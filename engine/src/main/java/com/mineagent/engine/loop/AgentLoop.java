@@ -91,18 +91,15 @@ public class AgentLoop {
      *  Lowered from 50 → 24 to reduce token consumption and latency.
      *  Old messages are summarized (see {@link #trimHistory}) so context
      *  is not lost, just compressed. */
-    private static final int MAX_HISTORY = 24;
 
     /** Number of recent messages to keep verbatim before summarizing.
      *  Messages older than this window get folded into a compact
      *  "[SUMMARY]" system message to save tokens. */
-    private static final int RECENT_KEEP = 12;
 
     /** Hard bound for the accumulated rolling summary. */
     private static final int MAX_HISTORY_SUMMARY_CHARS = 2_400;
 
     /** Maximum consecutive tool-call rounds within a single turn. */
-    private static final int MAX_TOOL_ROUNDS = 10;
 
     /** Maximum LLM retry attempts. */
     private static final int MAX_RETRIES = 3;
@@ -120,7 +117,6 @@ public class AgentLoop {
      *  a fresh cached decision for a similar situation. This is the
      *  single biggest latency win for repetitive actions (e.g. mining
      *  a vein block-by-block). */
-    private static final boolean DECISION_CACHE_ENABLED = true;
 
     /** 连续缓存命中上限。
      *  连续命中达到此次数后，强制走一次 LLM 调用，防止 AI 陷入
@@ -186,6 +182,12 @@ public class AgentLoop {
     private volatile String reasoningEffort; // off/low/medium/high/xhigh/max or null
     /** The role of the turn in progress, for SMH's smh/auto routing (RoleRouting; SMH plan 69, MA1.6). */
     private volatile String currentRole = "act";
+    /** The call-rate setting's limits (SMH plan 69, MA2.5; Busy by default): see settings/CallRate. */
+    private volatile int maxHistory = com.mineagent.engine.settings.CallRate.BUSY.history();
+    private volatile int recentKeep = com.mineagent.engine.settings.CallRate.BUSY.recentKeep();
+    private volatile int maxToolRounds = com.mineagent.engine.settings.CallRate.BUSY.toolRounds();
+    private volatile boolean decisionCacheEnabled = com.mineagent.engine.settings.CallRate.BUSY.decisionCache();
+    private volatile double outputScale = com.mineagent.engine.settings.CallRate.BUSY.outputScale();
     /**
      * Hard-coded ratings of skills, goals and (block 3) tactics, kept in the permanent library (SMH plan 69):
      * what worked better is used first, and what was tried too little gets its trial.
@@ -1377,6 +1379,14 @@ public class AgentLoop {
     public com.mineagent.engine.learning.Scorecard scorecard() { return scorecard; }
     public void setAgentSettings(com.mineagent.engine.settings.AgentSettings settings) {
         agentSettings = settings == null ? com.mineagent.engine.settings.AgentSettings.DEFAULTS : settings;
+        // MA2.4 and MA2.5: how much it experiments, and how freely it calls its model.
+        var rate = com.mineagent.engine.settings.CallRate.of(agentSettings.callRate());
+        maxHistory = rate.history();
+        recentKeep = rate.recentKeep();
+        maxToolRounds = rate.toolRounds();
+        decisionCacheEnabled = rate.decisionCache();
+        outputScale = rate.outputScale();
+        mechanismExplorer.setBudgetLimit(com.mineagent.engine.settings.CallRate.experimentBudget(agentSettings.experiments()));
     }
     public String getReasoningEffort() { return reasoningEffort; }
     public void setReasoningEffort(String effort) { this.reasoningEffort = effort; }
@@ -1732,12 +1742,12 @@ public class AgentLoop {
      */
     private void executeTurn(String trigger, int roundNumber) {
         // 0. Safety cap on tool-call rounds
-        if (roundNumber >= MAX_TOOL_ROUNDS) {
+        if (roundNumber >= maxToolRounds) {
             System.err.println("[MineAgent] Reached max tool rounds ("
-                    + MAX_TOOL_ROUNDS + ") - stopping turn to prevent infinite loop");
+                    + maxToolRounds + ") - stopping turn to prevent infinite loop");
             synchronized (history) {
                 history.add(ChatMessage.system(
-                        "[SYSTEM] You have called tools " + MAX_TOOL_ROUNDS
+                        "[SYSTEM] You have called tools " + maxToolRounds
                                 + " times in a row. Please respond to the owner now."));
             }
             // Final LLM call to wrap up
@@ -1788,7 +1798,7 @@ public class AgentLoop {
         //     1. 玩家最近 30 秒内说过话 → 不缓存（对话需要 LLM 真正理解）
         //     2. 连续命中 ≥ 2 次 → 强制走 LLM（防止无限循环）
         //     3. TTL 已缩短到 10 秒（降低情境变化风险）
-        if (DECISION_CACHE_ENABLED && roundNumber == 0 && !shouldSkipCache()) {
+        if (decisionCacheEnabled && roundNumber == 0 && !shouldSkipCache()) {
             String cacheKey = buildDecisionCacheKey();
             // buildDecisionCacheKey may return null (e.g. companion state
             // not yet available). ConcurrentHashMap forbids null keys, so we
@@ -1862,9 +1872,9 @@ public class AgentLoop {
         // more tools. Do not store the provider's rejected tool_calls: keeping
         // them without tool result messages makes the next provider request
         // protocol-invalid. Preserve only optional explanatory text.
-        if (roundNumber >= MAX_TOOL_ROUNDS && hasToolCalls) {
+        if (roundNumber >= maxToolRounds && hasToolCalls) {
             System.err.println("[MineAgent] LLM returned tool_calls after hitting "
-                    + "MAX_TOOL_ROUNDS cap (" + MAX_TOOL_ROUNDS + ") - ignoring them");
+                    + "maxToolRounds cap (" + maxToolRounds + ") - ignoring them");
             if (hasContent) {
                 ChatMessage textOnly = ChatMessage.assistant(assistantMsg.content());
                 synchronized (history) {
@@ -1894,7 +1904,7 @@ public class AgentLoop {
         //
         //     This replaces the old containsActionIntent() keyword check
         //     with a stricter, language-agnostic, LLM-driven declaration.
-        if (DECISION_CACHE_ENABLED && roundNumber == 0
+        if (decisionCacheEnabled && roundNumber == 0
                 && (assistantMsg.toolCalls() == null || assistantMsg.toolCalls().isEmpty())
                 && assistantMsg.content() != null && !assistantMsg.content().isBlank()
                 && hasExplicitNoActionMarker(assistantMsg.content())) {
@@ -2599,10 +2609,11 @@ public class AgentLoop {
      * still receive 4K tokens so their hidden reasoning is not starved.
      */
     private int outputTokenBudget(int roundNumber) {
-        if (roundNumber <= 0 || maxTokens <= 4_096 || complexStructuredOutputLikely()) {
+        int cap = (int) Math.round(4_096 * outputScale);
+        if (roundNumber <= 0 || maxTokens <= cap || complexStructuredOutputLikely()) {
             return maxTokens;
         }
-        return Math.min(maxTokens, 4_096);
+        return Math.min(maxTokens, cap);
     }
 
     private boolean complexStructuredOutputLikely() {
@@ -2631,7 +2642,7 @@ public class AgentLoop {
     /**
      * Trim the conversation history to prevent context overflow.
      * Always keeps the system prompt (index 0) and trims the oldest
-     * non-system messages when the history exceeds MAX_HISTORY.
+     * non-system messages when the history exceeds maxHistory.
      *
      * <p><b>Important:</b> When trimming, we must keep assistant messages
      * that contain {@code tool_calls} together with their corresponding
@@ -2642,7 +2653,7 @@ public class AgentLoop {
      */
     private void trimHistory() {
         synchronized (history) {
-            if (history.size() <= MAX_HISTORY + 1) return;
+            if (history.size() <= maxHistory + 1) return;
 
             // A Responses continuation has already stored the sent prefix on
             // the provider. Trim only that prefix while preserving the local
@@ -2660,11 +2671,11 @@ public class AgentLoop {
             // Preserve the system prompt (index 0)
             ChatMessage systemPrompt = history.get(0);
 
-            // Trim with hysteresis: trigger at MAX_HISTORY, then fall back to
-            // RECENT_KEEP. Trimming back to MAX_HISTORY caused the rolling
+            // Trim with hysteresis: trigger at maxHistory, then fall back to
+            // recentKeep. Trimming back to maxHistory caused the rolling
             // summary near the front of the prompt to be rewritten after
             // almost every tool round, defeating provider prefix caches.
-            int start = history.size() - RECENT_KEEP;
+            int start = history.size() - recentKeep;
 
             // Adjust start forward if it lands on a "tool" message whose
             // corresponding assistant tool_calls message was cut.
@@ -2753,7 +2764,7 @@ public class AgentLoop {
     private void trimStatefulHistory() {
         int oldSize = history.size();
         int sentEnd = Math.max(1, Math.min(providerHistoryCursor, oldSize));
-        int start = Math.max(1, sentEnd - RECENT_KEEP);
+        int start = Math.max(1, sentEnd - recentKeep);
         // Keep the assistant parent whenever the boundary lands in its tool
         // result group. Those results may be unsent but are still needed for
         // local fallback to Chat Completions.

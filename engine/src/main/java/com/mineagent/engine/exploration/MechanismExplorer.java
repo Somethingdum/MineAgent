@@ -150,7 +150,15 @@ public final class MechanismExplorer {
     }
 
     private static final int MAX_EXPERIMENTS = 128;
-    private static final int MAX_BUDGET = 12;
+    /** The most a budget can be (the High level of the experiments setting; SMH plan 69, MA2.4). */
+    private static final int MAX_BUDGET = 24;
+    /** This companion's experiment budget per subject (Low 6, Normal 12, High 24). */
+    private volatile int budgetLimit = MAX_BUDGET;
+
+    /** MA2.4: the experiments setting's budget per subject. */
+    public void setBudgetLimit(int limit) {
+        budgetLimit = Math.max(1, Math.min(MAX_BUDGET, limit));
+    }
     private static final int MAX_PROBES_PER_SUBJECT = 6;
     private static final long BUDGET_RESET_TICKS = 24_000L;
     private static final long OBSERVATION_WINDOW_TICKS = 160L;
@@ -257,7 +265,7 @@ public final class MechanismExplorer {
             return new Proposal(false, activeExperiment(),
                     "Finish or abort the active experiment before arming another");
         }
-        int cost = Math.max(1, Math.min(MAX_BUDGET, estimatedCost));
+        int cost = Math.max(1, Math.min(budgetLimit, estimatedCost));
         Budget budget = budgetFor(subject, gameTick);
         if (budget.probes() >= MAX_PROBES_PER_SUBJECT || budget.remaining() < cost) {
             return new Proposal(false, null,
@@ -708,7 +716,7 @@ public final class MechanismExplorer {
         if (old == null || !old.fingerprint().compatible(
                 knowledgeBase.currentFingerprint())
                 || gameTick - old.updatedTick() >= BUDGET_RESET_TICKS) {
-            return new Budget(subject, MAX_BUDGET, 0, gameTick,
+            return new Budget(subject, budgetLimit, 0, gameTick,
                     knowledgeBase.currentFingerprint());
         }
         return old;
