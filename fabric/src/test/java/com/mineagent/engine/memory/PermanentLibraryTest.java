@@ -50,9 +50,9 @@ final class PermanentLibraryTest {
         }
     }
 
-    private static final String PORTABLE = "[{\"tool\":\"craft_item\",\"args\":{\"item\":\"minecraft:crafting_table\",\"count\":1}}]";
-    private static final String LIFTABLE = "[{\"tool\":\"mine_block\",\"args\":{\"x\":10,\"y\":64,\"z\":-5}}]";
-    private static final String BOUND = "[{\"tool\":\"mine_block\",\"args_raw\":\"dig at 10, 64, -5\"}]";
+    private static final String PORTABLE = "[{\"tool\":\"craft\",\"args\":{\"item\":\"minecraft:crafting_table\",\"count\":1}}]";
+    private static final String LIFTABLE = "[{\"tool\":\"goto\",\"args\":{\"x\":10,\"y\":64,\"z\":-5}}]";
+    private static final String BOUND = "[{\"tool\":\"interact_at\",\"args_raw\":\"dig at 10, 64, -5\"}]";
 
     @Test void aSkillLearnedInOneWorldIsFoundInAnotherAndOutlivesIt(@TempDir Path tmp) throws Exception {
         Path config = tmp.resolve("config");

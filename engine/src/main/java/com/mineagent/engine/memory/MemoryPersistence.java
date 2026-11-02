@@ -67,6 +67,8 @@ public class MemoryPersistence {
     private static final String WORLD_SKILL_FILE = "world_skills.json";
     /** The old world skill file, kept beside its library copy once imported. */
     private static final String MIGRATED_SKILL_FILE = "learned_skills.migrated.json";
+    /** The hard-coded ratings of skills, goals and tactics (learning/Scorecard), with the library when there is one. */
+    private static final String SCORE_FILE = "scores.json";
     private static final String SEMANTIC_WORLD_FILE = "semantic_world.json";
     private static final String ROLLING_PLAN_FILE = "rolling_plan.json";
     private static final String MECHANISM_FILE = "mechanism_experiments.json";
@@ -99,6 +101,7 @@ public class MemoryPersistence {
      * mechanisms live under it, in a folder named like the world folder. Null: everything in the world.
      */
     private volatile Path libraryRoot;
+    private volatile com.mineagent.engine.learning.Scorecard scorecard;
     private final CognitiveMap cognitiveMap;
     private final PlaceEventMemory placeEventMemory;
     private final ImportanceEvaluator importanceEvaluator;
@@ -169,6 +172,39 @@ public class MemoryPersistence {
         this.libraryRoot = root;
     }
 
+    /** Keep these ratings with the library (or the world, without one). */
+    public synchronized void setScorecard(com.mineagent.engine.learning.Scorecard card) {
+        this.scorecard = card;
+    }
+
+    private Path scoreFile() {
+        Path library = libraryDir();
+        return library != null ? library.resolve(SCORE_FILE) : memoryDir.resolve(SCORE_FILE);
+    }
+
+    private void saveScores() throws IOException {
+        var card = scorecard;
+        if (card == null) return;
+        JsonObject data = new JsonObject();
+        data.addProperty("version", FORMAT_VERSION);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        data.add("state", GSON.toJsonTree(card.exportState()));
+        writeAtomic(scoreFile(), GSON.toJson(data));
+    }
+
+    private void loadScores() throws IOException {
+        var card = scorecard;
+        Path file = scoreFile();
+        if (card == null || !Files.exists(file)) return;
+        JsonObject data = readRoot(file);
+        if (!data.has("state") || !data.get("state").isJsonObject()) throw new IOException("score state is missing");
+        try {
+            card.importState(GSON.fromJson(data.get("state"), com.mineagent.engine.learning.Scorecard.State.class));
+        } catch (RuntimeException malformed) {
+            throw new IOException("invalid score state", malformed);
+        }
+    }
+
     /** This companion's library folder, or null without a library. */
     public Path libraryDir() {
         Path root = libraryRoot;
@@ -213,6 +249,9 @@ public class MemoryPersistence {
         try { saveSkills(); } catch (Exception e) {
             System.err.println("[MineAgent] Save learned skills failed: " + e.getMessage());
         }
+        try { saveScores(); } catch (Exception e) {
+            System.err.println("[MineAgent] Save scores failed: " + e.getMessage());
+        }
         try { saveSemanticWorld(); } catch (Exception e) {
             System.err.println("[MineAgent] Save semantic world failed: " + e.getMessage());
         }
@@ -254,7 +293,8 @@ public class MemoryPersistence {
      * 从磁盘恢复所有记忆。每个系统独立恢复，单个文件损坏不影响其他。
      */
     public synchronized void loadAll() {
-        if (!Files.isDirectory(memoryDir)) return;
+        // A world the companion has never been in has no folder yet; its permanent library still loads.
+        if (!Files.isDirectory(memoryDir) && libraryDir() == null) return;
         loadWithQuarantine(COGNITIVE_MAP_FILE, "cognitive map", this::loadCognitiveMap);
         loadWithQuarantine(PLACE_EVENT_FILE, "place events", this::loadPlaceEventMemory);
         loadWithQuarantine(IMPORTANCE_FILE, "importance weights", this::loadImportanceWeights);
@@ -264,6 +304,12 @@ public class MemoryPersistence {
         loadWithQuarantine(ASSET_FILE, "world assets", this::loadWorldAssets);
         loadWithQuarantine(EXPERIENCE_FILE, "experiences", this::loadExperiences);
         loadWithQuarantine(SKILL_FILE, "learned skills", this::loadSkills);
+        try {
+            loadScores();
+        } catch (Exception failure) {
+            System.err.println("[MineAgent] Load scores failed: " + failure.getMessage());
+            quarantine(scoreFile());
+        }
         loadWithQuarantine(SEMANTIC_WORLD_FILE, "semantic world", this::loadSemanticWorld);
         loadWithQuarantine(ROLLING_PLAN_FILE, "rolling plan", this::loadRollingPlan);
         loadWithQuarantine(MECHANISM_FILE, "mechanism experiments", this::loadMechanisms);

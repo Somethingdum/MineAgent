@@ -186,6 +186,15 @@ public class AgentLoop {
     private volatile String reasoningEffort; // off/low/medium/high/xhigh/max or null
     /** The role of the turn in progress, for SMH's smh/auto routing (RoleRouting; SMH plan 69, MA1.6). */
     private volatile String currentRole = "act";
+    /**
+     * Hard-coded ratings of skills, goals and (block 3) tactics, kept in the permanent library (SMH plan 69):
+     * what worked better is used first, and what was tried too little gets its trial.
+     */
+    private final com.mineagent.engine.learning.Scorecard scorecard = new com.mineagent.engine.learning.Scorecard();
+    /** The owner's goal and the skill run under way, measured on the server thread for the scorecard. */
+    private final com.mineagent.engine.learning.EpisodeTracker goalEpisode = new com.mineagent.engine.learning.EpisodeTracker();
+    private final com.mineagent.engine.learning.EpisodeTracker skillEpisode = new com.mineagent.engine.learning.EpisodeTracker();
+    private String skillEpisodeRun = "";
     /** This companion's own settings: trusted players and persona (SMH plan 69, MA1.7). */
     private volatile com.mineagent.engine.settings.AgentSettings agentSettings = com.mineagent.engine.settings.AgentSettings.DEFAULTS;
     /** Talk with players who are neither the owner nor trusted: no tools, no task, no inbox (MA1.7). */
@@ -366,6 +375,7 @@ public class AgentLoop {
         this.emotion = new EmotionState();
         this.placeMemory = new PlaceEventMemory();
         this.skillLib = new SkillLibrary();
+        this.skillLib.setScorecard(scorecard);
         this.decisionCache = new DecisionCache();
         this.theoryOfMind = new TheoryOfMind();
         this.knowledgeGraph = new MinecraftKnowledgeGraph();
@@ -434,6 +444,7 @@ public class AgentLoop {
             if (configDir != null) {
                 p.setLibraryRoot(com.mineagent.engine.memory.PermanentLibrary.root(configDir));
             }
+            p.setScorecard(scorecard);
             p.loadAll();
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
@@ -911,6 +922,41 @@ public class AgentLoop {
      * The LLM thread consumes only immutable index records and never touches a
      * Minecraft Level or Inventory directly.
      */
+    /**
+     * Rate what the companion does, from the game alone (SMH plan 69): the owner's goal, from when it is set to
+     * when its acceptance checks pass; each skill run, from start to its end. Health lost and a death count
+     * against them; the model's own words never do.
+     */
+    private void measureEpisodes(net.minecraft.server.level.ServerPlayer player, boolean goalVerified, long gameTick) {
+        if (player == null) return;
+        double health = player.getHealth();
+        double max = player.getMaxHealth();
+        boolean dead = player.isDeadOrDying();
+        goalEpisode.observe(health, dead);
+        skillEpisode.observe(health, dead);
+        String goal = planner.exportState().goal();
+        String goalKey = goal == null || goal.isBlank() ? null : "goal:" + goal;
+        if (goalEpisode.active() && (goalKey == null || !goalKey.equals(goalEpisode.key()))) goalEpisode.drop();
+        if (goalVerified && goalEpisode.active()) {
+            scorecard.record(goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.DONE, gameTick), gameTick);
+        } else if (dead && goalEpisode.active()) {
+            scorecard.record(goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick), gameTick);
+        } else if (!goalEpisode.active() && goalKey != null && !goalVerified && !dead) {
+            goalEpisode.begin(goalKey, gameTick, health, max);
+        }
+        SkillRuntime.Snapshot run = skillRuntime.snapshot();
+        if (run != null && run.runId() != null && !run.runId().equals(skillEpisodeRun) && !run.terminal()) {
+            skillEpisodeRun = run.runId();
+            skillEpisode.begin("skill:" + run.skillName(), gameTick, health, max);
+        }
+        if (run != null && skillEpisode.active() && run.runId() != null && run.runId().equals(skillEpisodeRun) && run.terminal()) {
+            if (run.status() == SkillRuntime.Status.CANCELLED) skillEpisode.drop();
+            else scorecard.record(skillEpisode.end(run.status() == SkillRuntime.Status.SUCCEEDED
+                    ? com.mineagent.engine.learning.Scorecard.Outcome.DONE
+                    : com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick), gameTick);
+        }
+    }
+
     public void onServerStateTick(long gameTick) {
         publishWorldSnapshot(gameTick, false);
         try {
@@ -928,6 +974,7 @@ public class AgentLoop {
             // facts. This prevents a completed tactical suffix from being
             // mistaken for completion of the owner's actual objective.
             boolean goalVerified = planner.verifyGoal(semanticWorldModel, gameTick);
+            measureEpisodes(player, goalVerified, gameTick);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -1179,6 +1226,7 @@ public class AgentLoop {
     public String getBaseUrl() { return baseUrl; }
     public double getTemperature() { return temperature; }
     public com.mineagent.engine.settings.AgentSettings getAgentSettings() { return agentSettings; }
+    public com.mineagent.engine.learning.Scorecard scorecard() { return scorecard; }
     public void setAgentSettings(com.mineagent.engine.settings.AgentSettings settings) {
         agentSettings = settings == null ? com.mineagent.engine.settings.AgentSettings.DEFAULTS : settings;
     }

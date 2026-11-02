@@ -55,6 +55,12 @@ public class SkillLibrary {
     ) {}
 
     private final Map<String, Skill> skills = new ConcurrentHashMap<>();
+    /** Hard-coded ratings of each skill's runs (SMH plan 69): the better skill is offered first. */
+    private volatile com.mineagent.engine.learning.Scorecard scorecard;
+
+    public void setScorecard(com.mineagent.engine.learning.Scorecard scorecard) {
+        this.scorecard = scorecard;
+    }
     /**
      * 注册一个新技能。如果同名技能已存在且成功率更高，则更新。
      */
@@ -104,11 +110,22 @@ public class SkillLibrary {
     public List<Skill> relevant(String taskDescription, int limit) {
         if (limit <= 0 || skills.isEmpty()) return Collections.emptyList();
         String query = taskDescription == null ? "" : taskDescription.trim();
+        // With ratings: how well each skill's runs went, measured by code (Scorecard), weighs half of
+        // its place, and a skill tried too little gets its trial; without them, as before.
+        var card = scorecard;
+        int totalRuns = 0;
+        if (card != null) {
+            for (Skill skill : skills.values()) {
+                var stat = card.stat("skill:" + skill.name());
+                if (stat != null) totalRuns += stat.runs();
+            }
+        }
+        final int runs = totalRuns;
         return skills.values().stream()
                 .filter(skill -> skill.successRate() > 0.7)
-                .map(skill -> Map.entry(skill, query.isBlank() ? skill.successRate()
+                .map(skill -> Map.entry(skill, rated(card, skill, runs, query.isBlank() ? skill.successRate()
                         : TextSimilarity.score(query, skill.name() + " "
-                                + skill.description() + " " + skill.triggerCondition())))
+                                + skill.description() + " " + skill.triggerCondition()))))
                 .filter(entry -> query.isBlank() || entry.getValue() > 0.0)
                 .sorted(Comparator.<Map.Entry<Skill, Double>>comparingDouble(
                                 Map.Entry::getValue).reversed()
@@ -119,6 +136,12 @@ public class SkillLibrary {
                 .limit(Math.min(8, limit))
                 .map(Map.Entry::getKey)
                 .toList();
+    }
+
+    private static double rated(com.mineagent.engine.learning.Scorecard card, Skill skill, int totalRuns, double relevance) {
+        if (card == null || relevance <= 0.0) return relevance;
+        double value = Math.min(1.0, card.choiceValue("skill:" + skill.name(), totalRuns));
+        return relevance * (0.5 + 0.5 * value);
     }
 
     /**

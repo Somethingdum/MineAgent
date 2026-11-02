@@ -89,6 +89,8 @@ public class LearnedSkillsTool implements Tool {
             s.addProperty("success_rate",
                     String.format(Locale.ROOT, "%.0f%%", skill.successRate() * 100));
             s.addProperty("invocations", skill.invocations());
+            // How its runs went, rated by code from the game alone (SMH plan 69).
+            s.addProperty("score", loop.scorecard().describe("skill:" + skill.name()));
             try {
                 var sequence = com.google.gson.JsonParser.parseString(skill.actionSequence()).getAsJsonArray();
                 var bindings = com.mineagent.engine.skill.SkillBindings.defaults(sequence);
