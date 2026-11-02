@@ -195,6 +195,10 @@ public class AgentLoop {
     private final com.mineagent.engine.learning.EpisodeTracker goalEpisode = new com.mineagent.engine.learning.EpisodeTracker();
     private final com.mineagent.engine.learning.EpisodeTracker skillEpisode = new com.mineagent.engine.learning.EpisodeTracker();
     private String skillEpisodeRun = "";
+    /** Practice when nobody needs it (MA2.1), and the planner's goal when a practice task began. */
+    private final com.mineagent.engine.learning.Curriculum curriculum = new com.mineagent.engine.learning.Curriculum();
+    private volatile String curriculumGoalAtBegin = "";
+    private final long createdAtMs = System.currentTimeMillis();
     /** This companion's own settings: trusted players and persona (SMH plan 69, MA1.7). */
     private volatile com.mineagent.engine.settings.AgentSettings agentSettings = com.mineagent.engine.settings.AgentSettings.DEFAULTS;
     /** Talk with players who are neither the owner nor trusted: no tools, no task, no inbox (MA1.7). */
@@ -445,6 +449,7 @@ public class AgentLoop {
                 p.setLibraryRoot(com.mineagent.engine.memory.PermanentLibrary.root(configDir));
             }
             p.setScorecard(scorecard);
+            p.setCurriculum(curriculum);
             p.loadAll();
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
@@ -610,19 +615,7 @@ public class AgentLoop {
         try {
             talkExecutor.submit(() -> {
                 try {
-                    LLMProvider p = resolveProvider();
-                    if (p == null) return;
-                    com.mineagent.api.llm.LLMResponse reply;
-                    // The loop's own turns keep their provider session: it is put back after this call.
-                    synchronized (p) {
-                        var before = p.sessionState(model);
-                        try {
-                            reply = p.complete(request);
-                        } finally {
-                            p.restoreSessionState(before);
-                        }
-                    }
-                    String text = com.mineagent.engine.chat.TalkOnly.replyText(reply);
+                    String text = com.mineagent.engine.chat.TalkOnly.replyText(sideCall(request));
                     if (text != null) speakToNearby(text);
                 } catch (Exception e) {
                     System.err.println("[MineAgent] Talk reply failed: " + e.getMessage());
@@ -668,6 +661,8 @@ public class AgentLoop {
     }
 
     public void onOwnerMessage(String message) {
+        // An order (the owner's, or a trusted player's) ends a practice task at once, uncounted (MA2.1).
+        curriculum.abandon();
         // Track last owner command for decision cache keying
         lastOwnerCommand = message.length() > 120 ? message.substring(0, 120) : message;
         // Keep a separate, bounded objective. The cache key deliberately uses
@@ -957,6 +952,75 @@ public class AgentLoop {
         }
     }
 
+    /**
+     * The curriculum (MA2.1): a practice task is ended by its checks passing (after a plan made for it), a
+     * death or its time running out; a new one is asked for when the companion is free, unordered for a
+     * minute, with no hostile within 16 blocks and health above its flee line, at most every 30 s.
+     */
+    private void practice(net.minecraft.server.level.ServerPlayer player, boolean goalVerified, long gameTick) {
+        if (player == null) return;
+        if (curriculum.current() != null) {
+            String goalNow = planner.exportState().goal();
+            if (goalVerified && goalNow != null && !goalNow.equals(curriculumGoalAtBegin)) curriculum.verified();
+            else if (player.isDeadOrDying() || curriculum.overdue(gameTick)) curriculum.failed();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long sinceOrder = now - Math.max(lastOwnerMessageTime, createdAtMs);
+        boolean hostileNear = !player.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
+                player.getBoundingBox().inflate(16.0)).isEmpty();
+        double flee = MineAgentEngine.getConfig().survival().healthFlee();
+        if (!curriculum.due(agentSettings.curriculum(), inProgress || skillRuntime.active(), sinceOrder,
+                hostileNear, player.getHealth(), flee, now)) return;
+        curriculum.asking(now);
+        List<String> names = new ArrayList<>();
+        for (SkillLibrary.Skill skill : skillLib.exportAll()) names.add(skill.name());
+        List<String> gaps = new ArrayList<>();
+        for (var gap : mechanismExplorer.curriculum(activeOwnerGoal, gameTick, 5)) gaps.add(gap.subject());
+        var request = com.mineagent.engine.learning.Curriculum.request(baseUrl, apiKey, model, temperature,
+                realtimeCognition.summarizeForPrompt(), names, scorecard.weakest(names, 5), gaps,
+                curriculum.doneList(), curriculum.tooHardList(), activeOwnerGoal);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    var task = curriculum.parse(replyContent(sideCall(request)));
+                    task.ifPresent(t -> Services.platform().scheduleOnServer(() -> {
+                        if (curriculum.current() != null || inProgress) return;
+                        String goal = planner.exportState().goal();
+                        curriculumGoalAtBegin = goal == null ? "" : goal;
+                        curriculum.begin(t, currentGameTickSafe());
+                        if (enqueueInbox("[CURRICULUM] " + t)) wake("curriculum");
+                        else curriculum.abandon();
+                    }));
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Curriculum proposal failed: " + e.getMessage());
+                } finally {
+                    curriculum.answered();
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            curriculum.answered();
+        }
+    }
+
+    /** A call on the side (talk, curriculum): its own request; the loop's provider session is put back after. */
+    private com.mineagent.api.llm.LLMResponse sideCall(com.mineagent.api.llm.LLMRequest request) {
+        LLMProvider p = resolveProvider();
+        if (p == null) return null;
+        synchronized (p) {
+            var before = p.sessionState(model);
+            try {
+                return p.complete(request);
+            } finally {
+                p.restoreSessionState(before);
+            }
+        }
+    }
+
+    private static String replyContent(com.mineagent.api.llm.LLMResponse r) {
+        return r == null || r.choice() == null || r.choice().message() == null ? null : r.choice().message().content();
+    }
+
     public void onServerStateTick(long gameTick) {
         publishWorldSnapshot(gameTick, false);
         try {
@@ -975,6 +1039,7 @@ public class AgentLoop {
             // mistaken for completion of the owner's actual objective.
             boolean goalVerified = planner.verifyGoal(semanticWorldModel, gameTick);
             measureEpisodes(player, goalVerified, gameTick);
+            practice(player, goalVerified, gameTick);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),

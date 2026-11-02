@@ -113,6 +113,21 @@ public final class Scorecard {
         return s.mean() / 100.0 + EXPLORE * Math.sqrt(2.0 * logTotal / s.runs());
     }
 
+    /** The skills with the lowest mean scores (rated at least once), as "name (score N)": worth practising. */
+    public List<String> weakest(Collection<String> skillNames, int limit) {
+        List<Stat> rated = new ArrayList<>();
+        for (String name : skillNames) {
+            Stat s = stat("skill:" + name);
+            if (s != null && s.runs() > 0) rated.add(s);
+        }
+        rated.sort(Comparator.comparingDouble(Stat::mean));
+        List<String> out = new ArrayList<>();
+        for (Stat s : rated.subList(0, Math.min(limit, rated.size()))) {
+            out.add(String.format(Locale.ROOT, "%s (score %.0f)", s.key().substring("skill:".length()), s.mean()));
+        }
+        return out;
+    }
+
     /** In a line for the model: the hard-coded rating, never the model's own. */
     public String describe(String key) {
         Stat s = stat(key);

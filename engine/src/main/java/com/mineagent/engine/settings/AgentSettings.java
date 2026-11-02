@@ -18,9 +18,14 @@ import java.util.UUID;
  * @param trusted players (UUID strings) whose orders the companion takes as its owner's, besides
  *                changing these settings and this list
  * @param persona a short description of how the companion talks
+ * @param curriculum whether it practises on its own when nobody needs it (MA2.1; on by default)
  */
-public record AgentSettings(List<String> trusted, String persona) {
-    public static final AgentSettings DEFAULTS = new AgentSettings(List.of(), "");
+public record AgentSettings(List<String> trusted, String persona, boolean curriculum) {
+    public static final AgentSettings DEFAULTS = new AgentSettings(List.of(), "", true);
+
+    public AgentSettings(List<String> trusted, String persona) {
+        this(trusted, persona, true);
+    }
     /** At most this many trusted players. */
     public static final int MAX_TRUSTED = 64;
     /** At most this many characters of persona. */
@@ -48,18 +53,22 @@ public record AgentSettings(List<String> trusted, String persona) {
         if (player == null || isTrusted(player)) return this;
         List<String> next = new ArrayList<>(trusted);
         next.add(player.toString());
-        return new AgentSettings(next, persona);
+        return new AgentSettings(next, persona, curriculum);
     }
 
     public AgentSettings withoutTrusted(UUID player) {
         if (player == null || !isTrusted(player)) return this;
         List<String> next = new ArrayList<>(trusted);
         next.remove(player.toString());
-        return new AgentSettings(next, persona);
+        return new AgentSettings(next, persona, curriculum);
     }
 
     public AgentSettings withPersona(String text) {
-        return new AgentSettings(trusted, text);
+        return new AgentSettings(trusted, text, curriculum);
+    }
+
+    public AgentSettings withCurriculum(boolean on) {
+        return new AgentSettings(trusted, persona, on);
     }
 
     public String toJson() {
@@ -68,6 +77,7 @@ public record AgentSettings(List<String> trusted, String persona) {
         for (String t : trusted) arr.add(t);
         obj.add("trusted", arr);
         obj.addProperty("persona", persona);
+        obj.addProperty("curriculum", curriculum);
         return obj.toString();
     }
 
@@ -86,7 +96,9 @@ public record AgentSettings(List<String> trusted, String persona) {
             }
             String persona = obj.has("persona") && obj.get("persona").isJsonPrimitive()
                     ? obj.get("persona").getAsString() : "";
-            return new AgentSettings(trusted, persona);
+            boolean curriculum = !obj.has("curriculum") || !obj.get("curriculum").isJsonPrimitive()
+                    || obj.get("curriculum").getAsBoolean();
+            return new AgentSettings(trusted, persona, curriculum);
         } catch (RuntimeException e) {
             return DEFAULTS;
         }
