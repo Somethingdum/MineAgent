@@ -184,6 +184,8 @@ public class AgentLoop {
     private final double temperature;
     private final int maxTokens;
     private volatile String reasoningEffort; // off/low/medium/high/xhigh/max or null
+    /** The role of the turn in progress, for SMH's smh/auto routing (RoleRouting; SMH plan 69, MA1.6). */
+    private volatile String currentRole = "act";
 
     private final List<ChatMessage> history = new ArrayList<>();
     /** Pending deliberation events, coalesced by semantic identity. */
@@ -1381,6 +1383,7 @@ public class AgentLoop {
 
     private void startTurn(String trigger) {
         inProgress = true;
+        currentRole = com.mineagent.engine.llm.RoleRouting.roleForTrigger(trigger);
         try {
             executor.submit(() -> {
                 try {
@@ -2173,7 +2176,7 @@ public class AgentLoop {
                     synchronized (provider) {
                         provider.restoreSessionState(providerStateBefore);
                         response = provider.complete(new LLMRequest(
-                                baseUrl, apiKey, model, messagesToSend, fallbackHistory,
+                                baseUrl, apiKey, com.mineagent.engine.llm.RoleRouting.modelFor(model, currentRole), messagesToSend, fallbackHistory,
                                 transportItems, toolDefs,
                                 temperature, outputTokenBudget(roundNumber), reasoningEffort,
                                 providerStateBefore.previousResponseId(), providerStateBefore.conversationId(),
