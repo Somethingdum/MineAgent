@@ -63,6 +63,10 @@ public class MemoryPersistence {
     private static final String ASSET_FILE = "world_assets.json";
     private static final String EXPERIENCE_FILE = "experiences.json";
     private static final String SKILL_FILE = "learned_skills.json";
+    /** With the permanent library: skills that still name a place of this world (SMH plan 69, MA2.0). */
+    private static final String WORLD_SKILL_FILE = "world_skills.json";
+    /** The old world skill file, kept beside its library copy once imported. */
+    private static final String MIGRATED_SKILL_FILE = "learned_skills.migrated.json";
     private static final String SEMANTIC_WORLD_FILE = "semantic_world.json";
     private static final String ROLLING_PLAN_FILE = "rolling_plan.json";
     private static final String MECHANISM_FILE = "mechanism_experiments.json";
@@ -90,6 +94,11 @@ public class MemoryPersistence {
     private static final long AUTO_SAVE_INTERVAL = 60_000;
 
     private volatile Path memoryDir;
+    /**
+     * The permanent library's root (PermanentLibrary; SMH plan 69, MA2.0): skills, general lessons and
+     * mechanisms live under it, in a folder named like the world folder. Null: everything in the world.
+     */
+    private volatile Path libraryRoot;
     private final CognitiveMap cognitiveMap;
     private final PlaceEventMemory placeEventMemory;
     private final ImportanceEvaluator importanceEvaluator;
@@ -153,6 +162,18 @@ public class MemoryPersistence {
         this.layeredMemory = layeredMemory;
         this.actionLedger = actionLedger;
         this.reservationLedger = reservationLedger;
+    }
+
+    /** Use the permanent library under this root for skills, general lessons and mechanisms (MA2.0). */
+    public synchronized void setLibraryRoot(Path root) {
+        this.libraryRoot = root;
+    }
+
+    /** This companion's library folder, or null without a library. */
+    public Path libraryDir() {
+        Path root = libraryRoot;
+        Path dir = memoryDir;
+        return root == null || dir == null || dir.getFileName() == null ? null : root.resolve(dir.getFileName().toString());
     }
 
     /**
@@ -507,7 +528,24 @@ public class MemoryPersistence {
         Map<String, Object> data = new HashMap<>();
         data.put("version", FORMAT_VERSION);
         data.put("timestamp", System.currentTimeMillis());
-        data.put("reflections", reflectionSystem.exportAll());
+        Path library = libraryDir();
+        List<ReflectionSystem.Reflection> all = reflectionSystem.exportAll();
+        if (library == null) {
+            data.put("reflections", all);
+        } else {
+            // General lessons go to the library, used in every world; the rest stay in this world.
+            List<ReflectionSystem.Reflection> general = new ArrayList<>();
+            List<ReflectionSystem.Reflection> here = new ArrayList<>();
+            for (ReflectionSystem.Reflection r : all) {
+                (PermanentLibrary.isGeneralLesson(r) ? general : here).add(r);
+            }
+            Map<String, Object> lessons = new HashMap<>();
+            lessons.put("version", FORMAT_VERSION);
+            lessons.put("timestamp", System.currentTimeMillis());
+            lessons.put("reflections", general);
+            writeAtomic(library.resolve(PermanentLibrary.LESSONS), GSON.toJson(lessons));
+            data.put("reflections", here);
+        }
         data.put("patterns", reflectionSystem.exportPatterns());
         writeAtomic(memoryDir.resolve(REFLECTION_FILE), GSON.toJson(data));
     }
@@ -542,25 +580,25 @@ public class MemoryPersistence {
 
     private void loadReflections() throws IOException {
         Path file = memoryDir.resolve(REFLECTION_FILE);
-        if (!Files.exists(file)) return;
-        JsonObject data = readRoot(file);
-        List<ReflectionSystem.Reflection> reflections = new ArrayList<>();
-        int skipped = 0;
-        for (JsonElement entry : arrayField(data, "reflections")) {
+        List<ReflectionSystem.Reflection> fromLibrary = new ArrayList<>();
+        Path library = libraryDir();
+        if (library != null) {
+            Path lessons = library.resolve(PermanentLibrary.LESSONS);
             try {
-                ReflectionSystem.Reflection reflection =
-                        GSON.fromJson(entry, ReflectionSystem.Reflection.class);
-                if (reflection == null || reflection.level() == null
-                        || reflection.trigger() == null || reflection.lesson() == null
-                        || reflection.applicability() == null) {
-                    skipped++;
-                } else {
-                    reflections.add(reflection);
-                }
-            } catch (RuntimeException malformedEntry) {
-                skipped++;
+                if (Files.exists(lessons)) fromLibrary.addAll(readReflectionList(readRoot(lessons), PermanentLibrary.LESSONS));
+            } catch (Exception corrupt) {
+                System.err.println("[MineAgent] Load library lessons failed: " + corrupt.getMessage());
+                quarantine(lessons);
             }
         }
+        if (!Files.exists(file)) {
+            if (!fromLibrary.isEmpty()) reflectionSystem.importAll(fromLibrary, new HashMap<>());
+            return;
+        }
+        JsonObject data = readRoot(file);
+        List<ReflectionSystem.Reflection> reflections = new ArrayList<>(fromLibrary);
+        reflections.addAll(readReflectionList(data, REFLECTION_FILE));
+        int skipped = 0;
         Map<String, Integer> patterns = new HashMap<>();
         if (data.has("patterns") && data.get("patterns").isJsonObject()) {
             for (Map.Entry<String, JsonElement> entry
@@ -579,6 +617,28 @@ public class MemoryPersistence {
         }
         logSkipped(REFLECTION_FILE, skipped);
         reflectionSystem.importAll(reflections, patterns);
+    }
+
+    private static List<ReflectionSystem.Reflection> readReflectionList(JsonObject data, String fileName) throws IOException {
+        List<ReflectionSystem.Reflection> reflections = new ArrayList<>();
+        int skipped = 0;
+        for (JsonElement entry : arrayField(data, "reflections")) {
+            try {
+                ReflectionSystem.Reflection reflection =
+                        GSON.fromJson(entry, ReflectionSystem.Reflection.class);
+                if (reflection == null || reflection.level() == null
+                        || reflection.trigger() == null || reflection.lesson() == null
+                        || reflection.applicability() == null) {
+                    skipped++;
+                } else {
+                    reflections.add(reflection);
+                }
+            } catch (RuntimeException malformedEntry) {
+                skipped++;
+            }
+        }
+        logSkipped(fileName, skipped);
+        return reflections;
     }
 
     // --- Unified cognitive state ---
@@ -691,16 +751,60 @@ public class MemoryPersistence {
     }
 
     private void saveSkills() throws IOException {
+        Path library = libraryDir();
+        if (library == null) {
+            writeSkillFile(memoryDir.resolve(SKILL_FILE), skillLibrary.exportAll());
+            return;
+        }
+        // Every skill that can be made portable goes to the library; one that still names a place stays here.
+        List<SkillLibrary.Skill> portable = new ArrayList<>();
+        List<SkillLibrary.Skill> here = new ArrayList<>();
+        for (SkillLibrary.Skill skill : skillLibrary.exportAll()) {
+            SkillLibrary.Skill lifted = PermanentLibrary.portable(skill);
+            if (lifted != null) portable.add(lifted);
+            else here.add(skill);
+        }
+        writeSkillFile(library.resolve(PermanentLibrary.SKILLS), portable);
+        writeSkillFile(memoryDir.resolve(WORLD_SKILL_FILE), here);
+    }
+
+    private static void writeSkillFile(Path file, List<SkillLibrary.Skill> skills) throws IOException {
         JsonObject data = new JsonObject();
         data.addProperty("version", FORMAT_VERSION);
         data.addProperty("timestamp", System.currentTimeMillis());
-        data.add("skills", GSON.toJsonTree(skillLibrary.exportAll()));
-        writeAtomic(memoryDir.resolve(SKILL_FILE), GSON.toJson(data));
+        data.add("skills", GSON.toJsonTree(skills));
+        writeAtomic(file, GSON.toJson(data));
     }
 
     private void loadSkills() throws IOException {
-        Path file = memoryDir.resolve(SKILL_FILE);
-        if (!Files.exists(file)) return;
+        Path library = libraryDir();
+        if (library == null) {
+            Path file = memoryDir.resolve(SKILL_FILE);
+            if (Files.exists(file)) skillLibrary.importAll(readSkillFile(file));
+            return;
+        }
+        List<SkillLibrary.Skill> all = new ArrayList<>();
+        for (Path file : List.of(library.resolve(PermanentLibrary.SKILLS), memoryDir.resolve(WORLD_SKILL_FILE))) {
+            try {
+                if (Files.exists(file)) all.addAll(readSkillFile(file));
+            } catch (Exception corrupt) {
+                System.err.println("[MineAgent] Load skills from " + file.getFileName() + " failed: " + corrupt.getMessage());
+                quarantine(file);
+            }
+        }
+        // A world from before the library: its skills are imported once, saved where they belong, and the
+        // old file kept beside them as learned_skills.migrated.json.
+        Path old = memoryDir.resolve(SKILL_FILE);
+        boolean migrate = Files.exists(old);
+        if (migrate) all.addAll(readSkillFile(old));
+        skillLibrary.importAll(all);
+        if (migrate) {
+            saveSkills();
+            Files.move(old, memoryDir.resolve(MIGRATED_SKILL_FILE), StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static List<SkillLibrary.Skill> readSkillFile(Path file) throws IOException {
         JsonObject data = readRoot(file);
         List<SkillLibrary.Skill> skills = new ArrayList<>();
         int skipped = 0;
@@ -714,8 +818,8 @@ public class MemoryPersistence {
                 skipped++;
             }
         }
-        logSkipped(SKILL_FILE, skipped);
-        skillLibrary.importAll(skills);
+        logSkipped(file.getFileName().toString(), skipped);
+        return skills;
     }
 
     private void saveSemanticWorld() throws IOException {
@@ -769,11 +873,16 @@ public class MemoryPersistence {
         data.addProperty("version", FORMAT_VERSION);
         data.addProperty("timestamp", System.currentTimeMillis());
         data.add("state", GSON.toJsonTree(mechanismExplorer.exportState()));
-        writeAtomic(memoryDir.resolve(MECHANISM_FILE), GSON.toJson(data));
+        Path library = libraryDir();
+        writeAtomic(library != null ? library.resolve(PermanentLibrary.MECHANISMS) : memoryDir.resolve(MECHANISM_FILE), GSON.toJson(data));
     }
 
     private void loadMechanisms() throws IOException {
-        Path file = memoryDir.resolve(MECHANISM_FILE);
+        // From the library when there is one (rules learned under another game or mod set go stale on import);
+        // a world from before the library is read once from its own folder.
+        Path library = libraryDir();
+        Path file = library != null && Files.exists(library.resolve(PermanentLibrary.MECHANISMS))
+                ? library.resolve(PermanentLibrary.MECHANISMS) : memoryDir.resolve(MECHANISM_FILE);
         if (!Files.exists(file)) return;
         JsonObject data = readRoot(file);
         if (!data.has("state") || !data.get("state").isJsonObject()) {
@@ -904,6 +1013,7 @@ public class MemoryPersistence {
     public synchronized void migrateTo(Path newDir) {
         if (newDir == null || newDir.equals(memoryDir)) return;
         Path oldDir = memoryDir;
+        Path oldLibrary = libraryDir();
         // Flush current in-memory state to the old location first
         saveAll();
         try {
@@ -931,6 +1041,20 @@ public class MemoryPersistence {
             System.err.println("[MineAgent] Memory migration failed: " + e.getMessage());
         }
         this.memoryDir = newDir;
+        // The library follows the new name too (copied; the old folder is kept: it is permanent).
+        Path newLibrary = libraryDir();
+        if (oldLibrary != null && newLibrary != null && !oldLibrary.equals(newLibrary) && Files.isDirectory(oldLibrary)) {
+            try {
+                Files.createDirectories(newLibrary);
+                try (var stream = Files.list(oldLibrary)) {
+                    for (Path f : stream.filter(Files::isRegularFile).toList()) {
+                        Files.copy(f, newLibrary.resolve(f.getFileName().toString()), StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            } catch (IOException e) {
+                System.err.println("[MineAgent] Library migration failed: " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -947,6 +1071,7 @@ public class MemoryPersistence {
             Files.deleteIfExists(memoryDir.resolve(ASSET_FILE));
             Files.deleteIfExists(memoryDir.resolve(EXPERIENCE_FILE));
             Files.deleteIfExists(memoryDir.resolve(SKILL_FILE));
+            Files.deleteIfExists(memoryDir.resolve(WORLD_SKILL_FILE));
             Files.deleteIfExists(memoryDir.resolve(SEMANTIC_WORLD_FILE));
             Files.deleteIfExists(memoryDir.resolve(ROLLING_PLAN_FILE));
             Files.deleteIfExists(memoryDir.resolve(MECHANISM_FILE));

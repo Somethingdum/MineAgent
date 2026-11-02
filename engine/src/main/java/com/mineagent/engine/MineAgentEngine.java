@@ -71,6 +71,11 @@ public final class MineAgentEngine {
     /** The config directory (saved so setconfig can persist changes). */
     private static Path configDirPath = null;
 
+    /** The mod's config folder, set in init (null before): the permanent library lives under it (SMH plan 69, MA2.0). */
+    public static Path getConfigDir() {
+        return configDirPath;
+    }
+
     /** The world's data directory for persistence (set during init). */
     private static Path worldDataDir = null;
 

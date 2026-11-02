@@ -429,6 +429,11 @@ public class AgentLoop {
                     skillLib, semanticWorldModel, rollingPlanner,
                     mechanismExplorer, history, cognitiveState, layeredMemory,
                     actionLedger, reservationLedger);
+            // Skills, general lessons and mechanisms in the permanent library, for every world (MA2.0).
+            java.nio.file.Path configDir = MineAgentEngine.getConfigDir();
+            if (configDir != null) {
+                p.setLibraryRoot(com.mineagent.engine.memory.PermanentLibrary.root(configDir));
+            }
             p.loadAll();
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
