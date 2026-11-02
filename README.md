@@ -4,6 +4,26 @@
 
 [English](README.en.md) | 简体中文
 
+## Using SMH
+
+This fork (`Somethingdum/MineAgent`, branch `smh-companion`) lets the companion think through SMH
+on another PC while you play. Set the mod's connection (the setup screen, or `llm` in
+`config/mineagent.json`) to:
+
+| Setting | Value |
+| --- | --- |
+| provider | `openai-compatible` |
+| baseUrl | `http://<the SMH PC's Tailscale address>:47821/apps` (copy it from SMH's admin panel, Models and PCs, Minecraft) |
+| apiKey | a device key made on that Minecraft card (`smhg_…`, shown once) |
+| model | `smh/auto` |
+
+With model `smh/auto`, each call is sent with its role as the model id (`smh/fight`, `smh/talk`,
+`smh/act`, `smh/plan`, `smh/learn`, `smh/review`), and SMH picks the model and the queue for it.
+Any other model id is sent unchanged, so the mod still works with any OpenAI-compatible server.
+The latest build of this branch is
+[`smh-latest`](https://github.com/Somethingdum/MineAgent/releases/tag/smh-latest).
+
+
 [![Build](https://github.com/bingdongni/MineAgent/actions/workflows/build.yml/badge.svg)](https://github.com/bingdongni/MineAgent/actions/workflows/build.yml)
 [![License: LGPL-3.0-only](https://img.shields.io/badge/License-LGPL--3.0--only-blue.svg)](LICENSE)
 

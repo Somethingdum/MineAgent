@@ -1,10 +1,12 @@
 name: Build
 
+# SMH companion fork (plan 69, MA1.5): every branch builds, and a build can be started by hand.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,16 +30,28 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # verifyReleaseArtifacts depends on :fabric:build and :neoforge:build, which run the unit tests.
       - name: Build both loader artifacts
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon prepareReleaseNotes verifyReleaseArtifacts
 
+      # Builds are told apart by commit, never by version: this fork never changes mod_version.
+      - name: Name the Fabric jar with its commit
+        id: named
+        run: |
+          version="$(sed -n 's/^mod_version *= *//p' gradle.properties | tr -d '[:space:]')"
+          short="${GITHUB_SHA::7}"
+          mkdir -p out
+          cp "fabric/build/libs/mineagent-fabric-${version}.jar" "out/mineagent-fabric-${version}-${short}.jar"
+          cp "fabric/build/libs/mineagent-fabric-${version}.jar" out/mineagent-fabric.jar
+          echo "name=mineagent-fabric-${version}-${short}" >> "$GITHUB_OUTPUT"
+
       - name: Upload Fabric artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mineagent-fabric
-          path: fabric/build/libs/mineagent-fabric-*.jar
+          name: ${{ steps.named.outputs.name }}
+          path: out/mineagent-fabric-*-*.jar
           if-no-files-found: error
 
       - name: Upload experimental NeoForge artifact
@@ -46,3 +60,50 @@ jobs:
           name: mineagent-neoforge-experimental
           path: neoforge/build/libs/mineagent-neoforge-*.jar
           if-no-files-found: error
+
+      - name: Keep the jar for smh-latest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/smh-companion'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smh-latest-jar
+          path: out/mineagent-fabric.jar
+          if-no-files-found: error
+
+  # The jar SMH's laptop setup downloads (plan 69, MA4.3):
+  # https://github.com/Somethingdum/MineAgent/releases/download/smh-latest/mineagent-fabric.jar
+  smh-latest:
+    name: Publish smh-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/smh-companion'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      # The release action only places a tag it creates; an existing smh-latest is moved here.
+      - name: Move smh-latest to this commit
+        run: |
+          git tag -f smh-latest "$GITHUB_SHA"
+          git push -f origin refs/tags/smh-latest
+
+      - name: Fetch the build
+        uses: actions/download-artifact@v4
+        with:
+          name: smh-latest-jar
+          path: out
+
+      - name: Publish the jar
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: smh-latest
+          name: smh-latest
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          body: |
+            The SMH companion build of commit ${{ github.sha }} (branch smh-companion).
+            Not a MineAgent release: mod_version is unchanged.
+          files: out/mineagent-fabric.jar
+          fail_on_unmatched_files: true
