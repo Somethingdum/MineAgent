@@ -1680,6 +1680,95 @@ public final class MineAgentEngine {
         return 1;
     }
 
+    /** The Agent settings panel's state for the owner's primary companion, sent to their client (MA2.6). */
+    private static int sendSettings(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        Optional<CompanionState> stateOpt = getCompanionByOwner(owner.getUUID());
+        if (stateOpt.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        CompanionState state = stateOpt.get();
+        var settings = state.loop.getAgentSettings();
+        List<String> trusted = new ArrayList<>();
+        for (String id : settings.trusted()) {
+            ServerPlayer p = null;
+            try {
+                p = source.getServer().getPlayerList().getPlayer(UUID.fromString(id));
+            } catch (IllegalArgumentException ignored) {
+                // kept UUIDs are always valid
+            }
+            trusted.add(p != null ? p.getName().getString() : id);
+        }
+        var card = state.loop.scorecard();
+        List<com.mineagent.engine.settings.SettingsCommand.SkillLine> skills = new ArrayList<>();
+        var all = new ArrayList<>(state.loop.skillLibrary().exportAll());
+        all.sort(Comparator.comparingDouble((com.mineagent.engine.skill.SkillLibrary.Skill k) -> {
+            var stat = card.stat("skill:" + k.name());
+            return stat == null ? -1.0 : -stat.mean();
+        }));
+        for (var skill : all.subList(0, Math.min(24, all.size()))) {
+            skills.add(new com.mineagent.engine.settings.SettingsCommand.SkillLine(skill.name(), card.describe("skill:" + skill.name())));
+        }
+        String json = com.mineagent.engine.settings.SettingsCommand.state(settings, trusted, skills,
+                state.loop.getModel(), state.loop.getBaseUrl(),
+                state.loop.getApiKey() != null && !state.loop.getApiKey().isBlank());
+        com.mineagent.engine.network.MineAgentNetwork.sendUiActionTo(owner, state.companion.companionId(), "settings_state", json);
+        return 1;
+    }
+
+    /** /mineagent settings set <key> <value>: the owner's own companions only; checked, saved, shown again. */
+    private static int setSetting(CommandSourceStack source, String key, String value) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        List<CompanionState> mine = getCompanionsByOwner(owner.getUUID());
+        if (mine.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        for (CompanionState s : mine) {
+            var result = com.mineagent.engine.settings.SettingsCommand.apply(s.loop.getAgentSettings(), key, value);
+            if (!result.ok()) {
+                source.sendFailure(Component.literal("§c[MineAgent] " + result.error()));
+                return 0;
+            }
+            s.loop.setAgentSettings(result.settings());
+            persistCompanionNow(s.companion.companionId());
+        }
+        return sendSettings(source);
+    }
+
+    /** /mineagent settings forget <skill>: the primary companion forgets one learned skill, in every world. */
+    private static int forgetSkill(CommandSourceStack source, String skill) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        Optional<CompanionState> stateOpt = getCompanionByOwner(owner.getUUID());
+        if (stateOpt.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        if (!stateOpt.get().loop.skillLibrary().remove(skill)) {
+            source.sendFailure(Component.literal("§c[MineAgent] No learned skill named '" + skill + "'."));
+            return 0;
+        }
+        stateOpt.get().loop.saveMemoryNow();
+        return sendSettings(source);
+    }
+
+    /** /mineagent settings test: one tiny call through the companion's connection, timed. */
+    private static int testConnection(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        Optional<CompanionState> stateOpt = getCompanionByOwner(owner.getUUID());
+        if (stateOpt.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        UUID id = stateOpt.get().companion.companionId();
+        stateOpt.get().loop.testConnection(result -> {
+            com.mineagent.engine.network.MineAgentNetwork.sendUiActionTo(owner, id, "settings_test", result);
+            owner.sendSystemMessage(Component.literal("[MineAgent] Connection test: " + result));
+        });
+        return 1;
+    }
+
     /** /mineagent trusted: the players the owner's primary companion obeys besides the owner. */
     private static int listTrusted(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
@@ -2122,6 +2211,21 @@ public final class MineAgentEngine {
                     })
                 )
                 // ── mode: set or toggle FOLLOW/FREE ──
+                // ── settings: the Agent settings panel's commands (SMH plan 69, MA2.6) ──
+                .then(literal("settings")
+                    .executes(ctx -> sendSettings(ctx.getSource()))
+                    .then(literal("set")
+                        .then(argument("key", StringArgumentType.word())
+                            .then(argument("value", StringArgumentType.greedyString())
+                                .executes(ctx -> setSetting(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "key"),
+                                        StringArgumentType.getString(ctx, "value"))))))
+                    .then(literal("forget")
+                        .then(argument("skill", StringArgumentType.word())
+                            .executes(ctx -> forgetSkill(ctx.getSource(),
+                                    StringArgumentType.getString(ctx, "skill")))))
+                    .then(literal("test")
+                        .executes(ctx -> testConnection(ctx.getSource()))))
                 // ── trust / untrust / trusted: who else the companions obey (SMH plan 69, MA1.7) ──
                 .then(literal("trust")
                     .then(argument("player", StringArgumentType.word())

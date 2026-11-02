@@ -180,6 +180,13 @@ public final class MineAgentClientController {
     }
 
     /** Apply a server UI action on the Minecraft client thread. */
+    /** The Agent settings panel's last state from the server (SMH plan 69, MA2.6); null until asked for. */
+    private static volatile com.google.gson.JsonObject agentSettingsState;
+
+    public static com.google.gson.JsonObject agentSettingsState() {
+        return agentSettingsState;
+    }
+
     public static void handleUiAction(ClientUiActionPayload payload) {
         if (payload == null) return;
         Minecraft client = Minecraft.getInstance();
@@ -201,6 +208,18 @@ public final class MineAgentClientController {
                 }
             }
             case "companion_status" -> parseAndApplyStatus(payload.data());
+            case "settings_state" -> {
+                try {
+                    agentSettingsState = com.google.gson.JsonParser.parseString(
+                            payload.data() == null ? "{}" : payload.data()).getAsJsonObject();
+                } catch (RuntimeException malformed) {
+                    return;
+                }
+                if (client.screen instanceof com.mineagent.engine.client.screen.AgentSettingsScreen screen) screen.refresh();
+            }
+            case "settings_test" -> {
+                if (client.screen instanceof com.mineagent.engine.client.screen.AgentSettingsScreen screen) screen.testResult(payload.data());
+            }
             case "companion_spawned" -> handleCompanionSpawned(payload);
             case "companion_despawned" -> handleCompanionDespawned(payload.companionId());
             case "companion_name" -> {

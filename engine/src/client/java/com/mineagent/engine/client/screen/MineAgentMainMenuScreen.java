@@ -55,8 +55,11 @@ public class MineAgentMainMenuScreen extends Screen {
                 ignored -> requestCompanionList());
         addMenuButton("screen.mineagent.menu.help", 1, 2, columnWidth,
                 ignored -> Minecraft.getInstance().setScreen(new HelpScreen()));
-        removeButton = addMenuButton("screen.mineagent.menu.remove", 0, 3,
-                innerWidth, ignored -> removeCompanion());
+        // SMH plan 69, MA2.6: who it obeys, its personality, how it learns and how often it calls its model.
+        addMenuButton("screen.mineagent.menu.agent", 0, 3, columnWidth,
+                ignored -> Minecraft.getInstance().setScreen(new AgentSettingsScreen()));
+        removeButton = addMenuButton("screen.mineagent.menu.remove", 1, 3,
+                columnWidth, ignored -> removeCompanion());
 
         int closeY = buttonsY + 4 * BUTTON_HEIGHT + 3 * ROW_GAP + 8;
         this.addRenderableWidget(Button.builder(Component.translatable("gui.done"),

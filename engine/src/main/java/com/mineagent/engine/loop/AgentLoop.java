@@ -1377,6 +1377,43 @@ public class AgentLoop {
     public double getTemperature() { return temperature; }
     public com.mineagent.engine.settings.AgentSettings getAgentSettings() { return agentSettings; }
     public com.mineagent.engine.learning.Scorecard scorecard() { return scorecard; }
+
+    /** Save this companion's memory and library now, off the server thread (the settings panel's changes). */
+    public void saveMemoryNow() {
+        if (persistence == null) return;
+        try {
+            talkExecutor.submit(() -> persistence.saveAll());
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // shutting down: saved on close
+        }
+    }
+
+    /**
+     * The settings panel's Test (SMH plan 69, MA2.6): one tiny smh/talk call, timed; the result is given back
+     * on the server thread, as "Reply in N ms" or what went wrong.
+     */
+    public void testConnection(java.util.function.Consumer<String> done) {
+        var request = new LLMRequest(baseUrl, apiKey, com.mineagent.engine.llm.RoleRouting.modelFor(model, "talk"),
+                List.of(ChatMessage.system("Reply with the single word: ok"), ChatMessage.user("ping")),
+                List.of(), List.of(), temperature, 8, null, null, null, null, Duration.ofSeconds(30), false);
+        long start = System.nanoTime();
+        try {
+            talkExecutor.submit(() -> {
+                String said;
+                try {
+                    var reply = replyContent(sideCall(request));
+                    long ms = (System.nanoTime() - start) / 1_000_000L;
+                    said = reply != null ? "Reply in " + ms + " ms" : "No reply after " + ms + " ms";
+                } catch (Exception e) {
+                    said = "Failed: " + e.getMessage();
+                }
+                final String result = said;
+                Services.platform().scheduleOnServer(() -> done.accept(result));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            done.accept("Failed: the companion is shutting down");
+        }
+    }
     public void setAgentSettings(com.mineagent.engine.settings.AgentSettings settings) {
         agentSettings = settings == null ? com.mineagent.engine.settings.AgentSettings.DEFAULTS : settings;
         // MA2.4 and MA2.5: how much it experiments, and how freely it calls its model.

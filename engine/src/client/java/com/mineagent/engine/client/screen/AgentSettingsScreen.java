@@ -1,0 +1,255 @@
+package com.mineagent.engine.client.screen;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.mineagent.engine.client.MineAgentClientController;
+import com.mineagent.engine.client.ui.MineAgentUiComponents;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * The Agent settings panel (SMH plan 69, MA2.6; the user, 2026-11-02: "The mod should give an easy to
+ * understand UI panel to change settings on the agent."). Five tabs in plain words: Connection, Who it obeys,
+ * Personality, Learning, Call rate. It shows what the server says (settings_state) and changes things with the
+ * owner's own commands (/mineagent settings, trust, untrust), which the server checks; nothing is decided here.
+ */
+public class AgentSettingsScreen extends Screen {
+    private static final int BUTTON_HEIGHT = 20;
+    private static final int ROW = 24;
+    private static final int LINE = 12;
+    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "callrate"};
+    private static final int SKILLS_SHOWN = 6;
+
+    private static int tab = 0;
+    private MineAgentUiComponents.Rect panel;
+    private int left;
+    private int innerWidth;
+    private int contentTop;
+    private EditBox playerField;
+    private EditBox personaField;
+    private String personaDraft;
+    private String testResult = "";
+    private final List<Line> lines = new ArrayList<>();
+
+    private record Line(Component text, int x, int y, int color) {}
+
+    public AgentSettingsScreen() {
+        super(Component.translatable("screen.mineagent.agent.title"));
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        lines.clear();
+        panel = MineAgentUiComponents.centeredPanel(this.width, this.height, 440, 290);
+        innerWidth = panel.width() - MineAgentUiComponents.PANEL_PADDING * 2;
+        left = panel.x() + MineAgentUiComponents.PANEL_PADDING;
+        int tabsY = panel.y() + MineAgentUiComponents.TITLE_BAND_HEIGHT + 8;
+        int gap = 3;
+        int tabWidth = (innerWidth - gap * (TABS.length - 1)) / TABS.length;
+        for (int i = 0; i < TABS.length; i++) {
+            final int which = i;
+            String label = (i == tab ? "> " : "") + Component.translatable("screen.mineagent.agent.tab." + TABS[i]).getString();
+            this.addRenderableWidget(Button.builder(Component.literal(label), ignored -> {
+                tab = which;
+                rebuild();
+            }).bounds(left + i * (tabWidth + gap), tabsY, tabWidth, BUTTON_HEIGHT).build());
+        }
+        contentTop = tabsY + BUTTON_HEIGHT + 10;
+        JsonObject state = MineAgentClientController.agentSettingsState();
+        if (state == null) {
+            line(Component.translatable("screen.mineagent.agent.loading"), left, contentTop, MineAgentUiComponents.COLOR_SUBTITLE);
+            command("mineagent settings");
+        } else {
+            switch (TABS[tab]) {
+                case "connection" -> connection(state);
+                case "obeys" -> obeys(state);
+                case "personality" -> personality(state);
+                case "learning" -> learning(state);
+                default -> callRate(state);
+            }
+        }
+        this.addRenderableWidget(Button.builder(Component.translatable("gui.back"),
+                ignored -> Minecraft.getInstance().setScreen(new MineAgentMainMenuScreen()))
+                .bounds(left, panel.y() + panel.height() - MineAgentUiComponents.PANEL_PADDING - BUTTON_HEIGHT,
+                        innerWidth, BUTTON_HEIGHT).build());
+    }
+
+    private void connection(JsonObject s) {
+        int y = contentTop;
+        line(Component.translatable("screen.mineagent.agent.model", str(s, "model")), left, y, MineAgentUiComponents.COLOR_TITLE);
+        line(Component.translatable("screen.mineagent.agent.base_url", clip(str(s, "baseUrl"), 60)), left, y += LINE, MineAgentUiComponents.COLOR_TITLE);
+        line(Component.translatable(s.has("keySet") && s.get("keySet").getAsBoolean()
+                ? "screen.mineagent.agent.key_set" : "screen.mineagent.agent.key_unset"), left, y += LINE, MineAgentUiComponents.COLOR_TITLE);
+        line(Component.translatable("screen.mineagent.agent.connection_note"), left, y += LINE + 4, MineAgentUiComponents.COLOR_SUBTITLE);
+        y += LINE + 6;
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.test"), ignored -> {
+            testResult = Component.translatable("screen.mineagent.agent.testing").getString();
+            command("mineagent settings test");
+        }).bounds(left, y, 140, BUTTON_HEIGHT).build());
+        if (!testResult.isEmpty()) line(Component.literal(clip(testResult, 60)), left + 150, y + 6, MineAgentUiComponents.COLOR_ACCENT);
+    }
+
+    private void obeys(JsonObject s) {
+        int y = contentTop;
+        line(Component.translatable("screen.mineagent.agent.obeys_note"), left, y, MineAgentUiComponents.COLOR_SUBTITLE);
+        y += LINE + 4;
+        JsonArray trusted = s.has("trusted") && s.get("trusted").isJsonArray() ? s.getAsJsonArray("trusted") : new JsonArray();
+        if (trusted.isEmpty()) {
+            line(Component.translatable("screen.mineagent.agent.only_you"), left, y + 6, MineAgentUiComponents.COLOR_TITLE);
+            y += ROW;
+        }
+        for (int i = 0; i < Math.min(5, trusted.size()); i++) {
+            String name = trusted.get(i).getAsString();
+            line(Component.literal(clip(name, 36)), left, y + 6, MineAgentUiComponents.COLOR_TITLE);
+            this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.remove"),
+                    ignored -> command("mineagent untrust " + safeWord(name)))
+                    .bounds(left + innerWidth - 80, y, 80, BUTTON_HEIGHT).build());
+            y += ROW;
+        }
+        playerField = new EditBox(this.font, left, y + 4, innerWidth - 90, BUTTON_HEIGHT,
+                Component.translatable("screen.mineagent.agent.player"));
+        playerField.setMaxLength(16);
+        playerField.setHint(Component.translatable("screen.mineagent.agent.player"));
+        this.addRenderableWidget(playerField);
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.add"), ignored -> {
+            String name = safeWord(playerField.getValue());
+            if (!name.isEmpty()) command("mineagent trust " + name);
+        }).bounds(left + innerWidth - 80, y + 4, 80, BUTTON_HEIGHT).build());
+    }
+
+    private void personality(JsonObject s) {
+        int y = contentTop;
+        line(Component.translatable("screen.mineagent.agent.persona_note"), left, y, MineAgentUiComponents.COLOR_SUBTITLE);
+        personaField = new EditBox(this.font, left, y + LINE + 4, innerWidth, BUTTON_HEIGHT,
+                Component.translatable("screen.mineagent.agent.persona"));
+        personaField.setMaxLength(600);
+        personaField.setValue(personaDraft != null ? personaDraft : str(s, "persona"));
+        personaField.setHint(Component.translatable("screen.mineagent.agent.persona_hint"));
+        this.addRenderableWidget(personaField);
+        int by = y + LINE + 4 + BUTTON_HEIGHT + 8;
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.save"), ignored -> {
+            String text = personaField.getValue().replaceAll("[\\r\\n]+", " ").strip();
+            personaDraft = null;
+            command("mineagent settings set persona " + (text.isEmpty() ? "none" : text));
+        }).bounds(left, by, 100, BUTTON_HEIGHT).build());
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.clear"), ignored -> {
+            personaDraft = null;
+            command("mineagent settings set persona none");
+        }).bounds(left + 106, by, 100, BUTTON_HEIGHT).build());
+    }
+
+    private void learning(JsonObject s) {
+        int y = contentTop;
+        boolean practice = !s.has("curriculum") || s.get("curriculum").getAsBoolean();
+        this.addRenderableWidget(Button.builder(Component.translatable(practice
+                ? "screen.mineagent.agent.practice_on" : "screen.mineagent.agent.practice_off"),
+                ignored -> command("mineagent settings set curriculum " + (practice ? "off" : "on")))
+                .bounds(left, y, (innerWidth - 6) / 2, BUTTON_HEIGHT).build());
+        String level = str(s, "experiments");
+        String next = level.equals("low") ? "normal" : level.equals("normal") ? "high" : "low";
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.experiments",
+                Component.translatable("screen.mineagent.agent.level." + (level.isEmpty() ? "high" : level))),
+                ignored -> command("mineagent settings set experiments " + next))
+                .bounds(left + (innerWidth - 6) / 2 + 6, y, (innerWidth - 6) / 2, BUTTON_HEIGHT).build());
+        y += ROW + 4;
+        line(Component.translatable("screen.mineagent.agent.skills_note"), left, y, MineAgentUiComponents.COLOR_SUBTITLE);
+        y += LINE + 2;
+        JsonArray skills = s.has("skills") && s.get("skills").isJsonArray() ? s.getAsJsonArray("skills") : new JsonArray();
+        if (skills.isEmpty()) line(Component.translatable("screen.mineagent.agent.no_skills"), left, y + 6, MineAgentUiComponents.COLOR_TITLE);
+        for (int i = 0; i < Math.min(SKILLS_SHOWN, skills.size()); i++) {
+            JsonObject k = skills.get(i).getAsJsonObject();
+            String name = str(k, "name");
+            line(Component.literal(clip(name, 28) + "  " + clip(str(k, "score"), 40)), left, y + 6, MineAgentUiComponents.COLOR_TITLE);
+            this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.forget"),
+                    ignored -> command("mineagent settings forget " + safeWord(name)))
+                    .bounds(left + innerWidth - 70, y, 70, BUTTON_HEIGHT).build());
+            y += ROW - 2;
+        }
+        if (skills.size() > SKILLS_SHOWN) {
+            line(Component.translatable("screen.mineagent.agent.more_skills", skills.size() - SKILLS_SHOWN), left, y + 4, MineAgentUiComponents.COLOR_MUTED);
+        }
+    }
+
+    private void callRate(JsonObject s) {
+        int y = contentTop;
+        String now = str(s, "callRate");
+        String[] levels = {"calm", "normal", "busy"};
+        int w = (innerWidth - 12) / 3;
+        for (int i = 0; i < levels.length; i++) {
+            String level = levels[i];
+            String label = (level.equals(now) ? "> " : "") + Component.translatable("screen.mineagent.agent.rate." + level).getString();
+            this.addRenderableWidget(Button.builder(Component.literal(label),
+                    ignored -> command("mineagent settings set callrate " + level))
+                    .bounds(left + i * (w + 6), y, w, BUTTON_HEIGHT).build());
+        }
+        y += ROW + 6;
+        for (String level : levels) {
+            line(Component.translatable("screen.mineagent.agent.rate." + level + ".about"), left, y,
+                    level.equals(now) ? MineAgentUiComponents.COLOR_ACCENT : MineAgentUiComponents.COLOR_SUBTITLE);
+            y += LINE + 2;
+        }
+    }
+
+    /** The server sent the settings again: drawn afresh, except while a personality is being typed. */
+    public void refresh() {
+        if (personaField != null && personaField.isFocused()) {
+            personaDraft = personaField.getValue();
+            return;
+        }
+        rebuild();
+    }
+
+    public void testResult(String result) {
+        testResult = result == null ? "" : result;
+        rebuild();
+    }
+
+    private void rebuild() {
+        if (personaField != null) personaDraft = personaField.getValue();
+        this.clearWidgets();
+        this.init();
+    }
+
+    private void command(String command) {
+        if (this.minecraft != null && this.minecraft.player != null) this.minecraft.player.connection.sendCommand(command);
+    }
+
+    private void line(Component text, int x, int y, int color) {
+        lines.add(new Line(text, x, y, color));
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        this.renderBackground(graphics, mouseX, mouseY, partialTick);
+        MineAgentUiComponents.drawPanel(graphics, panel.x(), panel.y(), panel.width(), panel.height(),
+                this.title, true, this.width, this.height);
+        for (Line l : lines) graphics.drawString(this.font, l.text(), l.x(), l.y(), l.color());
+        super.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public boolean shouldCloseOnEsc() {
+        return true;
+    }
+
+    private static String str(JsonObject o, String key) {
+        return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : "";
+    }
+
+    private static String clip(String s, int max) {
+        return s.length() > max ? s.substring(0, max - 1) + "…" : s;
+    }
+
+    /** A player or skill name as one command word (letters, digits, _ and -). */
+    private static String safeWord(String s) {
+        return s == null ? "" : s.strip().replaceAll("[^A-Za-z0-9_\\-]", "");
+    }
+}
