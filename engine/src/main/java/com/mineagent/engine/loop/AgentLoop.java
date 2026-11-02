@@ -186,6 +186,16 @@ public class AgentLoop {
     private volatile String reasoningEffort; // off/low/medium/high/xhigh/max or null
     /** The role of the turn in progress, for SMH's smh/auto routing (RoleRouting; SMH plan 69, MA1.6). */
     private volatile String currentRole = "act";
+    /** This companion's own settings: trusted players and persona (SMH plan 69, MA1.7). */
+    private volatile com.mineagent.engine.settings.AgentSettings agentSettings = com.mineagent.engine.settings.AgentSettings.DEFAULTS;
+    /** Talk with players who are neither the owner nor trusted: no tools, no task, no inbox (MA1.7). */
+    private final com.mineagent.engine.chat.TalkOnly talkOnly = new com.mineagent.engine.chat.TalkOnly();
+    /** Talk replies run here, never on the server thread and never in the way of the loop's own turns. */
+    private final ExecutorService talkExecutor = Executors.newSingleThreadExecutor(r -> {
+        var t = new Thread(r, "MineAgent-Talk");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final List<ChatMessage> history = new ArrayList<>();
     /** Pending deliberation events, coalesced by semantic identity. */
@@ -568,6 +578,79 @@ public class AgentLoop {
     /**
      * Add an owner message and wake the loop.
      */
+    /**
+     * A player who is neither the owner nor trusted said something to this companion (SMH plan 69, MA1.7;
+     * SMH's rule 16: what a stranger says never commands it). One smh/talk call with no tools at all; the
+     * reply is said to the players nearby. It never reaches the inbox, never starts a task and never
+     * changes a setting, whatever was said. Called on the server thread; the call runs off it.
+     */
+    public void onTalkOnly(String player, String message) {
+        if (message == null || message.isBlank()) return;
+        talkOnly.heard(player, message);
+        if (!talkOnly.take(player, System.currentTimeMillis())) return;
+        var request = com.mineagent.engine.chat.TalkOnly.request(baseUrl, apiKey, model, temperature,
+                companion.companionName(), agentSettings.persona(), talkStateLine(), talkOnly.recent(),
+                player, message);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    LLMProvider p = resolveProvider();
+                    if (p == null) return;
+                    com.mineagent.api.llm.LLMResponse reply;
+                    // The loop's own turns keep their provider session: it is put back after this call.
+                    synchronized (p) {
+                        var before = p.sessionState(model);
+                        try {
+                            reply = p.complete(request);
+                        } finally {
+                            p.restoreSessionState(before);
+                        }
+                    }
+                    String text = com.mineagent.engine.chat.TalkOnly.replyText(reply);
+                    if (text != null) speakToNearby(text);
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Talk reply failed: " + e.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // shutting down
+        }
+    }
+
+    /** What a stranger may know of the companion: health, food, busy or free. Never where it is. */
+    private String talkStateLine() {
+        try {
+            var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+            if (self == null) return "";
+            return "health " + Math.round(self.getHealth()) + "/" + Math.round(self.getMaxHealth())
+                    + ", food " + self.getFoodData().getFoodLevel() + "/20"
+                    + (inProgress ? ", busy with a task" : ", free");
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** A talk reply, in speakToOwner's format, to every real player within 32 blocks. */
+    private void speakToNearby(String text) {
+        Services.platform().scheduleOnServer(() -> {
+            try {
+                var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+                if (self == null) return;
+                var line = net.minecraft.network.chat.Component.literal(
+                        "§b[" + companion.companionName() + "]§r " + text);
+                for (var p : self.serverLevel().players()) {
+                    if (p == self || p.connection == null) continue;
+                    if (com.mineagent.engine.MineAgentEngine.isCompanionPlayer(p.getUUID())) continue;
+                    if (p.distanceTo(self) <= com.mineagent.engine.chat.ChatRouting.TRUSTED_BLOCKS) {
+                        p.sendSystemMessage(line);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[MineAgent] Failed to say a talk reply: " + e.getMessage());
+            }
+        });
+    }
+
     public void onOwnerMessage(String message) {
         // Track last owner command for decision cache keying
         lastOwnerCommand = message.length() > 120 ? message.substring(0, 120) : message;
@@ -1090,6 +1173,10 @@ public class AgentLoop {
     public String getModel() { return model; }
     public String getBaseUrl() { return baseUrl; }
     public double getTemperature() { return temperature; }
+    public com.mineagent.engine.settings.AgentSettings getAgentSettings() { return agentSettings; }
+    public void setAgentSettings(com.mineagent.engine.settings.AgentSettings settings) {
+        agentSettings = settings == null ? com.mineagent.engine.settings.AgentSettings.DEFAULTS : settings;
+    }
     public String getReasoningEffort() { return reasoningEffort; }
     public void setReasoningEffort(String effort) { this.reasoningEffort = effort; }
 
@@ -3960,6 +4047,7 @@ public class AgentLoop {
             }
             persistence.saveAll();
         }
+        talkExecutor.shutdownNow();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {

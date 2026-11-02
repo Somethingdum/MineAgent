@@ -296,7 +296,8 @@ public final class MineAgentEngine {
                 skinName != null ? skinName : "",
                 skinValue,
                 skinSignature,
-                serializeCompanionBody(state)
+                serializeCompanionBody(state),
+                state.loop.getAgentSettings().toJson()
         );
 
         com.mineagent.engine.entity.CompanionStore.save(worldDataDir, saved);
@@ -1550,7 +1551,10 @@ public final class MineAgentEngine {
      */
     public static void onPlayerChat(ServerPlayer sender, String message) {
         List<CompanionState> all = getCompanionsByOwner(sender.getUUID());
-        if (all.isEmpty()) return;
+        if (all.isEmpty()) {
+            routeOthersChat(sender, message);
+            return;
+        }
 
         // ── @mention routing ──
         // "@<name> <msg>"  → route to the named companion only
@@ -1599,6 +1603,101 @@ public final class MineAgentEngine {
         // No @mention → primary companion
         CompanionState primary = all.get(0);
         primary.loop.onOwnerMessage("[" + ownerName + "]: " + message);
+    }
+
+    /**
+     * Chat from a player who owns no companion (SMH plan 69, MA1.7; the user, 2026-11-02: "speak to any
+     * player. While only obeying ME and anyone I whitelist."). Each companion in their dimension hears it
+     * by ChatRouting: a trusted player within 32 blocks gives an order, as the owner does; anyone else who
+     * names it or stands within 8 blocks is talked with only (AgentLoop.onTalkOnly: no tools, no task, no
+     * inbox); everyone else is not heard.
+     */
+    private static void routeOthersChat(ServerPlayer sender, String message) {
+        if (sender == null || message == null || isCompanionPlayer(sender.getUUID())) return;
+        String name = sender.getName().getString();
+        for (CompanionState s : new ArrayList<>(COMPANIONS.values())) {
+            ServerPlayer body = s.companion.serverPlayer();
+            if (body == null || body.serverLevel() != sender.serverLevel()) continue;
+            var route = com.mineagent.engine.chat.ChatRouting.route(
+                    sender.getUUID(), s.companion.ownerUuid(), s.loop.getAgentSettings().trusted(),
+                    sender.distanceTo(body),
+                    com.mineagent.engine.chat.ChatRouting.mentions(message, s.companion.companionName()));
+            switch (route) {
+                case TRUSTED -> s.loop.onOwnerMessage("[" + name + "]: " + message);
+                case TALK -> s.loop.onTalkOnly(name, message);
+                default -> { }
+            }
+        }
+    }
+
+    /**
+     * /mineagent trust|untrust <player>: who else the owner's companions obey (SMH plan 69, MA1.7). The
+     * owner's own: the command acts only on companions the sender owns. A player is named while online,
+     * or by UUID.
+     */
+    private static int changeTrust(CommandSourceStack source, String who, boolean trust) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        List<CompanionState> mine = getCompanionsByOwner(owner.getUUID());
+        if (mine.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        UUID target = null;
+        String label = who;
+        ServerPlayer online = source.getServer().getPlayerList().getPlayerByName(who);
+        if (online != null) {
+            target = online.getUUID();
+            label = online.getName().getString();
+        } else {
+            try {
+                target = UUID.fromString(who);
+            } catch (IllegalArgumentException ignored) {
+                // not a UUID either
+            }
+        }
+        if (target == null) {
+            source.sendFailure(Component.literal("§c[MineAgent] No player named '" + who + "' is online."));
+            return 0;
+        }
+        if (target.equals(owner.getUUID()) || isCompanionPlayer(target)) {
+            source.sendFailure(Component.literal("§c[MineAgent] That player cannot be on your trusted list."));
+            return 0;
+        }
+        for (CompanionState s : mine) {
+            var now = s.loop.getAgentSettings();
+            s.loop.setAgentSettings(trust ? now.withTrusted(target) : now.withoutTrusted(target));
+            persistCompanionNow(s.companion.companionId());
+        }
+        String done = trust
+                ? "§a[MineAgent] Your companions now take orders from " + label + "."
+                : "§a[MineAgent] Your companions no longer take orders from " + label + ".";
+        source.sendSuccess(() -> Component.literal(done), false);
+        return 1;
+    }
+
+    /** /mineagent trusted: the players the owner's primary companion obeys besides the owner. */
+    private static int listTrusted(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        Optional<CompanionState> stateOpt = getCompanionByOwner(owner.getUUID());
+        if (stateOpt.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        List<String> names = new ArrayList<>();
+        for (String id : stateOpt.get().loop.getAgentSettings().trusted()) {
+            ServerPlayer p = null;
+            try {
+                p = source.getServer().getPlayerList().getPlayer(UUID.fromString(id));
+            } catch (IllegalArgumentException ignored) {
+                // kept UUIDs are always valid
+            }
+            names.add(p != null ? p.getName().getString() : id);
+        }
+        String text = names.isEmpty()
+                ? "§e[MineAgent] Only you give orders. Add someone with /mineagent trust <player>."
+                : "§e[MineAgent] Also taking orders from: " + String.join(", ", names);
+        source.sendSuccess(() -> Component.literal(text), false);
+        return 1;
     }
 
     /**
@@ -1690,6 +1789,9 @@ public final class MineAgentEngine {
                 // actually spawned (problem 4 fix: previously "has been restored!"
                 // was sent even on failure).
                 if (companion != null) {
+                    // Its trusted players and persona (SMH plan 69, MA1.7).
+                    getCompanion(companion.companionId()).ifPresent(state -> state.loop.setAgentSettings(
+                            com.mineagent.engine.settings.AgentSettings.fromJson(saved.agentSettings())));
                     boolean hardcoreDead = restoreCompanionBody(companion, saved.bodyData());
                     if (hardcoreDead) {
                         getCompanion(companion.companionId()).ifPresent(state ->
@@ -2015,6 +2117,17 @@ public final class MineAgentEngine {
                     })
                 )
                 // ── mode: set or toggle FOLLOW/FREE ──
+                // ── trust / untrust / trusted: who else the companions obey (SMH plan 69, MA1.7) ──
+                .then(literal("trust")
+                    .then(argument("player", StringArgumentType.word())
+                        .executes(ctx -> changeTrust(ctx.getSource(),
+                                StringArgumentType.getString(ctx, "player"), true))))
+                .then(literal("untrust")
+                    .then(argument("player", StringArgumentType.word())
+                        .executes(ctx -> changeTrust(ctx.getSource(),
+                                StringArgumentType.getString(ctx, "player"), false))))
+                .then(literal("trusted")
+                    .executes(ctx -> listTrusted(ctx.getSource())))
                 .then(literal("mode")
                     .executes(ctx -> {
                         // /mineagent mode — toggle primary companion
@@ -2662,6 +2775,10 @@ public final class MineAgentEngine {
 
             §e/mineagent remove
               §aRemove your companion
+            §e/mineagent trust§7 <player> §e/mineagent untrust§7 <player>
+              §aWho else your companions take orders from
+            §e/mineagent trusted
+              §aList them (everyone else is talked with, never obeyed)
 
             §e/mineagent respawn
               §aRespawn a dead companion

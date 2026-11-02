@@ -53,7 +53,9 @@ public final class CompanionStore {
             String skinName,
             String skinValue,
             String skinSignature,
-            String bodyData
+            String bodyData,
+            // The companion's own settings as JSON (settings/AgentSettings; SMH plan 69, MA1.7). Null: the defaults.
+            String agentSettings
     ) {}
 
     /**
@@ -87,6 +89,7 @@ public final class CompanionStore {
                 obj.addProperty("skinValue", c.skinValue() != null ? c.skinValue() : "");
                 obj.addProperty("skinSignature", c.skinSignature() != null ? c.skinSignature() : "");
                 obj.addProperty("bodyData", c.bodyData() != null ? c.bodyData() : "");
+                if (c.agentSettings() != null) obj.addProperty("agentSettings", c.agentSettings());
                 arr.add(obj);
             }
             root.add("companions", arr);
@@ -231,7 +234,9 @@ public final class CompanionStore {
                 optionalString(obj, "skinName", ""),
                 emptyToNull(optionalString(obj, "skinValue", null)),
                 emptyToNull(optionalString(obj, "skinSignature", null)),
-                emptyToNull(optionalString(obj, "bodyData", null)));
+                emptyToNull(optionalString(obj, "bodyData", null)),
+                // Saves from before the field have none: the defaults.
+                emptyToNull(optionalString(obj, "agentSettings", null)));
     }
 
     private static String requiredString(JsonObject object, String name) {
