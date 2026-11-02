@@ -933,9 +933,11 @@ public class AgentLoop {
         String goalKey = goal == null || goal.isBlank() ? null : "goal:" + goal;
         if (goalEpisode.active() && (goalKey == null || !goalKey.equals(goalEpisode.key()))) goalEpisode.drop();
         if (goalVerified && goalEpisode.active()) {
-            scorecard.record(goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.DONE, gameTick), gameTick);
+            var episode = goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.DONE, gameTick);
+            writeLesson(goal, episode, scorecard.record(episode, gameTick));
         } else if (dead && goalEpisode.active()) {
-            scorecard.record(goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick), gameTick);
+            var episode = goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick);
+            writeLesson(goal, episode, scorecard.record(episode, gameTick));
         } else if (!goalEpisode.active() && goalKey != null && !goalVerified && !dead) {
             goalEpisode.begin(goalKey, gameTick, health, max);
         }
@@ -946,9 +948,14 @@ public class AgentLoop {
         }
         if (run != null && skillEpisode.active() && run.runId() != null && run.runId().equals(skillEpisodeRun) && run.terminal()) {
             if (run.status() == SkillRuntime.Status.CANCELLED) skillEpisode.drop();
-            else scorecard.record(skillEpisode.end(run.status() == SkillRuntime.Status.SUCCEEDED
-                    ? com.mineagent.engine.learning.Scorecard.Outcome.DONE
-                    : com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick), gameTick);
+            else {
+                boolean succeeded = run.status() == SkillRuntime.Status.SUCCEEDED;
+                var episode = skillEpisode.end(succeeded
+                        ? com.mineagent.engine.learning.Scorecard.Outcome.DONE
+                        : com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick);
+                double score = scorecard.record(episode, gameTick);
+                if (!succeeded) writeLesson("the skill " + run.skillName(), episode, score);
+            }
         }
     }
 
@@ -1001,6 +1008,82 @@ public class AgentLoop {
         } catch (java.util.concurrent.RejectedExecutionException ignored) {
             curriculum.answered();
         }
+    }
+
+    /**
+     * MA2.2: one lesson from an episode, in the model's words, about what the game measured (its score, health
+     * lost, time) and the last steps taken. Kept under the task, so the next similar task recalls it.
+     */
+    private void writeLesson(String task, com.mineagent.engine.learning.Scorecard.Episode episode, double score) {
+        if (episode == null || task == null || task.isBlank()) return;
+        String outcome = (episode.died() ? "died" : episode.outcome().name().toLowerCase(Locale.ROOT))
+                + String.format(Locale.ROOT, ", score %.0f/100, %.0f health lost, %d s",
+                        score, episode.damageTaken(), episode.ticks() / 20);
+        var request = com.mineagent.engine.learning.LessonWriter.lessonRequest(baseUrl, apiKey, model, temperature,
+                task, outcome, recentSteps(12), realtimeCognition.summarizeForPrompt());
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    com.mineagent.engine.learning.LessonWriter.parseLesson(replyContent(sideCall(request)))
+                            .ifPresent(l -> reflection.recordLesson(task, outcome, l.text(), l.applies()));
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Lesson failed: " + e.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // shutting down
+        }
+    }
+
+    /**
+     * MA2.3: a newly verified skill written up (a name, what it does, when to use it) and checked by a second
+     * read; only a write-up the review passes replaces the plain entry. A name already taken by different steps
+     * gets a number, so two ways of doing one thing stay apart and are rated apart (Scorecard).
+     */
+    private void writeUpSkill(String plainId, String goal, String stepsJson) {
+        var request = com.mineagent.engine.learning.LessonWriter.writeUpRequest(baseUrl, apiKey, model, temperature, goal, stepsJson);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    var up = com.mineagent.engine.learning.LessonWriter.parseWriteUp(replyContent(sideCall(request)));
+                    if (up.isEmpty()) return;
+                    var review = com.mineagent.engine.learning.LessonWriter.reviewRequest(baseUrl, apiKey, model, temperature, up.get(), stepsJson);
+                    if (!com.mineagent.engine.learning.LessonWriter.parseReview(replyContent(sideCall(review)))) return;
+                    if (skillLib.getActionSequence(plainId) == null) return;
+                    var w = up.get();
+                    String name = w.name();
+                    for (int n = 2; n <= 9 && skillLib.getActionSequence(name) != null
+                            && !stepsJson.equals(skillLib.getActionSequence(name)); n++) {
+                        name = w.name() + "_" + n;
+                    }
+                    skillLib.register(name, w.description(), w.when(), stepsJson, true);
+                    if (!name.equals(plainId) && skillLib.getActionSequence(name) != null) skillLib.remove(plainId);
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Skill write-up failed: " + e.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // shutting down
+        }
+    }
+
+    /** The last tool calls and their results, newest last (two lines per step at most). */
+    private List<String> recentSteps(int steps) {
+        List<String> out = new ArrayList<>();
+        synchronized (history) {
+            for (int i = history.size() - 1; i >= 0 && out.size() < steps * 2; i--) {
+                ChatMessage m = history.get(i);
+                if ("tool".equals(m.role())) {
+                    out.add(0, "result: " + truncateForLog(m.content() == null ? "" : m.content(), 160));
+                } else if (m.toolCalls() != null) {
+                    for (int k = m.toolCalls().size() - 1; k >= 0; k--) {
+                        var call = m.toolCalls().get(k);
+                        out.add(0, call.name() + " " + truncateForLog(call.arguments() == null ? "" : call.arguments(), 120));
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /** A call on the side (talk, curriculum): its own request; the loop's provider session is put back after. */
@@ -2079,9 +2162,10 @@ public class AgentLoop {
                     .map(ChatMessage.ToolCallRef::name).toList();
             String skillId = generateSkillId(normalizedGoal,
                     toolNames.getFirst(), toolNames);
-            skillLib.registerSequence(skillId, normalizedGoal, normalizedGoal,
-                    toolTraceJson(verified), true);
+            String stepsJson = toolTraceJson(verified);
+            skillLib.registerSequence(skillId, normalizedGoal, normalizedGoal, stepsJson, true);
             verifiedActionTrace.clear();
+            if (skillLib.getActionSequence(skillId) != null) writeUpSkill(skillId, normalizedGoal, skillLib.getActionSequence(skillId));
         }
     }
 

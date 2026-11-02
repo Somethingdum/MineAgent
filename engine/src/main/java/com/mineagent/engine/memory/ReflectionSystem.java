@@ -88,6 +88,16 @@ public class ReflectionSystem {
     /**
      * 记录一次任务失败。
      */
+    /**
+     * A lesson the model wrote after an episode (SMH plan 69, MA2.2): kept under the task it is about, so the
+     * next similar task recalls it; {@code applies} "general" goes to the permanent library, "world" stays.
+     */
+    public void recordLesson(String task, String context, String lesson, String applies) {
+        if (task == null || lesson == null || lesson.isBlank()) return;
+        addReflection(new Reflection("lesson", task, truncate(context, 120), lesson,
+                System.currentTimeMillis(), "general".equals(applies) ? "general" : "world"));
+    }
+
     public void recordTaskFailure(String taskDescription, String reason, String context) {
         String lesson = generateMesoLesson(taskDescription, reason);
 
