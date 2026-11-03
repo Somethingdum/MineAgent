@@ -211,6 +211,15 @@ public final class MobDefenseChain implements TaskChain {
                 act = new Action(Move.FLEE, 0, !act.shield(), false, act.shield(), false);
             }
             apply(act, s, target, targetMob, sp, input);
+            // For the game tests: what it saw and did, every 2 seconds of a fight (the property is unset in play).
+            if (Boolean.getBoolean("mineagent.traceFights") && sp.level().getGameTime() % 40 == 0 && targetMob != null) {
+                System.out.println("[FIGHT " + companion.companionName() + "] " + posture + " (" + a.reason() + "), "
+                        + String.format("%.1f", target.distance()) + " away, charge " + String.format("%.2f", charge)
+                        + ", " + act.move() + (act.attack() ? " strike" : "") + (act.jump() ? " jump" : "")
+                        + (act.shield() ? " shield" : "") + ", in reach " + Interaction.inEntityReach(sp, targetMob)
+                        + ", sight " + sp.hasLineOfSight(targetMob) + ", using " + sp.isUsingItem()
+                        + ", on ground " + onGround + ", stance " + tactics.stance());
+            }
         } catch (Exception e) {
             System.err.println("[MineAgent] MobDefense tick error: " + e.getMessage());
             stop(TaskContext.inputDriver(companion), serverPlayer());

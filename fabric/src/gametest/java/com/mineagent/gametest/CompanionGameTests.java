@@ -33,6 +33,10 @@ import java.util.List;
 public class CompanionGameTests implements FabricGameTest {
     private static final String NO_MODEL = "http://127.0.0.1:9";
 
+    static {
+        System.setProperty("mineagent.traceFights", "true"); // fights print what the companion saw and did
+    }
+
     private record Scene(ServerPlayer owner, CompanionEntity companion, ServerPlayer body, AgentLoop loop) {}
 
     /** A stone floor, an owner (a mock player) at (3, 1, 3), and a companion beside them, with no model. */
