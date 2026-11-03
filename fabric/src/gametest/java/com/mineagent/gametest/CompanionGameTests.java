@@ -114,6 +114,29 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA5.8: it hits from a player's reach (3 blocks, eyes to hitbox), not from 4.5 blocks feet to feet as it
+     * used to. A still husk 4 blocks away is out of reach; 2 blocks away it is in reach.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_reach", timeoutTicks = 100)
+    public void itHitsOnlyFromAPlayersReach(GameTestHelper helper) {
+        Scene s = scene(helper, "Reach");
+        BlockPos me = helper.absolutePos(new BlockPos(3, 1, 8));
+        s.body().teleportTo(helper.getLevel(), me.getX() + 0.5, me.getY(), me.getZ() + 0.5, -90.0f, 0.0f);
+        Husk husk = helper.spawn(EntityType.HUSK, new BlockPos(7, 1, 8));
+        husk.setNoAi(true);
+        helper.runAfterDelay(5, () -> {
+            boolean far = com.mineagent.engine.act.Interaction.attackEntity(s.body(), husk);
+            BlockPos near = helper.absolutePos(new BlockPos(5, 1, 8));
+            husk.teleportTo(near.getX() + 0.5, near.getY(), near.getZ() + 0.5);
+            boolean close = com.mineagent.engine.act.Interaction.attackEntity(s.body(), husk);
+            tidy(s);
+            if (far) fail(helper, "it hit a husk 4 blocks away");
+            else if (!close) fail(helper, "it could not hit a husk 2 blocks away");
+            else helper.succeed();
+        });
+    }
+
     /** On guard, a husk 14 blocks away, outside a 6-block perimeter and not moving: it stays at its post. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_far", timeoutTicks = 200)
     public void onGuardItDoesNotRunOffAfterAFarMob(GameTestHelper helper) {

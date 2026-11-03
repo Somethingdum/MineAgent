@@ -121,10 +121,8 @@ public final class Interaction {
             if (player == null || target == null || hand == null) return InteractionResult.PASS;
             if (!target.isAlive() || target == player) return InteractionResult.FAIL;
 
-            // Check reach distance
-            double dist = player.distanceToSqr(target);
-            double reach = reachDistance(player);
-            if (dist > reach * reach) return InteractionResult.FAIL;
+            // A player's reach (SMH plan 70, MA5.8): the game's own check, from the eyes to the hitbox.
+            if (!inEntityReach(player, target)) return InteractionResult.FAIL;
             if (!player.hasLineOfSight(target)) return InteractionResult.FAIL;
 
             // Use the vanilla interact method
@@ -243,13 +241,9 @@ public final class Interaction {
             if (!target.isAlive() || target == player) return false;
             if (!target.isAttackable()) return false;
 
-            // Check reach distance (attack range is slightly shorter than interaction)
-            double reach = reachDistance(player);
-            double dist = player.distanceToSqr(target);
-            // Entities have a bounding box, so add some tolerance
-            double tolerance = target.getBoundingBox().getXsize() * 0.5;
-            double effectiveReach = reach + tolerance;
-            if (dist > effectiveReach * effectiveReach) return false;
+            // A player's reach (SMH plan 70, MA5.8). This used to allow 4.5 blocks feet to feet plus half the
+            // target's width, the reach for blocks; a player hits from 3 blocks, eyes to hitbox.
+            if (!inEntityReach(player, target)) return false;
             if (!player.hasLineOfSight(target)) return false;
 
             // A packet-driven player has already aimed before the attack
@@ -269,6 +263,18 @@ public final class Interaction {
     }
 
     // ── Internal Helpers ──────────────────────────────────────────
+
+    /**
+     * Whether a player could hit or use this entity from where it stands: the game's own check, its
+     * entity_interaction_range attribute (3 in survival) from the eyes to the target's hitbox. The configured creative
+     * reach, when set, adds what creative mode adds.
+     */
+    public static boolean inEntityReach(ServerPlayer player, Entity target) {
+        if (player == null || target == null) return false;
+        double bonus = player.gameMode instanceof
+                com.mineagent.engine.entity.fakeplayer.FakePlayerGameMode fakeMode ? fakeMode.getEntityReachBonus() : 0.0;
+        return player.canInteractWithEntity(target, bonus);
+    }
 
     /**
      * Check if a block position is within the player's reach distance.

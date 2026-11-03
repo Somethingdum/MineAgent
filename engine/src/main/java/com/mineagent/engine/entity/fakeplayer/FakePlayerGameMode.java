@@ -36,9 +36,6 @@ public class FakePlayerGameMode extends ServerPlayerGameMode {
     /** Extended reach distance for fake players (same as creative mode). */
     private static final double CREATIVE_REACH = 5.0;
 
-    /** Standard survival reach distance. */
-    private static final double SURVIVAL_REACH = 4.5;
-
     /** Whether to use creative-mode reach distance. */
     private boolean creativeReach;
 
@@ -152,7 +149,15 @@ public class FakePlayerGameMode extends ServerPlayerGameMode {
      * Returns creative-mode reach if enabled, otherwise survival reach.
      */
     public double getReachDistance() {
-        return creativeReach || isCreative() ? CREATIVE_REACH : SURVIVAL_REACH;
+        // The player's own block_interaction_range (4.5 in survival, 5 in creative), so attributes and game mode
+        // count as they do for a player; the configured creative reach lifts it to creative's.
+        double own = player.blockInteractionRange();
+        return creativeReach && !isCreative() ? Math.max(CREATIVE_REACH, own) : own;
+    }
+
+    /** What the configured creative reach adds to entity reach: creative's 5 over survival's 3. */
+    public double getEntityReachBonus() {
+        return creativeReach && !isCreative() ? 2.0 : 0.0;
     }
 
     /**
