@@ -118,6 +118,17 @@ public abstract class Movement {
                 return false;
             }
 
+            // SMH plan 70, MA5.1: checked again at the moment of breaking, since the world can change after the plan.
+            // Refusing stalls this edge, which then fails and is replanned without it.
+            var level = sp.level();
+            if (BlockHelper.kindOf(state) != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL
+                    || !com.mineagent.engine.pathing.util.BreakSafety.safeToBreak((bx, by, bz) -> {
+                        BlockPos at = new BlockPos(bx, by, bz);
+                        return level.isLoaded(at) ? level.getBlockState(at) : null;
+                    }, cell.getX(), cell.getY(), cell.getZ())) {
+                return false;
+            }
+
             activeBreakTimeoutTicks = BlockDigger.expectedBreakTicks(sp, cell);
             if (BlockDigger.startBreaking(sp, cell)) activeBreakTarget = cell;
             return false;

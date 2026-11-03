@@ -1,5 +1,8 @@
 package com.mineagent.engine.pathing.moves;
 
+import com.mineagent.engine.pathing.util.BreakCost;
+import com.mineagent.engine.pathing.util.BreakSafety;
+
 import com.mineagent.engine.pathing.util.BlockHelper;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -123,7 +126,20 @@ public final class MovementHelper {
         if (BlockHelper.canOpenByHand(state)) return 1.0d;
         if (!ctx.allowDigThrough()) return Double.POSITIVE_INFINITY;
         if (!BlockHelper.isBreakable(state)) return Double.POSITIVE_INFINITY;
-        return ActionCosts.BREAK_BLOCK;
+        // SMH plan 70, MA5.1: what it really costs. Nothing someone built is broken to get somewhere; no break lets
+        // lava or water in, or drops a tall stack of sand or gravel; a natural block costs its mining time with the
+        // best tool carried, plus the hole it leaves. Each falling block stacked above will drop in and be broken too.
+        BreakCost.Kind kind = BlockHelper.kindOf(state);
+        if (kind != BreakCost.Kind.NATURAL) return Double.POSITIVE_INFINITY;
+        if (!BreakSafety.safeToBreak(ctx::getBlockState, x, y, z)) return Double.POSITIVE_INFINITY;
+        double one = BreakCost.cost(ctx.breakTicks(state, x, y, z), kind);
+        int falling = BreakSafety.fallingStackAbove(ctx::getBlockState, x, y, z);
+        for (int i = 1; i <= falling; i++) {
+            BlockState above = ctx.getBlockState(x, y + i, z);
+            if (above == null) return Double.POSITIVE_INFINITY;
+            one += BreakCost.cost(ctx.breakTicks(above, x, y + i, z), BlockHelper.kindOf(above));
+        }
+        return one;
     }
 
     /**

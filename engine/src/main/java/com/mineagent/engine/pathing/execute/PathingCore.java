@@ -195,6 +195,9 @@ public class PathingCore {
                                     TaskContext.serverPlayer(player)),
                     pathConfig.allowParkour() && terrainPolicy.allowParkour(),
                     pos.getY(), terrainPolicy.maxUpwardDeviation(), excludedEdges);
+            // Break costs from the tools it carries (SMH plan 70, MA5.1).
+            ctx.withBreakTimer(com.mineagent.engine.pathing.moves.ToolTimer.of(
+                    TaskContext.serverPlayer(player)));
 
             boolean needsContinue = finder.initializeSearch(
                     pos.getX(), pos.getY(), pos.getZ(),

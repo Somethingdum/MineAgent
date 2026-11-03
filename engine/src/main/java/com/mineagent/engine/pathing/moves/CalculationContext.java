@@ -36,6 +36,15 @@ public class CalculationContext {
     public record ExcludedEdge(int sourceX, int sourceY, int sourceZ,
                                int destinationX, int destinationY, int destinationZ) {}
 
+    /** Ticks to break a block (SMH plan 70, MA5.1); {@link ToolTimer} gives the companion's best tool. */
+    @FunctionalInterface
+    public interface BreakTimer {
+        int ticks(BlockState state, int x, int y, int z);
+    }
+
+    /** By hand until the companion's tools are set. */
+    private BreakTimer breakTimer = this::ticksByHand;
+
     public CalculationContext(Level level, LoadedOnlyView worldView, ChunkLoadedTest chunkLoadedTest) {
         this(level, worldView, chunkLoadedTest, false, false, false, false,
                 0, Integer.MAX_VALUE, Set.of());
@@ -125,6 +134,22 @@ public class CalculationContext {
      */
     public boolean isWithinVerticalPolicy(int y) {
         return y <= (long) startY + maxUpwardDeviation;
+    }
+
+    /** Use this timer for break costs (the companion's tools); returns this context. */
+    public CalculationContext withBreakTimer(BreakTimer timer) {
+        if (timer != null) this.breakTimer = timer;
+        return this;
+    }
+
+    /** Ticks to break the block at x, y, z with the tools this search knows of. */
+    public int breakTicks(BlockState state, int x, int y, int z) {
+        return breakTimer.ticks(state, x, y, z);
+    }
+
+    private int ticksByHand(BlockState state, int x, int y, int z) {
+        float hardness = state.getDestroySpeed(level, new BlockPos(x, y, z));
+        return com.mineagent.engine.pathing.util.BreakCost.ticks(hardness, 1.0, !state.requiresCorrectToolForDrops());
     }
 
     /** Return true when execution evidence says this exact edge is unusable. */

@@ -116,24 +116,126 @@ public class CompanionGameTests implements FabricGameTest {
 
     /**
      * Plan 70, MA5.8: it hits from a player's reach (3 blocks, eyes to hitbox), not from 4.5 blocks feet to feet as it
-     * used to. A still husk 4 blocks away is out of reach; 2 blocks away it is in reach.
+     * used to. A still pig 4 blocks away is out of reach; 2 blocks away it is in reach. (A pig, so its fighting mind
+     * leaves it be; the companion is put back in place before each try, so nothing it does in between counts.)
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_reach", timeoutTicks = 100)
     public void itHitsOnlyFromAPlayersReach(GameTestHelper helper) {
         Scene s = scene(helper, "Reach");
         BlockPos me = helper.absolutePos(new BlockPos(3, 1, 8));
-        s.body().teleportTo(helper.getLevel(), me.getX() + 0.5, me.getY(), me.getZ() + 0.5, -90.0f, 0.0f);
-        Husk husk = helper.spawn(EntityType.HUSK, new BlockPos(7, 1, 8));
-        husk.setNoAi(true);
+        Runnable stand = () -> s.body().teleportTo(helper.getLevel(), me.getX() + 0.5, me.getY(), me.getZ() + 0.5, -90.0f, 0.0f);
+        var pig = helper.spawn(EntityType.PIG, new BlockPos(7, 1, 8));
+        pig.setNoAi(true);
         helper.runAfterDelay(5, () -> {
-            boolean far = com.mineagent.engine.act.Interaction.attackEntity(s.body(), husk);
+            stand.run();
+            boolean far = com.mineagent.engine.act.Interaction.attackEntity(s.body(), pig);
             BlockPos near = helper.absolutePos(new BlockPos(5, 1, 8));
-            husk.teleportTo(near.getX() + 0.5, near.getY(), near.getZ() + 0.5);
-            boolean close = com.mineagent.engine.act.Interaction.attackEntity(s.body(), husk);
+            pig.teleportTo(near.getX() + 0.5, near.getY(), near.getZ() + 0.5);
+            stand.run();
+            boolean close = com.mineagent.engine.act.Interaction.attackEntity(s.body(), pig);
+            String where = String.format("companion at %s, pig at %s", s.body().position(), pig.position());
             tidy(s);
-            if (far) fail(helper, "it hit a husk 4 blocks away");
-            else if (!close) fail(helper, "it could not hit a husk 2 blocks away");
+            if (far) fail(helper, "it hit a pig 4 blocks away (" + where + ")");
+            else if (!close) fail(helper, "it could not hit a pig 2 blocks away (" + where + ")");
             else helper.succeed();
+        });
+    }
+
+    /**
+     * Plan 70, MA5.1: a block's break cost is its mining time with the best tool carried plus the hole; nothing built is
+     * broken to get somewhere, nor anything that would let lava in or drop a tall stack of gravel.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breaks", timeoutTicks = 100)
+    public void breakCostsAreTheGamesAndSafe(GameTestHelper helper) {
+        Scene s = scene(helper, "Digger");
+        helper.setBlock(8, 1, 8, Blocks.STONE);
+        helper.setBlock(10, 1, 8, Blocks.OAK_PLANKS);
+        helper.setBlock(18, 1, 8, Blocks.STONE);
+        helper.setBlock(19, 1, 8, Blocks.LAVA); // far from the planks, so nothing catches
+        helper.setBlock(8, 1, 14, Blocks.STONE);
+        for (int y = 2; y <= 4; y++) helper.setBlock(8, y, 14, Blocks.GRAVEL);
+        helper.setBlock(11, 1, 14, Blocks.STONE);
+        for (int y = 2; y <= 11; y++) helper.setBlock(11, y, 14, Blocks.GRAVEL);
+        helper.runAfterDelay(2, () -> {
+            var caches = TaskContext.navCaches(s.companion());
+            java.util.function.Function<int[], Double> cost = xyz -> {
+                var ctx = new com.mineagent.engine.pathing.moves.CalculationContext(caches.level(), caches.worldView(),
+                        caches.loadedChunks()::isChunkLoaded, true, false);
+                ctx.withBreakTimer(com.mineagent.engine.pathing.moves.ToolTimer.of(s.body()));
+                BlockPos at = helper.absolutePos(new BlockPos(xyz[0], xyz[1], xyz[2]));
+                return com.mineagent.engine.pathing.moves.MovementHelper.costOfBreaking(ctx, at.getX(), at.getY(), at.getZ());
+            };
+            double byHand = cost.apply(new int[] {8, 1, 8});
+            s.body().getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+            double withPick = cost.apply(new int[] {8, 1, 8});
+            double planks = cost.apply(new int[] {10, 1, 8});
+            double byLava = cost.apply(new int[] {18, 1, 8});
+            double underGravel = cost.apply(new int[] {8, 1, 14});
+            double underTall = cost.apply(new int[] {11, 1, 14});
+            String all = String.format("hand %.1f, pickaxe %.1f, planks %.1f, by lava %.1f, under 3 gravel %.1f, under 10 gravel %.1f",
+                    byHand, withPick, planks, byLava, underGravel, underTall);
+            tidy(s);
+            if (!(Double.isFinite(byHand) && Double.isFinite(withPick) && withPick < byHand)) fail(helper, "stone: " + all);
+            else if (Double.isFinite(planks)) fail(helper, "planks would be broken to get somewhere: " + all);
+            else if (Double.isFinite(byLava)) fail(helper, "a block beside lava would be broken: " + all);
+            else if (!(Double.isFinite(underGravel) && underGravel > withPick)) fail(helper, "gravel above: " + all);
+            else if (Double.isFinite(underTall)) fail(helper, "a block under ten gravel would be broken: " + all);
+            else helper.succeed();
+        });
+    }
+
+    /**
+     * Plan 70, MA5.1: shut in a house of planks with its door on the far side, sent just past the back wall, it goes
+     * out through the door and around. It used to dig two blocks through the wall.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_house", timeoutTicks = 1600)
+    public void itUsesTheDoorNotTheWall(GameTestHelper helper) {
+        Scene s = scene(helper, "Housemate");
+        for (int x = 6; x <= 14; x++) {
+            for (int z = 6; z <= 14; z++) {
+                boolean edge = x == 6 || x == 14 || z == 6 || z == 14;
+                for (int y = 1; y <= 3; y++) if (edge) helper.setBlock(x, y, z, Blocks.OAK_PLANKS);
+                helper.setBlock(x, 4, z, Blocks.OAK_PLANKS);
+            }
+        }
+        var lower = Blocks.OAK_DOOR.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.DoorBlock.FACING, net.minecraft.core.Direction.SOUTH)
+                .setValue(net.minecraft.world.level.block.DoorBlock.HALF,
+                        net.minecraft.world.level.block.state.properties.DoubleBlockHalf.LOWER);
+        helper.setBlock(new BlockPos(10, 1, 14), lower);
+        helper.setBlock(new BlockPos(10, 2, 14), lower.setValue(net.minecraft.world.level.block.DoorBlock.HALF,
+                net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
+        BlockPos inside = helper.absolutePos(new BlockPos(10, 1, 10));
+        s.body().teleportTo(helper.getLevel(), inside.getX() + 0.5, inside.getY(), inside.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos goal = helper.absolutePos(new BlockPos(10, 1, 3));
+        helper.runAfterDelay(5, () -> {
+            var args = new com.google.gson.JsonObject();
+            args.addProperty("goal_mode", "xzy");
+            args.addProperty("x", goal.getX());
+            args.addProperty("y", goal.getY());
+            args.addProperty("z", goal.getZ());
+            new com.mineagent.tools.movement.MoveToTool().onServerCall("house-1", args, s.companion(), reply -> {});
+        });
+        helper.onEachTick(() -> {
+            int broken = 0;
+            for (int x = 6; x <= 14; x++) {
+                for (int y = 1; y <= 3; y++) {
+                    if (!helper.getBlockState(new BlockPos(x, y, 6)).is(Blocks.OAK_PLANKS)) broken++;
+                }
+            }
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (broken > 0) {
+                tidy(s);
+                fail(helper, broken + " planks of the back wall were broken");
+            } else if (off <= 1.5) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 1500) {
+                String how = String.format("not there after 1500 ticks: %.1f blocks off, at %s", off,
+                        s.body().blockPosition().toShortString());
+                tidy(s);
+                fail(helper, how);
+            }
         });
     }
 

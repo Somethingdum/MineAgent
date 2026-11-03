@@ -111,6 +111,16 @@ public final class BlockHelper {
                 || state.is(Blocks.POWDER_SNOW);
     }
 
+    /**
+     * Whether a block is the land, something someone built, or something better left alone (SMH plan 70, MA5.1), from
+     * its registry name and whether it holds a block entity. See {@link BreakCost#classify}.
+     */
+    public static BreakCost.Kind kindOf(BlockState state) {
+        if (state == null) return BreakCost.Kind.AVOID;
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+        return BreakCost.classify(id, state.hasBlockEntity());
+    }
+
     /** Whether a closed vanilla passage can be opened by an ordinary hand click. */
     public static boolean canOpenByHand(BlockState state) {
         if (state == null) return false;
