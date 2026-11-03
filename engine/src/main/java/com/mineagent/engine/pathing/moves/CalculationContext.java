@@ -155,6 +155,15 @@ public class CalculationContext {
         return placed != null && placed.isPlaced(x, y, z);
     }
 
+    private String dimId;
+
+    /** Whether x, y, z is at a farm whose player is AFK, where nothing is placed or broken (SMH plan 70, MA5.4). */
+    public boolean afkFarm(int x, int y, int z) {
+        if (level == null) return false;
+        if (dimId == null) dimId = level.dimension().location().toString();
+        return com.mineagent.engine.world.AfkFarms.protects(dimId, x, y, z);
+    }
+
     /** Ticks to break the block at x, y, z with the tools this search knows of. */
     public int breakTicks(BlockState state, int x, int y, int z) {
         return breakTimer.ticks(state, x, y, z);

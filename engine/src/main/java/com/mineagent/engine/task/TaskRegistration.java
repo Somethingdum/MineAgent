@@ -43,6 +43,12 @@ public final class TaskRegistration {
                 ExploreTask::new
         );
 
+        // Items meant for an AFK player, into a chest by them (SMH plan 70, MA5.4)
+        CompanionTaskFactory.register(
+                StoreItemsTask.StoreRecord.class,
+                StoreItemsTask::new
+        );
+
         // Mining
         CompanionTaskFactory.register(
                 AutoMineTool.MineBlockTaskRecord.class,

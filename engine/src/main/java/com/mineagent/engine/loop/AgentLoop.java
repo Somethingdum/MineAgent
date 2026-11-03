@@ -1398,7 +1398,7 @@ public class AgentLoop {
                     }
                     haltNow();
                     standDown();
-                    var portal = link.get().from();
+                    var portal = com.mineagent.engine.world.PlaceKeeper.portalBlockNear(me, link.get().from());
                     // Standing in the portal already (it came through it): out first, then back in.
                     var out = com.mineagent.engine.world.PlaceKeeper.standingInPortal(me)
                             ? com.mineagent.engine.world.PlaceKeeper.besidePortal(me) : null;
@@ -1481,6 +1481,12 @@ public class AgentLoop {
 
     private volatile Crossing crossing;
 
+    /** Where it is in a portal crossing ("OUT", "WAITING", "IN"), or "" when not crossing (the game tests). */
+    public String crossingStage() {
+        Crossing c = crossing;
+        return c == null ? "" : c.stage().name();
+    }
+
     /** Through the portal: on to the place; or it says it couldn't get through. */
     private void watchCrossing(net.minecraft.server.level.ServerPlayer me, long tick) {
         Crossing c = crossing;
@@ -1496,14 +1502,25 @@ public class AgentLoop {
             say("I couldn't get through the portal.");
         } else if (c.stage() == Crossing.Stage.OUT && !inPortal) {
             crossing = c.next(Crossing.Stage.WAITING, tick);
+        } else if (c.stage() == Crossing.Stage.OUT && tick - c.stageSince() >= PORTAL_RETRY) {
+            // Still in it: the way out failed; another try.
+            var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
+            if (out != null) goTo(out, java.util.List.of(), false, "xzy");
+            crossing = c.next(Crossing.Stage.OUT, tick);
         } else if (c.stage() == Crossing.Stage.WAITING && tick - c.stageSince() >= PORTAL_STEP_OUT) {
             goTo(c.portal(), java.util.List.of(), false, "xzy");
             crossing = c.next(Crossing.Stage.IN, tick);
-        } else if (c.stage() == Crossing.Stage.IN && inPortal && tick - c.stageSince() >= PORTAL_RETRY) {
-            var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
-            if (out != null) {
-                goTo(out, java.util.List.of(), false, "xzy");
-                crossing = c.next(Crossing.Stage.OUT, tick);
+        } else if (c.stage() == Crossing.Stage.IN && tick - c.stageSince() >= PORTAL_RETRY) {
+            if (inPortal) {
+                // In it this long and not taken through: out and in again.
+                var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
+                if (out != null) goTo(out, java.util.List.of(), false, "xzy");
+                crossing = c.next(out != null ? Crossing.Stage.OUT : Crossing.Stage.IN, tick);
+            } else {
+                // Not in it and not on its way: walk into it again.
+                LiveBodyState body = liveBodyState.get();
+                if (body == null || body.taskId() == null) goTo(c.portal(), java.util.List.of(), false, "xzy");
+                crossing = c.next(Crossing.Stage.IN, tick);
             }
         }
     }
@@ -2435,6 +2452,7 @@ public class AgentLoop {
                 saveMemoryNow();
             });
             watchOwnerActivity(owner);
+            keepNearAfkOwner(player, owner, gameTick);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -2714,11 +2732,12 @@ public class AgentLoop {
         if (post != null && post.distanceTo(self.position()) <= errand) {
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, post, null, guardRadius);
         }
-        // An AFK owner who is exposed is guarded, as on "guard me" (SMH plan 70, MA5.4); fishing, close by.
+        // An AFK owner who is exposed is guarded, as on "guard me" (SMH plan 70, MA5.4); fishing, close by. At a
+        // mob farm's hoppers, exposed or not, only what comes right at them: the farm's own mobs are theirs.
         if (owner != null && com.mineagent.engine.settings.Switches.afkGuard() && ownerActivity.afk() && owner.isAlive() && owner.serverLevel() == self.serverLevel()
-                && exposed(owner)) {
-            return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, owner.position(), owner.getUUID(),
-                    owner.fishing != null ? 6.0 : 12.0);
+                && (exposed(owner) || ownerAtFarm)) {
+            double radius = owner.fishing != null ? 6.0 : ownerAtFarm ? 4.0 : 12.0;
+            return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, owner.position(), owner.getUUID(), radius);
         }
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.ESCORT && owner != null) {
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.ESCORT, owner.position(), owner.getUUID(), 12.0);
@@ -2902,23 +2921,25 @@ public class AgentLoop {
 
     /** Chests it looks in go into its chest memory; a rare find into its journal (MA5.7, MA5.9). */
     private void listenForMemory() {
-        worldAssetIndex.onContainerLooked((pos, items, tick) -> {
-            var before = chests.looked(pos.dimension(), pos.x(), pos.y(), pos.z(), items, tick);
-            StringBuilder change = new StringBuilder();
-            for (var e : before.entrySet()) {
-                if (e.getValue() == 0) continue;
-                if (change.length() > 0) change.append(", ");
-                change.append(e.getValue() > 0 ? "+" : "").append(e.getValue()).append(' ').append(e.getKey().replace('_', ' '));
-            }
-            if (change.length() > 0) {
-                boolean in = before.values().stream().anyMatch(v -> v > 0);
-                journal.record(in ? "stored" : "took", "the chest at " + pos.x() + ", " + pos.y() + ", " + pos.z() + ": " + change,
-                        tick, pos.dimension(), pos.x(), pos.y(), pos.z());
-            }
-        });
+        worldAssetIndex.onContainerLooked((pos, items, tick) -> noteChest(pos.dimension(), pos.x(), pos.y(), pos.z(), items, tick));
         placeKeeper.onRareSight(seen -> journal.record("find", "saw " + seen.what().replace('_', ' ')
                 + (seen.kind() == com.mineagent.engine.memory.Sightings.Kind.ORE ? " ore" : "") + " at "
                 + seen.x() + ", " + seen.y() + ", " + seen.z(), seen.last(), seen.dim(), seen.x(), seen.y(), seen.z()));
+    }
+
+    /** What a chest holds now, as it saw it: into its chest memory, and what changed into its journal. */
+    public void noteChest(String dim, int x, int y, int z, java.util.Map<String, Integer> items, long tick) {
+        var before = chests.looked(dim, x, y, z, items, tick);
+        StringBuilder change = new StringBuilder();
+        for (var e : before.entrySet()) {
+            if (e.getValue() == 0) continue;
+            if (change.length() > 0) change.append(", ");
+            change.append(e.getValue() > 0 ? "+" : "").append(e.getValue()).append(' ').append(e.getKey().replace('_', ' '));
+        }
+        if (change.length() > 0) {
+            boolean in = before.values().stream().anyMatch(v -> v > 0);
+            journal.record(in ? "stored" : "took", "the chest at " + x + ", " + y + ", " + z + ": " + change, tick, dim, x, y, z);
+        }
     }
 
     /** The journal (the game tests). */
@@ -3016,12 +3037,119 @@ public class AgentLoop {
         long now = net.minecraft.Util.getMillis();
         var change = ownerActivity.update(now, owner.getLastActionTime(), com.mineagent.engine.settings.Switches.afkAfterMillis());
         if (change == OwnerActivity.Change.CAME_BACK) {
+            clearAfkFarm();
+            String line = ownerActivity.welcomeBack(now, whileAway());
             journal.record("back", "you came back to the keys", currentGameTickSafe());
-            speakToOwner(ownerActivity.welcomeBack(now));
+            speakToOwner(line);
         } else if (change == OwnerActivity.Change.WENT_AFK) {
+            afkSinceTick = currentGameTickSafe();
             journal.record("afk", "you went AFK", currentGameTickSafe());
-            onBodyLog("[AFK] the owner is away from the keys; guarding them while they're exposed");
+            onBodyLog("[AFK] The owner is away from the keys. Guard them while they're exposed; otherwise keep working, "
+                    + "within " + (int) com.mineagent.engine.loop.AfkRules.WORK_LEASH + " blocks of them (8 at a farm, "
+                    + "where nothing is placed or broken). Don't ask them anything: questions wait until they're back. "
+                    + "If you're stuck, put this goal aside and do the next one. Nothing is dropped for them: it goes in a chest.");
         }
+    }
+
+    /** The game tick they went AFK, for what happened while they were away. */
+    private volatile long afkSinceTick;
+    /** Whether the AFK owner is at a farm (fishing, or by its hoppers): checked every five seconds. */
+    private volatile boolean ownerAtFarm;
+    /** When it last turned back toward the AFK owner, so a walk back is not restarted every tick. */
+    private long leashTurnedAt;
+    private boolean leashTurned;
+
+    /** What happened while they were away, from its journal, for the welcome-back line: at most three things. */
+    private java.util.List<String> whileAway() {
+        java.util.List<String> notes = new java.util.ArrayList<>();
+        for (var e : journal.recent(200)) {
+            if (e.tick() < afkSinceTick) continue;
+            if (!java.util.List.of("stored", "find", "goal", "death", "place").contains(e.kind())) continue;
+            String t = e.kind().equals("stored") ? "put in " + e.text() : e.text();
+            if (!notes.contains(t)) notes.add(t);
+        }
+        return notes.size() > 3 ? notes.subList(notes.size() - 3, notes.size()) : notes;
+    }
+
+    /**
+     * While the owner is AFK (SMH plan 70, MA5.4): it works within 32 blocks of them, or 8 at a farm, and turns back
+     * when it is further; at a farm, no companion places or breaks a block within 16 of them.
+     */
+    private void keepNearAfkOwner(net.minecraft.server.level.ServerPlayer me, net.minecraft.server.level.ServerPlayer owner,
+                                  long tick) {
+        boolean on = me != null && owner != null && com.mineagent.engine.settings.Switches.afkGuard() && ownerActivity.afk()
+                && owner.isAlive() && owner.serverLevel() == me.serverLevel();
+        if (!on) {
+            clearAfkFarm();
+            leashTurned = false;
+            return;
+        }
+        String dim = owner.serverLevel().dimension().location().toString();
+        if (tick % 100L == 0L) {
+            ownerAtFarm = com.mineagent.engine.loop.AfkRules.atFarm(owner.fishing != null, hoppersNear(owner));
+            if (ownerAtFarm) {
+                farmOwner = owner.getUUID();
+                com.mineagent.engine.world.AfkFarms.set(farmOwner, new com.mineagent.engine.world.AfkFarms.Area(dim,
+                        owner.getX(), owner.getY(), owner.getZ(), com.mineagent.engine.loop.AfkRules.FARM_QUIET));
+            } else {
+                clearAfkFarm();
+            }
+        }
+        // With "keep working when I'm safe" off it stays by them, as at a farm.
+        double leash = com.mineagent.engine.loop.AfkRules.leash(ownerAtFarm || !com.mineagent.engine.settings.Switches.afkKeepWorking());
+        double away = me.distanceTo(owner);
+        if (away <= leash) {
+            leashTurned = false;
+            return;
+        }
+        if (leashTurned && tick - leashTurnedAt < 200L) return;
+        leashTurned = true;
+        leashTurnedAt = tick;
+        // Its body task stops; its thinking goes on (a goal it is on is picked up again within reach of them).
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null) {
+            var stop = new com.google.gson.JsonObject();
+            stop.addProperty("task_id", body.taskId());
+            runDirect("task_stop", stop);
+        }
+        // Three blocks from them, on its side.
+        double f = 3.0 / Math.max(away, 1.0);
+        int x = (int) Math.floor(owner.getX() + (me.getX() - owner.getX()) * f);
+        int z = (int) Math.floor(owner.getZ() + (me.getZ() - owner.getZ()) * f);
+        goTo(new com.mineagent.engine.world.RouteMemory.Point(dim, x, owner.getBlockY(), z), java.util.List.of(), false, "xz");
+        onBodyLog("[AFK] Back toward the owner: they're AFK and I keep within " + (int) leash + " blocks of them.");
+    }
+
+    /** Whose farm it keeps an area for: cleared by this even when they have left the game. */
+    private volatile UUID farmOwner;
+
+    private void clearAfkFarm() {
+        UUID who = farmOwner;
+        if (who != null) com.mineagent.engine.world.AfkFarms.clear(who);
+        farmOwner = null;
+        ownerAtFarm = false;
+    }
+
+    /** Hoppers within a few blocks of them: a farm's collection. */
+    private static int hoppersNear(net.minecraft.server.level.ServerPlayer owner) {
+        int r = com.mineagent.engine.loop.AfkRules.HOPPER_RANGE, n = 0;
+        var level = owner.serverLevel();
+        var at = owner.blockPosition();
+        var cursor = new net.minecraft.core.BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    cursor.set(at.getX() + dx, at.getY() + dy, at.getZ() + dz);
+                    if (level.isLoaded(cursor) && level.getBlockState(cursor).is(net.minecraft.world.level.block.Blocks.HOPPER)) n++;
+                }
+            }
+        }
+        return n;
+    }
+
+    /** Whether the AFK owner is at a farm (the game tests). */
+    public boolean ownerAtFarm() {
+        return ownerAtFarm;
     }
 
     /** Out in the open, at night, or with a monster about: an AFK owner here needs guarding. */
@@ -4617,6 +4745,11 @@ public class AgentLoop {
     }
 
     private void speakToOwner(String text) {
+        // A question waits until they're back to the keys (SMH plan 70, MA5.4): it is asked in the welcome-back line.
+        if (com.mineagent.engine.loop.AfkRules.isQuestion(text) && ownerActivity.hold(text)) {
+            journal.record("held", text, currentGameTickSafe());
+            return;
+        }
         journal.record("said", text, currentGameTickSafe());
         Services.platform().scheduleOnServer(() -> {
             try {
@@ -5935,6 +6068,7 @@ public class AgentLoop {
             eventGeneration.incrementAndGet();
         }
         realtimeCognition.close();
+        clearAfkFarm();
         long shutdownTick = currentGameTickSafe();
         skillRuntime.cancel("Agent loop shutdown", shutdownTick);
         mechanismExplorer.abort(null, "Agent loop shutdown", shutdownTick);

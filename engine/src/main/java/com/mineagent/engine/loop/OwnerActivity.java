@@ -18,6 +18,9 @@ public final class OwnerActivity {
     private boolean afk;
     private long afkSince;
     private int fightsWon;
+    /** Questions it had for them while they were away, said when they're back (at most {@link #HELD_MAX}). */
+    private final java.util.List<String> held = new java.util.ArrayList<>();
+    static final int HELD_MAX = 3;
 
     /** They said they're going AFK. */
     public synchronized void saidAfk(long now) {
@@ -49,6 +52,7 @@ public final class OwnerActivity {
         if (afk) {
             afkSince = now;
             fightsWon = 0;
+            held.clear();
             return Change.WENT_AFK;
         }
         return Change.CAME_BACK;
@@ -63,12 +67,48 @@ public final class OwnerActivity {
         if (afk) fightsWon++;
     }
 
+    /** A question for them while they're away: it waits until they're back. Whether it was held (they're AFK). */
+    public synchronized boolean hold(String question) {
+        if (!afk || question == null || question.isBlank()) return false;
+        String q = question.strip();
+        if (!held.contains(q)) {
+            if (held.size() >= HELD_MAX) held.remove(0);
+            held.add(q);
+        }
+        return true;
+    }
+
+    /** The questions waiting for them. */
+    public synchronized java.util.List<String> held() {
+        return java.util.List.copyOf(held);
+    }
+
     /** The one line it says when they're back. */
     public synchronized String welcomeBack(long now) {
+        return welcomeBack(now, java.util.List.of());
+    }
+
+    /**
+     * The one line it says when they're back: how long, the fights it won, what else happened ({@code notes}, from its
+     * journal: what it stored, found, finished; at most three), and the questions it held. The questions are then
+     * asked, so they are not held any more.
+     */
+    public synchronized String welcomeBack(long now, java.util.List<String> notes) {
         long minutes = Math.max(0L, (now - afkSince) / 60_000L);
         String away = minutes <= 1 ? "a minute" : minutes + " minutes";
-        if (fightsWon == 0) return "Welcome back. All quiet for " + away + ".";
-        return "Welcome back. " + away.substring(0, 1).toUpperCase() + away.substring(1) + "; I fought off "
-                + fightsWon + (fightsWon == 1 ? " mob" : " mobs") + " while you were away.";
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (fightsWon > 0) parts.add("I fought off " + fightsWon + (fightsWon == 1 ? " mob" : " mobs"));
+        if (notes != null) {
+            for (String n : notes) {
+                if (n != null && !n.isBlank() && parts.size() < 4) parts.add(n.strip().replaceAll("[.]+$", ""));
+            }
+        }
+        StringBuilder line = new StringBuilder("Welcome back. ");
+        if (parts.isEmpty()) line.append("All quiet for ").append(away).append('.');
+        else line.append(away.substring(0, 1).toUpperCase()).append(away.substring(1)).append(": ")
+                .append(String.join("; ", parts)).append('.');
+        if (!held.isEmpty()) line.append(" I wanted to ask: ").append(String.join(" ", held));
+        held.clear();
+        return line.toString();
     }
 }

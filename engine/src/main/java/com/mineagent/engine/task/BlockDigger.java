@@ -206,6 +206,12 @@ public final class BlockDigger {
         if (state.isAir()) {
             return rejected(BreakStatus.AIR, "target already contains air");
         }
+        // A farm its player is AFK at is left as it is (SMH plan 70, MA5.4).
+        if (com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(),
+                pos.getX(), pos.getY(), pos.getZ())) {
+            return rejected(BreakStatus.WORLD_INTERACTION_DENIED,
+                    "a player is AFK at a farm here: nothing is broken within 16 blocks of them until they're back");
+        }
         float hardness = state.getDestroySpeed(level, pos);
         if (!Float.isFinite(hardness) || hardness < 0.0f) {
             return rejected(BreakStatus.UNBREAKABLE, "hardness=" + hardness);

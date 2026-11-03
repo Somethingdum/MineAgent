@@ -89,4 +89,17 @@ final class JournalAndChestsTest {
         assertEquals(64, c.count());
         assertTrue(c.holding("dirt", "minecraft:overworld", 0, 64, 0, 100).stream().noneMatch(h -> h.chest().x() < 6));
     }
+    @Test void theChestsNearAPlaceNearestFirst() {
+        ChestMemory c = new ChestMemory(null, 64);
+        String ow = "minecraft:overworld";
+        c.looked(ow, 20, 64, 0, java.util.Map.of(), 1);
+        c.looked(ow, 3, 64, 4, java.util.Map.of("minecraft:wheat", 3), 2);
+        c.looked(ow, 40, 64, 0, java.util.Map.of(), 3);
+        c.looked("minecraft:the_nether", 1, 64, 1, java.util.Map.of(), 4);
+        var near = c.near(ow, 0, 64, 0, 24.0);
+        assertEquals(2, near.size(), "within 24 blocks, in this dimension");
+        assertEquals(3, near.get(0).x(), "nearest first");
+        assertEquals(20, near.get(1).x());
+        assertTrue(c.near(null, 0, 64, 0, 24.0).isEmpty());
+    }
 }

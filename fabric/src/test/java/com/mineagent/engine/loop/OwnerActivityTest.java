@@ -44,4 +44,31 @@ final class OwnerActivityTest {
         assertEquals(OwnerActivity.Change.CAME_BACK, a.update(10 * MIN, 10 * MIN));
         assertTrue(a.welcomeBack(10 * MIN).contains("All quiet"), a.welcomeBack(10 * MIN));
     }
+    @Test void questionsWaitUntilTheyAreBackAndAreAskedThen() {
+        OwnerActivity a = new OwnerActivity();
+        assertFalse(a.hold("Shall I smelt the iron?"), "at the keys: asked straight away, not held");
+        a.update(0, 1);
+        assertEquals(OwnerActivity.Change.WENT_AFK, a.update(4 * MIN, 1));
+        assertTrue(a.hold("Shall I smelt the iron?"));
+        assertTrue(a.hold("Shall I smelt the iron?"), "the same question twice is held once");
+        assertTrue(a.hold("Where do you want the wheat?"));
+        assertEquals(2, a.held().size());
+        assertEquals(OwnerActivity.Change.CAME_BACK, a.update(10 * MIN, 10 * MIN));
+        String line = a.welcomeBack(10 * MIN, java.util.List.of("stored 5 iron ingot in the chest at 4, 64, 2"));
+        assertTrue(line.startsWith("Welcome back. 6 minutes: stored 5 iron ingot"), line);
+        assertTrue(line.endsWith("I wanted to ask: Shall I smelt the iron? Where do you want the wheat?"), line);
+        assertTrue(a.held().isEmpty(), "asked, so no longer held");
+    }
+
+    @Test void atMostThreeQuestionsAndFourNotesInTheLine() {
+        OwnerActivity a = new OwnerActivity();
+        a.update(0, 1);
+        a.update(4 * MIN, 1);
+        for (int i = 1; i <= 5; i++) a.hold("Question " + i + "?");
+        assertEquals(java.util.List.of("Question 3?", "Question 4?", "Question 5?"), a.held(), "the latest three");
+        a.update(5 * MIN, 5 * MIN);
+        String line = a.welcomeBack(5 * MIN, java.util.List.of("a.", "b", "c", "d", "e"));
+        assertTrue(line.contains(": a; b; c; d."), line);
+        assertFalse(line.contains("; e"), line);
+    }
 }

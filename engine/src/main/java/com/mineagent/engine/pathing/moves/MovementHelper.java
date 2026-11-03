@@ -78,6 +78,7 @@ public final class MovementHelper {
         if (BlockHelper.canStandOn(below)) return 0;
         if (isSwimNode(ctx, x, y, z)) return 0; // it swims; no bridge over water
         if (!ctx.allowBridge() || !below.canBeReplaced()) return Double.POSITIVE_INFINITY;
+        if (ctx.afkFarm(x, y - 1, z)) return Double.POSITIVE_INFINITY; // a farm its player is AFK at: no blocks put down
 
         int supportY = y - 1;
         for (net.minecraft.core.Direction direction : net.minecraft.core.Direction.values()) {
@@ -139,6 +140,7 @@ public final class MovementHelper {
         BreakCost.Kind kind = costKind(BlockHelper.kindOf(state));
         if (kind != BreakCost.Kind.NATURAL) return Double.POSITIVE_INFINITY;
         if (ctx.placedByPlayer(x, y, z)) return Double.POSITIVE_INFINITY; // someone built it, whatever it's made of
+        if (ctx.afkFarm(x, y, z)) return Double.POSITIVE_INFINITY; // a farm its player is AFK at (MA5.4)
         if (!BreakSafety.safeToBreak(ctx::getBlockState, x, y, z)) return Double.POSITIVE_INFINITY;
         double one = BreakCost.cost(ctx.breakTicks(state, x, y, z), kind);
         int falling = BreakSafety.fallingStackAbove(ctx::getBlockState, x, y, z);
@@ -164,7 +166,7 @@ public final class MovementHelper {
         BlockState state = ctx.getBlockState(x, y, z);
         if (state == null) return Double.POSITIVE_INFINITY;
         if (BlockHelper.isAir(state) || BlockHelper.isWater(state)) {
-            return ActionCosts.PLACE_BLOCK;
+            return ctx.afkFarm(x, y, z) ? Double.POSITIVE_INFINITY : ActionCosts.PLACE_BLOCK;
         }
         return Double.POSITIVE_INFINITY;
     }

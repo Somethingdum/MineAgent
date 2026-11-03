@@ -116,6 +116,8 @@ public record MineAgentConfig(
      *                         water failed
      * @param avoidMobs        paths keep clear of hostile mobs, creepers most of all
      * @param longTrips        plan long trips over the chunks it has seen first
+     * @param afkKeepWorking   while its owner is AFK and safe, keep working within 32 blocks of them (off: it stays
+     *                         by them)
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -131,10 +133,11 @@ public record MineAgentConfig(
         boolean waterDrops,
         boolean bucketDescents,
         boolean avoidMobs,
-        boolean longTrips
+        boolean longTrips,
+        boolean afkKeepWorking
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, true, 3, true, true, true, true, true, true, true, true, true
+            true, true, true, true, 3, true, true, true, true, true, true, true, true, true, true
         );
     }
 
@@ -235,7 +238,7 @@ public record MineAgentConfig(
                 rawBehaviour.closeDoors, rawBehaviour.afkGuard, clamp(rawBehaviour.afkMinutes, 1, 60),
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
-                rawBehaviour.avoidMobs, rawBehaviour.longTrips);
+                rawBehaviour.avoidMobs, rawBehaviour.longTrips, rawBehaviour.afkKeepWorking);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

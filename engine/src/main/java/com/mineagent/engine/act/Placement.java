@@ -142,6 +142,12 @@ public final class Placement {
      * Falling blocks are excluded because a bridge block placed over a void
      * would immediately fall and leave the planned edge physically absent.
      */
+    /** At a farm whose player is AFK, where nothing is placed or broken (SMH plan 70, MA5.4). */
+    public static boolean atAfkFarm(ServerPlayer player, BlockPos pos) {
+        return player != null && pos != null && com.mineagent.engine.world.AfkFarms.protects(
+                player.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
+    }
+
     public static boolean placeAnySupportBlock(ServerPlayer player, BlockPos pos) {
         if (player == null || pos == null) return false;
         var inv = player.getInventory();
@@ -191,6 +197,9 @@ public final class Placement {
         }
         if (!isWithinReach(player, target)) {
             return Attempt.failure("target is outside interaction reach");
+        }
+        if (atAfkFarm(player, target)) {
+            return Attempt.failure("a player is AFK at a farm here: nothing is placed within 16 blocks of them until they're back");
         }
         if (!level.mayInteract(player, target)
                 || player.blockActionRestricted(

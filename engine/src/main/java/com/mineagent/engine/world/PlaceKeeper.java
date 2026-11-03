@@ -191,30 +191,51 @@ public final class PlaceKeeper {
     }
 
     /**
-     * A spot a step or two out of the portal it stands in, square to the portal's face, where it can stand (MA5.6);
-     * null if there is none. A player who came through a portal has to step out and back in to go back: while they
-     * stand in it the game keeps restarting its cooldown.
+     * The nearest spot out of the portal it stands in where it can stand (MA5.6): within 4 blocks, any side, up to 2 up
+     * or 3 down (a drop it takes unhurt); null if there is none. A player who came through a portal has to step out
+     * and back in to go back: while they stand in it the game keeps restarting its cooldown. A portal the game built
+     * against a ledge may have no ground straight out from its face, so it looks all round.
      */
     public static RouteMemory.Point besidePortal(ServerPlayer sp) {
         if (sp == null) return null;
         ServerLevel level = sp.serverLevel();
         BlockPos feet = sp.blockPosition();
-        var in = level.getBlockState(feet);
-        if (!in.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) in = level.getBlockState(feet.above());
-        var axis = in.hasProperty(net.minecraft.world.level.block.NetherPortalBlock.AXIS)
-                ? in.getValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS) : net.minecraft.core.Direction.Axis.X;
-        // A portal across x is walked through along z, and one across z along x.
-        var side = axis == net.minecraft.core.Direction.Axis.X ? net.minecraft.core.Direction.SOUTH : net.minecraft.core.Direction.EAST;
         String dim = level.dimension().location().toString();
-        for (int d = 1; d <= 3; d++) {
-            for (var dir : new net.minecraft.core.Direction[] {side, side.getOpposite()}) {
-                for (int dy : new int[] {0, 1, -1}) {
-                    BlockPos p = feet.relative(dir, d).above(dy);
-                    if (canStandOutside(level, p)) return new RouteMemory.Point(dim, p.getX(), p.getY(), p.getZ());
+        for (int r = 1; r <= 4; r++) {
+            for (int dy : new int[] {0, 1, -1, 2, -2, -3}) {
+                for (int dx = -r; dx <= r; dx++) {
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue; // this ring only
+                        BlockPos p = feet.offset(dx, dy, dz);
+                        if (canStandOutside(level, p)) return new RouteMemory.Point(dim, p.getX(), p.getY(), p.getZ());
+                    }
                 }
             }
         }
         return null;
+    }
+
+    /** The portal block nearest {@code near} within 3 blocks, lowest of its column: where to stand to go through. */
+    public static RouteMemory.Point portalBlockNear(ServerPlayer sp, RouteMemory.Point near) {
+        if (sp == null || near == null) return near;
+        ServerLevel level = sp.serverLevel();
+        var portal = net.minecraft.world.level.block.Blocks.NETHER_PORTAL;
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dy = -3; dy <= 3; dy++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    BlockPos p = new BlockPos(near.x() + dx, near.y() + dy, near.z() + dz);
+                    if (!level.isLoaded(p) || !level.getBlockState(p).is(portal) || level.getBlockState(p.below()).is(portal)) continue;
+                    double d = dx * dx + dy * dy + dz * dz;
+                    if (d < bestD) {
+                        bestD = d;
+                        best = p;
+                    }
+                }
+            }
+        }
+        return best == null ? near : new RouteMemory.Point(near.dim(), best.getX(), best.getY(), best.getZ());
     }
 
     private static boolean canStandOutside(ServerLevel level, BlockPos feet) {

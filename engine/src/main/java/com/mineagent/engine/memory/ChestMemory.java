@@ -83,6 +83,19 @@ public final class ChestMemory implements MemoryStore.Table {
         if (chests.remove(key(dim, x, y, z)) != null) dirty = true;
     }
 
+    /** Chests it knows within {@code max} blocks of x, y, z, nearest first. */
+    public synchronized List<Chest> near(String dim, int x, int y, int z, double max) {
+        List<Chest> out = new ArrayList<>();
+        if (dim == null) return out;
+        for (Chest c : chests.values()) {
+            if (!dim.equals(c.dim())) continue;
+            double d = Math.sqrt(Math.pow(c.x() - x, 2) + Math.pow(c.y() - y, 2) + Math.pow(c.z() - z, 2));
+            if (d <= max) out.add(c);
+        }
+        out.sort(Comparator.comparingDouble(c -> Math.pow(c.x() - x, 2) + Math.pow(c.y() - y, 2) + Math.pow(c.z() - z, 2)));
+        return out;
+    }
+
     /** Chests holding what was asked ("iron", "iron ingot", "diamonds"), nearest first. */
     public synchronized List<Holding> holding(String words, String dim, int x, int y, int z, int limit) {
         String w = Sightings.fromWords(words);

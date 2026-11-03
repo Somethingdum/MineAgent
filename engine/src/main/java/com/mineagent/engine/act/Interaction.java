@@ -57,6 +57,13 @@ public final class Interaction {
             // Check reach distance
             if (!isWithinReach(player, pos)) return InteractionResult.FAIL;
 
+            // With a block in hand, using a block that isn't a container puts it down: not at a farm its player is
+            // AFK at (SMH plan 70, MA5.4).
+            if (player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem
+                    && state.getMenuProvider(level, pos) == null && Placement.atAfkFarm(player, pos)) {
+                return InteractionResult.FAIL;
+            }
+
             // A real client clicks a visible point on the block outline, not
             // necessarily its centre. Centre-only rays reject lower blocks in
             // a two-high wall because the ray crosses the upper block first.

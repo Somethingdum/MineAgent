@@ -32,7 +32,8 @@ public class AgentSettingsScreen extends Screen {
             {"neverBreakBuilt", "Keep built blocks"}, {"rememberPlaced", "Remember placed"}, {"closeDoors", "Close doors"},
             {"afkGuard", "Guard me AFK"}, {"sleepWithPlayers", "Sleep with players"}, {"routeMemory", "Route memory"},
             {"sprint", "Sprint"}, {"saveWithWorld", "Save with world"}, {"swim", "Swim"}, {"waterDrops", "Water drops"},
-            {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"}};
+            {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"},
+            {"afkKeepWorking", "Work while I'm AFK"}};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};
     private static final int[] THINGS_SEEN = {10_000, 50_000, 100_000, 200_000};
     private static final int[] JOURNAL_DAYS = {30, 90, 365, 3_650};

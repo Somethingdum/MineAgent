@@ -34,6 +34,7 @@ public final class Switches {
     public static boolean bucketDescents() { return b().bucketDescents(); }
     public static boolean avoidMobs() { return b().avoidMobs(); }
     public static boolean longTrips() { return b().longTrips(); }
+    public static boolean afkKeepWorking() { return b().afkKeepWorking(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

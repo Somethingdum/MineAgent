@@ -1391,6 +1391,12 @@ public class CompanionGameTests implements FabricGameTest {
             var body = s.body();
             String dim = body.serverLevel().dimension().location().toString();
             var memory = s.loop().placeKeeper().memory();
+            if (helper.getTick() % 40 == 0) {
+                System.out.println("[SCENE portal] tick " + helper.getTick() + ": phase " + phase[0] + ", " + dim + " at "
+                        + body.blockPosition().toShortString() + ", in a portal "
+                        + com.mineagent.engine.world.PlaceKeeper.standingInPortal(body) + ", crossing '"
+                        + s.loop().crossingStage() + "'");
+            }
             if (phase[0] == 0 && dim.equals("minecraft:the_nether")) {
                 boolean linked = memory.portalTo("minecraft:overworld",
                         com.mineagent.engine.world.PlaceKeeper.point(body)).isPresent();
@@ -1409,6 +1415,224 @@ public class CompanionGameTests implements FabricGameTest {
                 String how = "phase " + phase[0] + ", in " + dim + " at " + body.blockPosition().toShortString();
                 tidy(s);
                 fail(helper, "after 2300 ticks: " + how);
+            }
+        });
+    }
+    /** How many of {@code item} a chest at {@code pos} holds. */
+    private static int inChest(GameTestHelper helper, BlockPos pos, net.minecraft.world.item.Item item) {
+        var be = helper.getLevel().getBlockEntity(pos);
+        if (!(be instanceof net.minecraft.world.Container c)) return -1;
+        int n = 0;
+        for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(item)) n += c.getItem(i).getCount();
+        return n;
+    }
+
+    /**
+     * Plan 70, MA5.4: iron meant for an AFK owner goes in the chest by them, not on the ground at their feet (dropped
+     * items vanish in five minutes); a question it has waits; when they're back, one line says where the iron went and
+     * asks the question.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_chest", timeoutTicks = 500)
+    public void itemsForAnAfkOwnerGoInAChestAndQuestionsWait(GameTestHelper helper) {
+        Scene s = scene(helper, "Keeper");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(7, 1, 3, Blocks.CHEST);
+        BlockPos chest = helper.absolutePos(new BlockPos(7, 1, 3));
+        s.body().getInventory().setItem(1, new ItemStack(Items.IRON_INGOT, 5));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
+        int[] phase = {0};
+        String[] reply = {""};
+        helper.onEachTick(() -> {
+            var level = helper.getLevel();
+            var onGround = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    s.owner().getBoundingBox().inflate(16.0), e -> e.getItem().is(Items.IRON_INGOT));
+            if (!onGround.isEmpty()) {
+                tidy(s);
+                fail(helper, "the iron was dropped on the ground by the AFK owner");
+                return;
+            }
+            if (phase[0] == 0 && s.loop().ownerAfk()) {
+                phase[0] = 1;
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("item_id", "minecraft:iron_ingot");
+                args.addProperty("count", 5);
+                new com.mineagent.tools.inventory.DropItemsTool().onServerCall("drop-afk", args, s.companion(), r -> reply[0] = r);
+            } else if (phase[0] == 1 && inChest(helper, chest, Items.IRON_INGOT) == 5) {
+                phase[0] = 2;
+                s.loop().say("Shall I smelt the iron?");
+                boolean held = s.loop().journal().recent(20).stream()
+                        .anyMatch(e -> "held".equals(e.kind()) && e.text().contains("smelt"));
+                if (!held) {
+                    tidy(s);
+                    fail(helper, "its question was asked while the owner was AFK");
+                    return;
+                }
+                MineAgentEngine.onPlayerChat(s.owner(), "back");
+            } else if (phase[0] == 2 && !s.loop().ownerAfk()) {
+                var welcome = s.loop().journal().recent(20).stream()
+                        .filter(e -> "said".equals(e.kind()) && e.text().startsWith("Welcome back")).findFirst();
+                if (welcome.isEmpty()) return; // said on the next tick
+                String line = welcome.get().text();
+                tidy(s);
+                if (line.contains("iron") && line.contains("chest") && line.contains("Shall I smelt the iron?")) helper.succeed();
+                else fail(helper, "the welcome-back line: " + line);
+            } else if (helper.getTick() >= 450) {
+                String how = "phase " + phase[0] + ", the chest holds " + inChest(helper, chest, Items.IRON_INGOT)
+                        + " iron, it carries " + s.body().getInventory().countItem(Items.IRON_INGOT) + ", the tool said " + reply[0];
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.4: AFK at a farm's hoppers, the farm is left alone: nothing broken within 16 blocks of the owner and
+     * it keeps within 8; back at the keys, the block can be broken again.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_farm", timeoutTicks = 400)
+    public void anAfkFarmIsLeftAlone(GameTestHelper helper) {
+        Scene s = scene(helper, "Farmhand");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(2, 0, 2, Blocks.HOPPER);
+        helper.setBlock(4, 0, 2, Blocks.HOPPER);
+        helper.setBlock(5, 1, 5, Blocks.DIRT);
+        BlockPos dirt = helper.absolutePos(new BlockPos(5, 1, 5));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
+        int[] phase = {0};
+        helper.onEachTick(() -> {
+            var check = com.mineagent.engine.task.BlockDigger.assessBreak(s.body(), dirt);
+            boolean farmSaysNo = check.detail() != null && check.detail().contains("AFK");
+            if (phase[0] == 0 && s.loop().ownerAtFarm()) {
+                if (!farmSaysNo) {
+                    tidy(s);
+                    fail(helper, "AFK at the farm, but breaking a block by them was allowed: " + check.status());
+                    return;
+                }
+                phase[0] = 1;
+                MineAgentEngine.onPlayerChat(s.owner(), "back");
+            } else if (phase[0] == 1 && !s.loop().ownerAfk()) {
+                tidy(s);
+                if (!farmSaysNo) helper.succeed();
+                else fail(helper, "the owner is back, but the farm is still off-limits");
+            } else if (helper.getTick() >= 350) {
+                String how = "phase " + phase[0] + ", afk " + s.loop().ownerAfk() + ", at a farm " + s.loop().ownerAtFarm();
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA5.8: a block within a player's reach is broken; one six blocks away is out of reach. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_block_reach", timeoutTicks = 300)
+    public void itBreaksOnlyWhatAPlayerCouldReach(GameTestHelper helper) {
+        Scene s = scene(helper, "Reacher");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos at = s.body().blockPosition();
+        BlockPos near = at.offset(2, 0, 0), far = at.offset(-7, 0, 0);
+        helper.getLevel().setBlockAndUpdate(near, Blocks.DIRT.defaultBlockState());
+        helper.getLevel().setBlockAndUpdate(far, Blocks.DIRT.defaultBlockState());
+        helper.onEachTick(() -> {
+            var level = helper.getLevel();
+            var farCheck = com.mineagent.engine.task.BlockDigger.assessBreak(s.body(), far);
+            if (farCheck.allowed() || com.mineagent.engine.task.BlockDigger.startBreaking(s.body(), far) || level.getBlockState(far).isAir()) {
+                tidy(s);
+                fail(helper, "a block 7 blocks away was in reach: " + farCheck.status());
+                return;
+            }
+            if (!level.getBlockState(near).isAir()) {
+                com.mineagent.engine.task.BlockDigger.startBreaking(s.body(), near);
+            } else {
+                tidy(s);
+                if (farCheck.status() == com.mineagent.engine.task.BlockDigger.BreakStatus.OUT_OF_REACH) helper.succeed();
+                else fail(helper, "the far block was refused, but not for reach: " + farCheck.status());
+                return;
+            }
+            if (helper.getTick() >= 250) {
+                tidy(s);
+                fail(helper, "the block 2 blocks away was never broken: " + com.mineagent.engine.task.BlockDigger.assessBreak(s.body(), near).status());
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.9: while the owner is away, lava fills the spot it left from; when they come back it comes back
+     * beside it, on safe ground, unhurt, and remembers home and what it did.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_return_lava", timeoutTicks = 200)
+    public void comingBackToLavaItStandsBesideIt(GameTestHelper helper) {
+        Scene s = scene(helper, "Keeper3");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.runAfterDelay(2, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
+        helper.runAfterDelay(10, () -> {
+            BlockPos left = s.body().blockPosition();
+            float health = s.body().getHealth();
+            MineAgentEngine.onPlayerLeave(s.owner());
+            var level = helper.getLevel();
+            level.setBlockAndUpdate(left, Blocks.LAVA.defaultBlockState());
+            level.setBlockAndUpdate(left.above(), Blocks.LAVA.defaultBlockState());
+            MineAgentEngine.onPlayerJoin(s.owner());
+            var back = MineAgentEngine.getCompanionsByOwner(s.owner().getUUID());
+            if (back.size() != 1) {
+                for (var c : back) MineAgentEngine.despawnCompanion(c.companion.companionId(), true);
+                s.owner().getServer().getPlayerList().remove(s.owner());
+                fail(helper, "after leaving and coming back there are " + back.size() + " companions");
+                return;
+            }
+            var again = back.get(0).companion.serverPlayer();
+            var loop = TaskContext.agentLoop(back.get(0).companion);
+            BlockPos now = again.blockPosition();
+            boolean inLava = !level.getBlockState(now).getFluidState().isEmpty()
+                    || !level.getBlockState(now.above()).getFluidState().isEmpty();
+            boolean beside = now.distSqr(left) <= 5 * 5;
+            boolean onGround = com.mineagent.engine.pathing.util.BlockHelper.canStandOn(level.getBlockState(now.below()));
+            boolean home = loop != null && loop.placeKeeper().memory().find("home", null).isPresent();
+            boolean journalKept = loop != null && loop.journal().recent(50).stream().anyMatch(e -> e.text().contains("ome"));
+            String all = String.format("in lava %b, beside %b (%s from %s), on ground %b, health %.1f of %.1f, home %b, journal kept %b",
+                    inLava, beside, now.toShortString(), left.toShortString(), onGround, again.getHealth(), health, home, journalKept);
+            MineAgentEngine.despawnCompanion(back.get(0).companion.companionId(), true);
+            s.owner().getServer().getPlayerList().remove(s.owner());
+            level.setBlockAndUpdate(left, Blocks.AIR.defaultBlockState());
+            level.setBlockAndUpdate(left.above(), Blocks.AIR.defaultBlockState());
+            if (!inLava && beside && onGround && again.getHealth() >= health && home && journalKept) helper.succeed();
+            else fail(helper, all);
+        });
+    }
+
+    /**
+     * Plan 70, MA5.10: a 256-block trip south over ground it has never seen, planned by chunks first: it gets there,
+     * and the chunks it passed are in its explored map.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_long_trip", timeoutTicks = 2400)
+    public void aLongTripGetsThereAndMapsTheWay(GameTestHelper helper) {
+        Scene s = scene(helper, "Voyager");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos start = s.body().blockPosition();
+        BlockPos goal = start.offset(0, 0, 256);
+        helper.runAfterDelay(5, () -> {
+            var args = new com.google.gson.JsonObject();
+            args.addProperty("goal_mode", "xz");
+            args.addProperty("x", goal.getX());
+            args.addProperty("z", goal.getZ());
+            new com.mineagent.tools.movement.MoveToTool().onServerCall("long-trip", args, s.companion(), r -> {});
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "long trip");
+            var body = s.body();
+            double left = flat(body.position(), Vec3.atBottomCenterOf(goal));
+            if (left <= 3.0) {
+                var chunks = s.loop().placeKeeper().chunks();
+                String dim = body.serverLevel().dimension().location().toString();
+                int cx = start.getX() >> 4;
+                int mapped = 0;
+                for (int z = start.getZ() >> 4; z <= goal.getZ() >> 4; z++) if (chunks.seen(dim, cx, z)) mapped++;
+                int along = (goal.getZ() >> 4) - (start.getZ() >> 4) + 1;
+                tidy(s);
+                if (mapped >= along - 1) helper.succeed();
+                else fail(helper, "there, but only " + mapped + " of the " + along + " chunks along the way are mapped");
+            } else if (helper.getTick() >= 2300) {
+                String how = String.format("%.0f blocks short after 2300 ticks, at %s", left, rel(helper, body.blockPosition()).toShortString());
+                tidy(s);
+                fail(helper, how);
             }
         });
     }

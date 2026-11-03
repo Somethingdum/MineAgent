@@ -70,8 +70,15 @@ public class DropItemsTool implements Tool {
         var owner = ((CompanionEntity) player).serverPlayerOwner();
         if (loop != null && loop.ownerAfk() && owner != null && owner.serverLevel() == sp.serverLevel()
                 && owner.distanceTo(sp) <= 8.0) {
-            reply.accept(ToolArgs.errorJson("The owner is AFK: dropped items would vanish before they're back. "
-                    + "Keep them, or put them in a chest, and hand them over when they're back."));
+            // Into a chest by them instead: one it knows within 24 blocks of them, or one in sight within 12.
+            var chest = chestFor(loop, owner);
+            if (chest == null) {
+                reply.accept(ToolArgs.errorJson("The owner is AFK: dropped items would vanish before they're back, and "
+                        + "there's no chest near them. Keep them and hand them over when they're back."));
+                return;
+            }
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(player, new com.mineagent.engine.task.StoreItemsTask.StoreRecord(
+                    toolCallId, itemId, count, chest.getX(), chest.getY(), chest.getZ()), reply);
             return;
         }
         var inv = sp.getInventory();
@@ -129,6 +136,40 @@ public class DropItemsTool implements Tool {
                     carriedAfter == carriedBefore - dropped);
             reply.accept(result.toString());
         }
+    }
+
+    /** A chest by an AFK owner for what was meant for them (SMH plan 70, MA5.4); null if there is none. */
+    static net.minecraft.core.BlockPos chestFor(com.mineagent.engine.loop.AgentLoop loop,
+                                                net.minecraft.server.level.ServerPlayer owner) {
+        var level = owner.serverLevel();
+        String dim = level.dimension().location().toString();
+        for (var c : loop.chestMemory().near(dim, owner.getBlockX(), owner.getBlockY(), owner.getBlockZ(), 24.0)) {
+            var pos = new net.minecraft.core.BlockPos(c.x(), c.y(), c.z());
+            if (level.isLoaded(pos) && net.minecraft.world.level.block.entity.HopperBlockEntity.getContainerAt(level, pos) != null
+                    && isChest(level.getBlockState(pos))) return pos;
+        }
+        net.minecraft.core.BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        var at = owner.blockPosition();
+        for (int dx = -12; dx <= 12; dx++) {
+            for (int dy = -4; dy <= 4; dy++) {
+                for (int dz = -12; dz <= 12; dz++) {
+                    var pos = at.offset(dx, dy, dz);
+                    if (!level.isLoaded(pos) || !isChest(level.getBlockState(pos))) continue;
+                    double d = dx * dx + dy * dy + dz * dz;
+                    if (d < bestD) {
+                        bestD = d;
+                        best = pos;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private static boolean isChest(net.minecraft.world.level.block.state.BlockState state) {
+        return state.is(net.minecraft.world.level.block.Blocks.CHEST) || state.is(net.minecraft.world.level.block.Blocks.TRAPPED_CHEST)
+                || state.is(net.minecraft.world.level.block.Blocks.BARREL);
     }
 
     private static int countItem(net.minecraft.world.entity.player.Inventory inventory,
