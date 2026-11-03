@@ -133,7 +133,10 @@ public class CompanionGameTests implements FabricGameTest {
             pig.teleportTo(near.getX() + 0.5, near.getY(), near.getZ() + 0.5);
             stand.run();
             boolean close = com.mineagent.engine.act.Interaction.attackEntity(s.body(), pig);
-            String where = String.format("companion at %s, pig at %s", s.body().position(), pig.position());
+            String where = String.format("companion at %s, pig at %s; reach %.2f, in reach %b, in sight %b, alive %b",
+                    s.body().position(), pig.position(), s.body().entityInteractionRange(),
+                    com.mineagent.engine.act.Interaction.inEntityReach(s.body(), pig), s.body().hasLineOfSight(pig),
+                    pig.isAlive());
             tidy(s);
             if (far) fail(helper, "it hit a pig 4 blocks away (" + where + ")");
             else if (!close) fail(helper, "it could not hit a pig 2 blocks away (" + where + ")");
@@ -315,6 +318,91 @@ public class CompanionGameTests implements FabricGameTest {
                 tidy(s);
                 if (inside) helper.succeed();
                 else fail(helper, "it got out of a house it could not open: at " + rel.toShortString());
+            }
+        });
+    }
+
+    /** A bed from (x, 1, z) to (x + 1, 1, z), head to the east. */
+    private static void bed(GameTestHelper helper, int x, int z) {
+        var foot = Blocks.RED_BED.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.BedBlock.FACING, net.minecraft.core.Direction.EAST)
+                .setValue(net.minecraft.world.level.block.BedBlock.PART,
+                        net.minecraft.world.level.block.state.properties.BedPart.FOOT);
+        helper.setBlock(new BlockPos(x, 1, z), foot);
+        helper.setBlock(new BlockPos(x + 1, 1, z), foot.setValue(net.minecraft.world.level.block.BedBlock.PART,
+                net.minecraft.world.level.block.state.properties.BedPart.HEAD));
+    }
+
+    /** Only the owner and its companion in the world: any player left awake keeps the night from passing. */
+    private static void onlyUs(GameTestHelper helper, Scene s) {
+        for (var p : List.copyOf(helper.getLevel().players())) {
+            if (p != s.owner() && p != s.body() && !MineAgentEngine.isCompanionPlayer(p.getUUID())) {
+                p.getServer().getPlayerList().remove(p);
+            }
+        }
+    }
+
+    /**
+     * Plan 70, MA5.5: the night passes only when everyone in the Overworld sleeps, the companion too. The owner lies
+     * down at night; the companion goes to the free bed near by and sleeps; the game passes the night.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_sleep", timeoutTicks = 1400)
+    public void theNightPassesWhenItSleepsToo(GameTestHelper helper) {
+        Scene s = scene(helper, "Sleeper");
+        onlyUs(helper, s);
+        bed(helper, 8, 3);
+        bed(helper, 8, 7);
+        var level = helper.getLevel();
+        long dayStart = level.getDayTime() / 24000L * 24000L;
+        level.setDayTime(dayStart + 14000L);
+        BlockPos byBed = helper.absolutePos(new BlockPos(7, 1, 3));
+        s.owner().teleportTo(level, byBed.getX() + 0.5, byBed.getY(), byBed.getZ() + 0.5, 0.0f, 0.0f);
+        boolean[] sawItAsleep = {false};
+        helper.runAfterDelay(5, () -> {
+            var tried = s.owner().startSleepInBed(helper.absolutePos(new BlockPos(8, 1, 3)));
+            if (tried.left().isPresent()) {
+                tidy(s);
+                fail(helper, "the owner could not lie down: " + tried.left().get());
+            }
+        });
+        helper.onEachTick(() -> {
+            if (s.body().isSleeping()) sawItAsleep[0] = true;
+            if (level.getDayTime() >= dayStart + 24000L) {
+                tidy(s);
+                if (sawItAsleep[0]) helper.succeed();
+                else fail(helper, "the night passed without the companion asleep");
+            } else if (helper.getTick() >= 1300) {
+                String how = String.format("still night after 1300 ticks: owner asleep %b, companion asleep %b, companion at %s",
+                        s.owner().isSleeping(), s.body().isSleeping(), helper.relativePos(s.body().blockPosition()).toShortString());
+                level.setDayTime(dayStart + 25000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA5.5: with no bed for the companion, the owner asleep alone does not pass the night. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_sleepless", timeoutTicks = 600)
+    public void withoutItAsleepTheNightWaits(GameTestHelper helper) {
+        Scene s = scene(helper, "Sleepless");
+        onlyUs(helper, s);
+        bed(helper, 8, 3);
+        var level = helper.getLevel();
+        long dayStart = level.getDayTime() / 24000L * 24000L;
+        level.setDayTime(dayStart + 14000L);
+        BlockPos byBed = helper.absolutePos(new BlockPos(7, 1, 3));
+        s.owner().teleportTo(level, byBed.getX() + 0.5, byBed.getY(), byBed.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(5, () -> s.owner().startSleepInBed(helper.absolutePos(new BlockPos(8, 1, 3))));
+        helper.onEachTick(() -> {
+            if (level.getDayTime() >= dayStart + 24000L) {
+                tidy(s);
+                fail(helper, "the night passed with the companion awake");
+            } else if (helper.getTick() >= 500) {
+                boolean ownerAsleep = s.owner().isSleeping();
+                level.setDayTime(dayStart + 25000L);
+                tidy(s);
+                if (ownerAsleep) helper.succeed();
+                else fail(helper, "the owner never got to sleep, so this shows nothing");
             }
         });
     }

@@ -4076,6 +4076,11 @@ public class AgentLoop {
      * Speak a message to the owner in-game.
      * Sends the AI's text response as a chat message to the owner player.
      */
+    /** Say a line to the owner in chat and on the companion screen (a survival chain's few words). */
+    public void say(String text) {
+        if (text != null && !text.isBlank()) speakToOwner(text);
+    }
+
     private void speakToOwner(String text) {
         Services.platform().scheduleOnServer(() -> {
             try {

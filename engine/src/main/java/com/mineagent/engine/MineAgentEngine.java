@@ -189,6 +189,8 @@ public final class MineAgentEngine {
         BrainChains.register(6,  p -> new BreathChain(p));
         BrainChains.register(5,  p -> new MobDefenseChain(p, survivalCfg));
         BrainChains.register(4,  p -> new FoodChain(p, survivalCfg));
+        // Sleeping like a player, so the night can pass (SMH plan 70, MA5.5).
+        BrainChains.register(5,  p -> new com.mineagent.engine.survival.SleepChain(p));
         BrainChains.register(2,  p -> new UnstuckChain(p, survivalCfg));
         // FollowChain: lowest priority, only active in FOLLOW mode when
         // no LLM task is running. Lets the companion actively follow the
@@ -1321,8 +1323,8 @@ public final class MineAgentEngine {
             }
         }
 
-        // Night skip logic: if all human players are sleeping, skip to morning
-        skipNightIfAllHumansSleeping(server);
+        // No night skip of the mod's own (SMH plan 70, MA5.5): the companion sleeps like a player (SleepChain), and
+        // the game passes the night by its own rule (playersSleepingPercentage).
     }
 
     private static void discardIncrementalWork() {
@@ -1335,53 +1337,6 @@ public final class MineAgentEngine {
             }
         }
         ACTIVE_TICK_WORK.clear();
-    }
-
-    /**
-     * Skip the night when all online human players are in bed.
-     * Companions (fake players) are excluded from this check.
-     */
-    private static void skipNightIfAllHumansSleeping(net.minecraft.server.MinecraftServer server) {
-        if (server == null) return;
-
-        // Find overworld level and check time
-        long dayTime = -1;
-        net.minecraft.server.level.ServerLevel overworld = null;
-        for (var level : server.getAllLevels()) {
-            if (level.dimensionType().bedWorks()) {
-                dayTime = level.getDayTime() % 24000;
-                overworld = level;
-                break;
-            }
-        }
-        if (overworld == null) return;
-        if (dayTime < 12541 || dayTime > 23460) return; // Not night
-
-        // Check all human players (non-companions)
-        var players = server.getPlayerList().getPlayers();
-        boolean anyHuman = false;
-        boolean allHumansSleeping = true;
-
-        for (var p : players) {
-            if (COMPANION_PLAYER_UUIDS.contains(p.getUUID())) {
-                continue; // Skip companions
-            }
-            anyHuman = true;
-            if (!p.isSleeping()) {
-                allHumansSleeping = false;
-                break;
-            }
-        }
-
-        if (anyHuman && allHumansSleeping) {
-            // All humans sleeping — skip to morning
-            overworld.setDayTime(0);
-            for (var p : players) {
-                p.stopSleeping();
-                p.sendSystemMessage(Component.literal(
-                        "§e[MineAgent] Good morning! (Night skipped)"));
-            }
-        }
     }
 
     // ── Death handling ─────────────────────────────────────────────
