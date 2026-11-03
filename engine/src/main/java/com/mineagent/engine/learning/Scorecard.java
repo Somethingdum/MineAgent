@@ -304,6 +304,33 @@ public final class Scorecard {
                 s.demoted() ? ", failing lately" : "", why == null ? "" : " (failures share " + why + ")");
     }
 
+    /**
+     * The fight record, as a person reads it (combat learning, plan 69 block 3): for each mob fought most, the
+     * stance the game has rated best against it, with its wins and tier. Keys are fight:<mob>:<stance>.
+     */
+    public List<String> fightRecord(int limit) {
+        Map<String, List<Stat>> byMob = new java.util.HashMap<>();
+        for (Stat s : stats.values()) {
+            String[] parts = s.key().split(":");
+            if (parts.length == 3 && parts[0].equals("fight")) byMob.computeIfAbsent(parts[1], k -> new ArrayList<>()).add(s);
+        }
+        List<Map.Entry<String, List<Stat>>> mobs = new ArrayList<>(byMob.entrySet());
+        mobs.sort(java.util.Comparator.comparingInt((Map.Entry<String, List<Stat>> e) ->
+                -e.getValue().stream().mapToInt(Stat::runs).sum()).thenComparing(Map.Entry::getKey));
+        List<String> out = new ArrayList<>();
+        for (var e : mobs) {
+            if (out.size() >= limit) break;
+            Stat best = e.getValue().stream().max(java.util.Comparator.comparingDouble(Stat::lowerBound)
+                    .thenComparingDouble(Stat::mean)).orElseThrow();
+            int fights = e.getValue().stream().mapToInt(Stat::runs).sum();
+            String stance = best.key().substring(best.key().lastIndexOf(':') + 1);
+            out.add(String.format(Locale.ROOT, "%s: %s works best, won %d of %d (%s); %d fights in all",
+                    e.getKey().replace('_', ' '), stance, best.successes(), best.runs(),
+                    tier(best.key()).name().toLowerCase(Locale.ROOT), fights));
+        }
+        return out;
+    }
+
     public State exportState() {
         return new State(new ArrayList<>(stats.values()));
     }

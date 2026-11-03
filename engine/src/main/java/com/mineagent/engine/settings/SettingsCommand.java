@@ -67,7 +67,27 @@ public final class SettingsCommand {
 
     public static String state(AgentSettings s, List<String> trustedNames, List<SkillLine> skills, List<GoalLine> goals,
                                String model, String baseUrl, boolean keySet) {
+        return state(s, trustedNames, skills, goals, null, model, baseUrl, keySet);
+    }
+
+    /** What the Combat tab shows (block 3): what it guards, whom it may attack, and its fight record. */
+    public record CombatState(String guarding, int guardRadius, List<String> targets, List<String> fights) {}
+
+    public static String state(AgentSettings s, List<String> trustedNames, List<SkillLine> skills, List<GoalLine> goals,
+                               CombatState combat, String model, String baseUrl, boolean keySet) {
         JsonObject o = new JsonObject();
+        if (combat != null) {
+            JsonObject c = new JsonObject();
+            c.addProperty("guarding", combat.guarding() == null ? "" : combat.guarding());
+            c.addProperty("guardRadius", combat.guardRadius());
+            JsonArray t = new JsonArray();
+            for (String name : combat.targets() == null ? List.<String>of() : combat.targets()) t.add(name);
+            c.add("targets", t);
+            JsonArray f = new JsonArray();
+            for (String line : combat.fights() == null ? List.<String>of() : combat.fights()) f.add(line);
+            c.add("fights", f);
+            o.add("combat", c);
+        }
         JsonArray trusted = new JsonArray();
         for (String t : trustedNames) trusted.add(t);
         o.add("trusted", trusted);

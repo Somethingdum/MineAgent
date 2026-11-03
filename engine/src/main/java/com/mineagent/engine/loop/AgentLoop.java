@@ -2068,6 +2068,28 @@ public class AgentLoop {
         return guardPost != null || guardWard != null;
     }
 
+    /** What it guards, as a person reads it ("the spot at 10 64 -5", a player's name), or "" when not guarding. */
+    public String guardState() {
+        UUID ward = guardWard;
+        var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+        if (ward != null) {
+            var p = self == null ? null : self.serverLevel().getServer().getPlayerList().getPlayer(ward);
+            return p != null ? p.getName().getString() : "a player who is away";
+        }
+        var post = guardPost;
+        if (post != null) return "the spot at " + Math.round(post.x) + " " + Math.round(post.y) + " " + Math.round(post.z);
+        return "";
+    }
+
+    public int guardRadiusBlocks() {
+        return (int) Math.round(guardRadius);
+    }
+
+    /** One of the owner's plain commands given another way (the settings panel): as if said in chat by the owner. */
+    public boolean ownerCommand(com.mineagent.engine.chat.CommandParser.Command c) {
+        return c != null && runCommand(c, true);
+    }
+
     /** "guard here" (a spot) or "guard Alex" (a player), {@code radius} blocks around; null for both stands down. */
     public void setGuard(net.minecraft.world.phys.Vec3 post, UUID ward, double radius) {
         guardPost = post;

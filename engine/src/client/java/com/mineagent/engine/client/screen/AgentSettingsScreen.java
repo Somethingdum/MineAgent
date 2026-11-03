@@ -24,7 +24,9 @@ public class AgentSettingsScreen extends Screen {
     private static final int BUTTON_HEIGHT = 20;
     private static final int ROW = 24;
     private static final int LINE = 12;
-    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "goals", "callrate"};
+    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "goals", "combat", "callrate"};
+    private static final int[] GUARD_RADII = {8, 12, 16, 24};
+    private static int guardRadiusChoice = 1;
     private static final int GOALS_SHOWN = 5;
     private static final int SKILLS_SHOWN = 4;
 
@@ -77,6 +79,7 @@ public class AgentSettingsScreen extends Screen {
                 case "personality" -> personality(state);
                 case "learning" -> learning(state);
                 case "goals" -> goals(state);
+                case "combat" -> combat(state);
                 default -> callRate(state);
             }
         }
@@ -242,6 +245,47 @@ public class AgentSettingsScreen extends Screen {
             goalField.setValue("");
             command("mineagent goal add " + text);
         }).bounds(left + innerWidth - 80, y + 4, 80, BUTTON_HEIGHT).build());
+    }
+
+    /** Guard here or stand down, whom it may attack, and how its fights have gone, as the game rated them. */
+    private void combat(JsonObject s) {
+        int y = contentTop;
+        JsonObject c = s.has("combat") && s.get("combat").isJsonObject() ? s.getAsJsonObject("combat") : new JsonObject();
+        String guarding = str(c, "guarding");
+        line(guarding.isEmpty() ? Component.translatable("screen.mineagent.agent.not_guarding")
+                : Component.translatable("screen.mineagent.agent.guarding", clip(guarding, 40), str(c, "guardRadius")),
+                left, y, guarding.isEmpty() ? MineAgentUiComponents.COLOR_SUBTITLE : MineAgentUiComponents.COLOR_ACCENT);
+        y += LINE + 4;
+        int w = (innerWidth - 12) / 3;
+        int radius = GUARD_RADII[Math.floorMod(guardRadiusChoice, GUARD_RADII.length)];
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.guard_here"),
+                ignored -> command("mineagent guard here " + radius)).bounds(left, y, w, BUTTON_HEIGHT).build());
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.guard_radius", radius), ignored -> {
+            guardRadiusChoice = Math.floorMod(guardRadiusChoice + 1, GUARD_RADII.length);
+            rebuild();
+        }).bounds(left + w + 6, y, w, BUTTON_HEIGHT).build());
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.stand_down"),
+                ignored -> command("mineagent guard off")).bounds(left + 2 * (w + 6), y, w, BUTTON_HEIGHT).build());
+        y += ROW + 2;
+        JsonArray targets = c.has("targets") && c.get("targets").isJsonArray() ? c.getAsJsonArray("targets") : new JsonArray();
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < targets.size(); i++) names.add(targets.get(i).getAsString());
+        line(names.isEmpty() ? Component.translatable("screen.mineagent.agent.no_targets")
+                : Component.translatable("screen.mineagent.agent.targets", clip(String.join(", ", names), 44)),
+                left, y + 6, MineAgentUiComponents.COLOR_TITLE);
+        if (!names.isEmpty()) {
+            this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.clear"),
+                    ignored -> command("mineagent target clear")).bounds(left + innerWidth - 70, y, 70, BUTTON_HEIGHT).build());
+        }
+        y += ROW + 2;
+        line(Component.translatable("screen.mineagent.agent.fights_note"), left, y, MineAgentUiComponents.COLOR_SUBTITLE);
+        y += LINE + 2;
+        JsonArray fights = c.has("fights") && c.get("fights").isJsonArray() ? c.getAsJsonArray("fights") : new JsonArray();
+        if (fights.isEmpty()) line(Component.translatable("screen.mineagent.agent.no_fights"), left, y, MineAgentUiComponents.COLOR_MUTED);
+        for (int i = 0; i < Math.min(4, fights.size()); i++) {
+            line(Component.literal(clip(fights.get(i).getAsString(), 72)), left, y, MineAgentUiComponents.COLOR_TITLE);
+            y += LINE;
+        }
     }
 
     private void callRate(JsonObject s) {

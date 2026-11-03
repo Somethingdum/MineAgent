@@ -121,4 +121,21 @@ final class ScorecardTest {
         }
         assertEquals("mine_stone_fast", lib.relevant("mine stone", 2).get(0).name());
     }
+
+    @Test void theFightRecordNamesTheBestStancePerMob() {
+        Scorecard card = new Scorecard();
+        for (int i = 0; i < 6; i++) {
+            card.record(new Scorecard.Episode("fight:zombie:balanced", Scorecard.Outcome.DONE, false, 200, 2, 20), i);
+            card.record(new Scorecard.Episode("fight:zombie:aggressive", i < 2 ? Scorecard.Outcome.DONE : Scorecard.Outcome.FAILED,
+                    i >= 2, 200, 12, 20), i);
+        }
+        card.record(new Scorecard.Episode("fight:skeleton:kite", Scorecard.Outcome.DONE, false, 300, 4, 20), 9);
+        card.record(new Scorecard.Episode("skill:mine_iron", Scorecard.Outcome.DONE, false, 300, 0, 20), 9);
+        var lines = card.fightRecord(5);
+        assertEquals(2, lines.size(), lines.toString());
+        assertTrue(lines.get(0).startsWith("zombie: balanced works best, won 6 of 6"), lines.get(0));
+        assertTrue(lines.get(0).endsWith("12 fights in all"), lines.get(0));
+        assertTrue(lines.get(1).startsWith("skeleton: kite works best"), lines.get(1));
+        assertEquals(1, card.fightRecord(1).size());
+    }
 }

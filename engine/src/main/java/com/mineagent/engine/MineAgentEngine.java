@@ -1654,6 +1654,24 @@ public final class MineAgentEngine {
         return Optional.empty();
     }
 
+    /** A guard order from the owner (the Combat tab): the same as saying it in chat. */
+    private static int guardOrder(CommandSourceStack source, com.mineagent.engine.chat.CommandParser.Kind kind, String player,
+                                  Integer radius) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer owner = source.getPlayerOrException();
+        Optional<CompanionState> state = getCompanionByOwner(owner.getUUID());
+        if (state.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+            return 0;
+        }
+        boolean done = state.get().loop.ownerCommand(new com.mineagent.engine.chat.CommandParser.Command(kind, player, radius));
+        if (!done) {
+            source.sendFailure(Component.literal("§c[MineAgent] Couldn't do that" + (player != null ? ": is " + player + " online?" : ".")));
+            return 0;
+        }
+        sendSettings(source);
+        return 1;
+    }
+
     /** Add a player the companion may attack (null: clear the list). The owner or a trusted player only. */
     private static int changeTarget(CommandSourceStack source, String who) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
@@ -1667,6 +1685,7 @@ public final class MineAgentEngine {
             s.loop.setAgentSettings(s.loop.getAgentSettings().withoutTargets());
             persistCompanionNow(s.companion.companionId());
             source.sendSuccess(() -> Component.literal("§a[MineAgent] It will attack no players."), false);
+            if (player.getUUID().equals(s.companion.ownerUuid())) sendSettings(source);
             return 1;
         }
         ServerPlayer target = source.getServer().getPlayerList().getPlayerByName(who);
@@ -1688,6 +1707,7 @@ public final class MineAgentEngine {
         persistCompanionNow(s.companion.companionId());
         String name = target.getName().getString();
         source.sendSuccess(() -> Component.literal("§a[MineAgent] It may now attack " + name + ". Your \"stop\" or /mineagent target clear ends it."), false);
+        if (player.getUUID().equals(s.companion.ownerUuid())) sendSettings(source);
         return 1;
     }
 
@@ -1809,7 +1829,19 @@ public final class MineAgentEngine {
             goals.add(new com.mineagent.engine.settings.SettingsCommand.GoalLine(g.id(),
                     g.status().name().toLowerCase(Locale.ROOT), i < goalLines.size() ? goalLines.get(i) : g.text()));
         }
-        String json = com.mineagent.engine.settings.SettingsCommand.state(settings, trusted, skills, goals,
+        List<String> targets = new ArrayList<>();
+        for (String id : settings.allowedTargets()) {
+            ServerPlayer p = null;
+            try {
+                p = source.getServer().getPlayerList().getPlayer(UUID.fromString(id));
+            } catch (IllegalArgumentException ignored) {
+                // kept UUIDs are always valid
+            }
+            targets.add(p != null ? p.getName().getString() : "a player who is away");
+        }
+        var combat = new com.mineagent.engine.settings.SettingsCommand.CombatState(state.loop.guardState(),
+                state.loop.guardRadiusBlocks(), targets, card.fightRecord(5));
+        String json = com.mineagent.engine.settings.SettingsCommand.state(settings, trusted, skills, goals, combat,
                 state.loop.getModel(), state.loop.getBaseUrl(),
                 state.loop.getApiKey() != null && !state.loop.getApiKey().isBlank());
         com.mineagent.engine.network.MineAgentNetwork.sendUiActionTo(owner, state.companion.companionId(), "settings_state", json);
@@ -2351,6 +2383,19 @@ public final class MineAgentEngine {
                             .then(argument("count", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 2304))
                                 .executes(ctx -> goalCommand(ctx.getSource(), "stock", StringArgumentType.getString(ctx, "item"),
                                         com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "count")))))))
+                // ── guard: the owner's guard orders, as the Combat tab sends them (SMH plan 69, block 3) ──
+                .then(literal("guard")
+                    .then(literal("here")
+                        .executes(ctx -> guardOrder(ctx.getSource(), com.mineagent.engine.chat.CommandParser.Kind.GUARD_HERE, null, null))
+                        .then(argument("radius", com.mojang.brigadier.arguments.IntegerArgumentType.integer(4, 32))
+                            .executes(ctx -> guardOrder(ctx.getSource(), com.mineagent.engine.chat.CommandParser.Kind.GUARD_HERE, null,
+                                    com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "radius")))))
+                    .then(literal("player")
+                        .then(argument("player", StringArgumentType.word())
+                            .executes(ctx -> guardOrder(ctx.getSource(), com.mineagent.engine.chat.CommandParser.Kind.GUARD_PLAYER,
+                                    StringArgumentType.getString(ctx, "player"), null))))
+                    .then(literal("off")
+                        .executes(ctx -> guardOrder(ctx.getSource(), com.mineagent.engine.chat.CommandParser.Kind.GUARD_OFF, null, null))))
                 // ── target: a player it may attack, on the owner's or a trusted player's word (SMH plan 69, MA3.8) ──
                 .then(literal("target")
                     .then(literal("clear").executes(ctx -> changeTarget(ctx.getSource(), null)))
