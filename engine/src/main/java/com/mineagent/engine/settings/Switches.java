@@ -29,4 +29,10 @@ public final class Switches {
     public static boolean bucketDescents() { return b().bucketDescents(); }
     public static boolean avoidMobs() { return b().avoidMobs(); }
     public static boolean longTrips() { return b().longTrips(); }
+
+    /** How much it remembers (MA5.7). */
+    public static MineAgentConfig.MemoryConfig memory() {
+        MineAgentConfig config = MineAgentEngine.getConfig();
+        return config == null || config.memory() == null ? MineAgentConfig.MemoryConfig.DEFAULTS : config.memory();
+    }
 }

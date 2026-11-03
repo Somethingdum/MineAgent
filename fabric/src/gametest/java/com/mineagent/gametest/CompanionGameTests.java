@@ -979,14 +979,13 @@ public class CompanionGameTests implements FabricGameTest {
                 s.loop().saveMemoryBlocking();
                 var folder = s.loop().memoryFolder();
                 String saved = "";
-                try {
-                    if (folder != null) saved = java.nio.file.Files.readString(folder.resolve("routes.json"));
-                } catch (java.io.IOException e) {
-                    saved = "";
+                if (folder != null) {
+                    saved = com.mineagent.engine.memory.store.StoreFile.read(folder.resolve("store/routes/places.gz"))
+                            .contents().map(com.mineagent.engine.memory.store.StoreFile.Contents::body).orElse("");
                 }
                 tidy(s);
                 if (saved.contains("\"home\"")) helper.succeed();
-                else fail(helper, "home was not in the saved memory (folder " + folder + ")");
+                else fail(helper, "home was not in the saved memory store (folder " + folder + ")");
             } else if (helper.getTick() >= 1300) {
                 String how = "after 1300 ticks, phase " + phase[0] + ": at " + rel(helper, s.body().blockPosition()).toShortString()
                         + ", home " + known.map(p -> p.at().toString()).orElse("not known");
@@ -1210,6 +1209,80 @@ public class CompanionGameTests implements FabricGameTest {
                 tidy(s);
                 husk.discard();
                 fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.7: diamond ore in plain view is remembered, and noted in the journal as a find; iron ore sealed in
+     * stone is not (only what it can see); the diamond mined out is struck off. What it saw is in the store on disk.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_seen", timeoutTicks = 400)
+    public void itRemembersWhatItCanSeeAndNothingThroughStone(GameTestHelper helper) {
+        Scene s = scene(helper, "Looker");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(7, 1, 3, Blocks.DIAMOND_ORE);
+        for (int x = 9; x <= 11; x++) for (int y = 1; y <= 3; y++) for (int z = 6; z <= 8; z++) helper.setBlock(x, y, z, Blocks.STONE);
+        helper.setBlock(10, 2, 7, Blocks.IRON_ORE);
+        BlockPos diamond = helper.absolutePos(new BlockPos(7, 1, 3));
+        boolean[] mined = {false};
+        helper.onEachTick(() -> {
+            var seen = s.loop().placeKeeper().sightings();
+            var body = s.body();
+            String dim = body.serverLevel().dimension().location().toString();
+            var at = body.blockPosition();
+            boolean sawDiamond = !seen.nearest("diamond", dim, at.getX(), at.getY(), at.getZ(), 1, 64).isEmpty();
+            boolean sawIron = !seen.nearest("iron", dim, at.getX(), at.getY(), at.getZ(), 1, 64).isEmpty();
+            if (sawIron) {
+                tidy(s);
+                fail(helper, "it remembered iron ore sealed inside stone");
+            } else if (sawDiamond && !mined[0]) {
+                mined[0] = true;
+                helper.getLevel().destroyBlock(diamond, false);
+            } else if (mined[0] && !sawDiamond) {
+                boolean noted = s.loop().journal().recent(50).stream()
+                        .anyMatch(e -> "find".equals(e.kind()) && e.text().contains("diamond"));
+                s.loop().saveMemoryBlocking();
+                var folder = s.loop().memoryFolder();
+                boolean onDisk = folder != null && java.nio.file.Files.exists(folder.resolve("store/sightings/index.gz"));
+                tidy(s);
+                if (noted && onDisk) helper.succeed();
+                else fail(helper, "struck off, but journal find " + noted + ", store on disk " + onDisk);
+            } else if (helper.getTick() >= 350) {
+                tidy(s);
+                fail(helper, mined[0] ? "the mined-out diamond was still remembered" : "it never noted the diamond in plain view");
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.7 and MA5.9: a chest it looked in holds iron; "where did you put the iron?" is answered from its
+     * chest memory, and "what did we do today?" from its journal, both without a model.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_recall", timeoutTicks = 200)
+    public void itAnswersFromItsMemory(GameTestHelper helper) {
+        Scene s = scene(helper, "Recaller");
+        BlockPos chest = helper.absolutePos(new BlockPos(6, 1, 6));
+        var dim = s.body().serverLevel().dimension().location().toString();
+        helper.runAfterDelay(2, () -> {
+            var pos = new com.mineagent.engine.world.WorldAssetIndex.Position(dim, chest.getX(), chest.getY(), chest.getZ());
+            s.loop().worldAssetIndex().observeContainer("minecraft:chest@" + chest.toShortString(), pos,
+                    List.of(new com.mineagent.engine.world.WorldAssetIndex.ItemObservation(0, "minecraft:iron_ingot", 32, 0, 0,
+                            java.util.Set.of(), 1.0)), true, helper.getLevel().getGameTime());
+            MineAgentEngine.onPlayerChat(s.owner(), "remember this as the forge");
+            MineAgentEngine.onPlayerChat(s.owner(), "where did you put the iron?");
+            MineAgentEngine.onPlayerChat(s.owner(), "what did we do today?");
+        });
+        helper.onEachTick(() -> {
+            var said = s.loop().journal().recent(50).stream().filter(e -> "said".equals(e.kind())).map(e -> e.text()).toList();
+            boolean iron = said.stream().anyMatch(t -> t.contains("32 iron ingot in the chest"));
+            boolean today = said.stream().anyMatch(t -> t.startsWith("Today:") && t.contains("place named"));
+            if (iron && today) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 150) {
+                tidy(s);
+                fail(helper, "said: " + said);
             }
         });
     }

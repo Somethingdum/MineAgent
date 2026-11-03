@@ -14,8 +14,10 @@ import static org.junit.jupiter.api.Assertions.*;
 final class CoarsePlannerTest {
     private static final String OW = "minecraft:overworld";
 
-    @Test void summariesKeepWhatWasSeenAndSaveAndLoad() {
-        ChunkSummaries m = new ChunkSummaries();
+    @Test void summariesKeepWhatWasSeenAndSaveAndLoad() throws Exception {
+        java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("chunks");
+        var store = new com.mineagent.engine.memory.store.MemoryStore(dir);
+        ChunkSummaries m = new ChunkSummaries(store);
         m.put(OW, 3, -7, new Summary(Kind.WATER, 62, false));
         m.put(OW, -400, 9000, new Summary(Kind.LAND, 140, true));
         m.put(OW, 1, 1, new Summary(Kind.UNKNOWN, 70, false)); // not kept
@@ -23,10 +25,13 @@ final class CoarsePlannerTest {
         assertEquals(new Summary(Kind.LAND, 140, true), m.get(OW, -400, 9000));
         assertEquals(Kind.UNKNOWN, m.get(OW, 1, 1).kind());
         assertEquals(Kind.UNKNOWN, m.get("minecraft:the_nether", 3, -7).kind());
-        ChunkSummaries back = new ChunkSummaries();
-        back.importState(m.exportState());
+        store.close();
+        var store2 = new com.mineagent.engine.memory.store.MemoryStore(dir);
+        ChunkSummaries back = new ChunkSummaries(store2);
         assertEquals(2, back.size());
         assertEquals(new Summary(Kind.LAND, 140, true), back.get(OW, -400, 9000));
+        assertEquals(new Summary(Kind.WATER, 62, false), back.get(OW, 3, -7));
+        store2.close();
     }
 
     @Test void overUnseenGroundTheWayIsStraight() {

@@ -31,6 +31,8 @@ public abstract class ServerLevelMixin {
                 }
             } else if (event == GameEvent.BLOCK_DESTROY) {
                 PlacedBlocks.broken(level, BlockPos.containing(pos));
+                // Ore mined out, a spawner broken, a chest gone: struck off what companions remember (MA5.7).
+                com.mineagent.engine.MineAgentEngine.onBlockGone(level, BlockPos.containing(pos), context.affectedState());
             }
         } catch (RuntimeException ignored) {
             // Remembering is a courtesy; it must never get in the way of the game.

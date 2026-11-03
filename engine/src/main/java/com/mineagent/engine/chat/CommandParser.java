@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
  */
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
-        GOAL_ADD, RESUME, AFK, BACK, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK }
+        GOAL_ADD, RESUME, AFK, BACK, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
+        WHAT_HAPPENED }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -59,6 +60,14 @@ public final class CommandParser {
     private static final Pattern WAY_BACK = Pattern.compile("^(?:go back the way (?:we|you|i) came|take (?:me|us) back the way (?:we|you) came"
             + "|back the way (?:we|you) came|retrace (?:our|your) steps|lead (?:me|us) back|take (?:me|us) back|lead the way back"
             + "|find the way back)$");
+    // Asked from memory (SMH plan 70, MA5.7 and MA5.9).
+    private static final Pattern WHERE_SEEN = Pattern.compile("^(?:where did you see|where have you seen|have you seen(?: any)?"
+            + "|seen any|did you see(?: any)?|where can i find|where could i find) (.{2,40})$");
+    private static final Pattern WHERE_PUT = Pattern.compile("^(?:where did you put|where'?d you put|where did we put"
+            + "|where have you put|where did you store|where'?s the chest with|which chest has) (.{2,40})$");
+    private static final Pattern WHAT_HAPPENED = Pattern.compile("^(?:what did (?:we|you) do|what happened|what have you been"
+            + " (?:doing|up to)|what did you get up to)(?: (today|yesterday|while i was (?:away|gone|out)|since i left))?$");
+    private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
     private static final Pattern STATUS = Pattern.compile("^(status|sitrep|report|what are you doing|what r u doing|what're you doing|how'?s it going)$");
     private static final Pattern CANCEL = Pattern.compile("^(cancel|abort|nevermind|never mind|forget it|cancel that|cancel the goal|drop it)$");
     private static final Pattern EAT = Pattern.compile("^(eat|eat something|eat food|have a snack|have something to eat)$");
@@ -118,6 +127,17 @@ public final class CommandParser {
         }
         m = GO_PLACE.matcher(t);
         if (m.matches()) return Optional.of(new Command(Kind.GO_PLACE, m.group(1).strip(), null));
+        m = WHERE_SEEN.matcher(t);
+        if (m.matches()) return Optional.of(new Command(Kind.WHERE_SEEN, m.group(1).strip(), null));
+        m = WHERE_PUT.matcher(t);
+        if (m.matches()) return Optional.of(new Command(Kind.WHERE_PUT, m.group(1).strip(), null));
+        m = WHAT_HAPPENED.matcher(t);
+        if (m.matches()) {
+            String when = m.group(1) == null ? "today" : m.group(1).startsWith("yesterday") ? "yesterday"
+                    : m.group(1).equals("today") ? "today" : "away";
+            return Optional.of(new Command(Kind.WHAT_HAPPENED, when, null));
+        }
+        if (WHAT_MISSED.matcher(t).matches()) return Optional.of(new Command(Kind.WHAT_HAPPENED, "away", null));
         m = WHERE_PLACE.matcher(t);
         if (m.matches()) return Optional.of(new Command(Kind.WHERE_PLACE, m.group(1).strip(), null));
         if (STATUS.matcher(t).matches()) return Optional.of(new Command(Kind.STATUS, null, null));

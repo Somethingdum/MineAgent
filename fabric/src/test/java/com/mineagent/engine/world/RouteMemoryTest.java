@@ -112,4 +112,24 @@ final class RouteMemoryTest {
         assertEquals(mine.id(), m.routes().get(0).to());
         assertEquals(mine.id(), m.placeAt(p(58, 64, 1)).orElseThrow().id());
     }
+
+    @Test void tripsAreKeptAndEachPartKnowsWhenItChanged() {
+        RouteMemory m = new RouteMemory();
+        long[] before = m.versions();
+        var home = m.name("home", null, p(0, 64, 0), 1);
+        assertTrue(m.versions()[0] > before[0], "naming a place changes places");
+        m.name("named", "the mine", p(60, 64, 0), 1);
+        long[] named = m.versions();
+        for (int x = 0; x <= 60; x++) m.walked(p(x, 64, 0), false, x);
+        assertTrue(m.versions()[1] > named[1], "walking changes the trail");
+        assertEquals(1, m.trips().size());
+        assertEquals(home.id(), m.trips().get(0).from());
+        RouteMemory back = new RouteMemory();
+        back.importPlaces(m.exportPlaces());
+        back.importTrail(m.exportTrail());
+        back.importTrips(m.trips());
+        assertEquals(m.places().size(), back.places().size());
+        assertEquals(1, back.routes().size());
+        assertEquals(1, back.trips().size());
+    }
 }

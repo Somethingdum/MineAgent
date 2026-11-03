@@ -46,6 +46,23 @@ public final class RouteMemory {
 
     public record State(List<Place> places, List<Route> routes, List<Point> trail, String trailFrom, int nextId) {}
 
+    /** A trip it made: from one known place (or none) to another, the way it went, simplified (MA5.7). */
+    public record Trip(String from, String to, long ended, List<Point> points) {}
+
+    /** Places and routes, for the memory store. */
+    public record PlacesState(List<Place> places, List<Route> routes, int nextId) {}
+
+    /** The trail under way. */
+    public record TrailState(List<Point> trail, String trailFrom) {}
+
+    /** The last trips kept in full; older ones live on in the routes they made. */
+    public static final int MAX_TRIPS = 200;
+    private final java.util.ArrayDeque<Trip> trips = new java.util.ArrayDeque<>();
+    /** Bumped on each change, so the store writes only what changed. */
+    private long placesVersion;
+    private long trailVersion;
+    private long tripsVersion;
+
     private final Map<String, Place> places = new LinkedHashMap<>();
     private final List<Route> routes = new ArrayList<>();
     private final List<Point> trail = new ArrayList<>();
@@ -67,6 +84,7 @@ public final class RouteMemory {
         Place place = new Place("p" + nextId++, k, n, at, 1.0, tick);
         places.put(place.id(), place);
         trimPlaces();
+        placesVersion++;
         return place;
     }
 
@@ -76,6 +94,7 @@ public final class RouteMemory {
             if (p.kind().equals(kind) && p.at().dim().equals(at.dim()) && p.at().distance(at) <= 64.0) {
                 Place seen = new Place(p.id(), p.kind(), p.name(), p.at(), 1.0, tick);
                 places.put(p.id(), seen);
+                placesVersion++;
                 return seen;
             }
         }
@@ -84,6 +103,7 @@ public final class RouteMemory {
         Place place = new Place("p" + nextId++, kind, name, at, 1.0, tick);
         places.put(place.id(), place);
         trimPlaces();
+        placesVersion++;
         return place;
     }
 
@@ -114,6 +134,7 @@ public final class RouteMemory {
         double c = p.confidence() * 0.6;
         if (c < 0.15 && !"home".equals(p.kind()) && !"named".equals(p.kind())) places.remove(id);
         else places.put(id, new Place(p.id(), p.kind(), p.name(), p.at(), Math.max(c, 0.15), p.checked()));
+        placesVersion++;
     }
 
     public synchronized List<Place> places() {
@@ -144,6 +165,7 @@ public final class RouteMemory {
             trail.add(now);
             lastRaw = now;
             lastDir = null;
+            trailVersion++;
             return;
         }
         if (now.equals(lastRaw)) return;
@@ -162,6 +184,7 @@ public final class RouteMemory {
         lastDir = dir;
         lastRaw = now;
         if (trail.size() > 4000) trail.subList(0, trail.size() - 4000).clear();
+        trailVersion++;
     }
 
     private static int[] direction(Point a, Point b) {
@@ -198,7 +221,9 @@ public final class RouteMemory {
 
     /** The trip starts at this place (or nowhere known). */
     public synchronized void startTrip(String fromPlace, Point at) {
+        closeTrip(null, -1L);
         trail.clear();
+        trailVersion++;
         trailFrom = fromPlace;
         lastRaw = at;
         lastDir = null;
@@ -218,7 +243,9 @@ public final class RouteMemory {
             for (int i = 1; i < way.size(); i++) length += way.get(i - 1).distance(way.get(i));
             kept = Optional.of(keepRoute(trailFrom, end.id(), way, length, tick));
         }
+        closeTrip(end == null ? null : end.id(), tick);
         trail.clear();
+        trailVersion++;
         trailFrom = end == null ? null : end.id();
         trail.add(at);
         lastRaw = at;
@@ -268,11 +295,13 @@ public final class RouteMemory {
                 List<Point> best = length < r.length() ? way : r.waypoints();
                 Route merged = new Route(from, to, best, Math.min(length, r.length()), r.uses() + 1, r.successes() + 1, tick);
                 routes.set(i, merged);
+                placesVersion++;
                 return merged;
             }
         }
         Route route = new Route(from, to, way, length, 1, 1, tick);
         routes.add(route);
+        placesVersion++;
         while (routes.size() > MAX_ROUTES) {
             routes.stream().min(Comparator.comparingLong(Route::last)).ifPresent(routes::remove);
         }
@@ -285,6 +314,7 @@ public final class RouteMemory {
             Route r = routes.get(i);
             if (r.from().equals(from) && r.to().equals(to)) {
                 routes.set(i, new Route(from, to, r.waypoints(), r.length(), r.uses() + 1, r.successes(), r.last()));
+                placesVersion++;
             }
         }
     }
@@ -356,6 +386,59 @@ public final class RouteMemory {
         if (s.trail() != null) for (Point p : s.trail()) if (p != null) trail.add(p);
         trailFrom = s.trailFrom();
         nextId = Math.max(s.nextId(), places.size() + 1);
+        placesVersion++;
+        trailVersion++;
+    }
+
+    // ── The memory store's view (MA5.7) ───────────────────────────
+
+    private void closeTrip(String to, long tick) {
+        if (trail.size() < 2) return;
+        trips.addLast(new Trip(trailFrom, to, tick, simplify(new ArrayList<>(trail))));
+        while (trips.size() > MAX_TRIPS) trips.removeFirst();
+        tripsVersion++;
+    }
+
+    public synchronized List<Trip> trips() {
+        return List.copyOf(trips);
+    }
+
+    /** Versions of places and routes, the trail, and the trips: each changes when that part does. */
+    public synchronized long[] versions() {
+        return new long[] {placesVersion, trailVersion, tripsVersion};
+    }
+
+    public synchronized PlacesState exportPlaces() {
+        return new PlacesState(List.copyOf(places.values()), List.copyOf(routes), nextId);
+    }
+
+    public synchronized TrailState exportTrail() {
+        return new TrailState(List.copyOf(trail), trailFrom);
+    }
+
+    public synchronized void importPlaces(PlacesState s) {
+        if (s == null) return;
+        places.clear();
+        routes.clear();
+        if (s.places() != null) for (Place p : s.places()) if (p != null && p.id() != null && p.at() != null) places.put(p.id(), p);
+        if (s.routes() != null) for (Route r : s.routes()) if (r != null && r.waypoints() != null) routes.add(r);
+        nextId = Math.max(s.nextId(), places.size() + 1);
+    }
+
+    public synchronized void importTrail(TrailState s) {
+        if (s == null) return;
+        trail.clear();
+        if (s.trail() != null) for (Point p : s.trail()) if (p != null) trail.add(p);
+        trailFrom = s.trailFrom();
+        lastRaw = trail.isEmpty() ? null : trail.get(trail.size() - 1);
+        lastDir = null;
+    }
+
+    public synchronized void importTrips(List<Trip> list) {
+        trips.clear();
+        if (list == null) return;
+        for (Trip t : list) if (t != null && t.points() != null) trips.addLast(t);
+        while (trips.size() > MAX_TRIPS) trips.removeFirst();
     }
 
     private static String clean(String s, String fallback) {

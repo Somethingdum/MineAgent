@@ -199,6 +199,18 @@ public final class WorldAssetIndex {
      * meaningful: it invalidates previously remembered contents at that exact
      * container rather than leaving phantom items in memory.
      */
+    /** Told what a chest at a fixed spot held when it was looked into (SMH plan 70, MA5.7's chest memory). */
+    @FunctionalInterface
+    public interface ContainerListener {
+        void looked(Position position, java.util.Map<String, Integer> items, long gameTick);
+    }
+
+    private volatile ContainerListener containerListener;
+
+    public void onContainerLooked(ContainerListener listener) {
+        this.containerListener = listener;
+    }
+
     public synchronized void observeContainer(String containerId, Position position,
                                               Collection<ItemObservation> observed,
                                               boolean durableLocation,
@@ -220,6 +232,18 @@ public final class WorldAssetIndex {
             }
         }
         changed();
+        ContainerListener listener = containerListener;
+        if (listener != null && durableLocation && position != null) {
+            java.util.Map<String, Integer> items = new java.util.LinkedHashMap<>();
+            if (observed != null) {
+                for (ItemObservation item : observed) if (validItem(item)) items.merge(item.resourceId(), item.count(), Integer::sum);
+            }
+            try {
+                listener.looked(position, items, gameTick);
+            } catch (RuntimeException e) {
+                System.err.println("[MineAgent] Chest memory failed: " + e.getMessage());
+            }
+        }
     }
 
     /** Reconcile positioned blocks for one fully scanned observation volume. */

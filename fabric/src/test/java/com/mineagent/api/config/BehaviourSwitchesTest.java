@@ -33,4 +33,14 @@ final class BehaviourSwitchesTest {
         var same = new MineAgentConfig(c.llm(), c.companion(), c.survival(), c.pathfinding());
         assertEquals(MineAgentConfig.BehaviourConfig.DEFAULTS, same.behaviour());
     }
+
+    @Test void memorySizesHaveDefaultsAndStayInRange() throws Exception {
+        Path dir = Files.createTempDirectory("mineagent-config");
+        Files.writeString(dir.resolve("mineagent.json"), "{\"memory\":{\"thingsSeen\":5,\"journalDays\":30}}");
+        MineAgentConfig config = MineAgentConfig.load(dir);
+        assertEquals(1_000, config.memory().thingsSeen());
+        assertEquals(30, config.memory().journalDays());
+        assertEquals(4_096, config.memory().chests());
+        assertEquals(50_000, MineAgentConfig.DEFAULTS.memory().thingsSeen());
+    }
 }

@@ -344,6 +344,11 @@ public class AgentLoop {
     private final OwnerActivity ownerActivity = new OwnerActivity();
     /** Its trail, the places it knows and the routes between them (SMH plan 70, MA5.6). */
     private final com.mineagent.engine.world.PlaceKeeper placeKeeper = new com.mineagent.engine.world.PlaceKeeper();
+    /** The journal of what happened in this world (SMH plan 70, MA5.9). */
+    private final com.mineagent.engine.memory.EventJournal journal = new com.mineagent.engine.memory.EventJournal();
+    /** Chests and what is in them (MA5.7). */
+    private volatile com.mineagent.engine.memory.ChestMemory chests = new com.mineagent.engine.memory.ChestMemory(null,
+            com.mineagent.api.config.MineAgentConfig.MemoryConfig.DEFAULTS.chests());
     private final SkillLibrary skillLib;
     private final DecisionCache decisionCache;
     private final TheoryOfMind theoryOfMind;
@@ -384,6 +389,8 @@ public class AgentLoop {
     /** 记忆持久化：游戏关闭时保存记忆，重启后恢复（解决"失忆"问题）。
      *  可为 null — 当 world data dir 尚未设置时（记忆不持久化，仅内存）。 */
     private final com.mineagent.engine.memory.MemoryPersistence persistence;
+    /** The bigger memory (SMH plan 70, MA5.7): things seen, the chunk map, places, routes, trips, the journal. */
+    private volatile com.mineagent.engine.memory.store.MemoryStore store;
     /** Stateful Responses transport is isolated per companion, never shared by registry singletons. */
     private final AtomicReference<ProviderSessionState> providerTransportState;
     /** Number of durable history messages already represented by a Responses session. */
@@ -499,10 +506,10 @@ public class AgentLoop {
             p.setScorecard(scorecard);
             p.setCurriculum(curriculum);
             p.setGoalBook(goalBook);
-            p.setRouteMemory(placeKeeper.memory());
-            p.setChunkMap(placeKeeper.chunks());
+            p.setRouteMemory(placeKeeper.memory()); // reads an older routes.json once; the store keeps them now
             p.setTacticBook(tacticBook);
             p.loadAll();
+            openStore(memDir.resolve("store"));
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
             // destroys prompt-cache affinity; continue with only new events.
@@ -537,6 +544,7 @@ public class AgentLoop {
             }
         }
         this.persistence = p;
+        listenForMemory();
 
         // The first message is deliberately immutable. Memory-loaded state is
         // attached as a transient tail context per request so provider prompt
@@ -730,6 +738,9 @@ public class AgentLoop {
      * the Andy Omega plan's Lexer); parked, anything else is only talked about; the rest goes to the model.
      */
     public void onOwnerMessage(String message, boolean fromOwner) {
+        int close0 = message.indexOf("]: ");
+        journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
+                + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
         var command = com.mineagent.engine.chat.CommandParser.parse(message, companion.companionName());
         if (command.isPresent() && runCommand(command.get(), fromOwner)) return;
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) {
@@ -1230,6 +1241,9 @@ public class AgentLoop {
             case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK -> {
                 return placeCommand(c, self, fromOwner);
             }
+            case WHERE_SEEN, WHERE_PUT, WHAT_HAPPENED -> {
+                return memoryCommand(c, self);
+            }
             // Stop, stay and follow end guard duty too: otherwise a guard told to stop walks back to its post.
             case STOP -> {
                 haltNow();
@@ -1340,6 +1354,8 @@ public class AgentLoop {
                 var at = ownerNear ? com.mineagent.engine.world.PlaceKeeper.point(owner) : here;
                 boolean home = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.HOME_HERE;
                 var place = memory.name(home ? "home" : "named", home ? "home" : c.value(), at, tick);
+                journal.record("place", (home ? "home is " : "named " + place.name() + " at ") + at.x() + ", " + at.y() + ", " + at.z(),
+                        tick, at.dim(), at.x(), at.y(), at.z());
                 saveMemoryNow();
                 speakToOwner(home
                         ? "Home is here, at " + at.x() + ", " + at.y() + ", " + at.z() + ". Say \"go home\" and I'll take us back."
@@ -1350,7 +1366,13 @@ public class AgentLoop {
                         ? com.mineagent.engine.world.PlaceKeeper.point(owner) : here;
                 var place = memory.find(c.value(), from);
                 if (place.isEmpty()) {
-                    if (!isHomeWord(c.value())) return false;
+                    // Not a place: a chest that holds it, or somewhere it saw it (MA5.7); else the model's.
+                    if (!isHomeWord(c.value())) {
+                        String answer = whereIs(c.value(), from, true, true);
+                        if (answer == null) return false;
+                        speakToOwner(answer);
+                        return true;
+                    }
                     speakToOwner("I don't know where home is yet. Stand there and say \"this is home\".");
                     return true;
                 }
@@ -1397,6 +1419,117 @@ public class AgentLoop {
             }
         }
         return true;
+    }
+
+    /**
+     * "Where did you see diamonds?", "where did you put the iron?", "what did we do yesterday?" (MA5.7, MA5.9),
+     * answered from its memory, never the model's guess.
+     */
+    private boolean memoryCommand(com.mineagent.engine.chat.CommandParser.Command c,
+                                  com.mineagent.engine.entity.CompanionEntity self) {
+        var me = self.serverPlayer();
+        if (me == null) return false;
+        var owner = self.serverPlayerOwner();
+        var from = owner != null && owner.serverLevel() == me.serverLevel()
+                ? com.mineagent.engine.world.PlaceKeeper.point(owner) : com.mineagent.engine.world.PlaceKeeper.point(me);
+        switch (c.kind()) {
+            case WHERE_SEEN -> {
+                String answer = whereIs(c.value(), from, false, true);
+                speakToOwner(answer != null ? answer : "I haven't seen any " + plainWords(c.value()) + " yet.");
+            }
+            case WHERE_PUT -> {
+                String answer = whereIs(c.value(), from, true, false);
+                if (answer == null) {
+                    var stored = journal.search(com.mineagent.engine.memory.Sightings.fromWords(c.value()).replace('_', ' '), "stored", 1);
+                    answer = stored.isEmpty() ? "I don't know of any " + plainWords(c.value()) + " in a chest."
+                            : "Last I noted: " + stored.get(0).text() + ".";
+                }
+                speakToOwner(answer);
+            }
+            case WHAT_HAPPENED -> speakToOwner(whatHappened(c.value()));
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String plainWords(String words) {
+        return words == null ? "" : words.strip().replaceFirst("^(?:the|my|our|some|any) ", "");
+    }
+
+    /** Where something is: chests holding it, then where it was seen; null when it knows of neither. */
+    private String whereIs(String words, com.mineagent.engine.world.RouteMemory.Point from, boolean inChests, boolean seen) {
+        if (from == null) return null;
+        String what = com.mineagent.engine.memory.Sightings.fromWords(words);
+        if (what.isEmpty()) return null;
+        String name = what.replace('_', ' ');
+        StringBuilder sb = new StringBuilder();
+        if (inChests) {
+            var held = chests.holding(words, from.dim(), from.x(), from.y(), from.z(), 3);
+            for (var h : held) {
+                var cp = new com.mineagent.engine.world.RouteMemory.Point(h.chest().dim(), h.chest().x(), h.chest().y(), h.chest().z());
+                if (sb.length() > 0) sb.append(" ");
+                sb.append(h.count()).append(" ").append(h.item().replace('_', ' ')).append(" in the chest ")
+                        .append(com.mineagent.engine.world.PlaceKeeper.whereFrom(from, cp));
+            }
+        }
+        if (seen && sb.length() == 0) {
+            long now = currentGameTickSafe();
+            var found = placeKeeper.sightings().nearest(what, from.dim(), from.x(), from.y(), from.z(), 3, 30_000);
+            for (var f : found) {
+                var s = f.sighting();
+                var sp = new com.mineagent.engine.world.RouteMemory.Point(s.dim(), s.x(), s.y(), s.z());
+                if (sb.length() > 0) sb.append(" Also ");
+                else sb.append("I saw ");
+                sb.append(s.count() > 1 ? s.count() + " " : "").append(name)
+                        .append(s.kind() == com.mineagent.engine.memory.Sightings.Kind.ORE ? " ore" : "")
+                        .append(" ").append(ago(now - s.last())).append(", ")
+                        .append(com.mineagent.engine.world.PlaceKeeper.whereFrom(from, sp));
+            }
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    /** "just now", "12 minutes ago", "3 hours ago", "2 days ago", in the game's time. */
+    static String ago(long ticks) {
+        long minutes = Math.max(0, ticks) / 1200L;
+        if (minutes < 1) return "just now";
+        if (minutes < 60) return minutes + (minutes == 1 ? " minute ago" : " minutes ago");
+        long hours = minutes / 60;
+        if (hours < 24) return hours + (hours == 1 ? " hour ago" : " hours ago");
+        long days = hours / 24;
+        return days + (days == 1 ? " day ago" : " days ago");
+    }
+
+    /** From the journal: today, yesterday, or since its owner left or went AFK. */
+    private String whatHappened(String when) {
+        var today = java.time.LocalDate.now();
+        if ("yesterday".equals(when)) return journal.describe(today.minusDays(1), "Yesterday");
+        if ("today".equals(when)) return journal.describe(today, "Today");
+        var recent = journal.recent(200);
+        int since = -1;
+        for (int i = recent.size() - 1; i >= 0; i--) {
+            String k = recent.get(i).kind();
+            if ("left".equals(k) || "afk".equals(k)) {
+                since = i;
+                break;
+            }
+        }
+        if (since < 0) return journal.describe(today, "Today");
+        java.util.Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        for (var e : recent.subList(since + 1, recent.size())) {
+            if ("said".equals(e.kind()) || "back".equals(e.kind())) continue;
+            counts.merge(e.kind(), 1, Integer::sum);
+            if (java.util.List.of("death", "find", "fight", "stored", "took", "goal", "place").contains(e.kind())) lines.add(e.text());
+        }
+        if (counts.isEmpty()) return "While you were away: all quiet.";
+        StringBuilder sb = new StringBuilder("While you were away: ");
+        sb.append(String.join("; ", lines.subList(Math.max(0, lines.size() - 6), lines.size())));
+        if (lines.isEmpty()) sb.append(counts.entrySet().stream().map(e -> e.getValue() + " " + e.getKey())
+                .collect(java.util.stream.Collectors.joining(", ")));
+        return sb.append('.').toString();
     }
 
     /** A trip by the goto task, through waypoints first; done early in the open when {@code stopInOpen}. */
@@ -1517,6 +1650,7 @@ public class AgentLoop {
 
     /** Add a goal to the book (the owner or a trusted player): started now if none is active. What to say back. */
     public String addGoal(String text, String setBy) {
+        journal.record("goal", "new goal (" + setBy + "): " + text, currentGameTickSafe());
         com.mineagent.engine.planning.GoalBook.Goal g;
         try {
             g = goalBook.add(text, setBy, currentGameTickSafe(), AgentLoop::isItemId);
@@ -1575,6 +1709,7 @@ public class AgentLoop {
         boolean wasActive = goalBook.active().map(g -> g.id().equalsIgnoreCase(id)).orElse(false);
         if (goalBook.get(id).isEmpty()) return "No goal " + id + ".";
         var next = goalBook.markDone(id);
+        journal.record("goal", "goal " + id + " marked done", currentGameTickSafe());
         saveMemoryNow();
         if (!wasActive) return "Marked " + id + " done.";
         haltNow();
@@ -1673,6 +1808,7 @@ public class AgentLoop {
         var g = now.get();
         if (step.isPresent() && step.get().done()) {
             var next = goalBook.complete();
+            journal.record("goal", "finished goal " + g.id() + ": " + truncateForLog(g.text(), 120), currentGameTickSafe());
             saveMemoryNow();
             speakToOwner("Goal " + g.id() + " done: " + truncateForLog(g.text(), 120) + "."
                     + next.map(n -> " Next up, " + n.id() + ": " + truncateForLog(n.text(), 100) + ".").orElse(""));
@@ -1983,6 +2119,8 @@ public class AgentLoop {
             var source = body.getLastDamageSource();
             String type = source == null ? "" : source.typeHolder().unwrapKey().map(k -> k.location().toString()).orElse("");
             var pos = body.blockPosition();
+            journal.record("death", cause + " at " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), tick,
+                    body.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
             if (goalBook.active().isPresent()) {
                 goalBook.milestone(com.mineagent.engine.learning.DeathNote.note(cause, pos.getX(), pos.getY(), pos.getZ()), tick);
             }
@@ -2106,7 +2244,13 @@ public class AgentLoop {
     }
 
     /** The one line it says when its owner is back in the world: where it stands and what it carries on with. */
+    /** The owner left the game: noted, so "what happened while I was away" starts here. */
+    public void noteLeaving() {
+        journal.record("left", "you left the game", currentGameTickSafe());
+    }
+
     public void sayBack() {
+        journal.record("back", "you came back into the game", currentGameTickSafe());
         StringBuilder line = new StringBuilder("Back. ");
         var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
         if (self != null) {
@@ -2192,6 +2336,8 @@ public class AgentLoop {
             if (gameTick % 20L == 0L) noteHostiles(player);
             doorKeeper.tick(player, gameTick);
             if (com.mineagent.engine.settings.Switches.routeMemory()) placeKeeper.tick(player, gameTick).ifPresent(place -> {
+                journal.record("find", "found " + aOrAn(place.kind()) + " (" + place.name() + ") at " + place.at().x() + ", "
+                        + place.at().y() + ", " + place.at().z(), gameTick, place.at().dim(), place.at().x(), place.at().y(), place.at().z());
                 speakToOwner("Found " + aOrAn(place.kind()) + ". I'll remember it as " + place.name() + ".");
                 saveMemoryNow();
             });
@@ -2568,6 +2714,11 @@ public class AgentLoop {
     /** The fight ended: won, broken off, or lost; rated and kept, with a lesson when it went badly. */
     public void fightEnded(com.mineagent.engine.learning.Scorecard.Outcome outcome) {
         if (!fightEpisode.active()) return;
+        journal.record("fight", switch (outcome) {
+            case DONE -> "won a fight";
+            case RETREATED -> "got away from a fight";
+            default -> "a fight ended: " + outcome.name().toLowerCase(java.util.Locale.ROOT);
+        }, currentGameTickSafe());
         if (outcome == com.mineagent.engine.learning.Scorecard.Outcome.DONE) ownerActivity.wonFight();
         var episode = fightEpisode.end(outcome, currentGameTickSafe());
         double score = scorecard.record(episode, currentGameTickSafe());
@@ -2628,6 +2779,68 @@ public class AgentLoop {
     /** Save this companion's memory and library now, on this thread (the game tests; shutdown saves the same way). */
     public void saveMemoryBlocking() {
         if (persistence != null) persistence.saveAll();
+        var s = store;
+        if (s != null) s.flushBlocking();
+    }
+
+    /**
+     * Open the bigger memory beside the memory files (MA5.7), put back any changes a crash left only in its journal,
+     * write every minute from its own thread, and report what it holds: counts and sizes, never what is in it.
+     */
+    private void openStore(java.nio.file.Path dir) {
+        try {
+            var s = new com.mineagent.engine.memory.store.MemoryStore(dir);
+            placeKeeper.attachStore(s, com.mineagent.engine.settings.Switches.memory().thingsSeen());
+            journal.attach(s, com.mineagent.engine.settings.Switches.memory().journalDays());
+            chests = new com.mineagent.engine.memory.ChestMemory(s, com.mineagent.engine.settings.Switches.memory().chests());
+            int replayed = s.replayJournals();
+            s.startAutoFlush(60);
+            store = s;
+            var r = s.report();
+            System.out.println("[MineAgent] Memory for " + companion.companionName() + ": " + r.counts() + "; " + r.files()
+                    + " files, " + (r.bytesOnDisk() / 1024) + " KB on disk"
+                    + (replayed > 0 ? "; " + replayed + " changes put back from the journal" : "")
+                    + (r.recovered() > 0 ? "; " + r.recovered() + " files put back from their last good copy" : "")
+                    + (r.quarantined() > 0 ? "; " + r.quarantined() + " damaged files set aside" : ""));
+        } catch (java.io.IOException | RuntimeException e) {
+            System.err.println("[MineAgent] Memory store could not open: " + e.getMessage());
+        }
+    }
+
+    /** Chests it looks in go into its chest memory; a rare find into its journal (MA5.7, MA5.9). */
+    private void listenForMemory() {
+        worldAssetIndex.onContainerLooked((pos, items, tick) -> {
+            var before = chests.looked(pos.dimension(), pos.x(), pos.y(), pos.z(), items, tick);
+            StringBuilder change = new StringBuilder();
+            for (var e : before.entrySet()) {
+                if (e.getValue() == 0) continue;
+                if (change.length() > 0) change.append(", ");
+                change.append(e.getValue() > 0 ? "+" : "").append(e.getValue()).append(' ').append(e.getKey().replace('_', ' '));
+            }
+            if (change.length() > 0) {
+                boolean in = before.values().stream().anyMatch(v -> v > 0);
+                journal.record(in ? "stored" : "took", "the chest at " + pos.x() + ", " + pos.y() + ", " + pos.z() + ": " + change,
+                        tick, pos.dimension(), pos.x(), pos.y(), pos.z());
+            }
+        });
+        placeKeeper.onRareSight(seen -> journal.record("find", "saw " + seen.what().replace('_', ' ')
+                + (seen.kind() == com.mineagent.engine.memory.Sightings.Kind.ORE ? " ore" : "") + " at "
+                + seen.x() + ", " + seen.y() + ", " + seen.z(), seen.last(), seen.dim(), seen.x(), seen.y(), seen.z()));
+    }
+
+    /** The journal (the game tests). */
+    public com.mineagent.engine.memory.EventJournal journal() {
+        return journal;
+    }
+
+    /** Chests it has looked in (the game tests). */
+    public com.mineagent.engine.memory.ChestMemory chestMemory() {
+        return chests;
+    }
+
+    /** The memory store, or null without a world folder (the game tests). */
+    public com.mineagent.engine.memory.store.MemoryStore memoryStore() {
+        return store;
     }
 
     /** This companion's memory folder in the world (null without a world), and its permanent library folder. */
@@ -2641,6 +2854,8 @@ public class AgentLoop {
 
     /** Save this companion's memory and library now, off the server thread (the settings panel's changes). */
     public void saveMemoryNow() {
+        var s = store;
+        if (s != null && !closed) s.flush();
         if (persistence == null || closed) return;
         try {
             // A save queued before the companion went (despawned, its memory perhaps deleted) is dropped.
@@ -2708,8 +2923,10 @@ public class AgentLoop {
         long now = net.minecraft.Util.getMillis();
         var change = ownerActivity.update(now, owner.getLastActionTime(), com.mineagent.engine.settings.Switches.afkAfterMillis());
         if (change == OwnerActivity.Change.CAME_BACK) {
+            journal.record("back", "you came back to the keys", currentGameTickSafe());
             speakToOwner(ownerActivity.welcomeBack(now));
         } else if (change == OwnerActivity.Change.WENT_AFK) {
+            journal.record("afk", "you went AFK", currentGameTickSafe());
             onBodyLog("[AFK] the owner is away from the keys; guarding them while they're exposed");
         }
     }
@@ -4307,6 +4524,7 @@ public class AgentLoop {
     }
 
     private void speakToOwner(String text) {
+        journal.record("said", text, currentGameTickSafe());
         Services.platform().scheduleOnServer(() -> {
             try {
                 var owner = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayerOwner();
@@ -5402,6 +5620,7 @@ public class AgentLoop {
         // global importance. This prevents unrelated old POIs from crowding
         // out a remembered facility or resource needed by the current goal.
         sb.append(compactPlaceMemory(memoryQuery, 3));
+        sb.append(thingsSeenForPrompt(memoryQuery, 4));
         // Skills: only count, not full list
         if (skillLib.size() > 0) {
             sb.append("已掌握技能: ").append(skillLib.size()).append("个\n");
@@ -5546,6 +5765,43 @@ public class AgentLoop {
     }
 
     /** Compact place memory: only the N most recent unique subjects. */
+    /**
+     * What it has seen and what its chests hold that the objective names (MA5.7): a lookup, a few lines at most, so a
+     * bigger memory adds nothing to the prompt that isn't asked for.
+     */
+    private String thingsSeenForPrompt(String query, int max) {
+        if (query == null || query.isBlank()) return "";
+        var me = TaskContext.serverPlayer(companion);
+        if (me == null) return "";
+        String dim = me.serverLevel().dimension().location().toString();
+        var at = me.blockPosition();
+        StringBuilder sb = new StringBuilder();
+        java.util.Set<String> asked = new java.util.LinkedHashSet<>();
+        for (String w : query.toLowerCase(java.util.Locale.ROOT).split("[^a-z_]+")) {
+            if (w.length() < 3) continue;
+            String what = com.mineagent.engine.memory.Sightings.fromWords(w);
+            if (!what.isEmpty() && placeKeeper.sightings().known(what)) asked.add(what);
+        }
+        int lines = 0;
+        for (String what : asked) {
+            if (lines >= max) break;
+            for (var f : placeKeeper.sightings().nearest(what, dim, at.getX(), at.getY(), at.getZ(), 2, 3000)) {
+                var s = f.sighting();
+                sb.append("- seen ").append(s.what()).append(s.kind() == com.mineagent.engine.memory.Sightings.Kind.ORE ? " ore" : "")
+                        .append(" at (").append(s.x()).append(",").append(s.y()).append(",").append(s.z()).append("), ")
+                        .append(Math.round(f.distance())).append(" blocks away\n");
+                lines++;
+            }
+            for (var h : chests.holding(what, dim, at.getX(), at.getY(), at.getZ(), 1)) {
+                var c = h.chest();
+                sb.append("- ").append(h.count()).append(" ").append(what).append(" in the chest at (").append(c.x()).append(",")
+                        .append(c.y()).append(",").append(c.z()).append(")\n");
+                lines++;
+            }
+        }
+        return sb.length() == 0 ? "" : "Things seen and in chests:\n" + sb;
+    }
+
     private String compactPlaceMemory(String query, int max) {
         var summary = placeMemory.summarizeForPrompt(query, max);
         if (summary == null || summary.isBlank() || summary.startsWith("（暂无")) {
@@ -5621,6 +5877,10 @@ public class AgentLoop {
             // once more after termination so that last complete dialogue and
             // its resulting memories are not lost across a normal restart.
             if (persistence != null) persistence.saveAll();
+            // The bigger memory: written out and closed, its journal emptied (MA5.7).
+            journal.close();
+            var s = store;
+            if (s != null) s.close();
         }
     }
 }

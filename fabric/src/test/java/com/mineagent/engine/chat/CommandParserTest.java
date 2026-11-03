@@ -107,4 +107,20 @@ final class CommandParserTest {
         assertEquals("RESUME", parsed("go on"));
         assertEquals("-", parsed("go mine some iron"));
     }
+
+    @Test void questionsForItsMemoryAreUnderstood() {
+        assertEquals("WHERE_SEEN:diamonds", parsed("where did you see diamonds?"));
+        assertEquals("WHERE_SEEN:iron", parsed("Steve, have you seen any iron"));
+        assertEquals("WHERE_SEEN:cows", parsed("where can I find cows"));
+        assertEquals("WHERE_PUT:the iron", parsed("where did you put the iron?"));
+        assertEquals("WHERE_PUT:my diamonds", parsed("where'd you put my diamonds"));
+        assertEquals("WHAT_HAPPENED:today", parsed("what did we do today?"));
+        assertEquals("WHAT_HAPPENED:today", parsed("what happened"));
+        assertEquals("WHAT_HAPPENED:yesterday", parsed("what did you do yesterday"));
+        assertEquals("WHAT_HAPPENED:away", parsed("what happened while I was away?"));
+        assertEquals("WHAT_HAPPENED:away", parsed("what did I miss"));
+        // Not these: what it is doing now, and a place.
+        assertEquals("STATUS", parsed("what are you doing?"));
+        assertEquals("WHERE_PLACE:the village", parsed("where's the village"));
+    }
 }

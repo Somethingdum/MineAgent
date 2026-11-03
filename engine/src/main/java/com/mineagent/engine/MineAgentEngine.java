@@ -315,6 +315,26 @@ public final class MineAgentEngine {
      * {@code PlayerList#saveAll}, which runs at every autosave and at shutdown. So after a crash the companions and the
      * world come back from the same moment: nothing it put in a chest is in two places, or in none.
      */
+    /**
+     * A block was destroyed (any player, explosion, the companion): a companion that remembered it as ore or a
+     * notable block strikes it off, and forgets a chest that was there (SMH plan 70, MA5.7).
+     */
+    public static void onBlockGone(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos,
+                                   net.minecraft.world.level.block.state.BlockState old) {
+        if (level == null || pos == null || old == null) return;
+        String dim = level.dimension().location().toString();
+        for (CompanionState state : List.copyOf(COMPANIONS.values())) {
+            try {
+                var sp = state.companion.serverPlayer();
+                if (sp == null || sp.serverLevel() != level) continue;
+                com.mineagent.engine.world.SightRecorder.broken(state.loop.placeKeeper().sightings(), dim, pos, old);
+                if (old.hasBlockEntity()) state.loop.chestMemory().gone(dim, pos.getX(), pos.getY(), pos.getZ());
+            } catch (RuntimeException ignored) {
+                // Remembering is a courtesy.
+            }
+        }
+    }
+
     public static void persistAllCompanions() {
         if (!com.mineagent.engine.settings.Switches.saveWithWorld()) return;
         for (CompanionState state : List.copyOf(COMPANIONS.values())) {
@@ -889,7 +909,7 @@ public final class MineAgentEngine {
                 resolvedProvider, resolvedKey, resolvedModel, resolvedBaseUrl,
                 temperature, previous.maxTokens());
         config = new MineAgentConfig(llm, config.companion(),
-                config.survival(), config.pathfinding(), config.behaviour());
+                config.survival(), config.pathfinding(), config.behaviour(), config.memory());
         if (configDirPath != null && !config.save(configDirPath)) {
             owner.sendSystemMessage(Component.literal(
                     "[MineAgent] Companion created, but the connection settings "
@@ -2107,6 +2127,12 @@ public final class MineAgentEngine {
             for (UUID companionId : companionIds) {
                 Optional<CompanionState> stateOpt = getCompanion(companionId);
                 if (stateOpt.isPresent()) {
+                    // "What happened while I was away" starts here (SMH plan 70, MA5.9).
+                    try {
+                        stateOpt.get().loop.noteLeaving();
+                    } catch (RuntimeException ignored) {
+                        // The journal is a courtesy.
+                    }
                     // Save the companion state to disk before despawning
                     persistCompanion(stateOpt.get());
                     // Its stats (the rest timer phantoms go by) and advancements, as the game saves a player's
@@ -2779,7 +2805,7 @@ public final class MineAgentEngine {
                                     return 0;
                                 }
 
-                                config = new MineAgentConfig(llm, comp, config.survival(), config.pathfinding(), config.behaviour());
+                                config = new MineAgentConfig(llm, comp, config.survival(), config.pathfinding(), config.behaviour(), config.memory());
                                 if (configDirPath != null) config.save(configDirPath);
 
                                 // API keys arrive through a command packet, but must

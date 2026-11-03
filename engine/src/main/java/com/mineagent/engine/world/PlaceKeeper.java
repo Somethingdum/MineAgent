@@ -28,7 +28,11 @@ public final class PlaceKeeper {
     static final int COVER = 2;
 
     private final RouteMemory memory = new RouteMemory();
-    private final ChunkSummaries chunks = new ChunkSummaries();
+    private volatile ChunkSummaries chunks = new ChunkSummaries();
+    private volatile com.mineagent.engine.memory.Sightings sightings =
+            new com.mineagent.engine.memory.Sightings(null, com.mineagent.engine.memory.Sightings.DEFAULT_MAX);
+    private volatile com.mineagent.engine.memory.store.MemoryStore store;
+    private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
     private long lastLook = Long.MIN_VALUE;
     private long lastSurvey = Long.MIN_VALUE;
     /** How often it notes the chunks around it, in ticks, and how far (in chunks). */
@@ -42,6 +46,69 @@ public final class PlaceKeeper {
     /** What it has seen of the chunks it has been near (SMH plan 70, MA5.10): long trips are planned over it. */
     public ChunkSummaries chunks() {
         return chunks;
+    }
+
+    private volatile java.util.function.Consumer<com.mineagent.engine.memory.Sightings.Sighting> rareSight;
+
+    /** Told of a rare first sighting (diamond, a spawner, a portal), for the journal. */
+    public void onRareSight(java.util.function.Consumer<com.mineagent.engine.memory.Sightings.Sighting> listener) {
+        this.rareSight = listener;
+    }
+
+    /** Things it has seen (MA5.7). */
+    public com.mineagent.engine.memory.Sightings sightings() {
+        return sightings;
+    }
+
+    /**
+     * Keep all of this in the memory store (MA5.7): the chunk map and things seen by region, places, routes, the trail
+     * and the last trips as their own files, each written only when it changed. Places and routes already loaded from
+     * an older memory file stay if the store has none yet, and are written to it at its next write.
+     */
+    public synchronized void attachStore(com.mineagent.engine.memory.store.MemoryStore store, int thingsSeen) {
+        this.store = store;
+        this.chunks = new ChunkSummaries(store);
+        this.sightings = new com.mineagent.engine.memory.Sightings(store, thingsSeen);
+        store.read("routes/places.gz", "places").ifPresent(b ->
+                memory.importPlaces(GSON.fromJson(b, RouteMemory.PlacesState.class)));
+        store.read("routes/trail.gz", "trail").ifPresent(b ->
+                memory.importTrail(GSON.fromJson(b, RouteMemory.TrailState.class)));
+        store.read("routes/trips.gz", "trips").ifPresent(b -> memory.importTrips(GSON.fromJson(b,
+                new com.google.gson.reflect.TypeToken<java.util.List<RouteMemory.Trip>>() {}.getType())));
+        store.register(new RouteTable(memory));
+    }
+
+    /** Route memory as a store table: three files, each written when its part changed. */
+    static final class RouteTable implements com.mineagent.engine.memory.store.MemoryStore.Table {
+        private final RouteMemory memory;
+        private long[] written;
+
+        RouteTable(RouteMemory memory) {
+            this.memory = memory;
+            this.written = memory.versions();
+            // Loaded from an older memory file and not in the store yet: written at the first write.
+            if (!memory.places().isEmpty()) written = new long[] {-1, -1, -1};
+        }
+
+        @Override public String name() { return "routes"; }
+
+        @Override public void replay(String op, String json) { }
+
+        @Override
+        public synchronized java.util.Map<String, com.mineagent.engine.memory.store.MemoryStore.Segment> takeDirty() {
+            long[] now = memory.versions();
+            var out = new java.util.LinkedHashMap<String, com.mineagent.engine.memory.store.MemoryStore.Segment>();
+            if (now[0] != written[0]) out.put("routes/places.gz", new com.mineagent.engine.memory.store.MemoryStore.Segment(
+                    "places", 1, GSON.toJson(memory.exportPlaces())));
+            if (now[1] != written[1]) out.put("routes/trail.gz", new com.mineagent.engine.memory.store.MemoryStore.Segment(
+                    "trail", 1, GSON.toJson(memory.exportTrail())));
+            if (now[2] != written[2]) out.put("routes/trips.gz", new com.mineagent.engine.memory.store.MemoryStore.Segment(
+                    "trips", 1, GSON.toJson(memory.trips())));
+            written = now;
+            return out;
+        }
+
+        @Override public long count() { return memory.places().size(); }
     }
 
     /** Where a player stands, as route memory keeps it. */
@@ -65,6 +132,7 @@ public final class PlaceKeeper {
         if (gameTick % RECORD_EVERY == 0) {
             memory.walked(point(sp), underground(sp.serverLevel(), sp.blockPosition()), gameTick);
         }
+        SightRecorder.tick(sp, sightings, gameTick, rareSight);
         if (gameTick - lastSurvey >= SURVEY_EVERY) {
             lastSurvey = gameTick;
             try {

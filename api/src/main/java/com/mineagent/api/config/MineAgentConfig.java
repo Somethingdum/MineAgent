@@ -11,12 +11,29 @@ public record MineAgentConfig(
     CompanionConfig companion,
     SurvivalConfig survival,
     PathfindingConfig pathfinding,
-    BehaviourConfig behaviour
+    BehaviourConfig behaviour,
+    MemoryConfig memory
 ) {
     /** The four sections a file from before the behaviour switches has; the switches take their defaults. */
     public MineAgentConfig(LLMConfig llm, CompanionConfig companion, SurvivalConfig survival,
                            PathfindingConfig pathfinding) {
-        this(llm, companion, survival, pathfinding, BehaviourConfig.DEFAULTS);
+        this(llm, companion, survival, pathfinding, BehaviourConfig.DEFAULTS, MemoryConfig.DEFAULTS);
+    }
+
+    public MineAgentConfig(LLMConfig llm, CompanionConfig companion, SurvivalConfig survival,
+                           PathfindingConfig pathfinding, BehaviourConfig behaviour) {
+        this(llm, companion, survival, pathfinding, behaviour, MemoryConfig.DEFAULTS);
+    }
+
+    /**
+     * How much it remembers (SMH plan 70, MA5.7).
+     *
+     * @param thingsSeen  sightings kept (ore, animals, mobs, notable blocks, structures, dangers), 1,000 to 500,000
+     * @param journalDays days the journal keeps in full; a summary of each day is kept for good (1 to 3,650)
+     * @param chests      chests and what is in them, 64 to 16,384
+     */
+    public record MemoryConfig(int thingsSeen, int journalDays, int chests) {
+        public static final MemoryConfig DEFAULTS = new MemoryConfig(50_000, 90, 4_096);
     }
 
     public record LLMConfig(
@@ -123,7 +140,7 @@ public record MineAgentConfig(
 
     public static final MineAgentConfig DEFAULTS = new MineAgentConfig(
         LLMConfig.DEFAULTS, CompanionConfig.DEFAULTS,
-        SurvivalConfig.DEFAULTS, PathfindingConfig.DEFAULTS, BehaviourConfig.DEFAULTS
+        SurvivalConfig.DEFAULTS, PathfindingConfig.DEFAULTS, BehaviourConfig.DEFAULTS, MemoryConfig.DEFAULTS
     );
 
     private static final Gson GSON = new GsonBuilder()
@@ -219,7 +236,10 @@ public record MineAgentConfig(
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips);
-        return new MineAgentConfig(llm, companion, survival, pathfinding, behaviour);
+        MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
+        MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
+                clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));
+        return new MineAgentConfig(llm, companion, survival, pathfinding, behaviour, memory);
     }
 
     private static String nonNull(String value) {
