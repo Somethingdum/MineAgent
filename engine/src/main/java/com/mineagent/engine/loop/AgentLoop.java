@@ -2492,6 +2492,7 @@ public class AgentLoop {
             measureEpisodes(player, goalVerified, gameTick);
             practice(player, goalVerified, gameTick);
             if (gameTick % 20L == 0L) orderHeartbeat(player);
+            if (gameTick % 100L == 0L) nightCare(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3295,6 +3296,63 @@ public class AgentLoop {
         if (count < 0) return words;
         return count == 0 ? "fill the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ() + " with " + what
                 : "put " + count + " " + what + " in the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ();
+    }
+
+    /** It is running an owner's order now (a task of one, or its goal active). */
+    public boolean busyWithOrder() {
+        LiveBodyState body = liveBodyState.get();
+        boolean task = body != null && body.taskId() != null;
+        return task && (orderGoalId != null || goalBook.active().isPresent());
+    }
+
+    /** The night it last sheltered for, and the day it last tried to make a bed (MA8.3). */
+    private long shelteredNight = -1, bedTriedDay = -1;
+
+    /**
+     * Night with its owner away and no bed (MA8.3): an emergency shelter until morning (two down or walled in, as the
+     * AFK shelter), once a night, when it is out under the sky and has nothing to do. By day, with no bed, it makes one
+     * as soon as it has what it takes here (a bed of the wool it carries or sheep in sight), once a day.
+     */
+    private void nightCare(net.minecraft.server.level.ServerPlayer player) {
+        if (player == null || !com.mineagent.engine.settings.Switches.sleepWhenAway() || !ownerActivity.afk()) return;
+        var level = player.serverLevel();
+        if (!level.dimensionType().bedWorks()) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding()) return;
+        long day = level.getDayTime() / 24_000L;
+        boolean hasBed = false;
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).getItem() instanceof net.minecraft.world.item.BedItem) hasBed = true;
+        if (!hasBed) {
+            var at = player.blockPosition();
+            for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-24, -4, -24), at.offset(24, 4, 24))) {
+                if (level.getBlockState(p).getBlock() instanceof net.minecraft.world.level.block.BedBlock) {
+                    hasBed = true;
+                    break;
+                }
+            }
+        }
+        if (!level.isDay()) {
+            if (hasBed || shelteredNight == day || !level.canSeeSky(player.blockPosition().above())) return;
+            shelteredNight = day;
+            journal.record("night", "no bed: sheltering until morning", currentGameTickSafe());
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                    new com.mineagent.engine.task.ShelterTask.ShelterRecord("night-" + UUID.randomUUID(), true), reply -> { });
+            return;
+        }
+        if (hasBed || bedTriedDay == day) return;
+        bedTriedDay = day;
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(player);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(player, this, null);
+        for (String bed : com.mineagent.engine.planning.production.GameKnowledge.family("any:bed")) {
+            var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, bed, 1,
+                    java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN));
+            if (!plan.possible()) continue;
+            journal.record("night", "making a bed for the nights", currentGameTickSafe());
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                    "bed-" + UUID.randomUUID(), bed, 1, null, false, true), reply -> { });
+            return;
+        }
     }
 
     /** "What's next": the goals after this one, from its goal book. */

@@ -71,6 +71,7 @@ public final class SleepChain implements TaskChain {
             if (sp == null || !sp.isAlive()) return Float.NEGATIVE_INFINITY;
             if (sp.isSleeping()) return PRIORITY;
             if (com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp)) return PRIORITY;
+            if (alone(sp, companion)) return PRIORITY;
             if (placedBed != null && sp.serverLevel().isDay() && placedBed.closerThan(sp.blockPosition(), 16)) {
                 return PICK_UP_PRIORITY;
             }
@@ -78,6 +79,20 @@ public final class SleepChain implements TaskChain {
         } catch (Exception error) {
             return Float.NEGATIVE_INFINITY;
         }
+    }
+
+    /**
+     * Night, its owner away, nothing asked of it (MA8.3): it sleeps every night it can, so phantoms don't come for it
+     * and its spawn is its bed. Not while it works on an order: underground work at night goes on while nobody waits.
+     */
+    static boolean alone(ServerPlayer sp, AgentPlayer companion) {
+        if (!com.mineagent.engine.settings.Switches.sleepWhenAway()) return false;
+        ServerLevel level = sp.serverLevel();
+        if (!level.dimensionType().bedWorks() || level.isDay()) return false;
+        var loop = com.mineagent.engine.task.TaskContext.agentLoop(companion);
+        if (loop == null || !loop.ownerAfk() || loop.busyWithOrder()) return false;
+        if (level.getDayTime() % 24_000L < 12_542L) return false; // beds take it from dusk
+        return true;
     }
 
     /** Someone else in its world is in bed at a time beds work, so the night waits on it. */
@@ -98,7 +113,7 @@ public final class SleepChain implements TaskChain {
     public void tick(AgentPlayer companion) {
         ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
         try {
-            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp);
+            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp) || alone(sp, companion);
             if (sp.isSleeping()) {
                 if (!want) sp.stopSleepInBed(true, true); // everyone else is up (or the switch is off): it gets up too
                 return;

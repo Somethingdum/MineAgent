@@ -35,7 +35,8 @@ public class AgentSettingsScreen extends Screen {
             {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"},
             {"afkFarmLeftAlone", "Leave my AFK farm"}, {"afkKeepBusy", "Keep busy when I'm AFK"},
             {"huntForOrders", "Hunt for orders"}, {"oreSightOnly", "Only ore it has seen"},
-            {"readyCheck", "Ready before trips"}, {"sparePickaxe", "Spare pickaxe"}, {"escapeLavaFire", "Out of lava and fire"}};
+            {"readyCheck", "Ready before trips"}, {"sparePickaxe", "Spare pickaxe"}, {"escapeLavaFire", "Out of lava and fire"},
+            {"sleepWhenAway", "Sleep nights when I'm away"}};
     private static final int[] READY_FOOD = {2, 4, 8, 16, 32};
     private static final int[] READY_TORCHES = {4, 8, 16, 32, 64};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};

@@ -29,8 +29,16 @@ import java.util.Set;
  */
 public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     public static final class ShelterRecord extends TaskRecord {
+        /** Night, its owner away and no bed (MA8.3): walled in until morning, not until they're back. */
+        public final boolean untilMorning;
+
         public ShelterRecord(String toolCallId) {
+            this(toolCallId, false);
+        }
+
+        public ShelterRecord(String toolCallId, boolean untilMorning) {
             super(toolCallId);
+            this.untilMorning = untilMorning;
         }
     }
 
@@ -123,7 +131,7 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     protected TaskState onTick() {
         ServerPlayer sp = TaskContext.serverPlayer(player);
         var loop = TaskContext.agentLoop(player);
-        boolean stay = loop != null && loop.afkSheltering();
+        boolean stay = record.untilMorning ? !sp.serverLevel().isDay() : loop != null && loop.afkSheltering();
         if (!stay && phase != Phase.OPEN) {
             AfkFarms.clear(sp.getUUID());
             breaking = null;

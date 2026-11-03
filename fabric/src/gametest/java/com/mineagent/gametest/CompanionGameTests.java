@@ -2226,7 +2226,9 @@ public class CompanionGameTests implements FabricGameTest {
                 return;
             }
             var inv = c.serverPlayer().getInventory();
-            if (rejoined[0] && inv.countItem(Items.STICK) >= 8 && inv.countItem(Items.CRAFTING_TABLE) >= 1) {
+            // All three made, and the last goal marked done (the heartbeat that does it runs once a second).
+            if (rejoined[0] && inv.countItem(Items.STICK) >= 8 && inv.countItem(Items.CRAFTING_TABLE) >= 1
+                    && (loop.goalBook().active().isEmpty() || helper.getTick() >= 1400)) {
                 boolean allDone = loop.goalBook().active().isEmpty();
                 String how = "got it: " + got + "; next: " + next[0] + "; all done " + allDone;
                 MineAgentEngine.despawnCompanion(c.companionId(), true);
@@ -2436,6 +2438,66 @@ public class CompanionGameTests implements FabricGameTest {
             tidy(s);
             if (away) helper.succeed();
             else fail(helper, "it stayed among them: " + how);
+        });
+    }
+
+    /** Plan 70, MA8.3: night, its owner away, a bed in its pack: it puts the bed down and sleeps. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_night_bed", timeoutTicks = 400)
+    public void nightWithABedItSleeps(GameTestHelper helper) {
+        Scene s = scene(helper, "Sleeper");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(4, new ItemStack(Items.WHITE_BED));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(10, () -> helper.getLevel().setDayTime(13_000));
+        helper.onEachTick(() -> {
+            trace(helper, s, "night bed");
+            if (s.body().isSleeping()) {
+                helper.getLevel().setDayTime(1_000);
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 380) {
+                String how = "not asleep; bed carried " + s.body().getInventory().countItem(Items.WHITE_BED) + ", owner afk " + s.loop().ownerAfk()
+                        + ", day time " + helper.getLevel().getDayTime() + "; said: " + lastSaid(s, "");
+                helper.getLevel().setDayTime(1_000);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA8.3: night, its owner away, no bed: walled in until morning, then out again. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_night_none", timeoutTicks = 900)
+    public void nightWithNoBedItShelters(GameTestHelper helper) {
+        Scene s = scene(helper, "Huddled");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(4, new ItemStack(Items.DIRT, 16));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(10, () -> helper.getLevel().setDayTime(13_000));
+        int[] shelteredAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "night none");
+            var body = s.body();
+            BlockPos at = body.blockPosition();
+            boolean walled = true;
+            for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                var head = at.above().relative(d);
+                walled &= !helper.getLevel().getBlockState(head).isAir();
+            }
+            walled &= !helper.getLevel().getBlockState(at.above(2)).isAir();
+            if (shelteredAt[0] < 0 && walled) {
+                shelteredAt[0] = (int) helper.getTick();
+                helper.getLevel().setDayTime(1_000); // morning
+            }
+            if (shelteredAt[0] > 0 && helper.getLevel().canSeeSky(at.above())) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 880) {
+                String how = "sheltered at " + shelteredAt[0] + ", walled now " + walled + ", sky " + helper.getLevel().canSeeSky(at.above())
+                        + "; said: " + lastSaid(s, "");
+                helper.getLevel().setDayTime(1_000);
+                tidy(s);
+                fail(helper, how);
+            }
         });
     }
 
