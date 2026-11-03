@@ -216,9 +216,22 @@ public final class Sightings extends RegionTable<Sightings.Region> {
     }
 
     /** Over the cap: the least worth goes, from the fullest region first. */
+    /*
+     * Full: down to 99% (room for more, so it is not trimming on every new sighting), from the fullest regions, a
+     * quarter of a region at a time, least worth first. This took "over + 1%" from one region, capped at its size, so
+     * with 50,000 over 400 regions one new sighting emptied a whole region whatever its things were worth.
+     */
+    /** Region ids parsed once: a lookup used to parse all of them every time. */
+    private final Map<String, RegionKey> parsedKeys = new HashMap<>();
+
+    private RegionKey parsedKey(String id) {
+        return parsedKeys.computeIfAbsent(id, RegionKey::parse);
+    }
+
     private void evictGlobal(long now) {
+        long target = max - max / 100;
         int guard = 0;
-        while (total > max && guard++ < 64) {
+        while (total > target && guard++ < 1_000) {
             String fullest = null;
             int most = 0;
             for (var e : directory.entrySet()) {
@@ -229,10 +242,9 @@ public final class Sightings extends RegionTable<Sightings.Region> {
                 }
             }
             if (fullest == null) return;
-            RegionKey rk = RegionKey.parse(fullest);
+            RegionKey rk = parsedKey(fullest);
             Region r = region(rk);
-            long over = total - max;
-            evictIn(rk, r, (int) Math.max(1, Math.min(over + max / 100, r.byKey.size())), now);
+            evictIn(rk, r, (int) Math.max(1, Math.min(total - target, r.byKey.size() / 4)), now);
         }
     }
 
@@ -252,13 +264,22 @@ public final class Sightings extends RegionTable<Sightings.Region> {
         for (Kind k : Kind.values()) if (k.name().equalsIgnoreCase(q)) asKind = k;
         final Kind kindQuery = asKind;
         List<Found> best = new ArrayList<>();
+        // The directory words a region holds this under: one per kind, looked up directly.
+        String[] wanted = new String[Kind.values().length];
+        for (Kind k : Kind.values()) wanted[k.ordinal()] = k.name() + ":" + q;
+        String kindPrefix = kindQuery == null ? null : kindQuery.name() + ":";
         synchronized (this) {
             List<RegionKey> candidates = new ArrayList<>();
             for (var e : directory.entrySet()) {
-                RegionKey rk = RegionKey.parse(e.getKey());
-                if (!rk.dim().equals(dim)) continue;
-                boolean has = e.getValue().keySet().stream().anyMatch(kw -> kindQuery != null
-                        ? kw.startsWith(kindQuery.name() + ":") : kw.endsWith(":" + q));
+                RegionKey rk = parsedKey(e.getKey());
+                if (!rk.dim().equals(dim) || rk.distanceFrom(x, z) > maxDistance) continue;
+                var words = e.getValue();
+                boolean has = false;
+                if (kindPrefix != null) {
+                    for (String kw : words.keySet()) if (kw.startsWith(kindPrefix)) { has = true; break; }
+                } else {
+                    for (String kw : wanted) if (words.containsKey(kw)) { has = true; break; }
+                }
                 if (has) candidates.add(rk);
             }
             candidates.sort(Comparator.comparingDouble(rk -> rk.distanceFrom(x, z)));

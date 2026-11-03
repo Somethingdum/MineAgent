@@ -1337,6 +1337,11 @@ public final class MineAgentEngine {
                 // same body in place. Paused-but-alive bodies still need normal
                 // physics, hunger and damage ticks.
                 if (!state.lifecycle.isDead()) sp.connection.tick();
+                // Through a portal, the game marks a player as changing dimension until its client confirms the
+                // teleport; a fake player has no client, so it stayed marked: it could not go through a portal again,
+                // and a player so marked takes no damage. Confirm it as a client would (as Carpet's fake players do)
+                // (SMH plan 70, MA5.6).
+                if (sp.isChangingDimension()) sp.hasChangedDimension();
             } catch (Throwable t) {
                 // A single companion's connection tick failure must NOT crash
                 // the entire server tick loop — log and continue.

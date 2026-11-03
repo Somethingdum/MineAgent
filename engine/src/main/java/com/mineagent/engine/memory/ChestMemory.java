@@ -83,6 +83,22 @@ public final class ChestMemory implements MemoryStore.Table {
         if (chests.remove(key(dim, x, y, z)) != null) dirty = true;
     }
 
+    /**
+     * The world went back to an earlier save (a crash, or a backup put back): what it saw in chests after game tick
+     * {@code tick} may not be so any more, so it forgets those chests until it looks in them again. How many.
+     */
+    public synchronized int forgetAfter(long tick) {
+        int n = 0;
+        for (var it = chests.values().iterator(); it.hasNext(); ) {
+            if (it.next().seen() > tick) {
+                it.remove();
+                n++;
+            }
+        }
+        if (n > 0) dirty = true;
+        return n;
+    }
+
     /** Chests it knows within {@code max} blocks of x, y, z, nearest first. */
     public synchronized List<Chest> near(String dim, int x, int y, int z, double max) {
         List<Chest> out = new ArrayList<>();

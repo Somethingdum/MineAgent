@@ -510,6 +510,7 @@ public class AgentLoop {
             p.setTacticBook(tacticBook);
             p.loadAll();
             openStore(memDir.resolve("store"));
+            checkAfterWorldSave();
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
             // destroys prompt-cache affinity; continue with only new events.
@@ -2917,6 +2918,29 @@ public class AgentLoop {
         } catch (java.io.IOException | RuntimeException e) {
             System.err.println("[MineAgent] Memory store could not open: " + e.getMessage());
         }
+    }
+
+    /**
+     * After a crash the world is back at its last save, and its game time with it (the game saves that with the
+     * world), so anything it noted at a later tick happened after that save (SMH plan 70, MA5.9). Chests seen since
+     * are looked in again before it relies on them; the journal says so. Its own body and items are saved with the
+     * world, so they went back with it.
+     */
+    private void checkAfterWorldSave() {
+        long worldTime;
+        try {
+            worldTime = TaskContext.serverPlayer(companion).level().getGameTime();
+        } catch (Throwable notYet) {
+            return; // no world time to go by: nothing is forgotten on a guess
+        }
+        int unsure = chests.forgetAfter(worldTime);
+        long later = journal.recent(200).stream().filter(e -> e.tick() > worldTime).count();
+        if (unsure == 0 && later == 0) return;
+        journal.record("note", "the world went back to an earlier save; what I noted after it may not be so"
+                + (unsure > 0 ? ", so I'll look in " + unsure + (unsure == 1 ? " chest" : " chests") + " again before relying on them" : ""),
+                worldTime);
+        System.out.println("[MineAgent] Memory for " + companion.companionName() + ": the world is older than " + later
+                + " journal entries; " + unsure + " chests to look in again");
     }
 
     /** Chests it looks in go into its chest memory; a rare find into its journal (MA5.7, MA5.9). */

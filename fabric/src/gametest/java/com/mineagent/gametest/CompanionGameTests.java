@@ -56,6 +56,9 @@ public class CompanionGameTests implements FabricGameTest {
         // mid-fight. Give the scenes a real server's simulation distance.
         var players = helper.getLevel().getServer().getPlayerList();
         if (players.getSimulationDistance() < SIMULATION_DISTANCE) players.setSimulationDistance(SIMULATION_DISTANCE);
+        // And a real server's view distance (10 by default): how far round a player the world is loaded, so a long
+        // trip's next leg is on loaded ground as it would be in a real game.
+        if (players.getViewDistance() < SIMULATION_DISTANCE) players.setViewDistance(SIMULATION_DISTANCE);
         for (var s : List.copyOf(MineAgentEngine.allCompanions())) {
             MineAgentEngine.despawnCompanion(s.companion.companionId(), true);
         }
@@ -1406,7 +1409,15 @@ public class CompanionGameTests implements FabricGameTest {
                     return;
                 }
                 phase[0] = 1;
-                helper.runAfterDelay(100, () -> MineAgentEngine.onPlayerChat(s.owner(), "go home"));
+                helper.runAfterDelay(100, () -> {
+                    // A client confirms the teleport; the companion has none, and the mark is cleared for it.
+                    if (s.body().isChangingDimension()) {
+                        tidy(s);
+                        fail(helper, "after the portal it was still marked as changing dimension (it would take no damage)");
+                        return;
+                    }
+                    MineAgentEngine.onPlayerChat(s.owner(), "go home");
+                });
             } else if (phase[0] == 1 && dim.equals("minecraft:overworld")
                     && flat(body.position(), Vec3.atBottomCenterOf(home)) <= 2.5) {
                 tidy(s);
@@ -1531,6 +1542,7 @@ public class CompanionGameTests implements FabricGameTest {
         BlockPos near = at.offset(2, 0, 0), far = at.offset(-7, 0, 0);
         helper.getLevel().setBlockAndUpdate(near, Blocks.DIRT.defaultBlockState());
         helper.getLevel().setBlockAndUpdate(far, Blocks.DIRT.defaultBlockState());
+        int[] started = {-100};
         helper.onEachTick(() -> {
             var level = helper.getLevel();
             var farCheck = com.mineagent.engine.task.BlockDigger.assessBreak(s.body(), far);
@@ -1540,7 +1552,11 @@ public class CompanionGameTests implements FabricGameTest {
                 return;
             }
             if (!level.getBlockState(near).isAir()) {
-                com.mineagent.engine.task.BlockDigger.startBreaking(s.body(), near);
+                // A break once started goes on by itself, as a player holding the button (again only if it stopped).
+                if (helper.getTick() - started[0] >= 60) {
+                    started[0] = (int) helper.getTick();
+                    com.mineagent.engine.task.BlockDigger.startBreaking(s.body(), near);
+                }
             } else {
                 tidy(s);
                 if (farCheck.status() == com.mineagent.engine.task.BlockDigger.BreakStatus.OUT_OF_REACH) helper.succeed();

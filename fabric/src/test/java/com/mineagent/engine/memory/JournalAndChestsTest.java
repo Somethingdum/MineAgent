@@ -102,4 +102,15 @@ final class JournalAndChestsTest {
         assertEquals(20, near.get(1).x());
         assertTrue(c.near(null, 0, 64, 0, 24.0).isEmpty());
     }
+    @Test void chestsSeenAfterTheWorldsLastSaveAreLookedInAgain() {
+        ChestMemory c = new ChestMemory(null, 64);
+        String ow = "minecraft:overworld";
+        c.looked(ow, 1, 64, 1, java.util.Map.of("minecraft:iron_ingot", 5), 1_000);
+        c.looked(ow, 2, 64, 2, java.util.Map.of("minecraft:wheat", 9), 6_100);
+        c.looked(ow, 3, 64, 3, java.util.Map.of(), 7_000);
+        assertEquals(2, c.forgetAfter(6_000), "the world was saved at tick 6,000");
+        assertEquals(1, c.count());
+        assertEquals(1, c.near(ow, 0, 64, 0, 24.0).get(0).x(), "what it saw before the save is kept");
+        assertEquals(0, c.forgetAfter(6_000), "nothing left to forget");
+    }
 }

@@ -138,6 +138,7 @@ public class AStarPathFinder {
         this.currentGoal = goal;
         this.currentFavoring = favoring;
         this.currentCtx = ctx;
+        if (ctx != null) ctx.startSearch();
         this.startNodeX = startX;
         this.startNodeY = startY;
         this.startNodeZ = startZ;
@@ -241,7 +242,18 @@ public class AStarPathFinder {
             expandNode(current, currentGoal, currentFavoring, currentCtx);
         }
 
-        // Open set is empty — no path exists
+        // Open set is empty. If the search reached the edge of the loaded chunks, the way may go on past it: the best
+        // path toward the goal so far, as Baritone does; walking it loads more ground and the next search goes on from
+        // there (SMH plan 70, MA5.10). This was NO_PATH, and a trip to anywhere past the loaded chunks failed.
+        if (currentCtx != null && currentCtx.reachedUnloaded()) {
+            PathCalcResult partial = buildCutoffResult(currentGoal, startNodeX, startNodeY, startNodeZ);
+            if (partial.foundPath()) {
+                searchResult = partial;
+                searchActive = false;
+                return false;
+            }
+        }
+        // No path exists
         searchResult = PathCalcResult.failure(
                 PathCalcResult.FailureReason.NO_PATH, nodesExplored);
         searchActive = false;

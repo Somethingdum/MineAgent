@@ -210,13 +210,20 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
         return !com.mineagent.engine.world.PlaceKeeper.underground(sp.serverLevel(), sp.blockPosition());
     }
 
+    /** A failed walk, with why, in the log (counts and reasons, nothing of anyone's). */
+    private TaskState failed() {
+        System.out.println("[MineAgent] MoveTo failed" + (leg >= 0 ? " on leg " + (leg + 1) + " of " + legs.size() : "")
+                + ": " + failReason);
+        return TaskState.FAILED;
+    }
+
     @Override
     public TaskState onTick() {
         if (navFailed && !skipLeg()) {
             // PathingCore already performs bounded replanning. Relaxing an
             // exact xzy/block goal to a three-block radius here reported
             // success at a position that did not satisfy the tool request.
-            return TaskState.FAILED;
+            return failed();
         }
         if (goalReached && !arrived()) return TaskState.SUCCESS;
 
@@ -226,7 +233,7 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
         // Re-check after tick (listener may have fired)
         if (goalReached && !arrived()) return TaskState.SUCCESS;
         if (navFailed && !skipLeg()) {
-            return TaskState.FAILED;
+            return failed();
         }
 
         // Progress lease management

@@ -77,4 +77,71 @@ final class SightingsTest {
         assertEquals(Long.valueOf(3L), report.counts().get("sightings"));
         st2.close();
     }
+    /** The quickest of {@code n} runs, in milliseconds: one slow moment on a shared CI machine is not the code. */
+    private static double bestOf(int n, java.util.concurrent.Callable<?> work) throws Exception {
+        double best = Double.MAX_VALUE;
+        for (int i = 0; i < n; i++) {
+            long t = System.nanoTime();
+            work.call();
+            best = Math.min(best, (System.nanoTime() - t) / 1e6);
+        }
+        return best;
+    }
+
+    /**
+     * MA5.7's sizes, measured: 50,000 things seen over 10,000 by 10,000 blocks (400 regions). A changed region is saved
+     * in under 20 ms, the memory opened again in under 200 ms, and a lookup takes under 1 ms.
+     */
+    @Test void atFullSizeItIsQuick() throws Exception {
+        Path dir = Files.createTempDirectory("sightings-full");
+        MemoryStore st = new MemoryStore(dir);
+        Sightings a = new Sightings(st, Sightings.DEFAULT_MAX);
+        java.util.Random r = new java.util.Random(70);
+        String[] ores = {"minecraft:iron_ore", "minecraft:coal_ore", "minecraft:copper_ore", "minecraft:gold_ore",
+                "minecraft:redstone_ore", "minecraft:lapis_ore", "minecraft:diamond_ore"};
+        long tick = 1;
+        while (a.count() < Sightings.DEFAULT_MAX) {
+            int x = r.nextInt(10_000) - 5_000, z = r.nextInt(10_000) - 5_000, y = r.nextInt(120) - 60;
+            Kind k = r.nextInt(4) == 0 ? Kind.ANIMAL : Kind.ORE;
+            a.see(k, k == Kind.ORE ? ores[r.nextInt(ores.length)] : "minecraft:cow", OW, x, y, z, 1, tick++);
+        }
+        st.flushBlocking();
+        assertEquals(Sightings.DEFAULT_MAX, a.count());
+
+        long[] t = {tick};
+        double save = bestOf(5, () -> {
+            a.see(Kind.ORE, "minecraft:emerald_ore", OW, 100 + (int) (t[0] % 50), 20, 100, 1, t[0]++);
+            st.flushBlocking();
+            return null;
+        });
+        assertTrue(save < 20.0, "a changed region saved in " + save + " ms");
+        long kept = a.count();
+        assertTrue(kept >= Sightings.DEFAULT_MAX * 99L / 100, "full, it trims to 99%, not more: " + kept);
+
+        double open = bestOf(3, () -> {
+            MemoryStore again = new MemoryStore(dir);
+            Sightings b = new Sightings(again, Sightings.DEFAULT_MAX);
+            again.replayJournals();
+            if (b.count() != kept) throw new AssertionError("reopened with " + b.count() + " of " + kept);
+            again.close();
+            return null;
+        });
+        assertTrue(open < 200.0, "opened again in " + open + " ms");
+
+        // Lookups where it lives (within 600 blocks: its regions stay loaded), and anywhere in the 10,000 blocks
+        // (most regions read back from disk first: the worst case).
+        for (int i = 0; i < 50; i++) a.nearest("iron", OW, r.nextInt(1_200) - 600, 0, r.nextInt(1_200) - 600, 3, 256);
+        int lookups = 200;
+        long started = System.nanoTime();
+        for (int i = 0; i < lookups; i++) a.nearest("diamond", OW, r.nextInt(1_200) - 600, 0, r.nextInt(1_200) - 600, 3, 256);
+        double each = (System.nanoTime() - started) / 1e6 / lookups;
+        started = System.nanoTime();
+        for (int i = 0; i < lookups; i++) a.nearest("diamond", OW, r.nextInt(10_000) - 5_000, 0, r.nextInt(10_000) - 5_000, 3, 256);
+        double anywhere = (System.nanoTime() - started) / 1e6 / lookups;
+        assertTrue(each < 1.0, "a lookup where it lives in " + each + " ms");
+        assertTrue(anywhere < 5.0, "a lookup anywhere in " + anywhere + " ms");
+        System.out.printf("[MA5.7 sizes] %d things seen: a changed region saved in %.1f ms, opened again in %.0f ms, "
+                + "a lookup in %.3f ms where it lives and %.3f ms anywhere%n", kept, save, open, each, anywhere);
+        st.close();
+    }
 }

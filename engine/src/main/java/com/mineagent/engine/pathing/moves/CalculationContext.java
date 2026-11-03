@@ -94,9 +94,25 @@ public class CalculationContext {
      */
     public BlockState getBlockState(int x, int y, int z) {
         if (!chunkLoadedTest.isChunkLoaded(x, z)) {
+            reachedUnloaded = true;
             return null;
         }
         return worldView.getBlockState(new BlockPos(x, y, z));
+    }
+
+    private boolean reachedUnloaded;
+
+    /** A new search: it has reached nothing unloaded yet. */
+    public void startSearch() {
+        reachedUnloaded = false;
+    }
+
+    /**
+     * Whether a search in this context reached ground not loaded yet. Then running out of places to look means only
+     * that the way goes on past what is loaded, not that there is none (SMH plan 70, MA5.10).
+     */
+    public boolean reachedUnloaded() {
+        return reachedUnloaded;
     }
 
     /** Check if a chunk is loaded. */
