@@ -424,6 +424,9 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
         helper.onEachTick(() -> {
+            // A test's mock player has no client connection to tick it, so its time in bed never counts: tick it as
+            // the connection would (the companion is ticked through its own).
+            s.owner().doTick();
             trace(helper, s, "sleep");
             if (s.body().isSleeping()) sawItAsleep[0] = true;
             if (level.getDayTime() >= dayStart + 24000L) {
@@ -453,15 +456,16 @@ public class CompanionGameTests implements FabricGameTest {
         s.owner().teleportTo(level, byBed.getX() + 0.5, byBed.getY(), byBed.getZ() + 0.5, 0.0f, 0.0f);
         helper.runAfterDelay(5, () -> s.owner().startSleepInBed(helper.absolutePos(new BlockPos(8, 1, 3))));
         helper.onEachTick(() -> {
+            s.owner().doTick(); // as in the scene above: the mock player's time in bed counts only when it is ticked
             if (level.getDayTime() >= dayStart + 24000L) {
                 tidy(s);
                 fail(helper, "the night passed with the companion awake");
             } else if (helper.getTick() >= 500) {
-                boolean ownerAsleep = s.owner().isSleeping();
+                boolean ownerAsleep = s.owner().isSleeping() && s.owner().isSleepingLongEnough();
                 level.setDayTime(dayStart + 25000L);
                 tidy(s);
                 if (ownerAsleep) helper.succeed();
-                else fail(helper, "the owner never got to sleep, so this shows nothing");
+                else fail(helper, "the owner never slept long enough to pass a night, so this shows nothing");
             }
         });
     }
@@ -619,6 +623,14 @@ public class CompanionGameTests implements FabricGameTest {
         Husk husk = helper.spawn(EntityType.HUSK, new BlockPos(8, 1, 3));
         husk.setTarget(s.body());
         helper.onEachTick(() -> {
+            trace(helper, s, "guard");
+            if (helper.getTick() % 40 == 0) {
+                System.out.println("[SCENE guard] husk at " + rel(helper, husk.blockPosition()).toShortString() + ", health "
+                        + Math.round(husk.getHealth()) + ", " + String.format("%.1f", husk.distanceTo(s.body()))
+                        + " away; companion blocking " + s.body().isBlocking() + ", in reach "
+                        + com.mineagent.engine.act.Interaction.inEntityReach(s.body(), husk) + ", husk's target "
+                        + (husk.getTarget() == null ? "none" : husk.getTarget().getName().getString()));
+            }
             double away = flat(s.body().position(), post);
             if (away > 8 + 3.5) {
                 tidy(s);
@@ -853,5 +865,112 @@ public class CompanionGameTests implements FabricGameTest {
         } else {
             helper.succeed();
         }
+    }
+
+    /** A corridor two blocks high through solid stone: in at (0, 8), east to x 6, north to z 2, east to x 12, south to z 12. */
+    private static boolean corridor(int x, int z) {
+        return (z == 8 && x >= 0 && x <= 6) || (x == 6 && z >= 2 && z <= 8) || (z == 2 && x >= 6 && x <= 12)
+                || (x == 12 && z >= 2 && z <= 12);
+    }
+
+    /**
+     * Plan 70, MA5.6: it walks into a winding cave, and "lead me out" takes it back out the way it came, by its trail,
+     * breaking nothing.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_cave", timeoutTicks = 1600)
+    public void itLeadsTheWayOutOfACaveByItsTrail(GameTestHelper helper) {
+        Scene s = scene(helper, "Caver");
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos away = helper.absolutePos(new BlockPos(-12, 1, -12));
+        s.owner().teleportTo(level, away.getX() + 0.5, away.getY(), away.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos outside = helper.absolutePos(new BlockPos(-3, 1, 8));
+        s.body().teleportTo(level, outside.getX() + 0.5, outside.getY(), outside.getZ() + 0.5, 0.0f, 0.0f);
+        for (int x = 0; x <= 14; x++) {
+            for (int z = 0; z <= 14; z++) {
+                for (int y = 1; y <= 5; y++) helper.setBlock(x, y, z, y <= 2 && corridor(x, z) ? Blocks.AIR : Blocks.STONE);
+            }
+        }
+        BlockPos end = helper.absolutePos(new BlockPos(12, 1, 12));
+        sendTo(helper, s, end, "cave-in");
+        int[] phase = {0};
+        helper.onEachTick(() -> {
+            trace(helper, s, "cave");
+            int broken = 0;
+            for (int x = 0; x <= 14; x++) {
+                for (int z = 0; z <= 14; z++) {
+                    for (int y = 1; y <= 5; y++) {
+                        if (!(y <= 2 && corridor(x, z)) && !helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.STONE)) broken++;
+                    }
+                }
+            }
+            BlockPos at = rel(helper, s.body().blockPosition());
+            boolean open = !com.mineagent.engine.world.PlaceKeeper.underground(level, s.body().blockPosition());
+            if (broken > 0) {
+                tidy(s);
+                fail(helper, "it broke " + broken + " blocks of the cave");
+            } else if (phase[0] == 0 && helper.getTick() > 10 && flat(s.body().position(), Vec3.atBottomCenterOf(end)) <= 1.5) {
+                phase[0] = 1;
+                MineAgentEngine.onPlayerChat(s.owner(), "lead me out");
+            } else if (phase[0] == 1 && open && at.getX() < 0) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 1500) {
+                String how = (phase[0] == 0 ? "it never got to the end of the cave" : "it never got back out")
+                        + ": at " + at.toShortString() + ", " + (open ? "in the open" : "underground")
+                        + ", trail of " + s.loop().placeKeeper().memory().wayBack().size() + " points";
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.6: the owner says "this is home"; sent far off, "go home" brings it back there, and home is in the
+     * memory it saves.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_home", timeoutTicks = 1400)
+    public void goHomeTakesItBackToTheHomeItWasShown(GameTestHelper helper) {
+        Scene s = scene(helper, "Homebody");
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos home = helper.absolutePos(new BlockPos(-12, 1, -12));
+        s.owner().teleportTo(level, home.getX() + 0.5, home.getY(), home.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(2, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
+        BlockPos far = helper.absolutePos(new BlockPos(20, 1, 20));
+        sendTo(helper, s, far, "home-out");
+        int[] phase = {0};
+        helper.onEachTick(() -> {
+            trace(helper, s, "home");
+            var memory = s.loop().placeKeeper().memory();
+            var known = memory.find("home", null);
+            if (phase[0] == 0 && helper.getTick() > 10 && flat(s.body().position(), Vec3.atBottomCenterOf(far)) <= 1.5) {
+                phase[0] = 1;
+                if (known.isEmpty() || known.get().at().x() != home.getX() || known.get().at().z() != home.getZ()) {
+                    String what = known.map(p -> p.at().toString()).orElse("no home");
+                    tidy(s);
+                    fail(helper, "\"this is home\" did not keep where the owner stood: " + what);
+                    return;
+                }
+                MineAgentEngine.onPlayerChat(s.owner(), "go home");
+            } else if (phase[0] == 1 && flat(s.body().position(), Vec3.atBottomCenterOf(home)) <= 2.5) {
+                s.loop().saveMemoryBlocking();
+                var folder = s.loop().memoryFolder();
+                String saved = "";
+                try {
+                    if (folder != null) saved = java.nio.file.Files.readString(folder.resolve("routes.json"));
+                } catch (java.io.IOException e) {
+                    saved = "";
+                }
+                tidy(s);
+                if (saved.contains("\"home\"")) helper.succeed();
+                else fail(helper, "home was not in the saved memory (folder " + folder + ")");
+            } else if (helper.getTick() >= 1300) {
+                String how = "after 1300 ticks, phase " + phase[0] + ": at " + rel(helper, s.body().blockPosition()).toShortString()
+                        + ", home " + known.map(p -> p.at().toString()).orElse("not known");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
     }
 }

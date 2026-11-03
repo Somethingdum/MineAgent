@@ -42,6 +42,14 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
     /** Last recorded position — used to detect progress. */
     private Vec3 lastProgressPos = null;
 
+    /** How near a waypoint counts as passing it. */
+    static final int LEG_RADIUS = 2;
+    /** Waypoints it may give up on (a block in the way since) before the trip fails. */
+    static final int MAX_SKIPS = 3;
+    /** The waypoint being walked to (SMH plan 70, MA5.6); -1 once on the way to the goal itself. */
+    private int leg = -1;
+    private int skipped;
+
     public MoveToTask(AgentPlayer player, MoveToTool.MoveToTaskRecord record) {
         super(player, record);
     }
@@ -67,10 +75,37 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
             }
         });
 
+        leg = record.waypoints.isEmpty() ? -1 : 0;
+        skipped = 0;
+        startLegOrGoal();
+
+        // Start the progress lease
+        ServerPlayer sp = TaskContext.serverPlayer(player);
+        long gameTime = sp.level().getGameTime();
+        lease.start(gameTime);
+        lastProgressPos = sp.position();
+    }
+
+    /** The next waypoint not already passed, or the goal itself once they're all passed. */
+    private void startLegOrGoal() {
+        ServerPlayer sp0 = TaskContext.serverPlayer(player);
+        while (leg >= 0 && leg < record.waypoints.size()) {
+            int[] p = record.waypoints.get(leg);
+            double dx = sp0.getX() - (p[0] + 0.5), dy = sp0.getY() - p[1], dz = sp0.getZ() - (p[2] + 0.5);
+            if (dx * dx + dy * dy + dz * dz > (LEG_RADIUS + 1) * (LEG_RADIUS + 1)) {
+                nav.navigateNear(p[0], p[1], p[2], LEG_RADIUS);
+                return;
+            }
+            leg++;
+        }
+        leg = -1;
+        startGoal(sp0);
+    }
+
+    private void startGoal(ServerPlayer sp0) {
         // Set goal based on mode
         // Use safe defaults for null y/z (shouldn't happen after MoveToTool
         // validation, but defensive against LLM-provided bad data)
-        ServerPlayer sp0 = TaskContext.serverPlayer(player);
         int safeY = record.y != null ? record.y : sp0.blockPosition().getY();
         int safeZ = record.z != null ? record.z : sp0.blockPosition().getZ();
 
@@ -84,30 +119,50 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
                 failReason = "Invalid goal_mode: " + record.goalMode;
             }
         }
+    }
 
-        // Start the progress lease
+    /** At a waypoint or the goal: on to the next, or done. False once the trip is over. */
+    private boolean arrived() {
+        if (record.stopInOpen && inOpen()) return false;
+        if (leg < 0) return false;
+        goalReached = false;
+        leg++;
+        startLegOrGoal();
+        return true;
+    }
+
+    /** A waypoint it can't reach is passed over for the next, a few times a trip. */
+    private boolean skipLeg() {
+        if (leg < 0 || skipped >= MAX_SKIPS) return false;
+        skipped++;
+        navFailed = false;
+        failReason = null;
+        leg++;
+        startLegOrGoal();
+        return true;
+    }
+
+    private boolean inOpen() {
         ServerPlayer sp = TaskContext.serverPlayer(player);
-        long gameTime = sp.level().getGameTime();
-        lease.start(gameTime);
-        lastProgressPos = sp.position();
+        return !com.mineagent.engine.world.PlaceKeeper.underground(sp.serverLevel(), sp.blockPosition());
     }
 
     @Override
     public TaskState onTick() {
-        if (navFailed) {
+        if (navFailed && !skipLeg()) {
             // PathingCore already performs bounded replanning. Relaxing an
             // exact xzy/block goal to a three-block radius here reported
             // success at a position that did not satisfy the tool request.
             return TaskState.FAILED;
         }
-        if (goalReached) return TaskState.SUCCESS;
+        if (goalReached && !arrived()) return TaskState.SUCCESS;
 
         // Tick the navigation
         nav.tick();
 
         // Re-check after tick (listener may have fired)
-        if (goalReached) return TaskState.SUCCESS;
-        if (navFailed) {
+        if (goalReached && !arrived()) return TaskState.SUCCESS;
+        if (navFailed && !skipLeg()) {
             return TaskState.FAILED;
         }
 

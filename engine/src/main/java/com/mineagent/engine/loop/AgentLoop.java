@@ -342,6 +342,8 @@ public class AgentLoop {
             new com.mineagent.engine.pathing.execute.DoorKeeper();
     /** Whether the owner is AFK (SMH plan 70, MA5.4). */
     private final OwnerActivity ownerActivity = new OwnerActivity();
+    /** Its trail, the places it knows and the routes between them (SMH plan 70, MA5.6). */
+    private final com.mineagent.engine.world.PlaceKeeper placeKeeper = new com.mineagent.engine.world.PlaceKeeper();
     private final SkillLibrary skillLib;
     private final DecisionCache decisionCache;
     private final TheoryOfMind theoryOfMind;
@@ -497,6 +499,7 @@ public class AgentLoop {
             p.setScorecard(scorecard);
             p.setCurriculum(curriculum);
             p.setGoalBook(goalBook);
+            p.setRouteMemory(placeKeeper.memory());
             p.setTacticBook(tacticBook);
             p.loadAll();
             // A restored Responses response id already represents the durable
@@ -1223,6 +1226,9 @@ public class AgentLoop {
                 if (!fromOwner) return false;
                 ownerActivity.saidBack();
             }
+            case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK -> {
+                return placeCommand(c, self, fromOwner);
+            }
             // Stop, stay and follow end guard duty too: otherwise a guard told to stop walks back to its post.
             case STOP -> {
                 haltNow();
@@ -1307,6 +1313,129 @@ public class AgentLoop {
             }
         }
         return true;
+    }
+
+    /**
+     * Places and the way back (SMH plan 70, MA5.6), answered from route memory without a model: "this is home",
+     * "remember this as the mine", "go home", "go to the village", "where's the mine", "lead me out", "go back the way
+     * we came". A place it doesn't know goes to the model, except home, which it says it doesn't know yet.
+     */
+    private boolean placeCommand(com.mineagent.engine.chat.CommandParser.Command c,
+                                 com.mineagent.engine.entity.CompanionEntity self, boolean fromOwner) {
+        var me = self.serverPlayer();
+        if (me == null) return false;
+        var memory = placeKeeper.memory();
+        var here = com.mineagent.engine.world.PlaceKeeper.point(me);
+        var owner = self.serverPlayerOwner();
+        boolean ownerNear = owner != null && owner.serverLevel() == me.serverLevel() && owner.distanceTo(me) < 24.0;
+        long tick = currentGameTickSafe();
+        switch (c.kind()) {
+            case HOME_HERE, REMEMBER_PLACE -> {
+                if (!fromOwner) {
+                    speakToOwner("Only my owner names places.");
+                    return true;
+                }
+                // "Here" is where the owner stands, when they're near; else where it is.
+                var at = ownerNear ? com.mineagent.engine.world.PlaceKeeper.point(owner) : here;
+                boolean home = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.HOME_HERE;
+                var place = memory.name(home ? "home" : "named", home ? "home" : c.value(), at, tick);
+                saveMemoryNow();
+                speakToOwner(home
+                        ? "Home is here, at " + at.x() + ", " + at.y() + ", " + at.z() + ". Say \"go home\" and I'll take us back."
+                        : "I'll remember this as " + place.name() + ".");
+            }
+            case WHERE_PLACE -> {
+                var from = ownerNear || (owner != null && owner.serverLevel() == me.serverLevel())
+                        ? com.mineagent.engine.world.PlaceKeeper.point(owner) : here;
+                var place = memory.find(c.value(), from);
+                if (place.isEmpty()) {
+                    if (!isHomeWord(c.value())) return false;
+                    speakToOwner("I don't know where home is yet. Stand there and say \"this is home\".");
+                    return true;
+                }
+                speakToOwner(capitalised(place.get().name()) + " is "
+                        + com.mineagent.engine.world.PlaceKeeper.whereFrom(from, place.get().at()));
+            }
+            case GO_PLACE -> {
+                var place = memory.find(c.value(), here);
+                if (place.isEmpty()) {
+                    if (!isHomeWord(c.value())) return false;
+                    speakToOwner("I don't know where home is yet. Stand there and say \"this is home\".");
+                    return true;
+                }
+                var to = place.get();
+                if (!to.at().dim().equals(here.dim())) {
+                    speakToOwner(capitalised(to.name()) + " is in "
+                            + com.mineagent.engine.world.PlaceKeeper.dimensionName(to.at().dim())
+                            + "; I can't take us through a portal on my own yet.");
+                    return true;
+                }
+                haltNow();
+                standDown();
+                goTo(to.at(), placeKeeper.wayTo(here, to), false);
+                speakToOwner("Heading to " + to.name() + ", " + com.mineagent.engine.world.PlaceKeeper.whereFrom(here, to.at()));
+            }
+            case WAY_BACK -> {
+                boolean out = "out".equals(c.value());
+                if (out && !com.mineagent.engine.world.PlaceKeeper.underground(me.serverLevel(), me.blockPosition())) {
+                    speakToOwner("We're out in the open already.");
+                    return true;
+                }
+                var back = com.mineagent.engine.world.RouteMemory.simplify(memory.wayBack());
+                if (back.size() < 2) {
+                    speakToOwner("I haven't got a way back yet: I've only just got here.");
+                    return true;
+                }
+                haltNow();
+                standDown();
+                goTo(back.get(back.size() - 1), back.subList(0, back.size() - 1), out);
+                speakToOwner(out ? "Leading the way out, the way we came in." : "Going back the way we came.");
+            }
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** A trip by the goto task, through waypoints first; done early in the open when {@code stopInOpen}. */
+    private void goTo(com.mineagent.engine.world.RouteMemory.Point to,
+                      java.util.List<com.mineagent.engine.world.RouteMemory.Point> via, boolean stopInOpen) {
+        var args = new com.google.gson.JsonObject();
+        args.addProperty("goal_mode", "block");
+        args.addProperty("x", to.x());
+        args.addProperty("y", to.y());
+        args.addProperty("z", to.z());
+        var points = new com.google.gson.JsonArray();
+        for (var p : via) {
+            if (!p.dim().equals(to.dim())) continue;
+            var a = new com.google.gson.JsonArray();
+            a.add(p.x());
+            a.add(p.y());
+            a.add(p.z());
+            points.add(a);
+        }
+        args.add("waypoints", points);
+        if (stopInOpen) args.addProperty("stop_in_open", true);
+        runDirect("goto", args);
+    }
+
+    private static boolean isHomeWord(String words) {
+        String w = words == null ? "" : words.strip().replaceFirst("^(?:the|my|our) ", "");
+        return w.equals("home") || w.equals("base");
+    }
+
+    private static String capitalised(String s) {
+        return s == null || s.isEmpty() ? "" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    private static String aOrAn(String word) {
+        return ("aeiou".indexOf(Character.toLowerCase(word.isEmpty() ? 'x' : word.charAt(0))) >= 0 ? "an " : "a ") + word;
+    }
+
+    /** Its places and routes (the game tests). */
+    public com.mineagent.engine.world.PlaceKeeper placeKeeper() {
+        return placeKeeper;
     }
 
     /** "Guard here", "guard Alex", "stand down" (the owner's only): set or clear guard duty. */
@@ -2061,6 +2190,10 @@ public class AgentLoop {
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
             doorKeeper.tick(player, gameTick);
+            placeKeeper.tick(player, gameTick).ifPresent(place -> {
+                speakToOwner("Found " + aOrAn(place.kind()) + ". I'll remember it as " + place.name() + ".");
+                saveMemoryNow();
+            });
             watchOwnerActivity(owner);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();

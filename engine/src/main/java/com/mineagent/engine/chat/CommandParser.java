@@ -15,11 +15,12 @@ import java.util.regex.Pattern;
  */
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
-        GOAL_ADD, RESUME, AFK, BACK }
+        GOAL_ADD, RESUME, AFK, BACK, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
-     * GOAL_ADD. {@code count}: for DROP;
+     * GOAL_ADD, the place's name for REMEMBER_PLACE, GO_PLACE ("home" for home) and WHERE_PLACE, "out" or "back" for
+     * WAY_BACK. {@code count}: for DROP;
      * for GUARD_HERE, the radius asked for (null: the default).
      */
     public record Command(Kind kind, String value, Integer count) {}
@@ -37,6 +38,27 @@ public final class CommandParser {
     /** Going AFK, or back (SMH plan 70, MA5.4). */
     private static final Pattern AFK = Pattern.compile("^(afk|brb|bbl|be right back|going afk|gonna go afk|gonna be afk|i'?m afk|i'?m going afk|back in a (?:bit|sec|second|min|minute|few)|gtg for a (?:bit|sec|second|min|minute))$");
     private static final Pattern BACK = Pattern.compile("^(back|i'?m back|back now|i'?m here now|here now)$");
+    // Places and the way back (SMH plan 70, MA5.6).
+    /** A place's name, with the article it was said with ("the mine"): route memory matches with or without it. */
+    private static final String NAME = "((?:the |my |our )?[a-z0-9][a-z0-9 '_-]{0,30})";
+    private static final Pattern HOME_HERE = Pattern.compile("^(?:this is (?:my |our |the )?(?:home|base)|this is where (?:i|we) live"
+            + "|set (?:my |our |the )?(?:home|base)(?: here)?|make (?:this|here) (?:my |our |the )?(?:home|base)"
+            + "|(?:home|base) is here|here is (?:home|base)|(?:we|i) live here)$");
+    private static final Pattern REMEMBER_PLACE = Pattern.compile("^(?:remember (?:this place|this spot|this location|this|here)(?: as)?"
+            + "|call (?:this|here)(?: place| spot)?|name (?:this|here)(?: place| spot)?|mark (?:this|here)(?: place| spot)? as"
+            + "|this (?:place|spot) is(?: called)?) " + NAME + "$");
+    private static final Pattern GO_HOME = Pattern.compile("^(?:let'?s |lets )?(?:go|head|walk|run|return|come|take me|lead me|bring me"
+            + "|take us|lead us)(?: back)?(?: to)? (?:home|(?:my |our |the )?base)$");
+    private static final Pattern GO_PLACE = Pattern.compile("^(?:let'?s |lets )?(?:go|head|walk|run|return|take me|lead me|bring me"
+            + "|take us|lead us)(?: back)? to " + NAME + "$");
+    private static final Pattern WHERE_PLACE = Pattern.compile("^(?:where'?s|wheres|where is|where was|how far is|how far to"
+            + "|how far away is) " + NAME + "$");
+    private static final Pattern WAY_OUT = Pattern.compile("^(?:get (?:us|me) out(?: of here| of this cave| of the cave)?"
+            + "|lead (?:me|us|the way) out(?: of here)?|take (?:me|us) out(?: of here)?|get out of (?:here|this cave|the cave)"
+            + "|find (?:the|a) way out|way out)$");
+    private static final Pattern WAY_BACK = Pattern.compile("^(?:go back the way (?:we|you|i) came|take (?:me|us) back the way (?:we|you) came"
+            + "|back the way (?:we|you) came|retrace (?:our|your) steps|lead (?:me|us) back|take (?:me|us) back|lead the way back"
+            + "|find the way back)$");
     private static final Pattern STATUS = Pattern.compile("^(status|sitrep|report|what are you doing|what r u doing|what're you doing|how'?s it going)$");
     private static final Pattern CANCEL = Pattern.compile("^(cancel|abort|nevermind|never mind|forget it|cancel that|cancel the goal|drop it)$");
     private static final Pattern EAT = Pattern.compile("^(eat|eat something|eat food|have a snack|have something to eat)$");
@@ -83,6 +105,21 @@ public final class CommandParser {
         if (m.matches() && !m.group(1).equals("me") && !m.group(1).equals("us")) return Optional.of(new Command(Kind.GUARD_PLAYER, m.group(1), null));
         if (AFK.matcher(t).matches()) return Optional.of(new Command(Kind.AFK, null, null));
         if (BACK.matcher(t).matches()) return Optional.of(new Command(Kind.BACK, null, null));
+        if (HOME_HERE.matcher(t).matches()) return Optional.of(new Command(Kind.HOME_HERE, null, null));
+        if (WAY_OUT.matcher(t).matches()) return Optional.of(new Command(Kind.WAY_BACK, "out", null));
+        if (WAY_BACK.matcher(t).matches()) return Optional.of(new Command(Kind.WAY_BACK, "back", null));
+        if (GO_HOME.matcher(t).matches()) return Optional.of(new Command(Kind.GO_PLACE, "home", null));
+        m = REMEMBER_PLACE.matcher(t);
+        if (m.matches()) {
+            String name = m.group(1).strip();
+            String bare = name.replaceFirst("^(?:the|my|our) ", "");
+            if (bare.equals("home") || bare.equals("base")) return Optional.of(new Command(Kind.HOME_HERE, null, null));
+            return Optional.of(new Command(Kind.REMEMBER_PLACE, name, null));
+        }
+        m = GO_PLACE.matcher(t);
+        if (m.matches()) return Optional.of(new Command(Kind.GO_PLACE, m.group(1).strip(), null));
+        m = WHERE_PLACE.matcher(t);
+        if (m.matches()) return Optional.of(new Command(Kind.WHERE_PLACE, m.group(1).strip(), null));
         if (STATUS.matcher(t).matches()) return Optional.of(new Command(Kind.STATUS, null, null));
         if (RESUME.matcher(t).matches()) return Optional.of(new Command(Kind.RESUME, null, null));
         if (CANCEL.matcher(t).matches()) return Optional.of(new Command(Kind.CANCEL, null, null));

@@ -81,4 +81,30 @@ final class CommandParserTest {
         assertEquals("COME", parsed("here"));
         assertEquals("-", parsed("go back to the base and get the iron"));
     }
+
+    @Test void placesAndTheWayBackAreUnderstood() {
+        assertEquals("HOME_HERE", parsed("this is home"));
+        assertEquals("HOME_HERE", parsed("Steve, set home here"));
+        assertEquals("HOME_HERE", parsed("remember this as home"));
+        assertEquals("HOME_HERE", parsed("this is our base"));
+        assertEquals("HOME_HERE", parsed("remember this place as our base"));
+        assertEquals("REMEMBER_PLACE:the mine", parsed("remember this as the mine"));
+        assertEquals("REMEMBER_PLACE:iron spot", parsed("call this place iron spot"));
+        assertEquals("GO_PLACE:home", parsed("go home"));
+        assertEquals("GO_PLACE:home", parsed("let's go back home!"));
+        assertEquals("GO_PLACE:home", parsed("take me to base"));
+        assertEquals("GO_PLACE:the mine", parsed("go to the mine"));
+        assertEquals("GO_PLACE:the village", parsed("please take me to the village"));
+        assertEquals("WHERE_PLACE:the village", parsed("where's the village?"));
+        assertEquals("WHERE_PLACE:home", parsed("how far is home"));
+        assertEquals("WAY_BACK:out", parsed("get us out of here"));
+        assertEquals("WAY_BACK:out", parsed("lead the way out"));
+        assertEquals("WAY_BACK:back", parsed("go back the way we came"));
+        assertEquals("WAY_BACK:back", parsed("retrace our steps"));
+        // Not these: a resume, a coming back, and an order that only names a place.
+        assertEquals("RESUME", parsed("get back to work"));
+        assertEquals("BACK", parsed("back"));
+        assertEquals("RESUME", parsed("go on"));
+        assertEquals("-", parsed("go mine some iron"));
+    }
 }

@@ -104,25 +104,52 @@ public class MoveToTool implements Tool {
             return;
         }
 
-        // Create task record (would be a concrete MoveToTaskRecord)
-        // For now, dispatch via TaskDispatch
-        var record = new MoveToTaskRecord(toolCallId, goalMode, x, y, z);
+        // Waypoints walked first, in order (SMH plan 70, MA5.6): the companion's own route memory sends them for "go
+        // home" and "lead me out"; they are not in the schema the model is shown.
+        java.util.List<int[]> waypoints = new java.util.ArrayList<>();
+        if (args.has("waypoints") && args.get("waypoints").isJsonArray()) {
+            for (var e : args.getAsJsonArray("waypoints")) {
+                if (waypoints.size() >= MoveToTaskRecord.MAX_WAYPOINTS) break;
+                if (!e.isJsonArray() || e.getAsJsonArray().size() != 3) continue;
+                try {
+                    var a = e.getAsJsonArray();
+                    waypoints.add(new int[] {a.get(0).getAsInt(), a.get(1).getAsInt(), a.get(2).getAsInt()});
+                } catch (RuntimeException notNumbers) {
+                    // skipped
+                }
+            }
+        }
+        boolean stopInOpen = args.has("stop_in_open") && args.get("stop_in_open").isJsonPrimitive()
+                && args.get("stop_in_open").getAsBoolean();
+        var record = new MoveToTaskRecord(toolCallId, goalMode, x, y, z, waypoints, stopInOpen);
         TaskDispatch.dispatchAsync(player, record, reply);
     }
 
     /** Task record for movement. */
     public static class MoveToTaskRecord extends com.mineagent.api.task.TaskRecord {
+        public static final int MAX_WAYPOINTS = 2000;
         public final String goalMode;
         public final int x;
         public final Integer y;
         public final Integer z;
+        /** Points to pass, in order, before the goal; empty for a plain trip. */
+        public final java.util.List<int[]> waypoints;
+        /** Done as soon as it stands in the open (the way out of a cave). */
+        public final boolean stopInOpen;
 
         public MoveToTaskRecord(String toolCallId, String goalMode, int x, Integer y, Integer z) {
+            this(toolCallId, goalMode, x, y, z, java.util.List.of(), false);
+        }
+
+        public MoveToTaskRecord(String toolCallId, String goalMode, int x, Integer y, Integer z,
+                                java.util.List<int[]> waypoints, boolean stopInOpen) {
             super(toolCallId);
             this.goalMode = goalMode;
             this.x = x;
             this.y = y;
             this.z = z;
+            this.waypoints = waypoints == null ? java.util.List.of() : java.util.List.copyOf(waypoints);
+            this.stopInOpen = stopInOpen;
         }
     }
 }

@@ -241,7 +241,7 @@ public final class RouteMemory {
     }
 
     /** Keep a point at every real turn and at least every {@link #ROUTE_STEP} blocks; drop the rest. */
-    static List<Point> simplify(List<Point> points) {
+    public static List<Point> simplify(List<Point> points) {
         if (points.size() <= 2) return points;
         List<Point> out = new ArrayList<>();
         out.add(points.get(0));
