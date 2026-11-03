@@ -1652,4 +1652,40 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+    /**
+     * Plan 70, MA5.4: while its owner is AFK it works within 32 blocks of them. Sent 60 blocks off, it turns back at
+     * the edge and keeps within reach of them.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_leash", timeoutTicks = 700)
+    public void whileTheOwnerIsAfkItWorksWithin32Blocks(GameTestHelper helper) {
+        Scene s = scene(helper, "Tethered");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        // A roof over them by day: safe, not out in the open, so it works rather than guards.
+        for (int x = 1; x <= 5; x++) for (int z = 1; z <= 5; z++) helper.setBlock(x, 3, z, Blocks.STONE);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
+        boolean[] sent = {false};
+        double[] furthest = {0};
+        helper.onEachTick(() -> {
+            trace(helper, s, "afk leash");
+            double away = s.body().distanceTo(s.owner());
+            furthest[0] = Math.max(furthest[0], away);
+            if (!sent[0] && s.loop().ownerAfk()) {
+                sent[0] = true;
+                BlockPos far = s.owner().blockPosition().offset(60, 0, 0);
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("goal_mode", "xz");
+                args.addProperty("x", far.getX());
+                args.addProperty("z", far.getZ());
+                new com.mineagent.tools.movement.MoveToTool().onServerCall("afk-far", args, s.companion(), r -> {});
+            }
+            if (furthest[0] > 38.0) {
+                tidy(s);
+                fail(helper, String.format("it went %.0f blocks from its AFK owner", furthest[0]));
+            } else if (sent[0] && helper.getTick() >= 600) {
+                tidy(s);
+                if (furthest[0] >= 24.0 && away <= 32.0) helper.succeed();
+                else fail(helper, String.format("furthest %.0f, now %.0f blocks from them", furthest[0], away));
+            }
+        });
+    }
 }
