@@ -931,6 +931,11 @@ public class AgentLoop {
         // A terminal task no longer owns the body. Keep its outcome as compact
         // evidence, but publish a null task id so the next decision sees an
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
+        if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-"))) {
+            lastOrderState = state;
+            var note = message == null ? null : java.util.regex.Pattern.compile("\"note\":\"([^\"]*)\"").matcher(message);
+            lastOrderNote = note != null && note.find() ? note.group(1) : message == null ? "" : message;
+        }
         liveBodyState.set(new LiveBodyState(null, "idle", null, null,
                 "last_task=" + taskName + " state=" + state
                         + (message == null || message.isBlank()
@@ -1328,7 +1333,12 @@ public class AgentLoop {
                 var g = goalBook.resume();
                 // No long goal to go back to: "continue" is the model's to read, as before.
                 if (g.isEmpty()) return false;
-                if (onSelfGoal(goalPrompt(g.get(), null))) {
+                if (orderIn(g.get().text(), companion.companionName()).isPresent()) {
+                    // An order: code runs it again, from where things are now.
+                    orderGoalId = null;
+                    orderSince = 0;
+                    speakToOwner("Back to it: " + com.mineagent.engine.goal.Orders.withoutMark(g.get().text()) + ".");
+                } else if (onSelfGoal(goalPrompt(g.get(), null))) {
                     speakToOwner("Back to " + g.get().id() + ": " + truncateForLog(g.get().text(), 120) + ".");
                 } else {
                     speakToOwner("Goal " + g.get().id() + " is next, once I'm off guard and out of parked mode.");
@@ -3081,6 +3091,11 @@ public class AgentLoop {
     private boolean orderSeen;
     /** Set while the heartbeat dispatches the active goal's order, so the order's handler doesn't make a second goal. */
     private String dispatchingGoal;
+    /** How the last order's task ended, and what it said. */
+    private volatile TaskState lastOrderState;
+    private volatile String lastOrderNote = "";
+    /** Per goal, the rungs of the recovery ladder used so far (MA6.4). */
+    private final Map<String, Integer> orderRungs = new java.util.HashMap<>();
 
     /** An order given now: in the goal book as the active goal (what it interrupts comes back after), being run. */
     private void orderGoal(String words) {
@@ -3095,8 +3110,9 @@ public class AgentLoop {
             }
         }
         orderGoalId = id;
-        orderSince = System.currentTimeMillis();
+        orderSince = currentGameTickSafe();
         orderSeen = false;
+        lastOrderState = null;
     }
 
     /** The order a goal's words are, when code runs it: production and mining, so far. */
@@ -3124,14 +3140,23 @@ public class AgentLoop {
         var g = active.get();
         LiveBodyState body = liveBodyState.get();
         boolean busy = body != null && body.taskId() != null;
-        long now = System.currentTimeMillis();
+        long now = currentGameTickSafe(); // game ticks: a test server runs faster than the clock
         if (g.id().equals(orderGoalId)) {
-            if (busy) {
+            boolean reported = lastOrderState != null; // its task said how it ended, however quick it was
+            if (busy && !reported) {
                 orderSeen = true;
                 return;
             }
-            if (!orderSeen && now - orderSince < 10_000L) return; // its task is on its way
+            if (!reported && !orderSeen && now - orderSince < 200L) return; // its task is on its way
             orderGoalId = null;
+            TaskState ended = lastOrderState;
+            String note = lastOrderNote == null ? "" : lastOrderNote;
+            lastOrderState = null;
+            if (ended == TaskState.FAILED) {
+                if (recover(g, note)) return;
+            } else {
+                orderRungs.remove(g.id());
+            }
             if (com.mineagent.engine.goal.Orders.stands(g.text())) {
                 orderSince = now; // again, until it's stopped
                 return;
@@ -3142,7 +3167,7 @@ public class AgentLoop {
             return;
         }
         if (busy || inProgress || skillRuntime.active()) return;
-        if (now - orderSince < 2_000L) return;
+        if (now - orderSince < 40L) return;
         var order = orderIn(g.text(), companion.companionName());
         if (order.isEmpty() || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self)) return;
         dispatchingGoal = g.id();
@@ -3155,6 +3180,64 @@ public class AgentLoop {
             // It couldn't start ("which chest?"): set aside, not tried every second.
             goalBook.pauseActive();
             saveMemoryNow();
+        }
+    }
+
+    /**
+     * The recovery ladder for an order that failed (MA6.4): the next rung that can help, used. True when the goal stays
+     * (tried again, set aside for you, a tool made first); false when it is over (handed on, or given up), and the
+     * queue moves on.
+     */
+    private boolean recover(com.mineagent.engine.planning.GoalBook.Goal g, String note) {
+        var f = com.mineagent.engine.goal.RecoveryLadder.classify(note);
+        int tried = orderRungs.getOrDefault(g.id(), 0);
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+        var owner = self == null ? null : self.serverPlayerOwner();
+        boolean ownerHere = owner != null && !ownerActivity.afk();
+        boolean model = System.currentTimeMillis() - lastSmhHintMs > 300_000L;
+        var rung = com.mineagent.engine.goal.RecoveryLadder.next(f, tried, ownerHere, model);
+        orderRungs.put(g.id(), com.mineagent.engine.goal.RecoveryLadder.after(rung));
+        String what = com.mineagent.engine.goal.Orders.withoutMark(g.text());
+        journal.record("recovery", rung + " for \"" + what + "\" (" + f + "): " + truncateForLog(note, 160), currentGameTickSafe());
+        switch (rung) {
+            case RETRY -> {
+                orderSince = currentGameTickSafe();
+                return true; // the heartbeat runs it again
+            }
+            case FIX -> {
+                boolean shears = note.toLowerCase(java.util.Locale.ROOT).contains("shears");
+                goalBook.chain(List.of("make me 1 " + (shears ? "shears" : "stone pickaxe")), "recovery", currentGameTickSafe());
+                saveMemoryNow();
+                speakToOwner("I need " + (shears ? "shears" : "a pickaxe") + " for that: making one first.");
+                return true;
+            }
+            case VARIATION -> {
+                // Its task already made what it could here; the rest is the next rung's.
+                return recover(g, note);
+            }
+            case ASK -> {
+                goalBook.pauseActive();
+                saveMemoryNow();
+                speakToOwner("I couldn't " + what + ": " + note + ". Say \"carry on\" and I'll try again, or \"cancel\" to leave it.");
+                return true;
+            }
+            case PATCH -> {
+                // The model, with a narrow brief; what code finished stays done.
+                goalBook.markDone(g.id());
+                orderRungs.remove(g.id());
+                try {
+                    goalBook.urgent(what + " (tried by code: " + truncateForLog(note, 120) + "; find another way)", "recovery", currentGameTickSafe(), null);
+                } catch (RuntimeException full) {
+                    speakToOwner("I've given up on " + what + ": " + note + ".");
+                }
+                saveMemoryNow();
+                return true;
+            }
+            default -> {
+                orderRungs.remove(g.id());
+                speakToOwner("I've given up on " + what + ": " + note + ".");
+                return false;
+            }
         }
     }
 

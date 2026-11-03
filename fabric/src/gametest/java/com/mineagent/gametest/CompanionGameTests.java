@@ -2287,6 +2287,42 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA6.4, the recovery ladder: an order for a chest that isn't there fails; its owner is here, so it asks
+     * (it doesn't guess, and doesn't ask the model about a chest only they know); the chest put down and "carry on"
+     * said, it does it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_ladder", timeoutTicks = 800)
+    public void aFailedOrderAsksThenCarriesOn(GameTestHelper helper) {
+        Scene s = scene(helper, "Asker");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.COBBLESTONE, 16));
+        BlockPos chest = helper.absolutePos(new BlockPos(7, 1, 3));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(),
+                "put 16 cobblestone in the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ()));
+        boolean[] placed = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "ladder");
+            String asked = lastSaid(s, "I couldn't put 16 cobblestone");
+            if (!placed[0] && !asked.isEmpty()) {
+                placed[0] = true;
+                helper.setBlock(7, 1, 3, Blocks.CHEST);
+                MineAgentEngine.onPlayerChat(s.owner(), "carry on");
+                return;
+            }
+            int in = placed[0] ? inChest(helper, chest, Items.COBBLESTONE) : 0;
+            if (in == 16) {
+                tidy(s);
+                if (asked.contains("there is no chest")) helper.succeed();
+                else fail(helper, "filled, but it asked: " + asked);
+            } else if (helper.getTick() >= 750) {
+                String how = "asked: " + asked + "; in the chest " + in + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {
