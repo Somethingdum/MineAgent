@@ -50,6 +50,8 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     private int breakingTicks;
     private int wait;
     private int failures;
+    /** Ticks left in a jump made to put a block down out of sight from its feet (a roof's). */
+    private int jumpTicks;
     private boolean centred;
     private boolean begun;
     private String outcome = "";
@@ -202,10 +204,31 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             return TaskState.RUNNING;
         }
         BlockPos next = todo.get(0);
+        var input = TaskContext.inputDriver(player);
+        if (jumpTicks > 0) {
+            jumpTicks--;
+            input.setJumping(false);
+            if (!sp.onGround() && Placement.placeAnySupportBlock(sp, next)) {
+                placed.add(next.immutable());
+                failures = 0;
+                jumpTicks = 0;
+                wait = 3;
+            } else if (jumpTicks == 0) {
+                failures++;
+                if (failures % 5 == 0) skipped.add(next.immutable());
+                wait = 4;
+            }
+            return TaskState.RUNNING;
+        }
         if (Placement.placeAnySupportBlock(sp, next)) {
             placed.add(next.immutable());
             failures = 0;
             wait = 3;
+        } else if (next.getY() >= feet.getY() + 2 && sp.onGround() && Placement.supportBlockCount(sp) > 0) {
+            // Standing, its eyes are below the top of its walls: the face to set this against is out of sight. As a
+            // player does in a hole one block wide, it jumps and puts the block down at the top of the jump.
+            input.setJumping(true);
+            jumpTicks = 12;
         } else {
             failures++;
             // A cell it can't fill from here (nothing to set it against, nothing left to place): on to the next.
