@@ -1636,11 +1636,6 @@ public final class MineAgentEngine {
     }
 
     /**
-     * /mineagent trust|untrust <player>: who else the owner's companions obey (SMH plan 69, MA1.7). The
-     * owner's own: the command acts only on companions the sender owns. A player is named while online,
-     * or by UUID.
-     */
-    /**
      * The companion a goal command is for: the sender's own (primary) companion, else one whose owner trusts them
      * (plan 69, MA3.1: goals are for the owner and trusted players).
      */
@@ -1751,6 +1746,11 @@ public final class MineAgentEngine {
         return 1;
     }
 
+    /**
+     * /mineagent trust|untrust <player>: who else the owner's companions obey (SMH plan 69, MA1.7). The
+     * owner's own: the command acts only on companions the sender owns. A player is named while online,
+     * or by UUID.
+     */
     private static int changeTrust(CommandSourceStack source, String who, boolean trust) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
         List<CompanionState> mine = getCompanionsByOwner(owner.getUUID());

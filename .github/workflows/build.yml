@@ -70,8 +70,7 @@ jobs:
           if-no-files-found: error
 
   # The companion in a running game (plan 69, MA4.4): the scenes in fabric/src/gametest on a headless server.
-  # The server exits with the number of scenes that failed. Kept apart from build for now, so a red scene
-  # shows here without holding back the jar.
+  # The server exits with the number of scenes that failed; smh-latest is published only when every scene passes.
   gametest:
     name: Game tests (Fabric, headless server)
     runs-on: ubuntu-latest
@@ -110,7 +109,7 @@ jobs:
   # https://github.com/Somethingdum/MineAgent/releases/download/smh-latest/mineagent-fabric.jar
   smh-latest:
     name: Publish smh-latest
-    needs: build
+    needs: [build, gametest]
     if: github.event_name == 'push' && github.ref == 'refs/heads/smh-companion'
     runs-on: ubuntu-latest
     permissions:

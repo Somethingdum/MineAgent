@@ -164,6 +164,64 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    private static int dirt(ServerPlayer body) {
+        int n = 0;
+        var inv = body.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).is(Items.DIRT)) n += inv.getItem(i).getCount();
+        return n;
+    }
+
+    /** A second player beside the companion, who says something to it through the game's chat path. */
+    private static ServerPlayer neighbour(GameTestHelper helper, Scene s) {
+        ServerPlayer p = helper.makeMockServerPlayerInLevel();
+        Vec3 at = s.body().position();
+        p.teleportTo(helper.getLevel(), at.x + 2, at.y, at.z + 1, 0.0f, 0.0f);
+        return p;
+    }
+
+    /** Scene 2: a stranger gives an order (one the owner's words would run at once), and nothing happens. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_stranger", timeoutTicks = 200)
+    public void aStrangersOrderDoesNothing(GameTestHelper helper) {
+        Scene s = scene(helper, "Loyal");
+        s.body().getInventory().setItem(3, new ItemStack(Items.DIRT, 16));
+        ServerPlayer stranger = neighbour(helper, s);
+        MineAgentEngine.onPlayerChat(stranger, "Loyal, drop 16 dirt");
+        MineAgentEngine.onPlayerChat(stranger, "Loyal, drop all your stuff");
+        helper.onEachTick(() -> {
+            if (dirt(s.body()) != 16) {
+                stranger.getServer().getPlayerList().remove(stranger);
+                tidy(s);
+                helper.fail("a stranger's order moved its things: " + dirt(s.body()) + " dirt left of 16");
+            } else if (helper.getTick() >= 100) {
+                stranger.getServer().getPlayerList().remove(stranger);
+                tidy(s);
+                helper.succeed();
+            }
+        });
+    }
+
+    /** Scene 3: a trusted player gives one, and it runs (the owner's plain commands, without a model). */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trusted", timeoutTicks = 300)
+    public void aTrustedPlayersOrderRuns(GameTestHelper helper) {
+        Scene s = scene(helper, "Helper");
+        s.body().getInventory().setItem(3, new ItemStack(Items.DIRT, 16));
+        ServerPlayer friend = neighbour(helper, s);
+        s.loop().setAgentSettings(s.loop().getAgentSettings().withTrusted(friend.getUUID()));
+        MineAgentEngine.onPlayerChat(friend, "Helper, drop 4 dirt");
+        helper.onEachTick(() -> {
+            int left = dirt(s.body());
+            if (left == 12) {
+                friend.getServer().getPlayerList().remove(friend);
+                tidy(s);
+                helper.succeed();
+            } else if (left < 12 || helper.getTick() >= 250) {
+                friend.getServer().getPlayerList().remove(friend);
+                tidy(s);
+                helper.fail("a trusted player's \"drop 4 dirt\" left " + left + " of 16");
+            }
+        });
+    }
+
     /** "get 3 diamonds" becomes a goal whose amount is counted, the item checked against the game's registry. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_goal", timeoutTicks = 100)
     public void aGoalsAmountsAreReadAgainstTheGame(GameTestHelper helper) {
