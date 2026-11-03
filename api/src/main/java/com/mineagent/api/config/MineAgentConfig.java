@@ -133,6 +133,7 @@ public record MineAgentConfig(
      * @param readyFood        food it carries for a trip (0 to 64)
      * @param readyTorches     torches it carries for a trip (0 to 64)
      * @param sparePickaxe     a spare pickaxe for a trip
+     * @param escapeLavaFire   out of lava the shortest safe way; water on itself when burning
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -157,11 +158,12 @@ public record MineAgentConfig(
         boolean readyCheck,
         int readyFood,
         int readyTorches,
-        boolean sparePickaxe
+        boolean sparePickaxe,
+        boolean escapeLavaFire
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true
+            true, 8, 16, true, true
         );
     }
 
@@ -265,7 +267,7 @@ public record MineAgentConfig(
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
                 rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly,
                 rawBehaviour.readyCheck, clamp(rawBehaviour.readyFood, 0, 64), clamp(rawBehaviour.readyTorches, 0, 64),
-                rawBehaviour.sparePickaxe);
+                rawBehaviour.sparePickaxe, rawBehaviour.escapeLavaFire);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

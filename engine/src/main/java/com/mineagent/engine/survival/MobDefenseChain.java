@@ -96,6 +96,13 @@ public final class MobDefenseChain implements TaskChain {
 
     /** What getPriority saw this tick, reused by tick(). */
     private Snapshot seen;
+    /** How fast its health is falling (MA8.2): fast enough to die within two seconds means leave now. */
+    private final com.mineagent.engine.combat.HealthTrend trend = new com.mineagent.engine.combat.HealthTrend();
+    private long trendTick = -1;
+    /** Fleeing and getting nowhere, the threat at arm's length: cornered. Blocks placed under it pillaring up. */
+    private int stuckFleeing;
+    private int pillared;
+    private net.minecraft.core.BlockPos pillarBase;
 
     // The fight under way (kept across interruptions by other chains; ended when nothing is left).
     private boolean fighting;
@@ -322,6 +329,15 @@ public final class MobDefenseChain implements TaskChain {
         Self self = selfOf(sp);
         Tactics t = tactics != null ? tactics : Tactics.of("balanced", config.healthFlee());
         Assessment assessment = CombatBrain.assess(hostiles, self, t, context);
+        if (now != trendTick) {
+            trendTick = now;
+            trend.sample(now, sp.getHealth());
+        }
+        if (!hostiles.isEmpty() && trend.lethalSoon() && assessment.posture() != Posture.FLEEING) {
+            // Leaving before the hit that kills: whatever the fight looks like, at this rate it is over in two seconds.
+            assessment = new Assessment(assessment.total(), assessment.strength(), Posture.FLEEING, assessment.primary(),
+                    assessment.ownerAtRisk(), "health falling too fast: leaving before the hit that kills");
+        }
         Snapshot s = new Snapshot(now, setup, anchor, context, hostiles, mobs, self, assessment, arrow, arrowFrom, drawing);
         seen = s;
         return s;
@@ -416,6 +432,31 @@ public final class MobDefenseChain implements TaskChain {
             return;
         }
         double distance = from.distanceTo(sp);
+        // Cornered (MA8.2): fleeing for two seconds with the threat still at arm's length and nowhere it got to: up a
+        // pillar of the blocks it carries, 8 high at most; most mobs can't follow.
+        boolean going = sp.getDeltaMovement().horizontalDistanceSqr() > 0.002;
+        stuckFleeing = distance < 3.0 && !going ? stuckFleeing + 1 : Math.max(0, stuckFleeing - 2);
+        if ((stuckFleeing > 40 || pillared > 0 && pillared < 8 && distance < 4.0)
+                && com.mineagent.engine.act.Placement.hasSupportBlock(sp)) {
+            if (nav != null && nav.isNavigating()) nav.cancel();
+            navGoal = null;
+            input.setForward(0.0f);
+            input.setStrafe(0.0f);
+            input.setSprinting(false);
+            sp.setXRot(90.0f); // straight down
+            if (sp.onGround()) pillarBase = sp.blockPosition();
+            input.setJumping(pillared < 8);
+            // At the top of the jump, clear of the cell it stood in: a block into that cell, under its feet.
+            if (!sp.onGround() && pillarBase != null && sp.getY() >= pillarBase.getY() + 1.0
+                    && sp.level().getBlockState(pillarBase).isAir()
+                    && com.mineagent.engine.act.Placement.placeAnySupportBlock(sp, pillarBase)) {
+                pillared++;
+                pillarBase = null;
+                if (pillared == 1) SurvivalBuiltin.bodyLog(companion).report("cornered: pillaring up");
+            }
+            return;
+        }
+        if (distance > 8.0) pillared = 0;
         if (distance < 8.0) {
             if (nav != null && nav.isNavigating()) nav.cancel();
             navGoal = null;

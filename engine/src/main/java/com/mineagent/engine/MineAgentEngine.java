@@ -186,6 +186,8 @@ public final class MineAgentEngine {
                 config.survival().pickupItems()
         );
         BrainChains.register(10, p -> new MLGChain(p));
+        // Out of lava, water on itself when burning (SMH plan 70, MA8.1).
+        BrainChains.register(9,  p -> new com.mineagent.engine.survival.LavaFireChain(p));
         BrainChains.register(6,  p -> new BreathChain(p));
         BrainChains.register(5,  p -> new MobDefenseChain(p, survivalCfg));
         BrainChains.register(4,  p -> new FoodChain(p, survivalCfg));

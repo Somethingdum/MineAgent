@@ -3152,6 +3152,11 @@ public class AgentLoop {
             TaskState ended = lastOrderState;
             String note = lastOrderNote == null ? "" : lastOrderNote;
             lastOrderState = null;
+            if (ended == TaskState.CANCELLED) {
+                // Cut off by something else (a model's call), not stopped by its owner (that pauses the goal): again.
+                orderSince = now;
+                return;
+            }
             if (ended == TaskState.FAILED) {
                 if (recover(g, note)) return;
             } else {
@@ -3166,7 +3171,8 @@ public class AgentLoop {
             next.ifPresent(n -> speakToOwner("Next: " + com.mineagent.engine.goal.Orders.withoutMark(n.text()) + "."));
             return;
         }
-        if (busy || inProgress || skillRuntime.active()) return;
+        // An owner's order doesn't wait on a model's turn (a chat reply, a practice idea): only on the body being free.
+        if (busy || skillRuntime.active()) return;
         if (now - orderSince < 40L) return;
         var order = orderIn(g.text(), companion.companionName());
         if (order.isEmpty() || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self)) return;

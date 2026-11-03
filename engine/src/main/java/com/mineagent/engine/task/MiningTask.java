@@ -428,6 +428,14 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             if (r < 0) return blocked(sp);
             return TaskState.RUNNING; // breaking it; one block at a time
         }
+        // A drop under the next step (a cave below the tunnel): filled from its cobblestone, or not stepped on (MA8.4).
+        if (!sp.blockPosition().equals(feet) && !com.mineagent.engine.pathing.util.BlockHelper.canStandOn(level.getBlockState(feet.below()))) {
+            if (unsafe(level, feet.below())) return blocked(sp);
+            var fill = ProductionTask.count(sp, Items.COBBLESTONE) > 0 ? Blocks.COBBLESTONE
+                    : ProductionTask.count(sp, Items.COBBLED_DEEPSLATE) > 0 ? Blocks.COBBLED_DEEPSLATE : null;
+            if (fill == null || !Placement.placeBlock(sp, feet.below(), fill.defaultBlockState())) return blocked(sp);
+            return TaskState.RUNNING;
+        }
         if (!sp.blockPosition().equals(feet)) return walk(feet);
         // Here: what it opened, and the light.
         turns = 0;

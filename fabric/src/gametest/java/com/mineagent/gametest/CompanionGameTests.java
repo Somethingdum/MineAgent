@@ -75,6 +75,13 @@ public class CompanionGameTests implements FabricGameTest {
                 for (int y = 0; y <= 12; y++) placed.clear(helper.absolutePos(new BlockPos(x, y, z)));
             }
         }
+        // And what earlier scenes left lying here or walking about (dropped items, cows, zombies): a scene starts clean.
+        var area = new net.minecraft.world.phys.AABB(helper.absoluteVec(new Vec3(-16, -3, -16)), helper.absoluteVec(new Vec3(25, 13, 25)));
+        for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.Entity.class, area,
+                x -> x instanceof net.minecraft.world.entity.item.ItemEntity || x instanceof net.minecraft.world.entity.Mob
+                        || x instanceof net.minecraft.world.entity.ExperienceOrb)) {
+            e.discard();
+        }
         ServerPlayer owner = reuseOwner != null ? reuseOwner : helper.makeMockServerPlayerInLevel();
         BlockPos at = helper.absolutePos(new BlockPos(3, 1, 3));
         owner.teleportTo(helper.getLevel(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 0.0f, 0.0f);
@@ -2320,6 +2327,115 @@ public class CompanionGameTests implements FabricGameTest {
                 tidy(s);
                 fail(helper, how);
             }
+        });
+    }
+
+    /** Plan 70, MA8.1: stepped into lava, it gets out onto the nearest ground, alive. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_lava", timeoutTicks = 200)
+    public void steppedIntoLavaItGetsOut(GameTestHelper helper) {
+        Scene s = scene(helper, "Hotfoot");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 6; x <= 8; x++) for (int z = 6; z <= 8; z++) helper.setBlock(x, 0, z, Blocks.LAVA);
+        BlockPos in = helper.absolutePos(new BlockPos(7, 0, 7));
+        s.body().teleportTo(helper.getLevel(), in.getX() + 0.5, in.getY(), in.getZ() + 0.5, 0.0f, 0.0f);
+        int[] outFor = {0};
+        helper.onEachTick(() -> {
+            trace(helper, s, "lava");
+            var body = s.body();
+            if (body.isDeadOrDying()) {
+                tidy(s);
+                fail(helper, "it died in the lava");
+                return;
+            }
+            if (helper.getTick() > 5 && !body.isInLava()) outFor[0]++;
+            else outFor[0] = 0;
+            if (outFor[0] >= 20) {
+                float health = body.getHealth();
+                tidy(s);
+                helper.succeed();
+                System.out.println("[SCENE lava] out of the lava with " + health + " health");
+            } else if (helper.getTick() >= 180) {
+                String how = "still in lava " + body.isInLava() + ", at " + rel(helper, body.blockPosition()).toShortString() + ", health " + body.getHealth();
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA8.1: set on fire with a water bucket, it pours water on itself, and takes it back up after. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fire", timeoutTicks = 200)
+    public void setOnFireItPutsItselfOut(GameTestHelper helper) {
+        Scene s = scene(helper, "Doused");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(5, new ItemStack(Items.WATER_BUCKET));
+        helper.runAfterDelay(5, () -> s.body().setRemainingFireTicks(300));
+        int[] outAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "fire");
+            var body = s.body();
+            if (helper.getTick() > 6 && outAt[0] < 0 && !body.isOnFire()) outAt[0] = (int) helper.getTick();
+            boolean puddle = false;
+            BlockPos at = body.blockPosition();
+            for (BlockPos p : BlockPos.betweenClosed(at.offset(-2, -1, -2), at.offset(2, 1, 2))) {
+                if (helper.getLevel().getFluidState(p).is(net.minecraft.tags.FluidTags.WATER)) puddle = true;
+            }
+            if (outAt[0] > 0 && !puddle && inv.countItem(Items.WATER_BUCKET) == 1) {
+                int took = outAt[0] - 5;
+                tidy(s);
+                if (took <= 40) helper.succeed();
+                else fail(helper, "out only after " + took + " ticks");
+            } else if (helper.getTick() >= 180) {
+                String how = "on fire " + body.isOnFire() + ", out at " + outAt[0] + ", water near " + puddle + ", water buckets "
+                        + inv.countItem(Items.WATER_BUCKET) + ", buckets " + inv.countItem(Items.BUCKET);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA8.2: three zombies at once, and it has no weapon: it doesn't stand and trade hits; it retreats (or,
+     * cornered, pillars up out of reach), and is alive after.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_retreat", timeoutTicks = 400)
+    public void threeZombiesItRetreats(GameTestHelper helper) {
+        Scene s = scene(helper, "Wary");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(8, new ItemStack(Items.DIRT, 16));
+        BlockPos me = helper.absolutePos(new BlockPos(4, 1, 4));
+        s.body().teleportTo(helper.getLevel(), me.getX() + 0.5, me.getY(), me.getZ() + 0.5, 0.0f, 0.0f);
+        java.util.List<net.minecraft.world.entity.monster.Zombie> zombies = new java.util.ArrayList<>();
+        helper.runAfterDelay(5, () -> {
+            for (int i = 0; i < 3; i++) {
+                var z = EntityType.ZOMBIE.create(helper.getLevel());
+                BlockPos at = me.offset(4, 0, i - 1);
+                z.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5);
+                z.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET));
+                z.setTarget(s.body());
+                helper.getLevel().addFreshEntity(z);
+                zombies.add(z);
+            }
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "retreat");
+            var body = s.body();
+            if (body.isDeadOrDying()) {
+                for (var z : zombies) z.discard();
+                tidy(s);
+                fail(helper, "it died");
+                return;
+            }
+            if (helper.getTick() < 160) return;
+            double nearest = Double.MAX_VALUE;
+            for (var z : zombies) if (z.isAlive()) nearest = Math.min(nearest, z.distanceTo(body));
+            double up = body.getY() - me.getY();
+            boolean away = nearest >= 6.0 || up >= 2.0;
+            String how = String.format("nearest zombie %.1f, %.1f up, health %.1f", nearest, up, body.getHealth());
+            for (var z : zombies) z.discard();
+            tidy(s);
+            if (away) helper.succeed();
+            else fail(helper, "it stayed among them: " + how);
         });
     }
 
