@@ -1943,6 +1943,52 @@ public class AgentLoop {
         return sb.append(", ").append(skillLib.size()).append(" skills (").append(certified).append(" certified).").toString();
     }
 
+    /** Its guard duty, to keep across a leave and a return (SMH plan 70, MA5.9). */
+    public net.minecraft.nbt.CompoundTag exportDuty() {
+        var tag = new net.minecraft.nbt.CompoundTag();
+        var post = guardPost;
+        if (post != null) {
+            tag.putDouble("px", post.x);
+            tag.putDouble("py", post.y);
+            tag.putDouble("pz", post.z);
+            var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+            if (self != null) tag.putString("dim", self.level().dimension().location().toString());
+        }
+        UUID ward = guardWard;
+        if (ward != null) tag.putUUID("ward", ward);
+        tag.putDouble("radius", guardRadius);
+        return tag;
+    }
+
+    /** The guard duty it had when it left; a post in another dimension than where it is now is dropped. */
+    public void importDuty(net.minecraft.nbt.CompoundTag tag) {
+        if (tag == null || tag.isEmpty()) return;
+        net.minecraft.world.phys.Vec3 post = null;
+        if (tag.contains("px")) {
+            var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+            String here = self == null ? "" : self.level().dimension().location().toString();
+            if (!tag.contains("dim") || tag.getString("dim").equals(here)) {
+                post = new net.minecraft.world.phys.Vec3(tag.getDouble("px"), tag.getDouble("py"), tag.getDouble("pz"));
+            }
+        }
+        UUID ward = tag.hasUUID("ward") ? tag.getUUID("ward") : null;
+        if (post != null || ward != null) setGuard(post, ward, tag.contains("radius") ? tag.getDouble("radius") : 12.0);
+    }
+
+    /** The one line it says when its owner is back in the world: where it stands and what it carries on with. */
+    public void sayBack() {
+        StringBuilder line = new StringBuilder("Back. ");
+        var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+        if (self != null) {
+            var at = self.blockPosition();
+            line.append("I'm at ").append(at.getX()).append(" ").append(at.getY()).append(" ").append(at.getZ()).append(". ");
+        }
+        String guard = guardState();
+        if (!guard.isEmpty()) line.append("Still guarding ").append(guard).append(". ");
+        goalBook.active().ifPresent(g -> line.append("Carrying on with: ").append(truncateForLog(g.text(), 80)).append("."));
+        speakToOwner(line.toString().strip());
+    }
+
     /** Who decides its work (settings/WorkMode): the owner's alone to change. */
     public void changeWorkMode(String mode) {
         var next = com.mineagent.engine.settings.WorkMode.of(mode);

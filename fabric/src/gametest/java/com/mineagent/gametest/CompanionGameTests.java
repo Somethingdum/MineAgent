@@ -83,6 +83,16 @@ public class CompanionGameTests implements FabricGameTest {
         s.owner().getServer().getPlayerList().remove(s.owner());
     }
 
+    /** Every 40 ticks, where the companion is and what has its body, into CI's log. */
+    private static void trace(GameTestHelper helper, Scene s, String what) {
+        if (helper.getTick() % 40 != 0) return;
+        var state = MineAgentEngine.getCompanion(s.companion().companionId());
+        String control = state.map(c -> c.auction.inControl()).orElse("gone");
+        System.out.println("[SCENE " + what + "] tick " + helper.getTick() + ": at "
+                + helper.relativePos(s.body().blockPosition()).toShortString() + ", " + control
+                + (s.body().isSleeping() ? ", asleep" : ""));
+    }
+
     /** A scene's failure, also printed, so the reason is in CI's log (the report file is not). */
     private static void fail(GameTestHelper helper, String why) {
         System.out.println("[GAMETEST FAILED] " + why);
@@ -213,6 +223,8 @@ public class CompanionGameTests implements FabricGameTest {
                 net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
         BlockPos inside = helper.absolutePos(new BlockPos(10, 1, 10));
         s.body().teleportTo(helper.getLevel(), inside.getX() + 0.5, inside.getY(), inside.getZ() + 0.5, 0.0f, 0.0f);
+        System.out.println("[SCENE house] put inside at " + helper.relativePos(s.body().blockPosition()).toShortString()
+                + "; wall at (10, 1, 6) is " + helper.getBlockState(new BlockPos(10, 1, 6)).getBlock());
         return helper.absolutePos(new BlockPos(10, 1, 3));
     }
 
@@ -271,6 +283,7 @@ public class CompanionGameTests implements FabricGameTest {
         sendTo(helper, s, goal, "house-1");
         boolean[] door = {false};
         helper.onEachTick(() -> {
+            trace(helper, s, "house");
             if (atDoor(helper, s)) door[0] = true;
             int broken = brokenWall(helper);
             double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
@@ -325,6 +338,7 @@ public class CompanionGameTests implements FabricGameTest {
         BlockPos goal = house(helper, s, Blocks.IRON_DOOR);
         sendTo(helper, s, goal, "iron-2");
         helper.onEachTick(() -> {
+            trace(helper, s, "iron wall");
             if (brokenWall(helper) > 0 || !helper.getBlockState(new BlockPos(10, 1, 14)).is(Blocks.IRON_DOOR)) {
                 tidy(s);
                 fail(helper, "it broke out of the house");
@@ -383,6 +397,7 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
         helper.onEachTick(() -> {
+            trace(helper, s, "sleep");
             if (s.body().isSleeping()) sawItAsleep[0] = true;
             if (level.getDayTime() >= dayStart + 24000L) {
                 tidy(s);
@@ -491,6 +506,49 @@ public class CompanionGameTests implements FabricGameTest {
             } else {
                 fail(helper, all);
             }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.9: the owner leaves and comes back. The companion comes back once, where it was, with what it had:
+     * its items, its hunger, an effect on it, its bed's spawn point, and its guard post.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_return", timeoutTicks = 200)
+    public void aLeaveAndReturnKeepsWhatItHad(GameTestHelper helper) {
+        Scene s = scene(helper, "Keeper2");
+        var body = s.body();
+        body.getInventory().setItem(3, new ItemStack(Items.IRON_INGOT, 17));
+        body.getFoodData().setFoodLevel(13);
+        body.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 6000, 1));
+        BlockPos spawn = helper.absolutePos(new BlockPos(12, 1, 12));
+        body.setRespawnPosition(helper.getLevel().dimension(), spawn, 0.0f, true, false);
+        BlockPos post = helper.absolutePos(new BlockPos(5, 1, 5));
+        s.loop().setGuard(Vec3.atBottomCenterOf(post), null, 9.0);
+        helper.runAfterDelay(5, () -> {
+            MineAgentEngine.onPlayerLeave(s.owner());
+            boolean gone = MineAgentEngine.getCompanionsByOwner(s.owner().getUUID()).isEmpty();
+            MineAgentEngine.onPlayerJoin(s.owner());
+            MineAgentEngine.onPlayerJoin(s.owner()); // a second join in the same moment must not make a second one
+            var back = MineAgentEngine.getCompanionsByOwner(s.owner().getUUID());
+            if (back.size() != 1) {
+                for (var c : back) MineAgentEngine.despawnCompanion(c.companion.companionId(), true);
+                s.owner().getServer().getPlayerList().remove(s.owner());
+                fail(helper, "after leaving and coming back there are " + back.size() + " companions (gone at first: " + gone + ")");
+                return;
+            }
+            var again = back.get(0).companion.serverPlayer();
+            var loop = TaskContext.agentLoop(back.get(0).companion);
+            int iron = again.getInventory().countItem(Items.IRON_INGOT);
+            int food = again.getFoodData().getFoodLevel();
+            boolean fast = again.hasEffect(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED);
+            boolean spawnKept = spawn.equals(again.getRespawnPosition());
+            boolean guarding = loop != null && loop.guarding() && loop.guardRadiusBlocks() == 9;
+            String all = String.format("gone at first %b, iron %d, food %d, speed %b, spawn kept %b, guarding %b",
+                    gone, iron, food, fast, spawnKept, guarding);
+            MineAgentEngine.despawnCompanion(back.get(0).companion.companionId(), true);
+            s.owner().getServer().getPlayerList().remove(s.owner());
+            if (gone && iron == 17 && food == 13 && fast && spawnKept && guarding) helper.succeed();
+            else fail(helper, all);
         });
     }
 

@@ -51,6 +51,15 @@ public class PriorityAuction {
         this.idle = new IdleBehavior(companion);
     }
 
+    /** What has the body now, for scenes and diagnostics: the chain's name, the task's, or "idle". */
+    public String inControl() {
+        TaskChain chain = currentWinner;
+        if (chain != null) return "chain:" + safeChainName(chain);
+        CompanionTask<?> task = currentTask;
+        if (task != null) return "task:" + task.getClass().getSimpleName() + (taskPaused ? " (paused)" : "");
+        return "idle";
+    }
+
     /** Run one deterministic server-tick auction. */
     public TaskChain tick() {
         TaskChain winner = null;

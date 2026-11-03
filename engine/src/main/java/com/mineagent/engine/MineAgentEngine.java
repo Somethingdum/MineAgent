@@ -310,6 +310,21 @@ public final class MineAgentEngine {
         com.mineagent.engine.entity.CompanionStore.save(worldDataDir, saved);
     }
 
+    /**
+     * Save every companion now, at the moment the game saves its players (SMH plan 70, MA5.9): called from a mixin on
+     * {@code PlayerList#saveAll}, which runs at every autosave and at shutdown. So after a crash the companions and the
+     * world come back from the same moment: nothing it put in a chest is in two places, or in none.
+     */
+    public static void persistAllCompanions() {
+        for (CompanionState state : List.copyOf(COMPANIONS.values())) {
+            try {
+                persistCompanion(state);
+            } catch (RuntimeException e) {
+                System.err.println("[MineAgent] Could not save companion with the world: " + e.getMessage());
+            }
+        }
+    }
+
     /** Persist an immediate lifecycle transition such as Hardcore death. */
     public static void persistCompanionNow(UUID companionId) {
         if (companionId == null) return;
@@ -341,6 +356,16 @@ public final class MineAgentEngine {
         body.putBoolean("HardcoreDead", state.companion.gameMode().isHardcore()
                 && state.lifecycle.isDead());
         body.putBoolean("HardcoreDeathLocked", state.companion.hardcoreDeathLocked());
+        // Everything a player has, as the game itself saves a player (SMH plan 70, MA5.9): effects, fire, air, its
+        // spawn point and bed, and the rest. The keys above stay for older saves and are read on top.
+        try {
+            var vanilla = sp.saveWithoutId(new net.minecraft.nbt.CompoundTag());
+            vanilla.remove("UUID");
+            body.put("Vanilla", vanilla);
+        } catch (RuntimeException e) {
+            System.err.println("[MineAgent] Could not keep the full player record: " + e.getMessage());
+        }
+        body.put("Duty", state.loop.exportDuty());
         return body.toString();
     }
 
@@ -353,6 +378,17 @@ public final class MineAgentEngine {
             boolean hardcoreDead = body.getBoolean("HardcoreDeathLocked")
                     || (companion.gameMode().isHardcore() && body.getBoolean("HardcoreDead"));
             companion.restoreHardcoreDeathLocked(hardcoreDead);
+            // The full player record first (SMH plan 70, MA5.9); the keys below are read on top, as before.
+            if (body.contains("Vanilla", net.minecraft.nbt.Tag.TAG_COMPOUND)) {
+                try {
+                    var vanilla = body.getCompound("Vanilla");
+                    vanilla.remove("UUID");
+                    sp.load(vanilla);
+                } catch (RuntimeException e) {
+                    System.err.println("[MineAgent] Could not read the full player record for '"
+                            + companion.companionName() + "': " + e.getMessage());
+                }
+            }
             if (body.contains("Inventory", net.minecraft.nbt.Tag.TAG_LIST)) {
                 sp.getInventory().load(body.getList(
                         "Inventory", net.minecraft.nbt.Tag.TAG_COMPOUND));
@@ -380,6 +416,10 @@ public final class MineAgentEngine {
                     ? net.minecraft.util.Mth.clamp(progress, 0.0f, 1.0f) : 0.0f;
 
             restoreSavedPosition(sp, body);
+            if (body.contains("Duty", net.minecraft.nbt.Tag.TAG_COMPOUND)) {
+                var loop = com.mineagent.engine.task.TaskContext.agentLoop(companion);
+                if (loop != null) loop.importDuty(body.getCompound("Duty"));
+            }
 
             if (body.contains("Mode")) {
                 try {
@@ -2048,6 +2088,7 @@ public final class MineAgentEngine {
                     player.sendSystemMessage(Component.literal(
                             "§a[MineAgent] Your companion '" + saved.companionName()
                                     + "' has been restored!"));
+                    getCompanion(companion.companionId()).ifPresent(state -> state.loop.sayBack());
                 }
             }
         }
@@ -2067,6 +2108,15 @@ public final class MineAgentEngine {
                 if (stateOpt.isPresent()) {
                     // Save the companion state to disk before despawning
                     persistCompanion(stateOpt.get());
+                    // Its stats (the rest timer phantoms go by) and advancements, as the game saves a player's
+                    // (SMH plan 70, MA5.9).
+                    try {
+                        var sp = stateOpt.get().companion.serverPlayer();
+                        sp.getStats().save();
+                        sp.getAdvancements().save();
+                    } catch (RuntimeException e) {
+                        System.err.println("[MineAgent] Could not save a companion's stats: " + e.getMessage());
+                    }
                 }
                 // Despawn from memory (but keep on disk)
                 despawnCompanion(companionId, false);
