@@ -204,6 +204,9 @@ public class AgentLoop {
 
     // ── Combat (SMH plan 69, block 3): what it guards, how it fights, every fight rated by the game ──
     /** A guarded spot, or a guarded player or creature (its UUID); null: not guarding. */
+    /** Skill repair (learning/SkillRepair): repairs under way, by base skill, and the last failures of each skill. */
+    private final Set<String> repairsInFlight = ConcurrentHashMap.newKeySet();
+    private final Map<String, Deque<String>> skillFailures = new ConcurrentHashMap<>();
     /** A line to the owner for a goal step, a new skill, or health back after a close call (MA3.3). */
     private final com.mineagent.engine.chat.MilestoneTalk milestoneTalk = new com.mineagent.engine.chat.MilestoneTalk();
     private volatile boolean closeCall;
@@ -1035,6 +1038,18 @@ public class AgentLoop {
                         : com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick);
                 double score = scorecard.record(episode, gameTick);
                 if (!succeeded) writeLesson("the skill " + run.skillName(), episode, score);
+                // Which step it stopped at, rated; versions on trial settled; a step that keeps failing repaired.
+                for (var step : com.mineagent.engine.learning.SkillRepair.stepEpisodes(run.skillName(), run.stepIndex(),
+                        run.stepCount(), succeeded)) scorecard.record(step, gameTick);
+                settleVersions(run.skillName());
+                if (!succeeded) {
+                    var seen = skillFailures.computeIfAbsent(run.skillName(), k -> new ArrayDeque<>());
+                    synchronized (seen) {
+                        seen.addLast(truncateForLog(run.lastEvidence(), 200));
+                        while (seen.size() > 3) seen.removeFirst();
+                    }
+                    repairSkill(run.skillName());
+                }
             }
         }
     }
@@ -1528,6 +1543,101 @@ public class AgentLoop {
                     + truncateForLog(g.text(), 120) + "\": " + truncateForLog(ms.get(ms.size() - 1).text(), 160));
         }
         onSelfGoal(goalPrompt(stepped.get(), nextStep));
+    }
+
+    /** The skills of one lineage: a base and its repaired versions (learning/SkillRepair). */
+    private List<String> lineageOf(String skill) {
+        String base = com.mineagent.engine.learning.SkillRepair.baseOf(skill);
+        List<String> out = new ArrayList<>();
+        for (SkillLibrary.Skill s : skillLib.exportAll()) {
+            if (com.mineagent.engine.learning.SkillRepair.baseOf(s.name()).equals(base)) out.add(s.name());
+        }
+        return out;
+    }
+
+    /** A version on trial that has proved itself takes over; one that has proved worse is removed (rolled back). */
+    private void settleVersions(String skill) {
+        List<String> lineage = lineageOf(skill);
+        if (lineage.size() < 2) return;
+        for (String name : lineage) {
+            if (!com.mineagent.engine.learning.SkillRepair.isVersion(name)) continue;
+            var verdict = com.mineagent.engine.learning.SkillRepair.judge(scorecard, name, lineage);
+            if (verdict == com.mineagent.engine.learning.SkillRepair.Verdict.PROMOTE) {
+                for (String other : lineage) if (!other.equals(name)) skillLib.remove(other);
+                onBodyLog("[SKILL_REPAIR] " + name + " does better than the older way and replaces it: "
+                        + scorecard.describe("skill:" + name));
+                sayMilestone(com.mineagent.engine.chat.MilestoneTalk.Kind.SKILL, "you found a better way to do "
+                        + truncateForLog(skillLib.get(name).map(SkillLibrary.Skill::description).orElse(name), 120));
+                saveMemoryNow();
+                return;
+            }
+            if (verdict == com.mineagent.engine.learning.SkillRepair.Verdict.ROLL_BACK) {
+                skillLib.remove(name);
+                onBodyLog("[SKILL_REPAIR] " + name + " did worse than the older way and was removed: "
+                        + scorecard.describe("skill:" + name));
+                saveMemoryNow();
+                return;
+            }
+        }
+    }
+
+    /**
+     * A skill that keeps failing at one step gets that step rewritten by the model, as a new version beside the old
+     * (both are then offered and rated; settleVersions keeps the better). Not on low experiments or the calm call
+     * rate; one repair at a time per skill; never a healthy certified skill.
+     */
+    private void repairSkill(String skill) {
+        if ("low".equals(agentSettings.experiments()) || "calm".equals(agentSettings.callRate())) return;
+        String sequence = skillLib.getActionSequence(skill);
+        if (sequence == null) return;
+        int count;
+        try {
+            count = com.google.gson.JsonParser.parseString(sequence).getAsJsonArray().size();
+        } catch (RuntimeException bad) {
+            return;
+        }
+        var weak = com.mineagent.engine.learning.SkillRepair.weakestStep(scorecard, skill, count);
+        if (weak.isEmpty()) return;
+        List<String> lineage = lineageOf(skill);
+        if (!com.mineagent.engine.learning.SkillRepair.mayRepair(scorecard, skill, lineage)) return;
+        String base = com.mineagent.engine.learning.SkillRepair.baseOf(skill);
+        if (!repairsInFlight.add(base)) return;
+        int index = weak.getAsInt();
+        var original = skillLib.get(skill).orElse(null);
+        if (original == null) {
+            repairsInFlight.remove(base);
+            return;
+        }
+        List<String> evidence;
+        var seen = skillFailures.getOrDefault(skill, new ArrayDeque<>());
+        synchronized (seen) {
+            evidence = List.copyOf(seen);
+        }
+        var request = com.mineagent.engine.learning.SkillRepair.request(baseUrl, apiKey, model, temperature, skill,
+                original.description(), sequence, index, evidence, scorecard.failureCondition("skill:" + skill), SKILL_ACTION_TOOLS);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    var fixed = com.mineagent.engine.learning.SkillRepair.apply(sequence, index,
+                            replyContent(sideCall(request)), SKILL_ACTION_TOOLS);
+                    fixed.ifPresent(f -> Services.platform().scheduleOnServer(() -> {
+                        String name = com.mineagent.engine.learning.SkillRepair.nextVersion(base, lineageOf(skill));
+                        skillLib.registerSequence(name, original.description(), original.triggerCondition(), f, true);
+                        if (skillLib.get(name).isPresent()) {
+                            onBodyLog("[SKILL_REPAIR] step " + (index + 1) + " of " + skill + " kept failing; trying "
+                                    + name + " with that step done another way. The better of the two stays.");
+                            saveMemoryNow();
+                        }
+                    }));
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Skill repair failed: " + e.getMessage());
+                } finally {
+                    repairsInFlight.remove(base);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            repairsInFlight.remove(base);
+        }
     }
 
     /** Health under the flee line, then back to three quarters: worth a word (MA3.3). */

@@ -1,5 +1,8 @@
 # Third-party notices
 
+Ideas only, no code copied: rating each step of a skill to find the one that fails, repairing that step alone,
+and keeping versions with a rollback to the better one (`learning/SkillRepair.java`) follow PSN (MIT).
+
 MineAgent is licensed under LGPL-3.0-only (see `LICENSE`). The parts below were ported from other projects
 under their own licences, which are kept here as those licences require.
 
