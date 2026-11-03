@@ -2569,6 +2569,47 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA8.8, living on its own with no model (the scenes' SMH is not there): its owner away, logs and wool in a
+     * chest it knows. By day it makes a bed from them, by code; at night it puts the bed down and sleeps in it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_own", timeoutTicks = 1800)
+    public void onItsOwnItMakesABedBeforeNight(GameTestHelper helper) {
+        Scene s = scene(helper, "Settler");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(6, 1, 3, Blocks.CHEST);
+        BlockPos chest = helper.absolutePos(new BlockPos(6, 1, 3));
+        var c = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(chest);
+        c.setItem(0, new ItemStack(Items.WHITE_WOOL, 3));
+        c.setItem(1, new ItemStack(Items.OAK_LOG, 3));
+        c.setChanged();
+        String dim = helper.getLevel().dimension().location().toString();
+        s.loop().noteChest(dim, chest.getX(), chest.getY(), chest.getZ(),
+                java.util.Map.of("minecraft:white_wool", 3, "minecraft:oak_log", 3), helper.getLevel().getGameTime());
+        helper.getLevel().setDayTime(1_000);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        boolean[] night = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "own");
+            var inv = s.body().getInventory();
+            if (!night[0] && inv.countItem(Items.WHITE_BED) >= 1) {
+                night[0] = true;
+                helper.getLevel().setDayTime(13_000);
+            }
+            if (night[0] && s.body().isSleeping()) {
+                helper.getLevel().setDayTime(1_000);
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 1750) {
+                String how = "bed made " + night[0] + ", asleep " + s.body().isSleeping() + ", wool " + inv.countItem(Items.WHITE_WOOL)
+                        + ", logs " + inv.countItem(Items.OAK_LOG) + ", planks " + inv.countItem(Items.OAK_PLANKS) + "; said: " + lastSaid(s, "");
+                helper.getLevel().setDayTime(1_000);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {

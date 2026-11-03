@@ -3368,19 +3368,63 @@ public class AgentLoop {
                     new com.mineagent.engine.task.ShelterTask.ShelterRecord("night-" + UUID.randomUUID(), true), reply -> { });
             return;
         }
-        if (hasBed || bedTriedDay == day) return;
-        bedTriedDay = day;
         var book = com.mineagent.engine.planning.production.GameKnowledge.book(player);
         var have = com.mineagent.engine.planning.production.GameKnowledge.have(player, this, null);
-        for (String bed : com.mineagent.engine.planning.production.GameKnowledge.family("any:bed")) {
-            var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, bed, 1,
-                    java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN));
-            if (!plan.possible()) continue;
-            journal.record("night", "making a bed for the nights", currentGameTickSafe());
-            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                    "bed-" + UUID.randomUUID(), bed, 1, null, false, true), reply -> { });
+        var none = java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
+        if (!hasBed && bedTriedDay != day) {
+            bedTriedDay = day;
+            for (String bed : com.mineagent.engine.planning.production.GameKnowledge.family("any:bed")) {
+                if (!com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, bed, 1, none).possible()) continue;
+                journal.record("night", "making a bed for the nights", currentGameTickSafe());
+                errand(bed, 1);
+                return;
+            }
+        }
+        // Living on its own (MA8.8): fed, armed, stocked, each by code from what it carries or sees, once a day each.
+        if (!com.mineagent.engine.settings.Switches.liveOnOwn()) return;
+        int food = 0, torches = 0, weapon = 0;
+        var foods = com.mineagent.engine.planning.production.GameKnowledge.foods().keySet();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.isEmpty()) continue;
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            if (foods.contains(id)) food += st.getCount();
+            if (st.is(net.minecraft.world.item.Items.TORCH)) torches += st.getCount();
+            weapon = Math.max(weapon, com.mineagent.engine.survival.MobDefenseChain.weaponTier(st));
+        }
+        int wantFood = com.mineagent.engine.survival.HardRules.tripFood(com.mineagent.engine.settings.Switches.readyFood(),
+                level.getDifficulty() == net.minecraft.world.Difficulty.HARD);
+        if (food < wantFood && ownTried.getOrDefault("food", -1L) != day) {
+            ownTried.put("food", day);
+            journal.record("own", "keeping fed: " + food + " food of " + wantFood, currentGameTickSafe());
+            errand(com.mineagent.engine.task.ProductionTask.FOOD, wantFood - food);
             return;
         }
+        if (weapon < 2 && ownTried.getOrDefault("sword", -1L) != day) {
+            ownTried.put("sword", day);
+            if (com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, "minecraft:stone_sword", 1, none).possible()) {
+                journal.record("own", "arming: a stone sword", currentGameTickSafe());
+                errand("minecraft:stone_sword", 1);
+                return;
+            }
+        }
+        int wantTorches = com.mineagent.engine.settings.Switches.readyTorches();
+        if (torches < wantTorches && ownTried.getOrDefault("torches", -1L) != day) {
+            ownTried.put("torches", day);
+            if (com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, "minecraft:torch", wantTorches - torches, none).possible()) {
+                journal.record("own", "stocking: torches", currentGameTickSafe());
+                errand("minecraft:torch", wantTorches - torches);
+            }
+        }
+    }
+
+    /** What it last tried on its own, by need, and the day it tried (MA8.8): once a day each, never a loop. */
+    private final Map<String, Long> ownTried = new java.util.HashMap<>();
+
+    /** A production errand from what it carries or sees (no searching), into its own pack. */
+    private void errand(String item, int count) {
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                "own-" + UUID.randomUUID(), item, count, null, false, true), reply -> { });
     }
 
     /** "What's next": the goals after this one, from its goal book. */

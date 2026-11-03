@@ -136,6 +136,8 @@ public record MineAgentConfig(
      * @param escapeLavaFire   out of lava the shortest safe way; water on itself when burning
      * @param sleepWhenAway    its owner away, it sleeps every night it can; with no bed, a shelter until morning, and
      *                         a bed made as soon as it can
+     * @param liveOnOwn        its owner away and nothing asked of it, it keeps itself fed, armed and stocked with
+     *                         torches, by code, from what it carries or sees (no model call needed)
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -162,11 +164,12 @@ public record MineAgentConfig(
         int readyTorches,
         boolean sparePickaxe,
         boolean escapeLavaFire,
-        boolean sleepWhenAway
+        boolean sleepWhenAway,
+        boolean liveOnOwn
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true
+            true, 8, 16, true, true, true, true
         );
     }
 
@@ -270,7 +273,7 @@ public record MineAgentConfig(
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
                 rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly,
                 rawBehaviour.readyCheck, clamp(rawBehaviour.readyFood, 0, 64), clamp(rawBehaviour.readyTorches, 0, 64),
-                rawBehaviour.sparePickaxe, rawBehaviour.escapeLavaFire, rawBehaviour.sleepWhenAway);
+                rawBehaviour.sparePickaxe, rawBehaviour.escapeLavaFire, rawBehaviour.sleepWhenAway, rawBehaviour.liveOnOwn);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

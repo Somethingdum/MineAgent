@@ -380,7 +380,7 @@ public final class MobDefenseChain implements TaskChain {
     }
 
     /** 0 not a weapon, 1 wood or gold .. 5 netherite; a sword or an axe counts in full, any other tool one less. */
-    static int weaponTier(ItemStack stack) {
+    public static int weaponTier(ItemStack stack) {
         if (stack.isEmpty() || !(stack.getItem() instanceof TieredItem)) return 0;
         String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
         int tier = id.startsWith("netherite_") ? 5 : id.startsWith("diamond_") ? 4 : id.startsWith("iron_") ? 3
