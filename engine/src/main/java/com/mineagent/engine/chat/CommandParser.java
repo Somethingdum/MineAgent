@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  */
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
-        GOAL_ADD, RESUME }
+        GOAL_ADD, RESUME, AFK, BACK }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -34,6 +34,9 @@ public final class CommandParser {
             "^(?:(?:go|switch to|switch|use|be|enter|mode)\\s+)?(servant|auto|escort|park|parked)(?:\\s+mode)?$");
     private static final Pattern OWN = Pattern.compile("^(on your own|do your own thing|go do your thing|be free)$");
     private static final Pattern ESCORT = Pattern.compile("^(protect me|guard me|defend me|keep me safe|escort me|cover me|watch over me)$");
+    /** Going AFK, or back (SMH plan 70, MA5.4). */
+    private static final Pattern AFK = Pattern.compile("^(afk|brb|bbl|be right back|going afk|gonna go afk|gonna be afk|i'?m afk|i'?m going afk|back in a (?:bit|sec|second|min|minute|few)|gtg for a (?:bit|sec|second|min|minute))$");
+    private static final Pattern BACK = Pattern.compile("^(back|i'?m back|back now|i'?m here now|here now)$");
     private static final Pattern STATUS = Pattern.compile("^(status|sitrep|report|what are you doing|what r u doing|what're you doing|how'?s it going)$");
     private static final Pattern CANCEL = Pattern.compile("^(cancel|abort|nevermind|never mind|forget it|cancel that|cancel the goal|drop it)$");
     private static final Pattern EAT = Pattern.compile("^(eat|eat something|eat food|have a snack|have something to eat)$");
@@ -78,6 +81,8 @@ public final class CommandParser {
         if (m.matches()) return Optional.of(new Command(Kind.GUARD_HERE, null, m.group(1) == null ? null : Integer.valueOf(m.group(1))));
         m = GUARD_PLAYER.matcher(t);
         if (m.matches() && !m.group(1).equals("me") && !m.group(1).equals("us")) return Optional.of(new Command(Kind.GUARD_PLAYER, m.group(1), null));
+        if (AFK.matcher(t).matches()) return Optional.of(new Command(Kind.AFK, null, null));
+        if (BACK.matcher(t).matches()) return Optional.of(new Command(Kind.BACK, null, null));
         if (STATUS.matcher(t).matches()) return Optional.of(new Command(Kind.STATUS, null, null));
         if (RESUME.matcher(t).matches()) return Optional.of(new Command(Kind.RESUME, null, null));
         if (CANCEL.matcher(t).matches()) return Optional.of(new Command(Kind.CANCEL, null, null));

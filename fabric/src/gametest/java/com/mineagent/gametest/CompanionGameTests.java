@@ -48,8 +48,13 @@ public class CompanionGameTests implements FabricGameTest {
         for (var s : List.copyOf(MineAgentEngine.allCompanions())) {
             MineAgentEngine.despawnCompanion(s.companion.companionId(), true);
         }
+        // Scenes build past their own test area, and the areas sit close together: clear what an earlier scene left
+        // above this floor (walls, roofs, gravel, lava) before laying it.
         for (int x = -16; x <= 24; x++) {
-            for (int z = -16; z <= 24; z++) helper.setBlock(x, 0, z, Blocks.STONE);
+            for (int z = -16; z <= 24; z++) {
+                for (int y = 12; y >= 1; y--) helper.setBlock(x, y, z, Blocks.AIR);
+                helper.setBlock(x, 0, z, Blocks.STONE);
+            }
         }
         ServerPlayer owner = reuseOwner != null ? reuseOwner : helper.makeMockServerPlayerInLevel();
         BlockPos at = helper.absolutePos(new BlockPos(3, 1, 3));
@@ -243,6 +248,12 @@ public class CompanionGameTests implements FabricGameTest {
         return broken;
     }
 
+    /** Whether its feet are in the doorway or the step just outside it. */
+    private static boolean atDoor(GameTestHelper helper, Scene s) {
+        BlockPos rel = helper.relativePos(s.body().blockPosition());
+        return rel.getX() == 10 && (rel.getZ() == 14 || rel.getZ() == 15);
+    }
+
     private static boolean doorOpen(GameTestHelper helper) {
         var state = helper.getBlockState(new BlockPos(10, 1, 14));
         return state.hasProperty(net.minecraft.world.level.block.DoorBlock.OPEN)
@@ -258,7 +269,9 @@ public class CompanionGameTests implements FabricGameTest {
         Scene s = scene(helper, "Housemate");
         BlockPos goal = house(helper, s, Blocks.OAK_DOOR);
         sendTo(helper, s, goal, "house-1");
+        boolean[] door = {false};
         helper.onEachTick(() -> {
+            if (atDoor(helper, s)) door[0] = true;
             int broken = brokenWall(helper);
             double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
             if (broken > 0) {
@@ -266,7 +279,8 @@ public class CompanionGameTests implements FabricGameTest {
                 fail(helper, broken + " planks of the house were broken");
             } else if (off <= 1.5 && !doorOpen(helper)) {
                 tidy(s);
-                helper.succeed();
+                if (door[0]) helper.succeed();
+                else fail(helper, "it got there without going through the door");
             } else if (helper.getTick() >= 1500) {
                 String how = String.format("after 1500 ticks: %.1f blocks off, at %s, door %s", off,
                         s.body().blockPosition().toShortString(), doorOpen(helper) ? "left open" : "shut");
@@ -284,7 +298,9 @@ public class CompanionGameTests implements FabricGameTest {
         button(helper, true);
         button(helper, false);
         sendTo(helper, s, goal, "iron-1");
+        boolean[] door = {false};
         helper.onEachTick(() -> {
+            if (atDoor(helper, s)) door[0] = true;
             int broken = brokenWall(helper);
             double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
             if (broken > 0 || !helper.getBlockState(new BlockPos(10, 1, 14)).is(Blocks.IRON_DOOR)) {
@@ -292,7 +308,8 @@ public class CompanionGameTests implements FabricGameTest {
                 fail(helper, "the house or its iron door was broken");
             } else if (off <= 1.5) {
                 tidy(s);
-                helper.succeed();
+                if (door[0]) helper.succeed();
+                else fail(helper, "it got there without going through the iron door");
             } else if (helper.getTick() >= 1500) {
                 String how = String.format("after 1500 ticks: %.1f blocks off, at %s", off, s.body().blockPosition().toShortString());
                 tidy(s);
@@ -403,6 +420,36 @@ public class CompanionGameTests implements FabricGameTest {
                 tidy(s);
                 if (ownerAsleep) helper.succeed();
                 else fail(helper, "the owner never got to sleep, so this shows nothing");
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.4: the owner says "afk" out in the open: its duty becomes guarding them, as on "guard me". "Back"
+     * ends it, as their next input would. (Their idle timer counts too; three minutes is too long for a scene.)
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk", timeoutTicks = 200)
+    public void anAfkOwnerInTheOpenIsGuarded(GameTestHelper helper) {
+        Scene s = scene(helper, "Watcher");
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
+        boolean[] guarded = {false};
+        helper.onEachTick(() -> {
+            var setup = s.loop().combatSetup(s.body(), s.owner());
+            boolean guarding = setup.duty() == com.mineagent.engine.combat.CombatBrain.Duty.GUARD
+                    && s.owner().getUUID().equals(setup.ward());
+            if (!guarded[0] && guarding && s.loop().ownerAfk()) {
+                guarded[0] = true;
+                MineAgentEngine.onPlayerChat(s.owner(), "back");
+            } else if (guarded[0] && !s.loop().ownerAfk()) {
+                boolean stoodDown = s.loop().combatSetup(s.body(), s.owner()).duty()
+                        != com.mineagent.engine.combat.CombatBrain.Duty.GUARD;
+                tidy(s);
+                if (stoodDown) helper.succeed();
+                else fail(helper, "the owner is back, but it still guards them");
+            } else if (helper.getTick() >= 150) {
+                String how = "after 150 ticks: afk " + s.loop().ownerAfk() + ", duty " + setup.duty();
+                tidy(s);
+                fail(helper, guarded[0] ? "it never saw the owner come back: " + how : "it never guarded the AFK owner: " + how);
             }
         });
     }

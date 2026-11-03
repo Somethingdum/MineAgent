@@ -65,6 +65,15 @@ public class DropItemsTool implements Tool {
         }
 
         var sp = ((CompanionEntity) player).serverPlayer();
+        // An AFK owner picks nothing up, and dropped items vanish after 5 minutes (SMH plan 70, MA5.4).
+        var loop = com.mineagent.engine.task.TaskContext.agentLoop(player);
+        var owner = ((CompanionEntity) player).serverPlayerOwner();
+        if (loop != null && loop.ownerAfk() && owner != null && owner.serverLevel() == sp.serverLevel()
+                && owner.distanceTo(sp) <= 8.0) {
+            reply.accept(ToolArgs.errorJson("The owner is AFK: dropped items would vanish before they're back. "
+                    + "Keep them, or put them in a chest, and hand them over when they're back."));
+            return;
+        }
         var inv = sp.getInventory();
         int carriedBefore = countItem(inv, itemId);
 

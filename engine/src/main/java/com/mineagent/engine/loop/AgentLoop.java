@@ -340,6 +340,8 @@ public class AgentLoop {
     private final PlaceEventMemory placeMemory;
     private final com.mineagent.engine.pathing.execute.DoorKeeper doorKeeper =
             new com.mineagent.engine.pathing.execute.DoorKeeper();
+    /** Whether the owner is AFK (SMH plan 70, MA5.4). */
+    private final OwnerActivity ownerActivity = new OwnerActivity();
     private final SkillLibrary skillLib;
     private final DecisionCache decisionCache;
     private final TheoryOfMind theoryOfMind;
@@ -1211,6 +1213,16 @@ public class AgentLoop {
         var self = (com.mineagent.engine.entity.CompanionEntity) companion;
         UUID id = companion.companionId();
         switch (c.kind()) {
+            // Going AFK, or back (SMH plan 70, MA5.4): the owner's word only; nothing for the model.
+            case AFK -> {
+                if (!fromOwner) return false;
+                ownerActivity.saidAfk(net.minecraft.Util.getMillis());
+                speakToOwner("I'll keep watch until you're back.");
+            }
+            case BACK -> {
+                if (!fromOwner) return false;
+                ownerActivity.saidBack();
+            }
             // Stop, stay and follow end guard duty too: otherwise a guard told to stop walks back to its post.
             case STOP -> {
                 haltNow();
@@ -2003,6 +2015,7 @@ public class AgentLoop {
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
             doorKeeper.tick(player, gameTick);
+            watchOwnerActivity(owner);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -2282,6 +2295,12 @@ public class AgentLoop {
         if (post != null && post.distanceTo(self.position()) <= errand) {
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, post, null, guardRadius);
         }
+        // An AFK owner who is exposed is guarded, as on "guard me" (SMH plan 70, MA5.4); fishing, close by.
+        if (owner != null && ownerActivity.afk() && owner.isAlive() && owner.serverLevel() == self.serverLevel()
+                && exposed(owner)) {
+            return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, owner.position(), owner.getUUID(),
+                    owner.fishing != null ? 6.0 : 12.0);
+        }
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.ESCORT && owner != null) {
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.ESCORT, owner.position(), owner.getUUID(), 12.0);
         }
@@ -2369,6 +2388,7 @@ public class AgentLoop {
     /** The fight ended: won, broken off, or lost; rated and kept, with a lesson when it went badly. */
     public void fightEnded(com.mineagent.engine.learning.Scorecard.Outcome outcome) {
         if (!fightEpisode.active()) return;
+        if (outcome == com.mineagent.engine.learning.Scorecard.Outcome.DONE) ownerActivity.wonFight();
         var episode = fightEpisode.end(outcome, currentGameTickSafe());
         double score = scorecard.record(episode, currentGameTickSafe());
         advisedTactics = null;
@@ -2496,6 +2516,31 @@ public class AgentLoop {
 
     public EmotionState emotion() { return emotion; }
     public PlaceEventMemory placeMemory() { return placeMemory; }
+
+    /** Whether the owner is AFK: in the game but not at the keys (SMH plan 70, MA5.4). */
+    public boolean ownerAfk() {
+        return ownerActivity.afk();
+    }
+
+    /** The game's idle timer and the owner's words, looked at each tick; one line when they come back. */
+    private void watchOwnerActivity(net.minecraft.server.level.ServerPlayer owner) {
+        if (owner == null) return;
+        long now = net.minecraft.Util.getMillis();
+        var change = ownerActivity.update(now, owner.getLastActionTime());
+        if (change == OwnerActivity.Change.CAME_BACK) {
+            speakToOwner(ownerActivity.welcomeBack(now));
+        } else if (change == OwnerActivity.Change.WENT_AFK) {
+            onBodyLog("[AFK] the owner is away from the keys; guarding them while they're exposed");
+        }
+    }
+
+    /** Out in the open, at night, or with a monster about: an AFK owner here needs guarding. */
+    private static boolean exposed(net.minecraft.server.level.ServerPlayer owner) {
+        var level = owner.serverLevel();
+        if (!level.isDay() || level.canSeeSky(owner.blockPosition().above())) return true;
+        return !level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
+                owner.getBoundingBox().inflate(16.0), net.minecraft.world.entity.Entity::isAlive).isEmpty();
+    }
 
     /** The doors it opened on its way and will shut once past (SMH plan 70, MA5.3). */
     public com.mineagent.engine.pathing.execute.DoorKeeper doorKeeper() { return doorKeeper; }

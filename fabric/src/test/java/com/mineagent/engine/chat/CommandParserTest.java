@@ -69,4 +69,16 @@ final class CommandParserTest {
         assertEquals("-", parsed("drop all your stuff"));
         assertEquals("-", parsed("can you tell me what the weather is like in the nether today and why"));
     }
+
+    @Test void goingAfkAndComingBackAreTheOwnersWords() {
+        assertEquals("AFK", parsed("afk"));
+        assertEquals("AFK", parsed("brb"));
+        assertEquals("AFK", parsed("be right back!"));
+        assertEquals("AFK", parsed("Steve, going afk"));
+        assertEquals("AFK", parsed("back in a bit"));
+        assertEquals("BACK", parsed("back"));
+        assertEquals("BACK", parsed("I'm back"));
+        assertEquals("COME", parsed("here"));
+        assertEquals("-", parsed("go back to the base and get the iron"));
+    }
 }
