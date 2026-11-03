@@ -18,6 +18,19 @@ public final class Production {
         return block != null && block.startsWith(ENTITY);
     }
 
+    /**
+     * In a plan's sources to leave out: everything it hasn't seen. Once a search round it found none of something, what
+     * it has never seen is not near either (no trees here: not oak, nor spruce, nor any of the forty others).
+     */
+    public static final String UNSEEN = "unseen:*";
+
+    /** A source that is shearing an animal, which it leaves: "shear:minecraft:sheep:white". */
+    public static final String SHEAR = "shear:";
+
+    public static boolean shearing(String block) {
+        return block != null && block.startsWith(SHEAR);
+    }
+
     /** How a recipe is made: a crafting grid (2 by 2 in the inventory, 3 by 3 at a table), a furnace kind, a cutter. */
     public enum Kind { CRAFT, SMELT, BLAST, SMOKE, CAMPFIRE, STONECUT }
 

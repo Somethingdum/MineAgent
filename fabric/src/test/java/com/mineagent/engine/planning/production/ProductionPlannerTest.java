@@ -54,23 +54,34 @@ final class ProductionPlannerTest {
         add.accept(new Recipe(m("cooked_beef_from_campfire_cooking"), Kind.CAMPFIRE, m("cooked_beef"), 1, List.of(new Need(List.of(m("beef")), 1)), false, 600));
         add.accept(new Recipe(m("iron_ingot_from_smelting_raw_iron"), Kind.SMELT, m("iron_ingot"), 1, List.of(new Need(List.of(m("raw_iron")), 1)), false, 200));
         add.accept(new Recipe(m("iron_ingot_from_blasting_raw_iron"), Kind.BLAST, m("iron_ingot"), 1, List.of(new Need(List.of(m("raw_iron")), 1)), false, 100));
+        add.accept(new Recipe(m("shears"), Kind.CRAFT, m("shears"), 1, List.of(new Need(List.of(m("iron_ingot")), 2)), false, 0));
+        add.accept(new Recipe(m("white_bed"), Kind.CRAFT, m("white_bed"), 1,
+                List.of(new Need(List.of(m("white_wool")), 3), new Need(PLANKS, 3)), true, 0));
+        add.accept(new Recipe(m("flint_and_steel"), Kind.CRAFT, m("flint_and_steel"), 1,
+                List.of(new Need(List.of(m("iron_ingot")), 1), new Need(List.of(m("flint")), 1)), false, 0));
         add.accept(new Recipe(m("iron_pickaxe"), Kind.CRAFT, m("iron_pickaxe"), 1,
                 List.of(new Need(List.of(m("iron_ingot")), 3), new Need(List.of(m("stick")), 2)), true, 0));
         Map<String, List<Source>> s = new HashMap<>();
         java.util.function.Consumer<Source> src = x -> s.computeIfAbsent(x.item(), k -> new ArrayList<>()).add(x);
         src.accept(new Source(m("cobblestone"), m("stone"), "pickaxe", 1, false, 1.0, 12));
         src.accept(new Source(m("stone"), m("stone"), "pickaxe", 1, true, 1.0, 12));
-        src.accept(new Source(m("oak_log"), m("oak_log"), "axe", 0, false, 1.0, 60));
+        src.accept(new Source(m("oak_log"), m("oak_log"), "", 0, false, 1.0, 60)); // by hand, as the game's table says
         src.accept(new Source(m("coal"), m("coal_ore"), "pickaxe", 1, false, 1.0, 23));
         src.accept(new Source(m("raw_iron"), m("iron_ore"), "pickaxe", 2, false, 1.0, 23));
         src.accept(new Source(m("diamond"), m("diamond_ore"), "pickaxe", 3, false, 1.0, 23));
         // A cow, from its loot table: 1-3 beef (2 on average), 0-2 leather; a kill priced by its health.
         src.accept(new Source(m("beef"), "entity:minecraft:cow", "", 0, false, 2.0, 120));
         src.accept(new Source(m("leather"), "entity:minecraft:cow", "", 0, false, 1.0, 120));
+        // Shearing a white sheep: 1 to 3 wool; it lives. Killing one: 1 wool and mutton.
+        src.accept(new Source(m("white_wool"), "shear:minecraft:sheep:white", "shears", 0, false, 2.0, 30));
+        src.accept(new Source(m("white_wool"), "entity:minecraft:sheep", "", 0, false, 1.0, 100));
+        // Gravel: flint one time in ten, gravel otherwise (measured over 64 breaks).
+        src.accept(new Source(m("flint"), m("gravel"), "", 0, false, 0.1, 18));
+        src.accept(new Source(m("gravel"), m("gravel"), "", 0, false, 0.9, 18));
         Map<String, Integer> fuel = Map.of(m("coal"), 1600, m("charcoal"), 1600, m("oak_log"), 300, m("oak_planks"), 300,
                 m("spruce_planks"), 300, m("stick"), 100);
         Map<String, Integer> uses = Map.of(m("wooden_pickaxe"), 59, m("stone_pickaxe"), 131, m("iron_pickaxe"), 250,
-                m("diamond_pickaxe"), 1561);
+                m("diamond_pickaxe"), 1561, m("shears"), 238);
         return new Book(r, s, fuel, uses);
     }
 
@@ -233,6 +244,42 @@ final class ProductionPlannerTest {
         assertEquals(6, ProductionPlanner.most(book, h, m("cooked_beef"), 16, without), "the 6 beef it has");
         assertEquals(16, ProductionPlanner.most(book, h, m("cooked_beef"), 16, java.util.Set.of()), "with the cows, all of it");
         assertEquals(0, ProductionPlanner.most(book, have(Map.of(), List.of(), 1, 0, 0, Map.of(), Map.of()), m("cooked_beef"), 16, without));
+        // Cows it has never seen, after a search round it found none of anything: not near either.
+        var none = have(Map.of(m("coal"), 4), List.of(), 1, 0, 0, Map.of(), Map.of());
+        assertTrue(ProductionPlanner.plan(book, none, m("cooked_beef"), 4).possible(), "unseen cows, priced as a search");
+        assertFalse(ProductionPlanner.plan(book, none, m("cooked_beef"), 4, java.util.Set.of(Production.UNSEEN)).possible());
+    }
+
+    // ── The catalogue (MA7.3) ───────────────────────────────────────
+
+    static final String WHITE_SHEEP = "shear:minecraft:sheep:white";
+
+    @Test void aBedFromShornWoolTheSheepLeftAlive() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("oak_planks"), 3), List.of(new Tool("shears", 0, false, 200)), 0, 0, 0,
+                Map.of(WHITE_SHEEP, Where.KNOWN, "entity:minecraft:sheep", Where.KNOWN), Map.of(WHITE_SHEEP, 12, "entity:minecraft:sheep", 12)),
+                m("white_bed"), 1);
+        assertTrue(p.possible(), p.problems().toString());
+        var shear = only(p, Action.SHEAR, m("white_wool"));
+        assertEquals(2, shear.blocks(), "2 wool a sheep on average: 2 sheep for 3");
+        assertTrue(p.steps().stream().noneMatch(s -> s.action() == Action.HUNT), "shorn, not killed: " + p.steps());
+        assertTrue(p.summary().contains("shear 2 white sheep"), p.summary());
+    }
+
+    @Test void noShearsItMakesThemFirst() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("oak_planks"), 3, m("iron_ingot"), 2), List.of(), 0, 0, 0,
+                Map.of(WHITE_SHEEP, Where.KNOWN), Map.of(WHITE_SHEEP, 12)), m("white_bed"), 1);
+        assertTrue(p.possible(), p.problems().toString());
+        assertEquals(1, p.toolsMade().getOrDefault(m("shears"), 0).intValue(), p.toolsMade().toString());
+        int shears = indexOf(p, Action.CRAFT, m("shears"));
+        int shear = indexOf(p, Action.SHEAR, m("white_wool"));
+        assertTrue(shears >= 0 && shears < shear, "the shears before the shearing: " + p.steps());
+    }
+
+    @Test void flintFromGravelOneInTen() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("iron_ingot"), 1), List.of(), 0, 0, 0, Map.of(m("gravel"), Where.KNOWN),
+                Map.of(m("gravel"), 8)), m("flint_and_steel"), 1);
+        assertTrue(p.possible(), p.problems().toString());
+        assertEquals(10, p.mined().get(m("gravel")).intValue(), "10 gravel for a flint, on average");
     }
 
     // ── The planner's own checks (MA7.2) ────────────────────────────

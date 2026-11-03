@@ -215,6 +215,12 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (food == null) return fail("I can't see a way to make food here: no animals I may hunt near, and nothing to cook");
             itemId = food;
         }
+        if (itemId.startsWith(GameKnowledge.ANY)) {
+            String kind = itemId.substring(GameKnowledge.ANY.length()).replace('_', ' ');
+            String one = cheapestOf(sp, GameKnowledge.family(itemId));
+            if (one == null) return fail("I can't see a way to make any " + kind + " here");
+            itemId = one;
+        }
         if (BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(itemId)).isEmpty()) {
             return fail("I don't know an item called " + ProductionPlanner.name(itemId));
         }
@@ -276,6 +282,23 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
         }
         return fail("I have a chest but nowhere here to put it");
+    }
+
+    /** Of a kind's items ("any bed"), the one cheapest to make here (a white bed with white sheep about); null if none. */
+    private String cheapestOf(ServerPlayer sp, List<String> items) {
+        var book = GameKnowledge.book(sp);
+        var have = GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos);
+        String best = null;
+        double bestTicks = Double.POSITIVE_INFINITY;
+        int n = Math.max(1, Math.min(16, record.count == 0 ? 16 : record.count));
+        for (String item : items) {
+            var plan = ProductionPlanner.plan(book, have, item, n, without);
+            if (plan.possible() && plan.ticks() < bestTicks) {
+                bestTicks = plan.ticks();
+                best = item;
+            }
+        }
+        return best;
     }
 
     /**
@@ -341,7 +364,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         // The first few it ran out of, animals first, in the order it found them gone.
         List<String> gone = new ArrayList<>();
         List<String> ran = new ArrayList<>(without);
-        ran.remove(NO_HUNTING);
+        ran.removeIf(w -> w.endsWith("*"));
         for (String w : ran) if (Production.animal(w) && gone.size() < 3) gone.add(ProductionPlanner.plural(w, 2));
         for (String w : ran) if (!Production.animal(w) && gone.size() < 3) gone.add(ProductionPlanner.plural(w, 2));
         String list = gone.size() <= 1 ? String.join("", gone)
@@ -379,11 +402,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             used.forEach((k, v) -> parts.add(String.format("%,d %s", v, ProductionPlanner.plural(k, v))));
             line.append("; ").append(String.join(", ", parts)).append(" used");
         }
-        if (!hunted.isEmpty()) {
-            List<String> parts = new ArrayList<>();
-            hunted.forEach((k, v) -> parts.add(String.format("%,d %s", v, ProductionPlanner.plural(k, v))));
-            line.append("; hunted ").append(String.join(", ", parts));
-        }
+        List<String> killed = new ArrayList<>(), shorn = new ArrayList<>();
+        hunted.forEach((k, v) -> (Production.shearing(k) ? shorn : killed).add(String.format("%,d %s", v, ProductionPlanner.plural(k, v))));
+        if (!killed.isEmpty()) line.append("; hunted ").append(String.join(", ", killed));
+        if (!shorn.isEmpty()) line.append("; sheared ").append(String.join(", ", shorn));
         say(line.append('.').toString());
         outcome = what;
         phase = Phase.DONE;
@@ -409,6 +431,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case FETCH -> fetch();
             case MINE -> mine();
             case HUNT -> hunt();
+            case SHEAR -> shear();
             case CRAFT -> craft();
             case SMELT -> smelt();
         };
@@ -503,6 +526,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         walkingTo = null;
         TaskContext.inputDriver(player).clear();
         without.add(source);
+        without.add(Production.UNSEEN); // it looked round and found none: what it has never seen isn't near either
         todo.clear();
         step = null;
         prey = null;
@@ -539,21 +563,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         ServerLevel level = sp.serverLevel();
         Item it = item(step.item());
         int got = count(sp, it) - itemBefore;
-        // Its drops first: they go in a few seconds' walk.
-        if (lootAt != null) {
-            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
-                    new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive());
-            if (drops.isEmpty() || --lootWait <= 0 || navFailed) {
-                lootAt = null;
-                chasing = null;
-                nav.cancel();
-            } else {
-                net.minecraft.world.entity.item.ItemEntity near = drops.get(0);
-                for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
-                chase(near.blockPosition(), 0);
-                return TaskState.RUNNING;
-            }
-        }
+        if (pickingUp(sp)) return TaskState.RUNNING;
         if (got >= step.count()) {
             nav.cancel();
             TaskContext.inputDriver(player).clear();
@@ -629,6 +639,108 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
+    /** Its drops first, after a kill or a shearing: they go in a few seconds' walk. True while it is picking them up. */
+    private boolean pickingUp(ServerPlayer sp) {
+        if (lootAt == null) return false;
+        var drops = sp.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive());
+        if (drops.isEmpty() || --lootWait <= 0 || navFailed) {
+            lootAt = null;
+            chasing = null;
+            nav.cancel();
+            return false;
+        }
+        net.minecraft.world.entity.item.ItemEntity near = drops.get(0);
+        for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
+        chase(near.blockPosition(), 0);
+        return true;
+    }
+
+    /**
+     * Wool by shearing (SMH plan 70, MA7.3): the nearest sheep of the colour with its wool grown, walked up to, shears
+     * in hand, sheared and left to grow it back; the wool picked up. Shears are made first if the plan made them.
+     */
+    private TaskState shear() {
+        ServerPlayer sp = sp();
+        ServerLevel level = sp.serverLevel();
+        int got = count(sp, item(step.item())) - itemBefore;
+        if (pickingUp(sp)) return TaskState.RUNNING;
+        if (got >= step.count()) {
+            nav.cancel();
+            TaskContext.inputDriver(player).clear();
+            return TaskState.SUCCESS;
+        }
+        if (!hasTool(sp, "shears")) {
+            String made = makeTool(sp, "shears");
+            if (made == null) return fail("I have no shears and can't make any");
+            if (made.isEmpty()) return TaskState.RUNNING;
+        }
+        String[] parts = step.block().split(":");
+        String colour = parts.length > 3 ? parts[3] : "white";
+        String dim = level.dimension().location().toString();
+        if (prey == null || !prey.isAlive() || !(prey instanceof net.minecraft.world.entity.animal.Sheep sh) || !sh.readyForShearing()
+                || ++preyTicks > 900) {
+            if (prey != null && preyTicks > 900) unreachable.add(prey.getUUID());
+            prey = null;
+            preyTicks = 0;
+            chasing = null;
+            navFailed = false;
+            net.minecraft.world.entity.Entity best = null;
+            for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class,
+                    new net.minecraft.world.phys.AABB(sp.blockPosition()).inflate(HUNT_RADIUS, 24, HUNT_RADIUS),
+                    x -> x.isAlive() && x.readyForShearing() && x.getColor().getName().equals(colour) && !unreachable.contains(x.getUUID())
+                            && !com.mineagent.engine.world.AfkFarms.protects(dim, x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
+                if (best == null || e.distanceToSqr(sp) < best.distanceToSqr(sp)) best = e;
+            }
+            if (best == null) return outOf(step.block());
+            prey = best;
+        }
+        if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, prey) || !sp.hasLineOfSight(prey)) {
+            chase(prey.blockPosition(), 1);
+            if (navFailed) {
+                unreachable.add(prey.getUUID());
+                prey = null;
+                navFailed = false;
+            }
+            return TaskState.RUNNING;
+        }
+        nav.cancel();
+        chasing = null;
+        TaskContext.inputDriver(player).clear();
+        hold(sp, net.minecraft.world.item.Items.SHEARS);
+        var result = com.mineagent.engine.act.Interaction.interactEntity(sp, prey, net.minecraft.world.InteractionHand.MAIN_HAND);
+        if (result.consumesAction()) {
+            hunted.merge(step.block(), 1, Integer::sum);
+            lootAt = prey.blockPosition().immutable();
+            lootWait = 80;
+            prey = null;
+            wait = 12;
+        } else {
+            unreachable.add(prey.getUUID());
+            prey = null;
+        }
+        TaskContext.syncInventory(sp);
+        return TaskState.RUNNING;
+    }
+
+    /** An item into its hand from its pack, as a player's hotbar swap. */
+    private static void hold(ServerPlayer sp, Item item) {
+        var inv = sp.getInventory();
+        if (inv.getSelected().is(item)) return;
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
+            if (!inv.getItem(i).is(item)) continue;
+            if (i < 9) {
+                inv.selected = i;
+            } else {
+                ItemStack displaced = inv.getItem(inv.selected);
+                inv.setItem(inv.selected, inv.getItem(i));
+                inv.setItem(i, displaced);
+            }
+            TaskContext.syncInventory(sp);
+            return;
+        }
+    }
+
     /** The nearest one it may take: grown, not a pet, not in your AFK farm, and not one of the last two near here. */
     private net.minecraft.world.entity.Entity choosePrey(ServerPlayer sp, net.minecraft.world.entity.EntityType<?> type) {
         ServerLevel level = sp.serverLevel();
@@ -670,7 +782,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack s = inv.getItem(i);
             String id = BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
-            if (!s.isEmpty() && id.endsWith("_" + kind) && s.isDamageableItem() && s.getMaxDamage() - s.getDamageValue() > 1) return true;
+            if (!s.isEmpty() && (id.endsWith("_" + kind) || id.equals(kind)) && s.isDamageableItem()
+                    && s.getMaxDamage() - s.getDamageValue() > 1) return true;
         }
         return false;
     }
@@ -683,7 +796,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         List<String> tools = new ArrayList<>(toolsToMake.keySet());
         tools.sort((a, b) -> ProductionPlanner.tierOf(b) - ProductionPlanner.tierOf(a));
         for (String t : tools) {
-            if (toolsToMake.getOrDefault(t, 0) <= 0 || !t.endsWith("_" + kind)) continue;
+            if (toolsToMake.getOrDefault(t, 0) <= 0 || !(t.endsWith("_" + kind) || t.endsWith(":" + kind))) continue;
             var recipe = recipeFor(sp, t);
             if (recipe == null) continue;
             String r = craftOnce(sp, recipe, 1);

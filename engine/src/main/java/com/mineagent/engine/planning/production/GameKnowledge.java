@@ -107,7 +107,7 @@ public final class GameKnowledge {
             }
         }
 
-        Map<String, List<Source>> sources = sources(sp, level);
+        Map<String, List<Source>> sources = new HashMap<>(Catalogue.withoutStorageBlocks(recipes, sources(sp, level)));
         animals(sp, level).forEach((item, list) -> sources.computeIfAbsent(item, k -> new ArrayList<>()).addAll(list));
         Map<String, Integer> fuel = new HashMap<>();
         for (var e : AbstractFurnaceBlockEntity.getFuel().entrySet()) fuel.put(id(e.getKey()), e.getValue());
@@ -143,6 +143,8 @@ public final class GameKnowledge {
         if (stack.is(ItemTags.AXES)) return "axe";
         if (stack.is(ItemTags.SHOVELS)) return "shovel";
         if (stack.is(ItemTags.HOES)) return "hoe";
+        if (stack.is(ItemTags.SWORDS)) return "sword";
+        if (stack.is(Items.SHEARS)) return "shears";
         return null;
     }
 
@@ -164,6 +166,7 @@ public final class GameKnowledge {
                 new Probe(silkPick, "pickaxe", 4, true),
                 new Probe(new ItemStack(Items.WOODEN_SHOVEL), "shovel", 1, false),
                 new Probe(new ItemStack(Items.WOODEN_AXE), "axe", 1, false),
+                new Probe(new ItemStack(Items.WOODEN_SWORD), "sword", 1, false),
                 new Probe(new ItemStack(Items.SHEARS), "shears", 0, false));
         Map<String, List<Source>> out = new HashMap<>();
         BlockPos at = sp.blockPosition();
@@ -185,11 +188,12 @@ public final class GameKnowledge {
                 if (!correct) continue;
                 Map<String, Double> got = new HashMap<>();
                 try {
-                    for (int sample = 0; sample < 2; sample++) {
-                        for (ItemStack d : Block.getDrops(state, level, at, null, sp, p.stack())) {
-                            got.merge(id(d.getItem()), d.getCount() / 2.0, Double::sum);
-                        }
-                    }
+                    // Two breaks; where they differ (gravel's flint, one time in ten; a leaf's sapling), 64, so a
+                    // chance is counted as the chance it is.
+                    Map<String, Double> first = drops(state, level, at, sp, p.stack(), 1);
+                    Map<String, Double> second = drops(state, level, at, sp, p.stack(), 1);
+                    if (first.equals(second)) got.putAll(first);
+                    else got.putAll(drops(state, level, at, sp, p.stack(), 64));
                 } catch (RuntimeException e) {
                     continue;
                 }
@@ -216,6 +220,15 @@ public final class GameKnowledge {
         return out;
     }
 
+    /** What breaking a block gives with this tool, on average over {@code n} breaks. */
+    private static Map<String, Double> drops(BlockState state, ServerLevel level, BlockPos at, ServerPlayer sp, ItemStack tool, int n) {
+        Map<String, Double> got = new HashMap<>();
+        for (int i = 0; i < n; i++) {
+            for (ItemStack d : Block.getDrops(state, level, at, null, sp, tool)) got.merge(id(d.getItem()), d.getCount() / (double) n, Double::sum);
+        }
+        return got;
+    }
+
     /**
      * The item a person means ("stone bricks", "torches", "an iron pickaxe"): its id in their words, singular or
      * plural, else its name in the game; null if none.
@@ -237,7 +250,26 @@ public final class GameKnowledge {
             String name = item.getDescription().getString().toLowerCase(java.util.Locale.ROOT);
             if (forms.contains(name) && item != Items.AIR) return id(item);
         }
+        // A kind with many (the catalogue, MA7.3): "a bed", "wool", "planks", "logs", "a boat": whichever of them is
+        // cheapest to make here.
+        for (String f : forms) {
+            String suffix = "_" + f.replace(' ', '_');
+            int n = 0;
+            for (var key : BuiltInRegistries.ITEM.keySet()) if (key.getPath().endsWith(suffix)) n++;
+            if (n >= 2) return ANY + f.replace(' ', '_');
+        }
         return null;
+    }
+
+    /** An order for any one of a kind: "any:bed". */
+    public static final String ANY = "any:";
+
+    /** The items of a kind ("any:bed": every bed). */
+    public static List<String> family(String any) {
+        String suffix = "_" + any.substring(ANY.length());
+        List<String> out = new ArrayList<>();
+        for (var key : BuiltInRegistries.ITEM.keySet()) if (key.getPath().endsWith(suffix)) out.add(key.toString());
+        return out;
     }
 
     private static final String ENTITY = Production.ENTITY;
@@ -252,6 +284,12 @@ public final class GameKnowledge {
     private static Map<String, List<Source>> animals(ServerPlayer sp, ServerLevel level) {
         Map<String, List<Source>> out = new HashMap<>();
         var server = level.getServer();
+        // Wool by shearing, the sheep left to grow it back (the catalogue, MA7.3): 1 to 3 a sheep of that colour.
+        for (var colour : net.minecraft.world.item.DyeColor.values()) {
+            String wool = "minecraft:" + colour.getName() + "_wool";
+            out.computeIfAbsent(wool, k -> new ArrayList<>()).add(new Source(wool, Production.SHEAR + "minecraft:sheep:" + colour.getName(),
+                    "shears", 0, false, 2.0, 30));
+        }
         for (var type : BuiltInRegistries.ENTITY_TYPE) {
             if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;
             try {
@@ -390,6 +428,16 @@ public final class GameKnowledge {
             String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
             herd.merge(key, 1, Integer::sum);
             herdAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);
+        }
+        // Sheep ready to shear, by colour: shearing leaves them, so there is no two to leave.
+        for (var sheep : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, new net.minecraft.world.phys.AABB(at).inflate(48),
+                sh -> sh.isAlive() && sh.readyForShearing())) {
+            String key = Production.SHEAR + "minecraft:sheep:" + sheep.getColor().getName();
+            int d = (int) Math.sqrt(sheep.blockPosition().distSqr(at));
+            if (!distance.containsKey(key) || d < distance.get(key)) {
+                where.put(key, Where.KNOWN);
+                distance.put(key, d);
+            }
         }
         herd.forEach((key, n) -> {
             if (n > LEAVE) {

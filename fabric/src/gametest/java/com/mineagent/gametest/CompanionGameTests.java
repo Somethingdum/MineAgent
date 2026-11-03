@@ -1952,6 +1952,45 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA7.3, the catalogue: "make me a bed", with three white sheep in the field, shears and planks: any bed
+     * means the cheapest here, a white one; the wool is shorn, every sheep left alive; the bed is crafted at a table.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bed", timeoutTicks = 1600)
+    public void makeMeABedFromTheSheep(GameTestHelper helper) {
+        Scene s = scene(helper, "Shepherd");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        field(helper, 0);
+        java.util.List<net.minecraft.world.entity.animal.Sheep> sheep = new java.util.ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            var sh = helper.spawn(EntityType.SHEEP, new BlockPos(9 + i * 2, 1, 9));
+            sh.setColor(net.minecraft.world.item.DyeColor.WHITE);
+            sheep.add(sh);
+        }
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.SHEARS));
+        inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 3));
+        inv.setItem(2, new ItemStack(Items.CRAFTING_TABLE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a bed"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "bed");
+            String done = lastSaid(s, "Done");
+            long alive = sheep.stream().filter(net.minecraft.world.entity.Entity::isAlive).count();
+            if (!done.isEmpty()) {
+                String plan = lastSaid(s, "On it");
+                int beds = inv.countItem(Items.WHITE_BED);
+                tidy(s);
+                if (beds == 1 && alive == 3 && plan.contains("shear") && done.contains("sheared")) helper.succeed();
+                else fail(helper, "white beds " + beds + ", sheep alive " + alive + "; plan: " + plan + "; done: " + done);
+            } else if (helper.getTick() >= 1500) {
+                String how = "white beds " + inv.countItem(Items.WHITE_BED) + ", wool " + inv.countItem(Items.WHITE_WOOL) + ", sheep alive "
+                        + alive + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {
@@ -2069,6 +2108,8 @@ public class CompanionGameTests implements FabricGameTest {
                 && r.cookTicks() == 100);
         boolean blast = book.recipes("minecraft:iron_ingot").stream().anyMatch(r -> r.kind() == com.mineagent.engine.planning.production.Production.Kind.BLAST
                 && r.cookTicks() == 100);
+        // Storage blocks are built, not found: no plan mines an iron block for its ingots.
+        boolean noStorage = book.sources("minecraft:iron_block").isEmpty() && book.sources("minecraft:coal_block").isEmpty();
         boolean foods = com.mineagent.engine.planning.production.GameKnowledge.foods().containsKey("minecraft:cooked_beef")
                 && !com.mineagent.engine.planning.production.GameKnowledge.foods().containsKey("minecraft:rotten_flesh");
         var have = new com.mineagent.engine.planning.production.Production.Have(java.util.Map.of("minecraft:coal", 216, "minecraft:oak_log", 16),
@@ -2079,12 +2120,13 @@ public class CompanionGameTests implements FabricGameTest {
         System.out.println("[SCENE knowledge] " + book.recipesByOutput().size() + " items with recipes, " + book.sourcesByItem().size()
                 + " with blocks that drop them; a chest of stone bricks: " + plan.summary());
         String how = String.format("recipe %b, cobblestone from stone %b, silk %b, not by hand %b, smelt %b, coal %b, uses %b, "
-                        + "iron needs stone %b (%s), cow beef %b (%s), no pets %b, smoker %b, blast %b, foods %b, plan %s",
+                        + "iron needs stone %b (%s), cow beef %b (%s), no pets %b, smoker %b, blast %b, foods %b, no storage %b, plan %s",
                 recipe, cobble, silk, noHand, smelt, coal, uses, iron, book.sources("minecraft:raw_iron"), beef,
-                book.sources("minecraft:beef"), noPets, smoker, blast, foods, plan.summary());
+                book.sources("minecraft:beef"), noPets, smoker, blast, foods, noStorage, plan.summary());
         System.out.println("[SCENE knowledge] " + how);
         tidy(s);
-        if (recipe && cobble && silk && noHand && smelt && coal && uses && iron && beef && noPets && smoker && blast && foods && plan.possible()
+        if (recipe && cobble && silk && noHand && smelt && coal && uses && iron && beef && noPets && smoker && blast && foods && noStorage
+                && !plan.summary().contains("iron") && plan.possible()
                 && plan.steps().stream().anyMatch(x -> x.action() == com.mineagent.engine.planning.production.ProductionPlanner.Action.SMELT)) helper.succeed();
         else fail(helper, how);
     }

@@ -69,7 +69,7 @@ public final class ProductionPlanner {
     private final Set<String> without;
     private int smokers, blasts;
 
-    public enum Action { FETCH, MINE, HUNT, CRAFT, SMELT }
+    public enum Action { FETCH, MINE, HUNT, SHEAR, CRAFT, SMELT }
 
     /**
      * One step of the job: FETCH {@code count} of {@code item} from its chests; MINE {@code blocks} of {@code block}
@@ -97,6 +97,7 @@ public final class ProductionPlanner {
                     case FETCH -> parts.add(String.format(Locale.ROOT, "%,d %s from my chests", s.count(), plural(s.item(), s.count())));
                     case MINE -> parts.add(String.format(Locale.ROOT, "mine %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case HUNT -> parts.add(String.format(Locale.ROOT, "hunt %,d %s", s.blocks(), plural(s.block(), s.blocks())));
+                    case SHEAR -> parts.add(String.format(Locale.ROOT, "shear %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case SMELT -> {
                         String station = s.recipe() != null && s.recipe().contains("smoking") ? "smoker"
                                 : s.recipe() != null && s.recipe().contains("blasting") ? "blast furnace" : "furnace";
@@ -174,7 +175,7 @@ public final class ProductionPlanner {
         for (Step s : merged) {
             switch (s.action()) {
                 case FETCH -> ticks += FETCH_PER_STACK * Math.ceil(s.count() / 64.0);
-                case MINE, HUNT -> {
+                case MINE, HUNT, SHEAR -> {
                     if (!mined.containsKey(s.block())) ticks += getThere(s.block());
                     mined.merge(s.block(), s.blocks(), Integer::sum);
                     ticks += s.blocks() * (breakTicks(s.block(), s.item()) + MINE_WALK);
@@ -227,6 +228,7 @@ public final class ProductionPlanner {
         double wear = toolWear(s, path);
         if (Double.isInfinite(wear)) return wear;
         Where where = have.where(s.block());
+        if (where == Where.UNKNOWN && without.contains(Production.UNSEEN)) return Double.POSITIVE_INFINITY;
         double reach = where == Where.COMMON ? 0 : where == Where.KNOWN
                 ? WALK_PER_BLOCK * have.knownDistance().getOrDefault(s.block(), 32) / 64.0 : UNSEEN;
         return (s.breakTicks() + MINE_WALK + wear + reach) / s.perBlock();
@@ -234,7 +236,7 @@ public final class ProductionPlanner {
 
     /** Its share of the tool a block wears out: none by hand; the cheapest tool per use otherwise. */
     private double toolWear(Source s, Set<String> path) {
-        if (s.tool().isEmpty() || (s.tier() == 0 && !s.silkTouch())) return 0;
+        if (s.tool().isEmpty()) return 0;
         for (Tool t : tools) if (fits(t, s) && t.usesLeft() > 0) return 0;
         if (s.silkTouch()) return Double.POSITIVE_INFINITY; // a Silk Touch tool is found, not made
         double best = Double.POSITIVE_INFINITY;
@@ -281,8 +283,9 @@ public final class ProductionPlanner {
     private List<String> craftableTools(String kind, int tier) {
         List<String> out = new ArrayList<>();
         for (String t : book.durability().keySet()) {
-            if (!t.endsWith("_" + kind)) continue;
-            if (tierOf(t) >= Math.max(1, tier) && !book.recipes(t).isEmpty()) out.add(t);
+            if (!t.endsWith("_" + kind) && !t.endsWith(":" + kind)) continue; // a stone pickaxe; shears
+            boolean tiered = !t.endsWith(":" + kind);
+            if ((!tiered || tierOf(t) >= Math.max(1, tier)) && !book.recipes(t).isEmpty()) out.add(t);
         }
         return out;
     }
@@ -374,7 +377,7 @@ public final class ProductionPlanner {
         int blocks = (int) Math.ceil(count / s.perBlock());
         String toolName = "";
         int extra = 0;
-        if (!s.tool().isEmpty() && (s.tier() > 0 || s.silkTouch())) {
+        if (!s.tool().isEmpty()) {
             int uses = usesOf(s);
             if (uses == 0 && s.silkTouch()) {
                 problems.add("I'd need a Silk Touch " + s.tool());
@@ -430,8 +433,8 @@ public final class ProductionPlanner {
             spendUses(s, blocks);
             if (toolName.isEmpty()) toolName = s.tool();
         }
-        steps.add(new Step(Production.animal(s.block()) ? Action.HUNT : Action.MINE, s.item(), count, null, 0, s.block(), blocks,
-                toolName, null, null, 0, 0, false));
+        Action act = Production.animal(s.block()) ? Action.HUNT : Production.shearing(s.block()) ? Action.SHEAR : Action.MINE;
+        steps.add(new Step(act, s.item(), count, null, 0, s.block(), blocks, toolName, null, null, 0, 0, false));
         // What is mined beyond the order and the tools made on the way is left over, for later steps.
         int surplus = (int) Math.floor(blocks * s.perBlock()) - count - extra;
         if (surplus > 0) carried.merge(s.item(), surplus, Integer::sum);
@@ -651,6 +654,10 @@ public final class ProductionPlanner {
     /** "minecraft:stone_bricks" as a person says it: "stone bricks". */
     public static String name(String id) {
         if (id == null) return "";
+        if (Production.shearing(id)) {
+            String[] p = id.split(":");
+            return (p.length > 3 ? p[3].replace('_', ' ') + " " : "") + (p.length > 2 ? p[2].replace('_', ' ') : "sheep");
+        }
         String n = id.substring(id.lastIndexOf(':') + 1).replace('_', ' ');
         return n;
     }
@@ -664,7 +671,7 @@ public final class ProductionPlanner {
     public static String plural(String id, int count) {
         String n = name(id);
         if (count == 1) return n;
-        if (Production.animal(id)) return n.equals("sheep") || n.endsWith("fish") ? n : n + "s"; // 5 cows, 3 sheep, 4 chickens
+        if (Production.animal(id) || Production.shearing(id)) return n.endsWith("sheep") || n.endsWith("fish") ? n : n + "s"; // 5 cows, 3 sheep
         String last = n.contains(" ") ? n.substring(n.lastIndexOf(' ') + 1) : n;
         if (MASS.contains(n) || MASS.contains(last) || n.endsWith("s") || n.endsWith("ore") || n.endsWith("dust")) return n;
         if (n.endsWith("ch") || n.endsWith("sh") || n.endsWith("x")) return n + "es";
