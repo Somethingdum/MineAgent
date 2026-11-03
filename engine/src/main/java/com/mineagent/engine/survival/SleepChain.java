@@ -38,6 +38,8 @@ public final class SleepChain implements TaskChain {
     static final int SEARCH_RADIUS = 24;
     /** How often it looks again, in ticks. */
     static final int SEARCH_EVERY = 100;
+    /** After a walk to the bed ends short of it, how long before it tries again, in ticks. */
+    static final int RETRY_WALK_AFTER = 40;
 
     private final AgentPlayer companion;
     private final CompanionBodyLog bodyLog;
@@ -48,6 +50,9 @@ public final class SleepChain implements TaskChain {
     private long toldNight = Long.MIN_VALUE;
     /** A bed it placed itself, to pick up again in the morning. */
     private BlockPos placedBed;
+    /** Where the walk under way is going, and when it started. */
+    private BlockPos walkingTo;
+    private long walkStarted = Long.MIN_VALUE;
 
     public SleepChain(AgentPlayer companion) {
         this.companion = companion;
@@ -113,11 +118,10 @@ public final class SleepChain implements TaskChain {
                 }
             }
             if (!inBedReach(sp, bed)) {
-                nav().navigateNear(bed.getX(), bed.getY(), bed.getZ(), 1);
-                nav().tick();
+                walkTo(bed, now);
                 return;
             }
-            nav().cancel();
+            stopWalking();
             TaskContext.inputDriver(companion).clear();
             if (monstersNear(level, sp, bed)) {
                 tellOnce(level, "Monsters near my bed; dealing with them first.");
@@ -138,7 +142,27 @@ public final class SleepChain implements TaskChain {
 
     @Override
     public void onInterrupt(AgentPlayer companion) {
+        stopWalking();
+    }
+
+    /**
+     * Walk on towards a place. The goal is set once, not every tick: setting it again starts the search over, and a
+     * walk restarted every tick never takes a step. A walk that ended short of it is tried again after a pause.
+     */
+    private void walkTo(BlockPos target, long now) {
+        PlayerNav n = nav();
+        boolean fresh = !target.equals(walkingTo);
+        if (fresh || (!n.isNavigating() && now - walkStarted >= RETRY_WALK_AFTER)) {
+            n.navigateNear(target.getX(), target.getY(), target.getZ(), 1);
+            walkingTo = target.immutable();
+            walkStarted = now;
+        }
+        n.tick();
+    }
+
+    private void stopWalking() {
         if (nav != null) nav.cancel();
+        walkingTo = null;
     }
 
     private PlayerNav nav() {
@@ -265,11 +289,10 @@ public final class SleepChain implements TaskChain {
             return;
         }
         if (!inBedReach(sp, placedBed)) {
-            nav().navigateNear(placedBed.getX(), placedBed.getY(), placedBed.getZ(), 1);
-            nav().tick();
+            walkTo(placedBed, level.getGameTime());
             return;
         }
-        nav().cancel();
+        stopWalking();
         if (BlockDigger.startBreaking(sp, placedBed)) {
             bodyLog.report("picked my bed back up");
             placedBed = null;

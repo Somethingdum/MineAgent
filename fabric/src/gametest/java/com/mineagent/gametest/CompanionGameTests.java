@@ -49,11 +49,13 @@ public class CompanionGameTests implements FabricGameTest {
             MineAgentEngine.despawnCompanion(s.companion.companionId(), true);
         }
         // Scenes build past their own test area, and the areas sit close together: clear what an earlier scene left
-        // above this floor (walls, roofs, gravel, lava) before laying it.
+        // above this floor (walls, roofs, gravel, lava, and blocks it marked as a player's) before laying it.
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(helper.getLevel());
         for (int x = -16; x <= 24; x++) {
             for (int z = -16; z <= 24; z++) {
                 for (int y = 12; y >= 1; y--) helper.setBlock(x, y, z, Blocks.AIR);
                 helper.setBlock(x, 0, z, Blocks.STONE);
+                for (int y = 0; y <= 12; y++) placed.clear(helper.absolutePos(new BlockPos(x, y, z)));
             }
         }
         ServerPlayer owner = reuseOwner != null ? reuseOwner : helper.makeMockServerPlayerInLevel();
@@ -83,13 +85,22 @@ public class CompanionGameTests implements FabricGameTest {
         s.owner().getServer().getPlayerList().remove(s.owner());
     }
 
+    /**
+     * Where a block is in the scene's own coordinates. 1.21.1's {@code GameTestHelper.relativePos} turns x and z
+     * around (it gives (-10, 1, -10) for a block set at (10, 1, 10)); our scenes are not rotated, so this is the
+     * offset from the scene's origin.
+     */
+    private static BlockPos rel(GameTestHelper helper, BlockPos absolute) {
+        return absolute.subtract(helper.absolutePos(BlockPos.ZERO));
+    }
+
     /** Every 40 ticks, where the companion is and what has its body, into CI's log. */
     private static void trace(GameTestHelper helper, Scene s, String what) {
         if (helper.getTick() % 40 != 0) return;
         var state = MineAgentEngine.getCompanion(s.companion().companionId());
         String control = state.map(c -> c.auction.inControl()).orElse("gone");
         System.out.println("[SCENE " + what + "] tick " + helper.getTick() + ": at "
-                + helper.relativePos(s.body().blockPosition()).toShortString() + ", " + control
+                + rel(helper, s.body().blockPosition()).toShortString() + ", " + control
                 + (s.body().isSleeping() ? ", asleep" : ""));
     }
 
@@ -223,7 +234,7 @@ public class CompanionGameTests implements FabricGameTest {
                 net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
         BlockPos inside = helper.absolutePos(new BlockPos(10, 1, 10));
         s.body().teleportTo(helper.getLevel(), inside.getX() + 0.5, inside.getY(), inside.getZ() + 0.5, 0.0f, 0.0f);
-        System.out.println("[SCENE house] put inside at " + helper.relativePos(s.body().blockPosition()).toShortString()
+        System.out.println("[SCENE house] put inside at " + rel(helper, s.body().blockPosition()).toShortString()
                 + "; wall at (10, 1, 6) is " + helper.getBlockState(new BlockPos(10, 1, 6)).getBlock());
         return helper.absolutePos(new BlockPos(10, 1, 3));
     }
@@ -262,7 +273,7 @@ public class CompanionGameTests implements FabricGameTest {
 
     /** Whether its feet are in the doorway or the step just outside it. */
     private static boolean atDoor(GameTestHelper helper, Scene s) {
-        BlockPos rel = helper.relativePos(s.body().blockPosition());
+        BlockPos rel = rel(helper, s.body().blockPosition());
         return rel.getX() == 10 && (rel.getZ() == 14 || rel.getZ() == 15);
     }
 
@@ -331,20 +342,36 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
-    /** Plan 70, MA5.3: an iron door with nothing to open it is a wall: it stays inside and breaks nothing. */
+    /**
+     * Plan 70, MA5.3: an iron door with nothing to open it is a wall: it stays inside and breaks nothing. The floor is
+     * one its owner laid (as a house's floor is), so digging under the wall is out too; natural ground under a wall
+     * may be dug, as a player would.
+     */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_iron_wall", timeoutTicks = 700)
     public void anIronDoorWithNoButtonIsAWall(GameTestHelper helper) {
         Scene s = scene(helper, "Shutin");
         BlockPos goal = house(helper, s, Blocks.IRON_DOOR);
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(helper.getLevel());
+        for (int x = 6; x <= 14; x++) {
+            for (int z = 6; z <= 14; z++) placed.mark(helper.absolutePos(new BlockPos(x, 0, z)));
+        }
+        int[] floor = {0};
         sendTo(helper, s, goal, "iron-2");
         helper.onEachTick(() -> {
             trace(helper, s, "iron wall");
+            floor[0] = 0;
+            for (int x = 7; x <= 13; x++) {
+                for (int z = 7; z <= 13; z++) if (!helper.getBlockState(new BlockPos(x, 0, z)).is(Blocks.STONE)) floor[0]++;
+            }
             if (brokenWall(helper) > 0 || !helper.getBlockState(new BlockPos(10, 1, 14)).is(Blocks.IRON_DOOR)) {
                 tidy(s);
                 fail(helper, "it broke out of the house");
+            } else if (floor[0] > 0) {
+                tidy(s);
+                fail(helper, "it dug " + floor[0] + " blocks of the floor its owner laid");
             } else if (helper.getTick() >= 600) {
                 BlockPos at = s.body().blockPosition();
-                BlockPos rel = helper.relativePos(at);
+                BlockPos rel = rel(helper, at);
                 boolean inside = rel.getX() > 6 && rel.getX() < 14 && rel.getZ() > 6 && rel.getZ() < 14;
                 tidy(s);
                 if (inside) helper.succeed();
@@ -405,7 +432,7 @@ public class CompanionGameTests implements FabricGameTest {
                 else fail(helper, "the night passed without the companion asleep");
             } else if (helper.getTick() >= 1300) {
                 String how = String.format("still night after 1300 ticks: owner asleep %b, companion asleep %b, companion at %s",
-                        s.owner().isSleeping(), s.body().isSleeping(), helper.relativePos(s.body().blockPosition()).toShortString());
+                        s.owner().isSleeping(), s.body().isSleeping(), rel(helper, s.body().blockPosition()).toShortString());
                 level.setDayTime(dayStart + 25000L);
                 tidy(s);
                 fail(helper, how);
