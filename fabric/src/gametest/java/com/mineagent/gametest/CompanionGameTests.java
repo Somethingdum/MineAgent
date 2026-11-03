@@ -126,6 +126,9 @@ public class CompanionGameTests implements FabricGameTest {
         armed(s.body());
         Husk husk = helper.spawn(EntityType.HUSK, new BlockPos(6, 1, 3));
         husk.setTarget(s.body());
+        var server = helper.getLevel().getServer();
+        int serverStart = server.getTickCount();
+        long gameStart = helper.getLevel().getGameTime();
         helper.onEachTick(() -> {
             if (!s.body().isAlive()) {
                 tidy(s);
@@ -136,8 +139,11 @@ public class CompanionGameTests implements FabricGameTest {
                 if (byIt) helper.succeed();
                 else fail(helper, "the husk died, but not by the companion");
             } else if (helper.getTick() >= 2300) {
-                String how = String.format("the husk still lives after 2300 ticks: husk health %.0f, %.1f blocks away, companion health %.0f",
-                        husk.getHealth(), husk.distanceTo(s.body()), s.body().getHealth());
+                String how = String.format("the husk still lives after 2300 ticks: husk health %.0f, %.1f blocks away, companion health %.0f"
+                        + " (%d server ticks and %d of game time went by; day time %d)",
+                        husk.getHealth(), husk.distanceTo(s.body()), s.body().getHealth(),
+                        server.getTickCount() - serverStart, helper.getLevel().getGameTime() - gameStart,
+                        helper.getLevel().getDayTime());
                 tidy(s);
                 fail(helper, how);
             }
