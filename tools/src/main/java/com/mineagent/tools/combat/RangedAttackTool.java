@@ -70,6 +70,12 @@ public class RangedAttackTool implements Tool {
             reply.accept(ToolArgs.errorJson("Entity " + entityId + " was not found or cannot be attacked."));
             return;
         }
+        // Players only on the owner's word; never the owner or the owner's own (plan 69, MA3.8).
+        String refused = com.mineagent.engine.combat.TargetPolicy.refusal(player, target);
+        if (refused != null) {
+            reply.accept(ToolArgs.errorJson(refused));
+            return;
+        }
 
         var record = new RangedAttackTaskRecord(toolCallId, entityId, chargeTicks);
         TaskDispatch.dispatchAsync(player, record, reply);

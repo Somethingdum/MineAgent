@@ -1654,6 +1654,43 @@ public final class MineAgentEngine {
         return Optional.empty();
     }
 
+    /** Add a player the companion may attack (null: clear the list). The owner or a trusted player only. */
+    private static int changeTarget(CommandSourceStack source, String who) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CompanionState> state = goalCompanionFor(player);
+        if (state.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] No companion takes orders from you."));
+            return 0;
+        }
+        var s = state.get();
+        if (who == null) {
+            s.loop.setAgentSettings(s.loop.getAgentSettings().withoutTargets());
+            persistCompanionNow(s.companion.companionId());
+            source.sendSuccess(() -> Component.literal("§a[MineAgent] It will attack no players."), false);
+            return 1;
+        }
+        ServerPlayer target = source.getServer().getPlayerList().getPlayerByName(who);
+        if (target == null) {
+            source.sendFailure(Component.literal("§c[MineAgent] No player named '" + who + "' is online."));
+            return 0;
+        }
+        if (target.getUUID().equals(s.companion.ownerUuid()) || isCompanionOwnedBy(target.getUUID(), s.companion.ownerUuid())) {
+            source.sendFailure(Component.literal("§c[MineAgent] It never attacks its owner or the owner's companions."));
+            return 0;
+        }
+        var next = s.loop.getAgentSettings().withTarget(target.getUUID());
+        if (next.allowedTargets().size() == s.loop.getAgentSettings().allowedTargets().size()
+                && !s.loop.getAgentSettings().isAllowedTarget(target.getUUID())) {
+            source.sendFailure(Component.literal("§c[MineAgent] The target list is full."));
+            return 0;
+        }
+        s.loop.setAgentSettings(next);
+        persistCompanionNow(s.companion.companionId());
+        String name = target.getName().getString();
+        source.sendSuccess(() -> Component.literal("§a[MineAgent] It may now attack " + name + ". Your \"stop\" or /mineagent target clear ends it."), false);
+        return 1;
+    }
+
     private static int listGoals(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         Optional<CompanionState> state = goalCompanionFor(player);
@@ -2314,6 +2351,11 @@ public final class MineAgentEngine {
                             .then(argument("count", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 2304))
                                 .executes(ctx -> goalCommand(ctx.getSource(), "stock", StringArgumentType.getString(ctx, "item"),
                                         com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "count")))))))
+                // ── target: a player it may attack, on the owner's or a trusted player's word (SMH plan 69, MA3.8) ──
+                .then(literal("target")
+                    .then(literal("clear").executes(ctx -> changeTarget(ctx.getSource(), null)))
+                    .then(argument("player", StringArgumentType.word())
+                        .executes(ctx -> changeTarget(ctx.getSource(), StringArgumentType.getString(ctx, "player")))))
                 // ── trust / untrust / trusted: who else the companions obey (SMH plan 69, MA1.7) ──
                 .then(literal("trust")
                     .then(argument("player", StringArgumentType.word())

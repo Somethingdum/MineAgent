@@ -68,6 +68,12 @@ public class MeleeAttackTool implements Tool {
             reply.accept(ToolArgs.errorJson("Entity " + entityId + " was not found or cannot be attacked."));
             return;
         }
+        // Players only on the owner's word; never the owner or the owner's own (plan 69, MA3.8).
+        String refused = com.mineagent.engine.combat.TargetPolicy.refusal(player, target);
+        if (refused != null) {
+            reply.accept(ToolArgs.errorJson(refused));
+            return;
+        }
 
         var record = new MeleeAttackTaskRecord(toolCallId, entityId, holdTicks);
         TaskDispatch.dispatchAsync(player, record, reply);

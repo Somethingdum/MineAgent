@@ -137,6 +137,8 @@ public class CompanionLifecycleHandler implements CompanionLifecycle {
         // Hardcore is an explicit per-companion permanent-death rule. Tell the
         // brain and owner the truth instead of advertising a respawn command
         // that the authoritative engine will reject.
+        // A death teaches: a lesson, a note on the goal, and a goal to fetch its things (SMH plan 69, MA3.9).
+        if (companion instanceof CompanionEntity entity) loop.onDied(entity.serverPlayer(), hardcore);
         loop.onBodyLog(hardcore
                 ? "I died in hardcore mode. This death is permanent; this companion cannot respawn or change mode. My human owner must create a new companion."
                 : "I died! My health reached zero. I need to be respawned.");

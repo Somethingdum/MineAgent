@@ -22,10 +22,17 @@ import java.util.UUID;
  * @param experiments how much it experiments with what it does not know: low, normal or high (MA2.4; high)
  * @param callRate    how freely it calls its model: calm, normal or busy (MA2.5; busy)
  * @param mode        who decides its work: servant, auto, escort or parked (WorkMode; servant)
+ * @param allowedTargets players (UUID strings) it may attack, on the owner's or a trusted player's word (MA3.8);
+ *                       never the owner, and "stop" from the owner clears it
  */
 public record AgentSettings(List<String> trusted, String persona, boolean curriculum, String experiments, String callRate,
-                            String mode) {
-    public static final AgentSettings DEFAULTS = new AgentSettings(List.of(), "", true, "high", "busy", "servant");
+                            String mode, List<String> allowedTargets) {
+    public static final AgentSettings DEFAULTS = new AgentSettings(List.of(), "", true, "high", "busy", "servant", List.of());
+
+    public AgentSettings(List<String> trusted, String persona, boolean curriculum, String experiments, String callRate,
+                         String mode) {
+        this(trusted, persona, curriculum, experiments, callRate, mode, List.of());
+    }
 
     public AgentSettings(List<String> trusted, String persona) {
         this(trusted, persona, true, "high", "busy", "servant");
@@ -44,7 +51,25 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
     }
 
     public AgentSettings withMode(String m) {
-        return new AgentSettings(trusted, persona, curriculum, experiments, callRate, m);
+        return new AgentSettings(trusted, persona, curriculum, experiments, callRate, m, allowedTargets);
+    }
+
+    /** At most this many players on the target list. */
+    public static final int MAX_TARGETS = 16;
+
+    public boolean isAllowedTarget(UUID player) {
+        return player != null && allowedTargets.contains(player.toString().toLowerCase(Locale.ROOT));
+    }
+
+    public AgentSettings withTarget(UUID player) {
+        if (player == null || isAllowedTarget(player)) return this;
+        List<String> next = new ArrayList<>(allowedTargets);
+        next.add(player.toString());
+        return new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode, next);
+    }
+
+    public AgentSettings withoutTargets() {
+        return allowedTargets.isEmpty() ? this : new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode, List.of());
     }
     /** At most this many trusted players. */
     public static final int MAX_TRUSTED = 64;
@@ -60,6 +85,14 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
             }
         }
         trusted = List.copyOf(clean);
+        LinkedHashSet<String> targets = new LinkedHashSet<>();
+        if (allowedTargets != null) {
+            for (String t : allowedTargets) {
+                String u = normalUuid(t);
+                if (u != null && targets.size() < MAX_TARGETS) targets.add(u);
+            }
+        }
+        allowedTargets = List.copyOf(targets);
         persona = persona == null ? "" : persona.strip();
         if (persona.length() > MAX_PERSONA) persona = persona.substring(0, MAX_PERSONA);
         experiments = switch (experiments == null ? "" : experiments.strip().toLowerCase(Locale.ROOT)) {
@@ -80,30 +113,30 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
         if (player == null || isTrusted(player)) return this;
         List<String> next = new ArrayList<>(trusted);
         next.add(player.toString());
-        return new AgentSettings(next, persona, curriculum, experiments, callRate, mode);
+        return new AgentSettings(next, persona, curriculum, experiments, callRate, mode, allowedTargets);
     }
 
     public AgentSettings withoutTrusted(UUID player) {
         if (player == null || !isTrusted(player)) return this;
         List<String> next = new ArrayList<>(trusted);
         next.remove(player.toString());
-        return new AgentSettings(next, persona, curriculum, experiments, callRate, mode);
+        return new AgentSettings(next, persona, curriculum, experiments, callRate, mode, allowedTargets);
     }
 
     public AgentSettings withPersona(String text) {
-        return new AgentSettings(trusted, text, curriculum, experiments, callRate, mode);
+        return new AgentSettings(trusted, text, curriculum, experiments, callRate, mode, allowedTargets);
     }
 
     public AgentSettings withCurriculum(boolean on) {
-        return new AgentSettings(trusted, persona, on, experiments, callRate, mode);
+        return new AgentSettings(trusted, persona, on, experiments, callRate, mode, allowedTargets);
     }
 
     public AgentSettings withExperiments(String level) {
-        return new AgentSettings(trusted, persona, curriculum, level, callRate, mode);
+        return new AgentSettings(trusted, persona, curriculum, level, callRate, mode, allowedTargets);
     }
 
     public AgentSettings withCallRate(String level) {
-        return new AgentSettings(trusted, persona, curriculum, experiments, level, mode);
+        return new AgentSettings(trusted, persona, curriculum, experiments, level, mode, allowedTargets);
     }
 
     public String toJson() {
@@ -116,6 +149,9 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
         obj.addProperty("experiments", experiments);
         obj.addProperty("callRate", callRate);
         obj.addProperty("mode", mode);
+        JsonArray targets = new JsonArray();
+        for (String t : allowedTargets) targets.add(t);
+        obj.add("allowedTargets", targets);
         return obj.toString();
     }
 
@@ -141,7 +177,13 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
             String callRate = obj.has("callRate") && obj.get("callRate").isJsonPrimitive()
                     ? obj.get("callRate").getAsString() : "busy";
             String mode = obj.has("mode") && obj.get("mode").isJsonPrimitive() ? obj.get("mode").getAsString() : "servant";
-            return new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode);
+            List<String> targets = new ArrayList<>();
+            if (obj.has("allowedTargets") && obj.get("allowedTargets").isJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("allowedTargets")) {
+                    if (e.isJsonPrimitive()) targets.add(e.getAsString());
+                }
+            }
+            return new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode, targets);
         } catch (RuntimeException e) {
             return DEFAULTS;
         }

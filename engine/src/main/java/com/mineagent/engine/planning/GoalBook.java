@@ -54,7 +54,12 @@ public final class GoalBook {
     /** A standing order: keep at least {@code count} of {@code item}. */
     public record Stock(String item, int count) {}
 
-    public record State(List<Goal> goals, List<Stock> stock, int nextId) {}
+    /** {@code resumeNext}: the goal an urgent one interrupted, which comes back first (null: none). */
+    public record State(List<Goal> goals, List<Stock> stock, int nextId, String resumeNext) {
+        public State(List<Goal> goals, List<Stock> stock, int nextId) {
+            this(goals, stock, nextId, null);
+        }
+    }
 
     /** What the goal loop does after a step is verified. {@code claimedShort}: the model said done; the count said no. */
     public record Step(boolean done, String next, boolean claimedShort) {}
@@ -94,6 +99,7 @@ public final class GoalBook {
     private final List<Goal> goals = new ArrayList<>();
     private final List<Stock> stock = new ArrayList<>();
     private int nextId = 1;
+    private String resumeNext;
 
     /**
      * A new goal; active if none is, else queued (paused) behind the active one. Amounts in its words become
@@ -106,6 +112,27 @@ public final class GoalBook {
         if (open >= MAX_OPEN) throw new IllegalStateException("the goal book is full (" + MAX_OPEN + " open goals)");
         Status s = active().isPresent() ? Status.PAUSED : Status.ACTIVE;
         Goal g = new Goal("g" + nextId++, t, clip(setBy), tick, s, List.of(), "", needsIn(t, isItem), 0, "", 0, 0);
+        goals.add(g);
+        prune();
+        return g;
+    }
+
+    /**
+     * A goal that cannot wait (going back for its things after a death, MA3.9): active now, the goal it interrupts
+     * paused and the next to come back. An urgent goal already active with the same opening words is replaced, so
+     * dying again on the way does not stack them.
+     */
+    public synchronized Goal urgent(String text, String setBy, long tick, String samePrefix) {
+        String t = clip(text);
+        if (t.isEmpty()) throw new IllegalArgumentException("a goal needs words");
+        Optional<Goal> current = active();
+        if (current.isPresent() && samePrefix != null && current.get().text().startsWith(samePrefix)) {
+            replace(current.get().with(Status.DROPPED));
+        } else if (current.isPresent()) {
+            replace(current.get().with(Status.PAUSED));
+            resumeNext = current.get().id();
+        }
+        Goal g = new Goal("g" + nextId++, t, clip(setBy), tick, Status.ACTIVE, List.of(), "", List.of(), 0, "", 0, 0);
         goals.add(g);
         prune();
         return g;
@@ -333,13 +360,15 @@ public final class GoalBook {
     // ── Saving ──
 
     public synchronized State exportState() {
-        return new State(List.copyOf(goals), List.copyOf(stock), nextId);
+        return new State(List.copyOf(goals), List.copyOf(stock), nextId, resumeNext);
     }
 
     public synchronized void importState(State s) {
         goals.clear();
         stock.clear();
+        resumeNext = null;
         if (s == null) return;
+        resumeNext = s.resumeNext();
         if (s.goals() != null) {
             boolean seenActive = false;
             for (Goal g : s.goals()) {
@@ -383,7 +412,12 @@ public final class GoalBook {
     }
 
     private Optional<Goal> promoteNext() {
-        Optional<Goal> next = goals.stream().filter(g -> g.status() == Status.PAUSED)
+        // The goal an urgent one interrupted comes back first; then the queue, oldest first.
+        String back = resumeNext;
+        resumeNext = null;
+        Optional<Goal> next = back == null ? Optional.empty()
+                : goals.stream().filter(g -> g.id().equals(back) && g.status() == Status.PAUSED).findFirst();
+        if (next.isEmpty()) next = goals.stream().filter(g -> g.status() == Status.PAUSED)
                 .min(Comparator.comparingLong(Goal::createdTick));
         next.ifPresent(g -> replace(g.with(Status.ACTIVE)));
         return next.map(g -> g.with(Status.ACTIVE));

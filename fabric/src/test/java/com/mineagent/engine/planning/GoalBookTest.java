@@ -147,6 +147,23 @@ final class GoalBookTest {
         assertThrows(IllegalStateException.class, () -> book.add("one too many", "owner", 99, ITEMS));
     }
 
+    @Test void anUrgentGoalInterruptsAndTheInterruptedOneComesBackFirst() {
+        GoalBook book = new GoalBook();
+        book.add("older queued goal", "owner", 0, ITEMS);      // g1, active
+        book.add("the next in the queue", "owner", 1, ITEMS);   // g2, paused
+        assertTrue(book.switchTo("g2"));                         // g2 active, g1 paused
+        var rescue = book.urgent("Recover your gear at 1 2 3", "death", 5, "Recover your gear at ");
+        assertEquals(rescue.id(), book.active().orElseThrow().id());
+        // Died again on the way: replaced, not stacked.
+        var again = book.urgent("Recover your gear at 4 5 6", "death", 6, "Recover your gear at ");
+        assertEquals(GoalBook.Status.DROPPED, book.get(rescue.id()).orElseThrow().status());
+        assertEquals(again.id(), book.active().orElseThrow().id());
+        // Survives a save.
+        GoalBook loaded = new GoalBook();
+        loaded.importState(new Gson().fromJson(new Gson().toJson(book.exportState()), GoalBook.State.class));
+        assertEquals("g2", loaded.complete().orElseThrow().id(), "the interrupted goal, not the oldest queued one");
+    }
+
     @Test void standingOrdersComeDueWhenShort() {
         GoalBook book = new GoalBook();
         assertTrue(book.setStock("minecraft:torch", 64));

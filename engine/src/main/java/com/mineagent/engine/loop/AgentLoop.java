@@ -204,6 +204,9 @@ public class AgentLoop {
 
     // ── Combat (SMH plan 69, block 3): what it guards, how it fights, every fight rated by the game ──
     /** A guarded spot, or a guarded player or creature (its UUID); null: not guarding. */
+    /** A line to the owner for a goal step, a new skill, or health back after a close call (MA3.3). */
+    private final com.mineagent.engine.chat.MilestoneTalk milestoneTalk = new com.mineagent.engine.chat.MilestoneTalk();
+    private volatile boolean closeCall;
     /** Long goals and standing stock orders (planning/GoalBook, MA3.1); saved with the world. */
     private final com.mineagent.engine.planning.GoalBook goalBook = new com.mineagent.engine.planning.GoalBook();
     private final java.util.concurrent.atomic.AtomicBoolean goalStepInFlight = new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -1187,7 +1190,13 @@ public class AgentLoop {
                 haltNow();
                 boolean wasGuarding = standDown();
                 String paused = pauseGoal();
-                speakToOwner("Stopped" + (wasGuarding ? ", and off guard" : "") + "." + paused);
+                // The owner's "stop" also ends any player it was told to attack (MA3.8).
+                boolean hadTargets = fromOwner && !agentSettings.allowedTargets().isEmpty();
+                if (hadTargets) {
+                    setAgentSettings(agentSettings.withoutTargets());
+                    MineAgentEngine.persistCompanionNow(id);
+                }
+                speakToOwner("Stopped" + (wasGuarding ? ", and off guard" : "") + (hadTargets ? ", and attacking no one" : "") + "." + paused);
             }
             case STAY -> {
                 haltNow();
@@ -1513,7 +1522,46 @@ public class AgentLoop {
             activeOwnerGoal = "";
             return;
         }
+        var ms = stepped.get().milestones();
+        if (!ms.isEmpty()) {
+            sayMilestone(com.mineagent.engine.chat.MilestoneTalk.Kind.MILESTONE, "you finished a step toward your goal \""
+                    + truncateForLog(g.text(), 120) + "\": " + truncateForLog(ms.get(ms.size() - 1).text(), 160));
+        }
         onSelfGoal(goalPrompt(stepped.get(), nextStep));
+    }
+
+    /** Health under the flee line, then back to three quarters: worth a word (MA3.3). */
+    private void watchCloseCalls(net.minecraft.server.level.ServerPlayer player) {
+        if (player == null || player.isDeadOrDying()) {
+            closeCall = false;
+            return;
+        }
+        double flee = MineAgentEngine.getConfig().survival().healthFlee();
+        if (player.getHealth() <= flee) closeCall = true;
+        else if (closeCall && player.getHealth() >= player.getMaxHealth() * 0.75) {
+            closeCall = false;
+            sayMilestone(com.mineagent.engine.chat.MilestoneTalk.Kind.RECOVERED, "you were nearly killed a moment ago and have healed back up");
+        }
+    }
+
+    /** One line to the owner in its own voice, at most one of each kind a minute; none on the calm call rate. */
+    private void sayMilestone(com.mineagent.engine.chat.MilestoneTalk.Kind kind, String what) {
+        if (!milestoneTalk.take(kind, System.currentTimeMillis())) return;
+        if ("calm".equals(agentSettings.callRate())) return;
+        var request = com.mineagent.engine.chat.MilestoneTalk.request(baseUrl, apiKey, model, temperature,
+                companion.companionName(), agentSettings.persona(), what);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    String line = com.mineagent.engine.chat.MilestoneTalk.sentence(replyContent(sideCall(request)));
+                    if (line != null) Services.platform().scheduleOnServer(() -> speakToOwner(line));
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Milestone line failed: " + e.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // shutting down
+        }
     }
 
     /**
@@ -1557,6 +1605,46 @@ public class AgentLoop {
         var st = due.get().getKey();
         onSelfGoal("Standing order: keep at least " + st.count() + " " + st.item().replace('_', ' ') + " on you; you have "
                 + due.get().getValue() + ". Get more (gather, craft or take from your own chests), then stop.");
+    }
+
+    /**
+     * A death teaches (SMH plan 69, MA3.9): a lesson about what killed it, a note on the goal it was on, and, when
+     * its things are lying there to be had (not burnt in lava, not in the void, keepInventory off, not hardcore), a
+     * goal to go back for them, ahead of the goal it was on, which comes back after.
+     */
+    public void onDied(net.minecraft.server.level.ServerPlayer body, boolean hardcore) {
+        if (body == null) return;
+        try {
+            long tick = currentGameTickSafe();
+            String cause = body.getCombatTracker().getDeathMessage().getString();
+            var source = body.getLastDamageSource();
+            String type = source == null ? "" : source.typeHolder().unwrapKey().map(k -> k.location().toString()).orElse("");
+            var pos = body.blockPosition();
+            if (goalBook.active().isPresent()) {
+                goalBook.milestone(com.mineagent.engine.learning.DeathNote.note(cause, pos.getX(), pos.getY(), pos.getZ()), tick);
+            }
+            boolean keep = body.serverLevel().getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_KEEPINVENTORY);
+            // The inventory has already been dropped by now: what matters is whether its things lie here.
+            boolean dropped = !body.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    body.getBoundingBox().inflate(4.0)).isEmpty();
+            if (com.mineagent.engine.learning.DeathNote.recoverable(type, keep, hardcore, dropped)) {
+                var g = goalBook.urgent(com.mineagent.engine.learning.DeathNote.recoveryGoal(pos.getX(), pos.getY(), pos.getZ(),
+                        body.level().dimension().location().toString()), "death", tick,
+                        com.mineagent.engine.learning.DeathNote.RECOVER_PREFIX);
+                notifyRecovery(g.id(), pos);
+            }
+            saveMemoryNow();
+            var episode = new com.mineagent.engine.learning.Scorecard.Episode("survive",
+                    com.mineagent.engine.learning.Scorecard.Outcome.FAILED, true, 0L, body.getMaxHealth(), body.getMaxHealth());
+            writeLesson("staying alive (" + truncateForLog(cause, 120) + ")", episode, 0.0);
+        } catch (RuntimeException e) {
+            System.err.println("[MineAgent] Death lesson failed: " + e.getMessage());
+        }
+    }
+
+    private void notifyRecovery(String goalId, net.minecraft.core.BlockPos pos) {
+        speakToOwner("When I'm back, I'll go for my things at " + pos.getX() + " " + pos.getY() + " " + pos.getZ()
+                + " (goal " + goalId + "), then back to what I was doing.");
     }
 
     /** What it carries, by item id without the namespace, with any log and any planks counted as families too. */
@@ -1691,6 +1779,7 @@ public class AgentLoop {
             measureEpisodes(player, goalVerified, gameTick);
             practice(player, goalVerified, gameTick);
             goalHeartbeat(player);
+            watchCloseCalls(player);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -2891,8 +2980,12 @@ public class AgentLoop {
             String skillId = generateSkillId(normalizedGoal,
                     toolNames.getFirst(), toolNames);
             String stepsJson = toolTraceJson(verified);
+            boolean fresh = skillLib.getActionSequence(skillId) == null;
             skillLib.registerSequence(skillId, normalizedGoal, normalizedGoal, stepsJson, true);
             verifiedActionTrace.clear();
+            if (fresh && skillLib.getActionSequence(skillId) != null) {
+                sayMilestone(com.mineagent.engine.chat.MilestoneTalk.Kind.SKILL, "you learned a new skill: " + truncateForLog(normalizedGoal, 160));
+            }
             if (skillLib.getActionSequence(skillId) != null) writeUpSkill(skillId, normalizedGoal, skillLib.getActionSequence(skillId));
         }
     }
