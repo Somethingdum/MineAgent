@@ -931,7 +931,7 @@ public class AgentLoop {
         // A terminal task no longer owns the body. Keep its outcome as compact
         // evidence, but publish a null task id so the next decision sees an
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
-        if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-"))) {
+        if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-"))) {
             lastOrderState = state;
             var note = message == null ? null : java.util.regex.Pattern.compile("\"note\":\"([^\"]*)\"").matcher(message);
             lastOrderNote = note != null && note.find() ? note.group(1) : message == null ? "" : message;
@@ -1322,6 +1322,25 @@ public class AgentLoop {
             }
             case STATUS -> speakToOwner(statusLine());
             case WHATS_NEXT -> speakToOwner(whatsNext());
+            case FOOD_BOTH -> {
+                if (!fromOwner) return false;
+                // Food for two (MA8.5): enough for its trips and as much again for you, then yours handed over.
+                int each = Math.max(4, com.mineagent.engine.settings.Switches.readyFood());
+                return queueOrders("make me " + (2 * each) + " food, then give me " + each + " food");
+            }
+            case GIVE -> {
+                if (!fromOwner) return false;
+                String what = FOOD_WORDS.matcher(c.value()).matches() ? com.mineagent.engine.task.ProductionTask.FOOD
+                        : com.mineagent.engine.planning.production.GameKnowledge.itemFor(c.value());
+                if (what == null || what.startsWith(com.mineagent.engine.planning.production.GameKnowledge.ANY)) return false;
+                int count = c.count() == null ? 1 : c.count() < 0 ? -c.count() * 64 : c.count();
+                String words = "give me " + count + " " + c.value();
+                journal.record("order", words, currentGameTickSafe());
+                orderGoal(words);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.GiveTask.GiveRecord(
+                        "give-" + UUID.randomUUID(), what, count), reply -> { });
+                return true;
+            }
             case WHY -> speakToOwner(why());
             case NEEDS -> speakToOwner(needs());
             case CANCEL -> {
@@ -2278,6 +2297,15 @@ public class AgentLoop {
             var pos = body.blockPosition();
             journal.record("death", cause + " at " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), tick,
                     body.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
+            // Three deaths here in 15 minutes: a place to keep away from (MA8.6).
+            var zone = com.mineagent.engine.learning.DangerZones.of(body.getUUID()).died(
+                    body.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ(), body.level().getGameTime());
+            zone.ifPresent(z -> {
+                journal.record("danger", "died three times near " + z.x() + ", " + z.y() + ", " + z.z() + " in 15 minutes: keeping away",
+                        tick, z.dim(), z.x(), z.y(), z.z());
+                speakToOwner("I've died three times near " + z.x() + ", " + z.y() + ", " + z.z()
+                        + " in 15 minutes. I'll keep away from there for a few days, and my paths go round it.");
+            });
             if (goalBook.active().isPresent()) {
                 goalBook.milestone(com.mineagent.engine.learning.DeathNote.note(cause, pos.getX(), pos.getY(), pos.getZ()), tick);
             }
@@ -3122,7 +3150,7 @@ public class AgentLoop {
         if (c.isEmpty()) return c;
         var k = c.get().kind();
         return k == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE || k == com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE
-                ? c : java.util.Optional.empty();
+                || k == com.mineagent.engine.chat.CommandParser.Kind.GIVE ? c : java.util.Optional.empty();
     }
 
     /**

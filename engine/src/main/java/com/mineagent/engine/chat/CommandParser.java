@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -63,6 +63,10 @@ public final class CommandParser {
     /** The words a goal keeps an order in, so it means the same chest after a restart. */
     private static final Pattern FILL_AT = Pattern.compile("^fill the chest at (-?\\d+), (-?\\d+), (-?\\d+) with (.{2,60})$");
     private static final Pattern PUT_AT = Pattern.compile("^put (\\d{1,4}) (.{2,60}?) in the chest at (-?\\d+), (-?\\d+), (-?\\d+)$");
+    /** "Give me 8 food", "hand me 16 torches": handed over (MA8.5). */
+    private static final Pattern GIVE = Pattern.compile("^(?:give|hand|bring|pass|toss) me " + HOW_MANY + " (.{2,40}?)(?: please)?$");
+    /** "Get food for both of us": food for two, half handed over. */
+    private static final Pattern FOOD_BOTH = Pattern.compile("^(?:get|make|find|cook) (?:some )?food for (?:both of us|the two of us|us both|us|me and you|you and me)$");
     /** What next, why, what it needs (MA6.5): answered from its goals and its task, no model. */
     private static final Pattern WHATS_NEXT = Pattern.compile("^(?:what'?s next|what next|what are you doing next|what will you do next|what'?s after (?:that|this)|then what)$");
     private static final Pattern WHY = Pattern.compile("^(?:why|why are you doing (?:that|this)|what'?s that for|what for|why that)$");
@@ -143,6 +147,9 @@ public final class CommandParser {
         at = PUT_AT.matcher(t);
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
+        if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
+        Matcher give = GIVE.matcher(t);
+        if (give.matches()) return Optional.of(new Command(Kind.GIVE, give.group(2).strip(), howMany(give.group(1))));
         if (WHATS_NEXT.matcher(t).matches()) return Optional.of(new Command(Kind.WHATS_NEXT, null, null));
         if (WHY.matcher(t).matches()) return Optional.of(new Command(Kind.WHY, null, null));
         if (NEEDS.matcher(t).matches()) return Optional.of(new Command(Kind.NEEDS, null, null));

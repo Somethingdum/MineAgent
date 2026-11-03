@@ -172,6 +172,20 @@ public final class GameKnowledge {
         BlockPos at = sp.blockPosition();
         for (Block block : BuiltInRegistries.BLOCK) {
             BlockState state = block.defaultBlockState();
+            if (block instanceof net.minecraft.world.level.block.CropBlock crop) {
+                // A crop is harvested ripe and planted again (MA8.5), never broken green for its seeds.
+                try {
+                    BlockState ripe = crop.getStateForAge(crop.getMaxAge());
+                    for (var e : drops(ripe, level, at, sp, ItemStack.EMPTY, 32).entrySet()) {
+                        if (e.getValue() <= 0) continue;
+                        out.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(new Source(e.getKey(), Production.CROP + id(block), "", 0,
+                                false, e.getValue(), 2));
+                    }
+                } catch (RuntimeException odd) {
+                    // a crop a mod builds oddly: left out
+                }
+                continue;
+            }
             if (state.isAir() || !state.getFluidState().isEmpty()) continue;
             float hardness;
             try {
@@ -438,6 +452,15 @@ public final class GameKnowledge {
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 12, 24))) {
             if (!level.isLoaded(p)) continue;
             var st = level.getBlockState(p);
+            if (st.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(st)) {
+                String key = Production.CROP + id(st.getBlock());
+                int d = (int) Math.sqrt(p.distSqr(at));
+                if (!distance.containsKey(key) || d < distance.get(key)) {
+                    where.put(key, Where.KNOWN);
+                    distance.put(key, d);
+                }
+                continue;
+            }
             if (!st.is(net.minecraft.tags.BlockTags.LOGS)) continue;
             String bid = id(st.getBlock());
             int d = (int) Math.sqrt(p.distSqr(at));

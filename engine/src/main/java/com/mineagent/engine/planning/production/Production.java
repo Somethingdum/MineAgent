@@ -24,6 +24,13 @@ public final class Production {
      */
     public static final String UNSEEN = "unseen:*";
 
+    /** A source that is a ripe crop, harvested and planted again: "crop:minecraft:wheat". */
+    public static final String CROP = "crop:";
+
+    public static boolean crop(String block) {
+        return block != null && block.startsWith(CROP);
+    }
+
     /** A source that is shearing an animal, which it leaves: "shear:minecraft:sheep:white". */
     public static final String SHEAR = "shear:";
 

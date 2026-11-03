@@ -61,6 +61,12 @@ public final class TaskRegistration {
                 ProductionTask::new
         );
 
+        // Handing its owner what they asked for (SMH plan 70, MA8.5)
+        CompanionTaskFactory.register(
+                GiveTask.GiveRecord.class,
+                GiveTask::new
+        );
+
         // Mining on its own: branch tunnels at the ore's height (SMH plan 70, MA7.8)
         CompanionTaskFactory.register(
                 MiningTask.MineRecord.class,

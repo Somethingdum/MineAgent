@@ -141,15 +141,20 @@ public class PathingCore {
     /** Hostile mobs within 32 blocks, to keep paths clear of (MA5.10); none when the switch is off. */
     static java.util.List<com.mineagent.engine.pathing.util.MobAvoidance.Danger> dangersAround(
             net.minecraft.server.level.ServerPlayer body) {
-        if (!com.mineagent.engine.settings.Switches.avoidMobs()) return java.util.List.of();
         var out = new java.util.ArrayList<com.mineagent.engine.pathing.util.MobAvoidance.Danger>();
-        for (var mob : body.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+        if (com.mineagent.engine.settings.Switches.avoidMobs()) for (var mob : body.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
                 body.getBoundingBox().inflate(32.0), m -> m.isAlive()
                         && m instanceof net.minecraft.world.entity.monster.Enemy
                         && !(m instanceof net.minecraft.world.entity.NeutralMob neutral && !neutral.isAngry()))) {
             out.add(com.mineagent.engine.pathing.util.MobAvoidance.mob(mob.getBlockX(), mob.getBlockY(), mob.getBlockZ(),
                     mob instanceof net.minecraft.world.entity.monster.Creeper));
             if (out.size() >= 64) break;
+        }
+        // Places it keeps dying (MA8.6): kept off like a mob, harder.
+        String dim = body.level().dimension().location().toString();
+        for (var z : com.mineagent.engine.learning.DangerZones.of(body.getUUID()).zones(dim, body.level().getGameTime())) {
+            out.add(new com.mineagent.engine.pathing.util.MobAvoidance.Danger(z.x(), z.y(), z.z(),
+                    com.mineagent.engine.learning.DangerZones.RADIUS, com.mineagent.engine.learning.DangerZones.WEIGHT));
         }
         return out;
     }

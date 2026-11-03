@@ -509,6 +509,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case MINE -> mine();
             case HUNT -> hunt();
             case SHEAR -> shear();
+            case HARVEST -> harvest();
             case CRAFT -> craft();
             case SMELT -> smelt();
         };
@@ -843,6 +844,99 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
+    // ── Harvesting (MA8.5) ──────────────────────────────────────────
+
+    private BlockPos crop;
+    private BlockPos replant;
+
+    /**
+     * Ripe crops harvested and planted again (SMH plan 70, MA8.5): the nearest ripe one of the kind, broken by hand,
+     * its drops picked up, and a seed of it put back in the farmland, so the field grows again. Never a green one, and
+     * never in your AFK farm.
+     */
+    private TaskState harvest() {
+        ServerPlayer sp = sp();
+        ServerLevel level = sp.serverLevel();
+        int got = count(sp, item(step.item())) - itemBefore;
+        if (replant != null) {
+            replantAt(sp);
+            return TaskState.RUNNING;
+        }
+        if (pickingUp(sp)) return TaskState.RUNNING;
+        if (got >= step.count()) {
+            nav.cancel();
+            TaskContext.inputDriver(player).clear();
+            return TaskState.SUCCESS;
+        }
+        var block = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(step.block().substring(Production.CROP.length()))).orElse(null);
+        if (!(block instanceof net.minecraft.world.level.block.CropBlock kind)) return outOf(step.block());
+        String dim = level.dimension().location().toString();
+        if (crop == null || !(level.getBlockState(crop).getBlock() == block && kind.isMaxAge(level.getBlockState(crop)))) {
+            crop = null;
+            double best = Double.MAX_VALUE;
+            BlockPos at = sp.blockPosition();
+            for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -4, -24), at.offset(24, 4, 24))) {
+                var st = level.getBlockState(p);
+                if (st.getBlock() != block || !kind.isMaxAge(st) || AfkFarmsProtect(dim, p)) continue;
+                double d = p.distSqr(at);
+                if (d < best) {
+                    best = d;
+                    crop = p.immutable();
+                }
+            }
+            if (crop == null) return outOf(step.block());
+            chasing = null;
+            navFailed = false;
+        }
+        if (crop.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
+            chase(crop, 1);
+            if (navFailed) {
+                navFailed = false;
+                return outOf(step.block());
+            }
+            return TaskState.RUNNING;
+        }
+        nav.cancel();
+        chasing = null;
+        TaskContext.inputDriver(player).clear();
+        if (BlockDigger.startBreakingDetailed(sp, crop).allowed() || level.getBlockState(crop).isAir()) {
+            if (level.getBlockState(crop).isAir()) {
+                lootAt = crop;
+                lootWait = 40;
+                replant = crop;
+                crop = null;
+                wait = 2;
+            }
+        }
+        return TaskState.RUNNING;
+    }
+
+    private static boolean AfkFarmsProtect(String dim, BlockPos p) {
+        return com.mineagent.engine.world.AfkFarms.protects(dim, p.getX(), p.getY(), p.getZ());
+    }
+
+    /** A seed of the crop back in the farmland it came from. */
+    private void replantAt(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        BlockPos at = replant;
+        var block = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(step.block().substring(Production.CROP.length()))).orElse(null);
+        Item seed = block == null ? null : block.asItem();
+        if (seed == null || seed == net.minecraft.world.item.Items.AIR || !level.getBlockState(at).isAir()
+                || !level.getBlockState(at.below()).is(Blocks.FARMLAND)) {
+            replant = null;
+            return;
+        }
+        if (count(sp, seed) == 0) {
+            if (!pickingUp(sp)) replant = null; // its seeds come with its drops; none left: the cell stays bare
+            return;
+        }
+        hold(sp, seed);
+        sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, net.minecraft.world.phys.Vec3.atCenterOf(at.below()).add(0, 0.5, 0));
+        com.mineagent.engine.act.Interaction.interactBlock(sp, at.below(), net.minecraft.world.InteractionHand.MAIN_HAND);
+        TaskContext.syncInventory(sp);
+        replant = null;
+    }
+
     /** An item into its hand from its pack, as a player's hotbar swap. */
     private static void hold(ServerPlayer sp, Item item) {
         var inv = sp.getInventory();
@@ -1020,19 +1114,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     furnaces.add(p);
                 }
             }
-            while (furnaces.size() < step.furnaces() && count(sp, station.asItem()) > 0) {
-                BlockPos spot = null;
-                for (BlockPos p : ring(workSpot, 2)) {
+            // Put down from its pack, round where it works: every free spot tried (a cow on one, a fence by another), the
+            // nearest ring first.
+            for (int r = 2; r <= 3 && furnaces.size() < step.furnaces(); r++) {
+                for (BlockPos p : ring(workSpot, r)) {
+                    if (furnaces.size() >= step.furnaces() || count(sp, station.asItem()) == 0) break;
                     if (furnaces.contains(p)) continue;
                     var st = level.getBlockState(p);
-                    if (BlockHelper.isPassable(st) && st.getFluidState().isEmpty()
-                            && BlockHelper.canStandOn(level.getBlockState(p.below()))) {
-                        spot = p.immutable();
-                        break;
-                    }
+                    if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
+                    if (Placement.placeBlock(sp, p.immutable(), station.defaultBlockState())) furnaces.add(p.immutable());
                 }
-                if (spot == null || !Placement.placeBlock(sp, spot, station.defaultBlockState())) break;
-                furnaces.add(spot);
             }
             if (furnaces.isEmpty()) return fail("I have no furnace to smelt " + ProductionPlanner.name(step.input()) + " in");
             // Each furnace's share, in whole pieces of fuel's worth, and the fuel for it: as the plan priced it.
@@ -1308,6 +1399,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case MINE -> "mining " + ProductionPlanner.plural(step.block(), step.blocks());
             case HUNT -> "hunting " + ProductionPlanner.plural(step.block(), step.blocks());
             case SHEAR -> "shearing " + ProductionPlanner.plural(step.block(), step.blocks());
+            case HARVEST -> "harvesting " + ProductionPlanner.name(step.block());
             case CRAFT -> "crafting " + ProductionPlanner.plural(step.item(), step.count());
             case SMELT -> "smelting " + ProductionPlanner.plural(step.input(), step.count());
         };

@@ -71,7 +71,7 @@ public final class SleepChain implements TaskChain {
             if (sp == null || !sp.isAlive()) return Float.NEGATIVE_INFINITY;
             if (sp.isSleeping()) return PRIORITY;
             if (com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp)) return PRIORITY;
-            if (alone(sp, companion)) return PRIORITY;
+            if (alone(sp, companion) && bedToHand(sp)) return PRIORITY; // with no bed, the night shelter is its job
             if (placedBed != null && sp.serverLevel().isDay() && placedBed.closerThan(sp.blockPosition(), 16)) {
                 return PICK_UP_PRIORITY;
             }
@@ -95,6 +95,20 @@ public final class SleepChain implements TaskChain {
         return true;
     }
 
+    /** A bed in its pack, or a free one near (looked for now and then, not every tick). */
+    private boolean bedToHand(ServerPlayer sp) {
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).getItem() instanceof BedItem) return true;
+        ServerLevel level = sp.serverLevel();
+        long now = level.getGameTime();
+        if (bed != null && freeBed(level, bed)) return true;
+        if (now - lastSearch > SEARCH_EVERY) {
+            lastSearch = now;
+            bed = findBed(sp);
+        }
+        return bed != null;
+    }
+
     /** Someone else in its world is in bed at a time beds work, so the night waits on it. */
     static boolean wanted(ServerPlayer sp) {
         ServerLevel level = sp.serverLevel();
@@ -113,7 +127,7 @@ public final class SleepChain implements TaskChain {
     public void tick(AgentPlayer companion) {
         ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
         try {
-            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp) || alone(sp, companion);
+            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp) || alone(sp, companion) && bedToHand(sp);
             if (sp.isSleeping()) {
                 if (!want) sp.stopSleepInBed(true, true); // everyone else is up (or the switch is off): it gets up too
                 return;

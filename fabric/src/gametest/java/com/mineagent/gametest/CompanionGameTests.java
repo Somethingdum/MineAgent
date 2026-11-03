@@ -2501,6 +2501,78 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA8.5, food that renews: "make me 2 bread" by a field of ripe wheat: it harvests what it needs, plants a
+     * seed back in every cell it took, and bakes the bread at the table it carries.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_farm", timeoutTicks = 1600)
+    public void aWheatFieldHarvestedAndReplanted(GameTestHelper helper) {
+        Scene s = scene(helper, "Farmer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var ripe = ((net.minecraft.world.level.block.CropBlock) Blocks.WHEAT).getStateForAge(7);
+        for (int x = 8; x <= 10; x++) for (int z = 8; z <= 10; z++) {
+            helper.setBlock(x, 0, z, Blocks.FARMLAND);
+            helper.setBlock(x, 1, z, ripe);
+        }
+        helper.setBlock(9, 0, 11, Blocks.WATER);
+        s.body().getInventory().setItem(3, new ItemStack(Items.CRAFTING_TABLE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 2 bread"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "farm");
+            String done = lastSaid(s, "Done");
+            if (!done.isEmpty()) {
+                int bread = s.body().getInventory().countItem(Items.BREAD);
+                int planted = 0, young = 0;
+                for (int x = 8; x <= 10; x++) for (int z = 8; z <= 10; z++) {
+                    var st = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, 1, z)));
+                    if (st.is(Blocks.WHEAT)) {
+                        planted++;
+                        if (!((net.minecraft.world.level.block.CropBlock) Blocks.WHEAT).isMaxAge(st)) young++;
+                    }
+                }
+                String plan = lastSaid(s, "On it");
+                tidy(s);
+                // 6 wheat for 2 bread: at least 6 cells harvested, every cell still growing wheat.
+                if (bread == 2 && planted == 9 && young >= 6 && plan.contains("harvest")) helper.succeed();
+                else fail(helper, "bread " + bread + ", cells with wheat " + planted + ", replanted " + young + "; plan: " + plan + "; done: " + done);
+            } else if (helper.getTick() >= 1500) {
+                String how = "bread " + s.body().getInventory().countItem(Items.BREAD) + ", wheat " + s.body().getInventory().countItem(Items.WHEAT)
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA8.5: "give me 4 bread": it comes to its owner and hands 4 over, keeping the rest. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_give", timeoutTicks = 400)
+    public void giveMeFourBread(GameTestHelper helper) {
+        Scene s = scene(helper, "Giver");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(2, new ItemStack(Items.BREAD, 8));
+        BlockPos far = helper.absolutePos(new BlockPos(12, 1, 12));
+        s.body().teleportTo(helper.getLevel(), far.getX() + 0.5, far.getY(), far.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "give me 4 bread"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "give");
+            String here = lastSaid(s, "Here");
+            if (!here.isEmpty()) {
+                int kept = s.body().getInventory().countItem(Items.BREAD);
+                int handed = s.owner().getInventory().countItem(Items.BREAD);
+                for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        s.owner().getBoundingBox().inflate(4.0), e -> e.getItem().is(Items.BREAD))) handed += e.getItem().getCount();
+                double near = s.body().distanceTo(s.owner());
+                tidy(s);
+                if (kept == 4 && handed == 4 && near <= 4.0) helper.succeed();
+                else fail(helper, String.format("kept %d, handed %d, %.1f from its owner; said: %s", kept, handed, near, here));
+            } else if (helper.getTick() >= 380) {
+                String how = "said: " + lastSaid(s, "") + "; bread " + s.body().getInventory().countItem(Items.BREAD);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {

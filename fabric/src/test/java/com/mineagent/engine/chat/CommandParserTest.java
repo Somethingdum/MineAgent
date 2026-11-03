@@ -158,6 +158,12 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.WHY, CommandParser.parse("why", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.NEEDS, CommandParser.parse("what do you need", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.PRODUCE, CommandParser.parse("I need 3 furnaces", "Pal").orElseThrow().kind(), "still an order");
+        var give = CommandParser.parse("give me 8 food", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.GIVE, give.kind());
+        assertEquals("food", give.value());
+        assertEquals(8, give.count().intValue());
+        assertEquals(CommandParser.Kind.FOOD_BOTH, CommandParser.parse("get food for both of us", "Pal").orElseThrow().kind());
+        assertEquals(-1, CommandParser.parse("hand me a stack of torches", "Pal").orElseThrow().count().intValue());
     }
 
     @Test void ordersToMineOnItsOwn() {

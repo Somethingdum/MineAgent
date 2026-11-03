@@ -69,7 +69,7 @@ public final class ProductionPlanner {
     private final Set<String> without;
     private int smokers, blasts;
 
-    public enum Action { FETCH, MINE, HUNT, SHEAR, CRAFT, SMELT }
+    public enum Action { FETCH, MINE, HUNT, SHEAR, HARVEST, CRAFT, SMELT }
 
     /**
      * One step of the job: FETCH {@code count} of {@code item} from its chests; MINE {@code blocks} of {@code block}
@@ -99,6 +99,7 @@ public final class ProductionPlanner {
                     case MINE -> parts.add(String.format(Locale.ROOT, "mine %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case HUNT -> parts.add(String.format(Locale.ROOT, "hunt %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case SHEAR -> parts.add(String.format(Locale.ROOT, "shear %,d %s", s.blocks(), plural(s.block(), s.blocks())));
+                    case HARVEST -> parts.add(String.format(Locale.ROOT, "harvest %,d ripe %s", s.blocks(), name(s.block())));
                     case SMELT -> {
                         String station = s.recipe() != null && s.recipe().contains("smoking") ? "smoker"
                                 : s.recipe() != null && s.recipe().contains("blasting") ? "blast furnace" : "furnace";
@@ -177,7 +178,7 @@ public final class ProductionPlanner {
         for (Step s : merged) {
             switch (s.action()) {
                 case FETCH -> ticks += FETCH_PER_STACK * Math.ceil(s.count() / 64.0);
-                case MINE, HUNT, SHEAR -> {
+                case MINE, HUNT, SHEAR, HARVEST -> {
                     if (!mined.containsKey(s.block())) ticks += getThere(s.block());
                     mined.merge(s.block(), s.blocks(), Integer::sum);
                     ticks += s.blocks() * (breakTicks(s.block(), s.item()) + MINE_WALK);
@@ -471,7 +472,8 @@ public final class ProductionPlanner {
             spendUses(s, blocks);
             if (toolName.isEmpty()) toolName = s.tool();
         }
-        Action act = Production.animal(s.block()) ? Action.HUNT : Production.shearing(s.block()) ? Action.SHEAR : Action.MINE;
+        Action act = Production.animal(s.block()) ? Action.HUNT : Production.shearing(s.block()) ? Action.SHEAR
+                : Production.crop(s.block()) ? Action.HARVEST : Action.MINE;
         steps.add(new Step(act, s.item(), count, null, 0, s.block(), blocks, toolName, null, null, 0, 0, false));
         // What is mined beyond the order and the tools made on the way is left over, for later steps.
         int surplus = (int) Math.floor(blocks * s.perBlock()) - count - extra;
