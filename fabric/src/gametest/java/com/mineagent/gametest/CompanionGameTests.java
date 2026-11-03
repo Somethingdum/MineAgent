@@ -2185,6 +2185,108 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA6.2, MA6.3, MA6.5: "make me 4 oak planks, then make me 8 sticks, then make me a crafting table": three
+     * goals in that order, each run by code; "what's next" answered from its goals; and when its owner leaves and comes
+     * back between two of them, it carries on with the next.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_then", timeoutTicks = 1600)
+    public void ordersInARowSurviveALeaveAndReturn(GameTestHelper helper) {
+        Scene s = scene(helper, "Steady");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.OAK_LOG, 3));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(),
+                "make me 4 oak planks, then make me 8 sticks, then make me a crafting table"));
+        boolean[] asked = {false}, rejoined = {false};
+        String[] next = {""};
+        helper.onEachTick(() -> {
+            trace(helper, s, "then");
+            var companions = MineAgentEngine.getCompanionsByOwner(s.owner().getUUID());
+            if (companions.isEmpty()) return;
+            var c = companions.get(0).companion;
+            var loop = TaskContext.agentLoop(c);
+            if (loop == null) return;
+            String got = said(loop, "Got it");
+            if (!asked[0] && !got.isEmpty()) {
+                asked[0] = true;
+                MineAgentEngine.onPlayerChat(s.owner(), "what's next");
+            }
+            if (next[0].isEmpty()) next[0] = said(loop, "After this");
+            if (!rejoined[0] && !said(loop, "Next: make me 8 sticks").isEmpty()) {
+                rejoined[0] = true;
+                MineAgentEngine.onPlayerLeave(s.owner());
+                MineAgentEngine.onPlayerJoin(s.owner());
+                return;
+            }
+            var inv = c.serverPlayer().getInventory();
+            if (rejoined[0] && inv.countItem(Items.STICK) >= 8 && inv.countItem(Items.CRAFTING_TABLE) >= 1) {
+                boolean allDone = loop.goalBook().active().isEmpty();
+                String how = "got it: " + got + "; next: " + next[0] + "; all done " + allDone;
+                MineAgentEngine.despawnCompanion(c.companionId(), true);
+                s.owner().getServer().getPlayerList().remove(s.owner());
+                if (got.contains("make me 4 oak planks, then make me 8 sticks, then make me a crafting table")
+                        && next[0].startsWith("After this: make me 8 sticks, then make me a crafting table") && allDone) helper.succeed();
+                else fail(helper, how);
+            } else if (helper.getTick() >= 1500) {
+                String how = "rejoined " + rejoined[0] + ", sticks " + inv.countItem(Items.STICK) + ", tables " + inv.countItem(Items.CRAFTING_TABLE)
+                        + ", planks " + inv.countItem(Items.OAK_PLANKS) + ", goal " + loop.goalBook().active().map(g -> g.text()).orElse("none")
+                        + "; said: " + said(loop, "");
+                MineAgentEngine.despawnCompanion(c.companionId(), true);
+                s.owner().getServer().getPlayerList().remove(s.owner());
+                fail(helper, how);
+            }
+        });
+    }
+
+    private static String said(com.mineagent.engine.loop.AgentLoop loop, String startingWith) {
+        var said = loop.journal().recent(60).stream()
+                .filter(e -> "said".equals(e.kind()) && e.text().startsWith(startingWith)).toList();
+        return said.isEmpty() ? "" : said.get(said.size() - 1).text();
+    }
+
+    /**
+     * Plan 70, MA6.1: an order interrupted by a fight carries on after it. Mid-smelt a zombie comes at it; it fights
+     * (its sword) and then fills the chest as if nothing happened.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fight_resume", timeoutTicks = 2600)
+    public void anOrderCarriesOnAfterAFight(GameTestHelper helper) {
+        Scene s = scene(helper, "Steadfast");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = almostFullChest(helper, 48);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(1, new ItemStack(Items.COBBLESTONE, 16));
+        inv.setItem(2, new ItemStack(Items.COAL, 2));
+        inv.setItem(3, new ItemStack(Items.FURNACE, 4));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "fill this chest with stone bricks"));
+        net.minecraft.world.entity.monster.Zombie[] zombie = {null};
+        helper.runAfterDelay(160, () -> {
+            BlockPos at = s.body().blockPosition().offset(4, 0, 0);
+            var z = EntityType.ZOMBIE.create(helper.getLevel());
+            z.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5);
+            z.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET)); // no burning in the sun
+            z.setTarget(s.body());
+            helper.getLevel().addFreshEntity(z);
+            zombie[0] = z;
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "fight resume");
+            int bricks = inChest(helper, chest, Items.STONE_BRICKS);
+            String done = lastSaid(s, "Your chest is full");
+            if (bricks == 64 && !done.isEmpty()) {
+                boolean fought = zombie[0] != null && !zombie[0].isAlive();
+                tidy(s);
+                if (fought) helper.succeed();
+                else fail(helper, "filled, but the zombie " + (zombie[0] == null ? "never came" : "is still alive"));
+            } else if (helper.getTick() >= 2500) {
+                String how = "bricks " + bricks + ", zombie " + (zombie[0] == null ? "none" : zombie[0].isAlive() ? "alive" : "dead")
+                        + ", health " + s.body().getHealth() + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {

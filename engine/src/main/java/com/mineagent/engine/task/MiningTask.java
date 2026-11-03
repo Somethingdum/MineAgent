@@ -834,6 +834,28 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         if (sub != null) sub.interrupt();
         if (nav != null) nav.cancel();
         if (digging != null) BlockDigger.abortBreaking(sp(), digging);
+        digging = null;
+        walkingTo = null; // made again from where it stands when it carries on
         TaskContext.inputDriver(player).clear();
+    }
+
+    /** What it is doing, from the facts (MA6.5). */
+    @Override
+    public com.mineagent.api.task.TaskSnapshot snapshot() {
+        String doing = switch (phase) {
+            case READY -> "getting ready for the trip";
+            case TOOL -> "making a pickaxe";
+            case DIG, VEIN -> prep ? "mining iron and coal for an iron pickaxe" : "branch mining at Y " + targetY;
+            case HOME, DEPOSIT -> "taking the haul home";
+            case BACK -> "going back to the tunnel";
+            default -> phase.name().toLowerCase(java.util.Locale.ROOT);
+        };
+        String got = begun ? gotLine() : "";
+        String summary = "mining " + record.ore + (record.count > 0 ? " (" + record.count + ")" : "") + ": " + doing
+                + (got.isEmpty() ? "" : "; " + got + " so far");
+        int n = begun ? gained() : 0;
+        return com.mineagent.api.task.TaskSnapshot.progress(doing, summary, n, record.count > 0 ? record.count : -1,
+                face == null ? null : face.getX(), face == null ? null : face.getY(), face == null ? null : face.getZ(),
+                null, null, n * 1_000L + index);
     }
 }

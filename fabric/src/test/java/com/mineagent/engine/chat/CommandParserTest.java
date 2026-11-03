@@ -146,6 +146,20 @@ final class CommandParserTest {
         assertTrue(CommandParser.parse("afk farm is broken", "Pal").isEmpty(), "talk about an AFK farm is not going AFK");
     }
 
+    @Test void theWordsAGoalKeepsAnOrderInAndTheQuestions() {
+        var fill = CommandParser.parse("fill the chest at 12, -59, -8 with stone bricks", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.PRODUCE, fill.kind());
+        assertEquals("chestat|12,-59,-8|stone bricks", fill.value());
+        assertEquals(0, fill.count().intValue());
+        var put = CommandParser.parse("put 4 cooked beef in the chest at 1, 2, 3", "Pal").orElseThrow();
+        assertEquals("chestat|1,2,3|cooked beef", put.value());
+        assertEquals(4, put.count().intValue());
+        assertEquals(CommandParser.Kind.WHATS_NEXT, CommandParser.parse("what's next?", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.WHY, CommandParser.parse("why", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.NEEDS, CommandParser.parse("what do you need", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.PRODUCE, CommandParser.parse("I need 3 furnaces", "Pal").orElseThrow().kind(), "still an order");
+    }
+
     @Test void ordersToMineOnItsOwn() {
         var d = CommandParser.parse("mine diamonds", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.MINE_ORE, d.kind());

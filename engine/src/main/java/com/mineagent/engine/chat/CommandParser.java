@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -60,6 +60,13 @@ public final class CommandParser {
     private static final Pattern GET_ORE = Pattern.compile("^(?:go )?(?:get|fetch) me (?:(\\d{1,3}) |some )?" + ORE_WORDS + "(?: ore)?$");
     /** "go mining", "mine until I say stop", "go strip mining". */
     private static final Pattern MINING = Pattern.compile("^(?:go (?:strip |branch )?mining|mine until i (?:say|tell you to) stop|start mining|keep mining)$");
+    /** The words a goal keeps an order in, so it means the same chest after a restart. */
+    private static final Pattern FILL_AT = Pattern.compile("^fill the chest at (-?\\d+), (-?\\d+), (-?\\d+) with (.{2,60})$");
+    private static final Pattern PUT_AT = Pattern.compile("^put (\\d{1,4}) (.{2,60}?) in the chest at (-?\\d+), (-?\\d+), (-?\\d+)$");
+    /** What next, why, what it needs (MA6.5): answered from its goals and its task, no model. */
+    private static final Pattern WHATS_NEXT = Pattern.compile("^(?:what'?s next|what next|what are you doing next|what will you do next|what'?s after (?:that|this)|then what)$");
+    private static final Pattern WHY = Pattern.compile("^(?:why|why are you doing (?:that|this)|what'?s that for|what for|why that)$");
+    private static final Pattern NEEDS = Pattern.compile("^(?:what do you need|do you need anything|what are you missing|need anything)$");
     private static final Pattern FILL = Pattern.compile("^fill (?:up )?(?:(this|that|the|my|our|a|an|another|one) )?(?:chest|barrel)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern FILL_IT = Pattern.compile("^fill (?:it|this|that)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern CHEST_OF = Pattern.compile("^(?:i (?:want|need)|make me|get me|give me|i'?d like)\\s+(?:an? )?(?:(?:entire|full|whole) )?chest(?:ful)? of (.{2,60})$");
@@ -130,6 +137,15 @@ public final class CommandParser {
         if (g.matches()) return Optional.of(new Command(Kind.GOAL_ADD, g.group(1).strip(), null));
         Matcher afk = AFK_WITH.matcher(t);
         if (afk.matches()) return Optional.of(new Command(Kind.AFK, afk.group(1).strip(), null));
+        Matcher at = FILL_AT.matcher(t);
+        if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(1) + "," + at.group(2) + "," + at.group(3)
+                + "|" + at.group(4).strip(), 0));
+        at = PUT_AT.matcher(t);
+        if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
+                + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
+        if (WHATS_NEXT.matcher(t).matches()) return Optional.of(new Command(Kind.WHATS_NEXT, null, null));
+        if (WHY.matcher(t).matches()) return Optional.of(new Command(Kind.WHY, null, null));
+        if (NEEDS.matcher(t).matches()) return Optional.of(new Command(Kind.NEEDS, null, null));
         Matcher ore = MINE_ORE.matcher(t);
         if (!ore.matches()) ore = GET_ORE.matcher(t);
         if (ore.matches()) {
@@ -238,7 +254,7 @@ public final class CommandParser {
         return -Integer.parseInt(w.substring(0, w.indexOf(' ')));
     }
 
-    static String normalise(String line, String companionName) {
+    public static String normalise(String line, String companionName) {
         if (line == null) return "";
         String t = NAME_PREFIX.matcher(line.strip()).replaceFirst("").toLowerCase(Locale.ROOT);
         String name = companionName == null ? "" : companionName.toLowerCase(Locale.ROOT).strip();

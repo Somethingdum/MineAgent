@@ -743,6 +743,10 @@ public class AgentLoop {
         journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
                 + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
         var command = com.mineagent.engine.chat.CommandParser.parse(message, companion.companionName());
+        // "Do X, then Y" (MA6.3): goals in that order, each run by code where code knows it.
+        if (fromOwner && (command.isEmpty() || command.get().kind() != com.mineagent.engine.chat.CommandParser.Kind.AFK
+                && command.get().kind() != com.mineagent.engine.chat.CommandParser.Kind.GOAL_ADD)
+                && queueOrders(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName()))) return;
         if (command.isPresent() && runCommand(command.get(), fromOwner)) return;
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) {
             int close = message.indexOf("]: ");
@@ -1251,7 +1255,9 @@ public class AgentLoop {
                 int count = c.count() == null ? 0 : c.count();
                 haltNow();
                 standDown();
-                journal.record("order", "mine " + (count > 0 ? count + " " : "") + ore + (here ? " here" : ""), currentGameTickSafe());
+                String words = "mine " + (count > 0 ? count + " " : "") + ore + (here ? " here" : "");
+                journal.record("order", words, currentGameTickSafe());
+                orderGoal(words);
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.MiningTask.MineRecord(
                         "mine-" + UUID.randomUUID(), ore, count, here), reply -> { });
                 return true;
@@ -1310,6 +1316,9 @@ public class AgentLoop {
                 changeWorkMode(c.value());
             }
             case STATUS -> speakToOwner(statusLine());
+            case WHATS_NEXT -> speakToOwner(whatsNext());
+            case WHY -> speakToOwner(why());
+            case NEEDS -> speakToOwner(needs());
             case CANCEL -> {
                 haltNow();
                 activeOwnerGoal = "";
@@ -2219,6 +2228,7 @@ public class AgentLoop {
             if (!inbox.isEmpty()) return;
         }
         if (player.getHealth() <= MineAgentEngine.getConfig().survival().healthFlee()) return;
+        if (active.isPresent() && orderIn(active.get().text(), companion.companionName()).isPresent()) return; // code runs it
         if (active.isPresent()) {
             if (now - lastGoalNudgeMs < 90_000L) return;
             lastGoalNudgeMs = now;
@@ -2331,6 +2341,8 @@ public class AgentLoop {
     private String statusLine() {
         String goal = planner.exportState().goal();
         String practising = curriculum.current();
+        LiveBodyState task = liveBodyState.get();
+        String doing = task != null && task.taskId() != null && task.snapshot() != null ? task.snapshot().summary() : null;
         var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
         int certified = 0;
         for (SkillLibrary.Skill skill : skillLib.exportAll()) {
@@ -2338,7 +2350,8 @@ public class AgentLoop {
         }
         StringBuilder sb = new StringBuilder(agentSettings.workMode().id()).append(" mode");
         goalBook.active().ifPresent(g -> sb.append(", long goal ").append(g.id()).append(": ").append(truncateForLog(g.text(), 60)));
-        if (goal != null && !goal.isBlank()) sb.append(", working on: ").append(truncateForLog(goal, 80));
+        if (doing != null) sb.append(", ").append(truncateForLog(doing, 120));
+        else if (goal != null && !goal.isBlank()) sb.append(", working on: ").append(truncateForLog(goal, 80));
         else if (practising != null) sb.append(", practising: ").append(truncateForLog(practising, 80));
         else sb.append(", nothing on");
         if (self != null) {
@@ -2468,6 +2481,7 @@ public class AgentLoop {
             boolean goalVerified = planner.verifyGoal(semanticWorldModel, gameTick);
             measureEpisodes(player, goalVerified, gameTick);
             practice(player, goalVerified, gameTick);
+            if (gameTick % 20L == 0L) orderHeartbeat(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3013,6 +3027,14 @@ public class AgentLoop {
         if (me == null) return false;
         String words = c.value();
         boolean anyChest = words.startsWith("anychest|");
+        net.minecraft.core.BlockPos at = null;
+        if (words.startsWith("chestat|")) {
+            // The words a goal keeps it in: the chest by where it is.
+            String[] parts = words.split("\\|", 3);
+            String[] xyz = parts[1].split(",");
+            at = new net.minecraft.core.BlockPos(Integer.parseInt(xyz[0].strip()), Integer.parseInt(xyz[1].strip()), Integer.parseInt(xyz[2].strip()));
+            words = "chest|" + parts[2];
+        }
         boolean toChest = anyChest || words.startsWith("chest|");
         if (toChest) words = words.substring(words.indexOf('|') + 1);
         String item = FOOD_WORDS.matcher(words).matches() ? com.mineagent.engine.task.ProductionTask.FOOD
@@ -3026,7 +3048,9 @@ public class AgentLoop {
         }
         net.minecraft.core.BlockPos chest = null;
         boolean placeChest = false;
-        if (toChest) {
+        if (at != null) {
+            chest = at;
+        } else if (toChest) {
             chest = owner != null && owner.serverLevel() == me.serverLevel() ? chestMeant(owner) : null;
             if (chest == null && anyChest) {
                 placeChest = true; // "a chest": none by them, so one of its own
@@ -3040,9 +3064,189 @@ public class AgentLoop {
             standDown();
         }
         journal.record("order", "make " + (count == 0 ? "a chest full of" : count) + " " + words, currentGameTickSafe());
+        // In the goal book in words that mean the same job after a restart (MA6.2): that chest, by where it is.
+        orderGoal(chest != null ? (count == 0 ? "fill the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ() + " with " + words
+                : "put " + count + " " + words + " in the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ())
+                : placeChest ? "fill up a chest with " + words : "make me " + Math.max(1, count) + " " + words);
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
                 "produce-" + UUID.randomUUID(), item, count, chest, placeChest), reply -> { });
         return true;
+    }
+
+    // ── The goal spine: orders in the goal book, run by code (SMH plan 70, MA6.2, MA6.3, MA6.5) ──────────
+
+    /** The goal whose order it is running now (null: none), since when, and whether its task has been seen running. */
+    private String orderGoalId;
+    private long orderSince;
+    private boolean orderSeen;
+    /** Set while the heartbeat dispatches the active goal's order, so the order's handler doesn't make a second goal. */
+    private String dispatchingGoal;
+
+    /** An order given now: in the goal book as the active goal (what it interrupts comes back after), being run. */
+    private void orderGoal(String words) {
+        String id = dispatchingGoal;
+        if (id == null) {
+            try {
+                var g = goalBook.urgent(words, "owner", currentGameTickSafe(), null);
+                id = g.id();
+                saveMemoryNow();
+            } catch (RuntimeException full) {
+                return; // the goal book is full: it does the order, unlisted
+            }
+        }
+        orderGoalId = id;
+        orderSince = System.currentTimeMillis();
+        orderSeen = false;
+    }
+
+    /** The order a goal's words are, when code runs it: production and mining, so far. */
+    private static java.util.Optional<com.mineagent.engine.chat.CommandParser.Command> orderIn(String goalText, String name) {
+        var c = com.mineagent.engine.chat.CommandParser.parse(com.mineagent.engine.goal.Orders.withoutMark(goalText), name);
+        if (c.isEmpty()) return c;
+        var k = c.get().kind();
+        return k == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE || k == com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE
+                ? c : java.util.Optional.empty();
+    }
+
+    /**
+     * The active goal, when it is an order code runs: dispatched; when its task ends, done (or, standing, done again),
+     * and the next goal comes up. After a restart the active order is dispatched again and picks up from what is in the
+     * world (the chest half full, the tunnel dug so far).
+     */
+    private void orderHeartbeat(net.minecraft.server.level.ServerPlayer player) {
+        if (player == null || suspended || guarding()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        var active = goalBook.active();
+        if (active.isEmpty()) {
+            orderGoalId = null;
+            return;
+        }
+        var g = active.get();
+        LiveBodyState body = liveBodyState.get();
+        boolean busy = body != null && body.taskId() != null;
+        long now = System.currentTimeMillis();
+        if (g.id().equals(orderGoalId)) {
+            if (busy) {
+                orderSeen = true;
+                return;
+            }
+            if (!orderSeen && now - orderSince < 10_000L) return; // its task is on its way
+            orderGoalId = null;
+            if (com.mineagent.engine.goal.Orders.stands(g.text())) {
+                orderSince = now; // again, until it's stopped
+                return;
+            }
+            var next = goalBook.markDone(g.id());
+            saveMemoryNow();
+            next.ifPresent(n -> speakToOwner("Next: " + com.mineagent.engine.goal.Orders.withoutMark(n.text()) + "."));
+            return;
+        }
+        if (busy || inProgress || skillRuntime.active()) return;
+        if (now - orderSince < 2_000L) return;
+        var order = orderIn(g.text(), companion.companionName());
+        if (order.isEmpty() || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self)) return;
+        dispatchingGoal = g.id();
+        try {
+            runCommand(order.get(), true);
+        } finally {
+            dispatchingGoal = null;
+        }
+        if (!g.id().equals(orderGoalId)) {
+            // It couldn't start ("which chest?"): set aside, not tried every second.
+            goalBook.pauseActive();
+            saveMemoryNow();
+        }
+    }
+
+    /**
+     * "Fill this chest with stone bricks, then mine diamonds until further notice": the goals in that order, the chest
+     * meant now pinned down in the words, what it was doing after them. False when the line is one order.
+     */
+    private boolean queueOrders(String line) {
+        var orders = com.mineagent.engine.goal.Orders.split(line);
+        if (orders.size() < 2) {
+            // One order that stands ("make me 64 torches until I say stop"), when code runs it: a standing goal.
+            var one = com.mineagent.engine.goal.Orders.order(line);
+            if (!one.standing() || orderIn(one.text(), companion.companionName()).isEmpty()) return false;
+            if (orderIn(line, companion.companionName()).isPresent()) return false; // the order reads it itself ("mine iron until I say stop")
+            orders = List.of(one);
+        }
+        List<String> texts = new ArrayList<>();
+        for (var o : orders) texts.add(pinned(o.text()) + (o.standing() ? com.mineagent.engine.goal.Orders.STANDS : ""));
+        List<com.mineagent.engine.planning.GoalBook.Goal> made;
+        try {
+            made = goalBook.chain(texts, "owner", currentGameTickSafe());
+        } catch (RuntimeException full) {
+            return false;
+        }
+        saveMemoryNow();
+        haltNow();
+        standDown();
+        orderGoalId = null;
+        orderSince = 0;
+        List<String> said = new ArrayList<>();
+        for (var g : made) said.add(com.mineagent.engine.goal.Orders.withoutMark(g.text()) + (com.mineagent.engine.goal.Orders.stands(g.text()) ? " until you say stop" : ""));
+        speakToOwner("Got it: " + String.join(", then ", said) + ".");
+        journal.record("order", String.join(", then ", texts), currentGameTickSafe());
+        return true;
+    }
+
+    /** An order's words with "this chest" pinned to the chest they mean now; other words as they are. */
+    private String pinned(String words) {
+        var c = com.mineagent.engine.chat.CommandParser.parse(words, companion.companionName());
+        if (c.isEmpty() || c.get().kind() != com.mineagent.engine.chat.CommandParser.Kind.PRODUCE) return words;
+        String v = c.get().value();
+        if (!(v.startsWith("chest|") || v.startsWith("anychest|"))) return words;
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+        var owner = self == null ? null : self.serverPlayerOwner();
+        var chest = owner == null ? null : chestMeant(owner);
+        if (chest == null) return words;
+        String what = v.substring(v.indexOf('|') + 1);
+        int count = c.get().count() == null ? 0 : c.get().count();
+        if (count < 0) return words;
+        return count == 0 ? "fill the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ() + " with " + what
+                : "put " + count + " " + what + " in the chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ();
+    }
+
+    /** "What's next": the goals after this one, from its goal book. */
+    private String whatsNext() {
+        var up = goalBook.upcoming();
+        if (up.isEmpty()) return goalBook.active().isPresent() ? "Nothing after this." : "Nothing on.";
+        List<String> names = new ArrayList<>();
+        for (int i = 0; i < Math.min(3, up.size()); i++) names.add(com.mineagent.engine.goal.Orders.withoutMark(up.get(i).text()));
+        return "After this: " + String.join(", then ", names) + (up.size() > 3 ? ", and " + (up.size() - 3) + " more." : ".");
+    }
+
+    /** "Why": who asked for what it is doing. */
+    private String why() {
+        var g = goalBook.active();
+        if (g.isPresent()) {
+            String who = g.get().setBy() == null || g.get().setBy().isBlank() || g.get().setBy().equals("owner") ? "you" : g.get().setBy();
+            return "Because " + who + " asked: " + com.mineagent.engine.goal.Orders.withoutMark(g.get().text()) + ".";
+        }
+        if (curriculum.current() != null) return "Practising: " + truncateForLog(curriculum.current(), 100) + ".";
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null) return "Nothing was asked of me, so I found my own work.";
+        return "I'm not doing anything just now.";
+    }
+
+    /** "What do you need": what its task is stuck on, or the goal's amounts still short. */
+    private String needs() {
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.snapshot() != null && body.snapshot().blockedReason() != null) {
+            return "I'm stuck: " + body.snapshot().blockedReason() + ".";
+        }
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayer() : null;
+        if (self != null) {
+            Map<String, Integer> have = carried(self);
+            var short_ = goalBook.unmet(i -> have.getOrDefault(i, 0));
+            if (!short_.isEmpty()) {
+                List<String> parts = new ArrayList<>();
+                for (var n : short_) parts.add(n.count() + " " + n.item().replace("minecraft:", "").replace('_', ' '));
+                return "Still short of " + String.join(", ", parts) + ".";
+            }
+        }
+        return "Nothing; I have what I need for this.";
     }
 
     /** Words that mean food in general, not one food: "food", "something to eat", "cooked meat". */

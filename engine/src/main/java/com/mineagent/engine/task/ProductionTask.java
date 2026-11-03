@@ -1272,6 +1272,18 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     @Override
+    protected String cancelledMessage() {
+        release(); // stopped: what it had counted on from its chests is free again
+        return "{\"success\":false,\"delivered\":" + delivered + ",\"note\":\"stopped\"}";
+    }
+
+    @Override
+    protected String timeoutMessage() {
+        release();
+        return "{\"success\":false,\"delivered\":" + delivered + ",\"note\":\"out of time\"}";
+    }
+
+    @Override
     protected String failureMessage() {
         return "{\"success\":false,\"delivered\":" + delivered + ",\"note\":\"" + outcome.replace("\"", "'") + "\"}";
     }
@@ -1280,7 +1292,29 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     protected void onInterrupt() {
         if (sub != null) sub.interrupt();
         if (nav != null) nav.cancel();
-        release();
+        // The walk it was on is gone: made again from where it stands when it carries on (a fight, then back to it).
+        walkingTo = null;
+        chasing = null;
+        prey = null;
         TaskContext.inputDriver(player).clear();
+    }
+
+    /** What it is doing, from the facts (MA6.5): the order, the step, how far. */
+    @Override
+    public com.mineagent.api.task.TaskSnapshot snapshot() {
+        String what = itemId == null ? ProductionPlanner.name(record.item) : ProductionPlanner.plural(itemId, Math.max(2, target));
+        String doing = step == null ? phase.name().toLowerCase(java.util.Locale.ROOT) : switch (step.action()) {
+            case FETCH -> "fetching " + ProductionPlanner.plural(step.item(), step.count()) + " from my chests";
+            case MINE -> "mining " + ProductionPlanner.plural(step.block(), step.blocks());
+            case HUNT -> "hunting " + ProductionPlanner.plural(step.block(), step.blocks());
+            case SHEAR -> "shearing " + ProductionPlanner.plural(step.block(), step.blocks());
+            case CRAFT -> "crafting " + ProductionPlanner.plural(step.item(), step.count());
+            case SMELT -> "smelting " + ProductionPlanner.plural(step.input(), step.count());
+        };
+        String summary = String.format(java.util.Locale.ROOT, "making %s%s: %s, %,d of %,d in", what,
+                chestPos != null ? " for the chest at " + chestPos.toShortString() : "", doing, delivered, Math.max(target, 0));
+        return com.mineagent.api.task.TaskSnapshot.progress(doing, summary, delivered, Math.max(1, target),
+                chestPos == null ? null : chestPos.getX(), chestPos == null ? null : chestPos.getY(), chestPos == null ? null : chestPos.getZ(),
+                outcome.isEmpty() || phase != Phase.FAILED ? null : outcome, null, delivered * 64L + (step == null ? 0 : step.hashCode() & 63));
     }
 }

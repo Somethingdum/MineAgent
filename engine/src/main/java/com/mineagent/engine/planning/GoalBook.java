@@ -54,10 +54,17 @@ public final class GoalBook {
     /** A standing order: keep at least {@code count} of {@code item}. */
     public record Stock(String item, int count) {}
 
-    /** {@code resumeNext}: the goal an urgent one interrupted, which comes back first (null: none). */
-    public record State(List<Goal> goals, List<Stock> stock, int nextId, String resumeNext) {
+    /**
+     * {@code resumeNext}: the goal an urgent one interrupted, which comes back first (null: none); {@code upNext}: the
+     * goals that come next, in order, before the rest of the queue ("do X, then Y"; null in files saved before it).
+     */
+    public record State(List<Goal> goals, List<Stock> stock, int nextId, String resumeNext, List<String> upNext) {
         public State(List<Goal> goals, List<Stock> stock, int nextId) {
-            this(goals, stock, nextId, null);
+            this(goals, stock, nextId, null, null);
+        }
+
+        public State(List<Goal> goals, List<Stock> stock, int nextId, String resumeNext) {
+            this(goals, stock, nextId, resumeNext, null);
         }
     }
 
@@ -99,7 +106,8 @@ public final class GoalBook {
     private final List<Goal> goals = new ArrayList<>();
     private final List<Stock> stock = new ArrayList<>();
     private int nextId = 1;
-    private String resumeNext;
+    /** What comes next, in order, before the rest of the queue (the goal an urgent one interrupted; "then" goals). */
+    private final java.util.ArrayDeque<String> upNext = new java.util.ArrayDeque<>();
 
     /**
      * A new goal; active if none is, else queued (paused) behind the active one. Amounts in its words become
@@ -130,12 +138,48 @@ public final class GoalBook {
             replace(current.get().with(Status.DROPPED));
         } else if (current.isPresent()) {
             replace(current.get().with(Status.PAUSED));
-            resumeNext = current.get().id();
+            upNext.addFirst(current.get().id());
         }
         Goal g = new Goal("g" + nextId++, t, clip(setBy), tick, Status.ACTIVE, List.of(), "", List.of(), 0, "", 0, 0);
         goals.add(g);
         prune();
         return g;
+    }
+
+    /**
+     * "Do X, then Y, then Z" (SMH plan 70, MA6.3): X active now, Y and Z next in that order, then the goal X interrupted,
+     * then the rest of the queue. The goals made, in order.
+     */
+    public synchronized List<Goal> chain(List<String> texts, String setBy, long tick) {
+        List<Goal> made = new ArrayList<>();
+        for (String text : texts) {
+            String t = clip(text);
+            if (t.isEmpty()) continue;
+            Goal g = new Goal("g" + nextId++, t, clip(setBy), tick, Status.PAUSED, List.of(), "", List.of(), 0, "", 0, 0);
+            goals.add(g);
+            made.add(g);
+        }
+        if (made.isEmpty()) return made;
+        Optional<Goal> current = active();
+        current.ifPresent(c -> {
+            replace(c.with(Status.PAUSED));
+            upNext.addFirst(c.id());
+        });
+        for (int i = made.size() - 1; i >= 1; i--) upNext.addFirst(made.get(i).id());
+        replace(made.get(0).with(Status.ACTIVE));
+        prune();
+        List<Goal> out = new ArrayList<>();
+        for (Goal g : made) get(g.id()).ifPresent(out::add);
+        return out;
+    }
+
+    /** The goals that come next, in order, then the rest of the queue: what it will do after the active goal. */
+    public synchronized List<Goal> upcoming() {
+        List<Goal> out = new ArrayList<>();
+        for (String id : upNext) get(id).filter(g -> g.status() == Status.PAUSED && !out.contains(g)).ifPresent(out::add);
+        goals.stream().filter(g -> g.status() == Status.PAUSED && !out.contains(g))
+                .sorted(Comparator.comparingLong(Goal::createdTick)).forEach(out::add);
+        return out;
     }
 
     public synchronized Optional<Goal> active() {
@@ -360,15 +404,19 @@ public final class GoalBook {
     // ── Saving ──
 
     public synchronized State exportState() {
-        return new State(List.copyOf(goals), List.copyOf(stock), nextId, resumeNext);
+        return new State(List.copyOf(goals), List.copyOf(stock), nextId, upNext.peekFirst(), List.copyOf(upNext));
     }
 
     public synchronized void importState(State s) {
         goals.clear();
         stock.clear();
-        resumeNext = null;
+        upNext.clear();
         if (s == null) return;
-        resumeNext = s.resumeNext();
+        if (s.upNext() != null) {
+            for (String id : s.upNext()) if (id != null) upNext.addLast(id);
+        } else if (s.resumeNext() != null) {
+            upNext.addLast(s.resumeNext());
+        }
         if (s.goals() != null) {
             boolean seenActive = false;
             for (Goal g : s.goals()) {
@@ -412,11 +460,12 @@ public final class GoalBook {
     }
 
     private Optional<Goal> promoteNext() {
-        // The goal an urgent one interrupted comes back first; then the queue, oldest first.
-        String back = resumeNext;
-        resumeNext = null;
-        Optional<Goal> next = back == null ? Optional.empty()
-                : goals.stream().filter(g -> g.id().equals(back) && g.status() == Status.PAUSED).findFirst();
+        // What comes next in order (the goal an urgent one interrupted, "then" goals); then the queue, oldest first.
+        Optional<Goal> next = Optional.empty();
+        while (next.isEmpty() && !upNext.isEmpty()) {
+            String back = upNext.pollFirst();
+            next = goals.stream().filter(g -> g.id().equals(back) && g.status() == Status.PAUSED).findFirst();
+        }
         if (next.isEmpty()) next = goals.stream().filter(g -> g.status() == Status.PAUSED)
                 .min(Comparator.comparingLong(Goal::createdTick));
         next.ifPresent(g -> replace(g.with(Status.ACTIVE)));
