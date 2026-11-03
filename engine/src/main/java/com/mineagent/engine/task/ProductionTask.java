@@ -1093,8 +1093,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         Item out = item(step.item()), in = item(step.input()), fuel = item(step.fuel());
         if (smeltStage == 0) {
             // Where it works: here, the first time; back here after.
-            if (workSpot == null) workSpot = sp.blockPosition();
-            if (!sp.blockPosition().equals(workSpot)) return walkTo(workSpot, 0);
+            if (workSpot == null) workSpot = standing(sp);
+            if (!standing(sp).equals(workSpot)) return walkTo(workSpot, 0);
             var station = station(sp);
             furnaces.removeIf(f -> !level.getBlockState(f).is(station));
             for (BlockPos p : ring(workSpot, 2)) {
@@ -1300,7 +1300,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private static boolean placeNear(ServerPlayer sp, net.minecraft.world.level.block.state.BlockState state, int r) {
         ServerLevel level = sp.serverLevel();
         for (int ring = Math.max(1, r); ring <= 3; ring++) {
-            for (BlockPos p : ring(sp.blockPosition(), ring)) {
+            for (BlockPos p : ring(standing(sp), ring)) {
                 var st = level.getBlockState(p);
                 if ((st.isAir() || st.canBeReplaced()) && !(st.getBlock() instanceof net.minecraft.world.level.block.CropBlock)
                         && st.getFluidState().isEmpty() && BlockHelper.canStandOn(level.getBlockState(p.below()))
@@ -1308,6 +1308,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
         }
         return false;
+    }
+
+    /**
+     * The cell its body is in: on farmland, a path or soul sand (less than a block high) its block position is that
+     * block, so the cell above.
+     */
+    static BlockPos standing(ServerPlayer sp) {
+        BlockPos p = sp.blockPosition();
+        return BlockHelper.isPassable(sp.serverLevel().getBlockState(p)) ? p : p.above();
     }
 
     /** The cells at Chebyshev distance {@code r} round {@code c}, at its height. */
