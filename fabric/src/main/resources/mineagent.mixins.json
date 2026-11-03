@@ -4,7 +4,8 @@
   "package": "com.mineagent.fabric.mixin",
   "compatibilityLevel": "JAVA_21",
   "server": [
-    "NameTagMixin"
+    "NameTagMixin",
+    "ServerLevelMixin"
   ],
   "client": [],
   "injectors": {

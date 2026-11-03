@@ -136,6 +136,7 @@ public final class MovementHelper {
         // best tool carried, plus the hole it leaves. Each falling block stacked above will drop in and be broken too.
         BreakCost.Kind kind = BlockHelper.kindOf(state);
         if (kind != BreakCost.Kind.NATURAL) return Double.POSITIVE_INFINITY;
+        if (ctx.placedByPlayer(x, y, z)) return Double.POSITIVE_INFINITY; // someone built it, whatever it's made of
         if (!BreakSafety.safeToBreak(ctx::getBlockState, x, y, z)) return Double.POSITIVE_INFINITY;
         double one = BreakCost.cost(ctx.breakTicks(state, x, y, z), kind);
         int falling = BreakSafety.fallingStackAbove(ctx::getBlockState, x, y, z);

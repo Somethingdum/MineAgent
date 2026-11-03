@@ -44,6 +44,9 @@ public class CalculationContext {
 
     /** By hand until the companion's tools are set. */
     private BreakTimer breakTimer = this::ticksByHand;
+    /** The blocks real players placed in this level (SMH plan 70, MA5.2), looked up once per search. */
+    private com.mineagent.engine.world.PlacedBlocks placed;
+    private boolean placedLooked;
 
     public CalculationContext(Level level, LoadedOnlyView worldView, ChunkLoadedTest chunkLoadedTest) {
         this(level, worldView, chunkLoadedTest, false, false, false, false,
@@ -140,6 +143,15 @@ public class CalculationContext {
     public CalculationContext withBreakTimer(BreakTimer timer) {
         if (timer != null) this.breakTimer = timer;
         return this;
+    }
+
+    /** Whether a real player placed the block at x, y, z (SMH plan 70, MA5.2). */
+    public boolean placedByPlayer(int x, int y, int z) {
+        if (!placedLooked) {
+            placedLooked = true;
+            placed = level == null ? null : com.mineagent.engine.world.PlacedBlocks.of(level);
+        }
+        return placed != null && placed.isPlaced(x, y, z);
     }
 
     /** Ticks to break the block at x, y, z with the tools this search knows of. */

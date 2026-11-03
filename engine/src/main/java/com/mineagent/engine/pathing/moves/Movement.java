@@ -148,7 +148,9 @@ public abstract class Movement {
             // Refusing stalls this edge, which then fails and is replanned without it.
             var level = sp.level();
             boolean own = TaskContext.temporaryBlocks(player).owns(cell);
-            if ((!own && BlockHelper.kindOf(state) != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL)
+            var placedRecord = com.mineagent.engine.world.PlacedBlocks.of(level);
+            boolean someones = placedRecord != null && placedRecord.isPlaced(cell.getX(), cell.getY(), cell.getZ());
+            if ((!own && (someones || BlockHelper.kindOf(state) != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL))
                     || !com.mineagent.engine.pathing.util.BreakSafety.safeToBreak((bx, by, bz) -> {
                         BlockPos at = new BlockPos(bx, by, bz);
                         return level.isLoaded(at) ? level.getBlockState(at) : null;

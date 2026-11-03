@@ -407,8 +407,10 @@ public final class UnstuckChain implements TaskChain {
         var level = sp.level();
         var state = level.getBlockState(target);
         boolean own = com.mineagent.engine.task.TaskContext.temporaryBlocks(companion).owns(target);
+        var placedRecord = com.mineagent.engine.world.PlacedBlocks.of(level);
         boolean built = com.mineagent.engine.pathing.util.BlockHelper.kindOf(state)
-                != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL;
+                != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL
+                || (placedRecord != null && placedRecord.isPlaced(target.getX(), target.getY(), target.getZ()));
         boolean unsafe = !com.mineagent.engine.pathing.util.BreakSafety.safeToBreak((x, y, z) -> {
             BlockPos at = new BlockPos(x, y, z);
             return level.isLoaded(at) ? level.getBlockState(at) : null;

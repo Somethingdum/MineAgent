@@ -454,6 +454,46 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA5.2: a stone block the owner places is remembered and never broken to get somewhere; stone the world
+     * has is still the land; breaking the owner's block strikes it off.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_placed", timeoutTicks = 100)
+    public void blocksAPlayerPlacedAreLeftStanding(GameTestHelper helper) {
+        Scene s = scene(helper, "Mason");
+        var level = helper.getLevel();
+        s.owner().setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(Items.STONE, 4));
+        BlockPos floor = helper.absolutePos(new BlockPos(6, 0, 6));
+        var hit = new net.minecraft.world.phys.BlockHitResult(Vec3.atCenterOf(floor).add(0, 0.5, 0),
+                net.minecraft.core.Direction.UP, floor, false);
+        s.owner().gameMode.useItemOn(s.owner(), level, s.owner().getMainHandItem(),
+                net.minecraft.world.InteractionHand.MAIN_HAND, hit);
+        helper.setBlock(9, 1, 6, Blocks.STONE);
+        BlockPos theirs = helper.absolutePos(new BlockPos(6, 1, 6));
+        BlockPos nature = helper.absolutePos(new BlockPos(9, 1, 6));
+        helper.runAfterDelay(2, () -> {
+            var record = com.mineagent.engine.world.PlacedBlocks.of(level);
+            var caches = TaskContext.navCaches(s.companion());
+            var ctx = new com.mineagent.engine.pathing.moves.CalculationContext(caches.level(), caches.worldView(),
+                    caches.loadedChunks()::isChunkLoaded, true, false);
+            boolean placedIt = level.getBlockState(theirs).is(Blocks.STONE);
+            boolean remembered = record.isPlaced(theirs.getX(), theirs.getY(), theirs.getZ());
+            boolean natureRemembered = record.isPlaced(nature.getX(), nature.getY(), nature.getZ());
+            double theirsCost = com.mineagent.engine.pathing.moves.MovementHelper.costOfBreaking(ctx, theirs.getX(), theirs.getY(), theirs.getZ());
+            double natureCost = com.mineagent.engine.pathing.moves.MovementHelper.costOfBreaking(ctx, nature.getX(), nature.getY(), nature.getZ());
+            level.destroyBlock(theirs, false);
+            boolean forgotten = !record.isPlaced(theirs.getX(), theirs.getY(), theirs.getZ());
+            String all = String.format("placed %b, remembered %b, nature remembered %b, costs %.1f and %.1f, forgotten after breaking %b",
+                    placedIt, remembered, natureRemembered, theirsCost, natureCost, forgotten);
+            tidy(s);
+            if (placedIt && remembered && !natureRemembered && Double.isInfinite(theirsCost) && Double.isFinite(natureCost) && forgotten) {
+                helper.succeed();
+            } else {
+                fail(helper, all);
+            }
+        });
+    }
+
     /** On guard, a husk 14 blocks away, outside a 6-block perimeter and not moving: it stays at its post. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_far", timeoutTicks = 200)
     public void onGuardItDoesNotRunOffAfterAFarMob(GameTestHelper helper) {
