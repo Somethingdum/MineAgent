@@ -59,6 +59,9 @@ final class BehaviourSwitchesTest {
         assertTrue(d.escapeLavaFire(), "a check that only prevents harm: on");
         assertTrue(d.sleepWhenAway(), "nights when you're away: in bed, or sheltered");
         assertTrue(d.liveOnOwn(), "living on its own, no model needed");
+        assertEquals(64, d.primeMeat(), "prime a world: 64 meat each");
+        assertEquals(32, d.primeTorches());
+        assertTrue(d.primeFullIron());
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

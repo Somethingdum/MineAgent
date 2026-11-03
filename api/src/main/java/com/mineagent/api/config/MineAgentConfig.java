@@ -138,6 +138,9 @@ public record MineAgentConfig(
      *                         a bed made as soon as it can
      * @param liveOnOwn        its owner away and nothing asked of it, it keeps itself fed, armed and stocked with
      *                         torches, by code, from what it carries or sees (no model call needed)
+     * @param primeMeat        "prime the world": cooked meat each (0 to 128)
+     * @param primeTorches     "prime the world": torches each (0 to 128)
+     * @param primeFullIron    "prime the world": a full iron set each (armour, sword, pickaxe); off, a helmet each
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -165,11 +168,14 @@ public record MineAgentConfig(
         boolean sparePickaxe,
         boolean escapeLavaFire,
         boolean sleepWhenAway,
-        boolean liveOnOwn
+        boolean liveOnOwn,
+        int primeMeat,
+        int primeTorches,
+        boolean primeFullIron
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true
+            true, 8, 16, true, true, true, true, 64, 32, true
         );
     }
 
@@ -273,7 +279,8 @@ public record MineAgentConfig(
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
                 rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly,
                 rawBehaviour.readyCheck, clamp(rawBehaviour.readyFood, 0, 64), clamp(rawBehaviour.readyTorches, 0, 64),
-                rawBehaviour.sparePickaxe, rawBehaviour.escapeLavaFire, rawBehaviour.sleepWhenAway, rawBehaviour.liveOnOwn);
+                rawBehaviour.sparePickaxe, rawBehaviour.escapeLavaFire, rawBehaviour.sleepWhenAway, rawBehaviour.liveOnOwn,
+                clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

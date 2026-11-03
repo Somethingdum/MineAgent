@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -70,6 +70,8 @@ public final class CommandParser {
     /** "Light up the area", "light this place up", "put torches around": no dark spot left (MA9.4). */
     private static final Pattern LIGHT = Pattern.compile("^(?:light (?:up )?(?:the |this )?(?:area|place|base|here|it)(?: up)?|light it up|light this place up"
             + "|put (?:some )?torches (?:around|down|up)(?: here)?|torch (?:the |this )?(?:area|place) up)$");
+    /** "Prime the world", "set us up": a starting point for both (MA9.3). */
+    private static final Pattern PRIME = Pattern.compile("^(?:prime (?:the |this |a |our )?world|set us up|get us started|give us a (?:good )?start)$");
     /** "Get food for both of us": food for two, half handed over. */
     private static final Pattern FOOD_BOTH = Pattern.compile("^(?:get|make|find|cook) (?:some )?food for (?:both of us|the two of us|us both|us|me and you|you and me)$");
     /** What next, why, what it needs (MA6.5): answered from its goals and its task, no model. */
@@ -155,6 +157,7 @@ public final class CommandParser {
         if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
         if (BUILD.matcher(t).matches()) return Optional.of(new Command(Kind.BUILD, "hut", null));
         if (LIGHT.matcher(t).matches()) return Optional.of(new Command(Kind.LIGHT, null, 8));
+        if (PRIME.matcher(t).matches()) return Optional.of(new Command(Kind.PRIME, null, null));
         Matcher give = GIVE.matcher(t);
         if (give.matches()) return Optional.of(new Command(Kind.GIVE, give.group(2).strip(), howMany(give.group(1))));
         if (WHATS_NEXT.matcher(t).matches()) return Optional.of(new Command(Kind.WHATS_NEXT, null, null));

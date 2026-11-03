@@ -50,6 +50,7 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
     private BlockPos corner;
     private int index;
     private int tries;
+    private int groundY = Integer.MIN_VALUE;
     private int repairs;
     private final List<Blueprint.Block> missing = new ArrayList<>();
     private CompanionTask<?> sub;
@@ -217,7 +218,9 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
                 tries = 0;
                 continue;
             }
-            int feet = ProductionTask.standing(sp).getY();
+            // The ground it jumps from, kept while it is in the air (its block position rises with it).
+            if (sp.onGround() || groundY == Integer.MIN_VALUE) groundY = ProductionTask.standing(sp).getY();
+            int feet = groundY;
             boolean high = p.getY() >= feet + 2;
             if (high) input.setJumping(true);
             if ((!high || !sp.onGround() && sp.getY() >= feet + 0.9) && Placement.placeBlock(sp, p, want.defaultBlockState())) {

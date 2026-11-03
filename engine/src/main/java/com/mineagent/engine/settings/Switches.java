@@ -49,6 +49,9 @@ public final class Switches {
     public static boolean escapeLavaFire() { return b().escapeLavaFire(); }
     public static boolean sleepWhenAway() { return b().sleepWhenAway(); }
     public static boolean liveOnOwn() { return b().liveOnOwn(); }
+    public static int primeMeat() { return b().primeMeat(); }
+    public static int primeTorches() { return b().primeTorches(); }
+    public static boolean primeFullIron() { return b().primeFullIron(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

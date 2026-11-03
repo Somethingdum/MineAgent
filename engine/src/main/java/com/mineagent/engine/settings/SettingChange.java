@@ -34,6 +34,9 @@ public final class SettingChange {
                     // A distance to keep within while they're AFK; "off" or 0 for none.
                     int n = java.util.Set.of("off", "none", "no", "nolimit").contains(v.replace(" ", "")) ? 0 : Integer.parseInt(v);
                     tree.addProperty(name, Math.max(0, Math.min(256, n)));
+                } else if (name.equals("primeMeat") || name.equals("primeTorches")) {
+                    int n = java.util.Set.of("off", "none", "no").contains(v) ? 0 : Integer.parseInt(v);
+                    tree.addProperty(name, Math.max(0, Math.min(128, n)));
                 } else if (name.equals("readyFood") || name.equals("readyTorches")) {
                     // What it takes on a trip: 0 to 64; "off" or "none" for none.
                     int n = java.util.Set.of("off", "none", "no").contains(v) ? 0 : Integer.parseInt(v);

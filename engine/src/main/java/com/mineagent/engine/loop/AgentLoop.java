@@ -1336,6 +1336,10 @@ public class AgentLoop {
                 int each = Math.max(4, com.mineagent.engine.settings.Switches.readyFood());
                 return queueOrders("make me " + (2 * each) + " food, then give me " + each + " food");
             }
+            case PRIME -> {
+                if (!fromOwner) return false;
+                return queueOrders(primeOrders());
+            }
             case LIGHT -> {
                 if (!fromOwner || !(companion instanceof com.mineagent.engine.entity.CompanionEntity le) || le.serverPlayer() == null) return false;
                 var ownerNow = le.serverPlayerOwner();
@@ -3476,6 +3480,45 @@ public class AgentLoop {
     private void errand(String item, int count) {
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
                 "own-" + UUID.randomUUID(), item, count, null, false, true), reply -> { });
+    }
+
+    /**
+     * "Prime the world" (SMH plan 70, MA9.3): a starting point for both of you, as orders in a row that code runs:
+     * the hut, the iron (mined at its height), the gear, beds, food, torches, the area lit, and your share handed over.
+     * The amounts are settings (behaviour.primeMeat, primeTorches, primeFullIron).
+     */
+    String primeOrders() {
+        boolean full = com.mineagent.engine.settings.Switches.primeFullIron();
+        int meat = com.mineagent.engine.settings.Switches.primeMeat(), torches = com.mineagent.engine.settings.Switches.primeTorches();
+        // Iron each: a helmet 5; a full set 24, a sword 2, a pickaxe 3; and the shears for wool, 2.
+        int iron = 2 * (full ? 29 : 5) + 2;
+        // Only what it is short of: raw iron and ingots it carries or has in chests it knows count.
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayer() : null;
+        if (self != null) {
+            var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+            iron -= have.count("minecraft:raw_iron") + have.count("minecraft:iron_ingot");
+        }
+        List<String> o = new ArrayList<>();
+        o.add("build a hut");
+        if (iron > 0) o.add("mine " + iron + " iron");
+        if (full) {
+            for (String piece : List.of("iron helmets", "iron chestplates", "iron leggings", "iron boots", "iron swords", "iron pickaxes")) {
+                o.add("make me 2 " + piece);
+            }
+        } else {
+            o.add("make me 2 iron helmets");
+        }
+        o.add("make me 2 white beds");
+        if (meat > 0) o.add("make me " + (2 * meat) + " food");
+        if (torches > 0) o.add("make me " + (2 * torches) + " torches");
+        o.add("light up the area");
+        // Yours: into your hands (or kept for you while you're away).
+        o.add("give me 1 iron helmet");
+        if (full) for (String piece : List.of("iron chestplate", "iron leggings", "iron boots", "iron sword", "iron pickaxe")) o.add("give me 1 " + piece);
+        o.add("give me 1 white bed");
+        if (meat > 0) o.add("give me " + meat + " food");
+        if (torches > 0) o.add("give me " + torches + " torches");
+        return String.join(", then ", o);
     }
 
     /** "What's next": the goals after this one, from its goal book. */

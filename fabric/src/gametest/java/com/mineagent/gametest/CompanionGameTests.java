@@ -2713,6 +2713,65 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA9.3, a small prime ("prime the world" with the settings scaled down: a helmet each, 4 meat each, no
+     * torches), in a field with sheep and cows, the iron already mined: a hut built and checked, the helmets smelted
+     * and made, beds from shorn wool, food hunted and cooked, the area lit, and its owner's share handed over.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_prime", timeoutTicks = 9000)
+    public void aSmallPrime(GameTestHelper helper) {
+        setting(helper, "behaviour.primeFullIron", "off");
+        setting(helper, "behaviour.primeMeat", "4");
+        setting(helper, "behaviour.primeTorches", "0");
+        Scene s = scene(helper, "Pioneer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        field(helper, 6);
+        for (int i = 0; i < 3; i++) {
+            var sh = helper.spawn(EntityType.SHEEP, new BlockPos(2 + i * 2, 1, 12));
+            sh.setColor(net.minecraft.world.item.DyeColor.WHITE);
+        }
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.TORCH, 16));
+        inv.setItem(4, new ItemStack(Items.RAW_IRON, 12));
+        inv.setItem(5, new ItemStack(Items.COAL, 8));
+        inv.setItem(6, new ItemStack(Items.FURNACE, 4));
+        inv.setItem(7, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(8, new ItemStack(Items.OAK_PLANKS, 16));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "prime the world"));
+        Runnable restore = () -> {
+            setting(helper, "behaviour.primeFullIron", "on");
+            setting(helper, "behaviour.primeMeat", "64");
+            setting(helper, "behaviour.primeTorches", "32");
+        };
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 400 == 0) trace(helper, s, "prime");
+            var owner = s.owner();
+            int helmets = owner.getInventory().countItem(Items.IRON_HELMET), beds = owner.getInventory().countItem(Items.WHITE_BED);
+            for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, owner.getBoundingBox().inflate(4))) {
+                if (e.getItem().is(Items.IRON_HELMET)) helmets += e.getItem().getCount();
+                if (e.getItem().is(Items.WHITE_BED)) beds += e.getItem().getCount();
+            }
+            boolean hut = !lastSaid(s, "Built the hut at ").isEmpty() && lastSaid(s, "Built the hut at ").contains("every block checked");
+            boolean done = s.loop().goalBook().active().isEmpty() && !lastSaid(s, "Got it").isEmpty() && helper.getTick() > 100;
+            if (done) {
+                int mine = s.body().getInventory().countItem(Items.IRON_HELMET);
+                String how = "hut " + hut + ", helmets: owner " + helmets + ", its own " + mine + "; beds to owner " + beds + "; said: " + lastSaid(s, "");
+                restore.run();
+                tidy(s);
+                if (hut && helmets >= 1 && mine >= 1 && beds >= 1) helper.succeed();
+                else fail(helper, how);
+            } else if (helper.getTick() >= 8900) {
+                String how = "goal " + s.loop().goalBook().active().map(g -> g.text()).orElse("none") + "; hut " + hut + ", helmets to owner " + helmets
+                        + ", beds " + beds + "; said: " + lastSaid(s, "");
+                restore.run();
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {

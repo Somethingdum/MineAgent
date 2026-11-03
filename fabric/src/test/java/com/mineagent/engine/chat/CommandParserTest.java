@@ -167,6 +167,8 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.BUILD, CommandParser.parse("build a hut", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.LIGHT, CommandParser.parse("light up the area", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.LIGHT, CommandParser.parse("put some torches around", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.PRIME, CommandParser.parse("prime the world", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.PRIME, CommandParser.parse("set us up", "Pal").orElseThrow().kind());
         assertEquals(-1, CommandParser.parse("hand me a stack of torches", "Pal").orElseThrow().count().intValue());
     }
 

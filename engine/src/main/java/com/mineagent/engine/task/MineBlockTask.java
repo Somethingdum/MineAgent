@@ -270,12 +270,41 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
         }
     }
 
+    /**
+     * For a log two or more above the ground, the cell at the foot of its trunk (the logs under it gone, or still to cut,
+     * down to solid ground) when it is free to stand in and the log is in reach from there; else null.
+     */
+    private BlockPos trunkBase(BlockPos log) {
+        var level = TaskContext.serverPlayer(player).serverLevel();
+        if (!level.getBlockState(log).is(net.minecraft.tags.BlockTags.LOGS)) return null;
+        BlockPos p = log.below();
+        int depth = 0;
+        while (depth < 8 && (level.getBlockState(p).isAir() || level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS))) {
+            p = p.below();
+            depth++;
+        }
+        if (depth < 2 || !com.mineagent.engine.pathing.util.BlockHelper.canStandOn(level.getBlockState(p))) return null;
+        BlockPos feet = p.above();
+        if (!level.getBlockState(feet).isAir() || !level.getBlockState(feet.above()).isAir()) return null; // still log there: cut first
+        return log.getY() - feet.getY() <= 5 ? feet : null;
+    }
+
     private void navigateToNextBlock() {
         if (targetBlocks == null || currentBlockIndex >= targetBlocks.size()) {
             beginScan();
             return;
         }
         BlockPos target = targetBlocks.get(currentBlockIndex);
+        // A tree's log above head height: stood under it, at the foot of the trunk, as a player fells a tree (SMH plan
+        // 70, MA7.6); beside it there is nowhere to stand.
+        BlockPos base = trunkBase(target);
+        if (base != null) {
+            nav.navigateTo(base.getX(), base.getY(), base.getZ());
+            phase = Phase.NAVIGATE;
+            lastExecutorProgressVersion = Long.MIN_VALUE;
+            markProgress(TaskContext.serverPlayer(player).level().getGameTime());
+            return;
+        }
         nav.navigateToBlock(target.getX(), target.getY(), target.getZ());
         phase = Phase.NAVIGATE;
         lastExecutorProgressVersion = Long.MIN_VALUE;
