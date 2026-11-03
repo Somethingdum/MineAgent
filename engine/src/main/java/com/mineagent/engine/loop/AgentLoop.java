@@ -1336,6 +1336,18 @@ public class AgentLoop {
                 int each = Math.max(4, com.mineagent.engine.settings.Switches.readyFood());
                 return queueOrders("make me " + (2 * each) + " food, then give me " + each + " food");
             }
+            case LIGHT -> {
+                if (!fromOwner || !(companion instanceof com.mineagent.engine.entity.CompanionEntity le) || le.serverPlayer() == null) return false;
+                var ownerNow = le.serverPlayerOwner();
+                var center = ownerNow != null && ownerNow.serverLevel() == le.serverPlayer().serverLevel()
+                        && ownerNow.distanceTo(le.serverPlayer()) < 24 ? ownerNow.blockPosition() : le.serverPlayer().blockPosition();
+                haltNow();
+                standDown();
+                journal.record("order", "light up the area", currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LightTask.LightRecord(
+                        "light-" + UUID.randomUUID(), center, c.count() == null ? 8 : c.count()), reply -> { });
+                return true;
+            }
             case BUILD -> {
                 if (!fromOwner || !(companion instanceof com.mineagent.engine.entity.CompanionEntity ce) || ce.serverPlayer() == null) return false;
                 // The wood it has most planks of (oak if none), and its door.

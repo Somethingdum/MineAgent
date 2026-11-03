@@ -61,6 +61,12 @@ public final class TaskRegistration {
                 ProductionTask::new
         );
 
+        // Lighting an area until no spot is dark (SMH plan 70, MA9.4)
+        CompanionTaskFactory.register(
+                LightTask.LightRecord.class,
+                LightTask::new
+        );
+
         // Building from a blueprint (SMH plan 70, MA9.1)
         CompanionTaskFactory.register(
                 BlueprintTask.BlueprintRecord.class,

@@ -2684,6 +2684,35 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /** Plan 70, MA9.4: "light up the area": torches down until no spot within 8 blocks a mob could stand on is dark. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_light", timeoutTicks = 1600)
+    public void anAreaLitUntilNoSpotIsDark(GameTestHelper helper) {
+        Scene s = scene(helper, "Lamplighter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(2, new ItemStack(Items.TORCH, 32));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "light up the area"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "light");
+            String lit = lastSaid(s, "Lit up");
+            if (!lit.isEmpty()) {
+                BlockPos c = s.owner().blockPosition();
+                int dark = 0;
+                for (BlockPos p : BlockPos.betweenClosed(c.offset(-8, -3, -8), c.offset(8, 3, 8))) {
+                    if (p.distSqr(c) > 64) continue;
+                    if (com.mineagent.engine.task.LightTask.spawnable(helper.getLevel(), p)
+                            && helper.getLevel().getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p) == 0) dark++;
+                }
+                tidy(s);
+                if (dark == 0) helper.succeed();
+                else fail(helper, dark + " dark spots left; said: " + lit);
+            } else if (helper.getTick() >= 1500) {
+                String how = "torches left " + s.body().getInventory().countItem(Items.TORCH) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {
