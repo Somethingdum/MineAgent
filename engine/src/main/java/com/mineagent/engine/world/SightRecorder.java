@@ -32,6 +32,8 @@ public final class SightRecorder {
     /** How often it looks at what moves, and at blocks, in ticks. */
     static final int ENTITIES_EVERY = 40;
     static final int BLOCKS_EVERY = 100;
+    /** While it is on the move, a look at blocks every 8 blocks it goes, no closer than this many ticks apart. */
+    static final int BLOCKS_MOVING = 20;
     /** How far it looks for what moves, and for blocks. */
     static final double ENTITY_RANGE = 24.0;
     static final int BLOCK_RANGE = 10;
@@ -44,12 +46,13 @@ public final class SightRecorder {
 
     private SightRecorder() {}
 
-    public static void tick(ServerPlayer sp, Sightings sightings, long gameTick,
+    /** What it sees this tick: what moves every two seconds; blocks when {@code lookAtBlocks} (its look schedule). */
+    public static void tick(ServerPlayer sp, Sightings sightings, long gameTick, boolean lookAtBlocks,
                             java.util.function.Consumer<Sightings.Sighting> rare) {
         if (sp == null || sightings == null || !sp.isAlive() || sp.isSpectator()) return;
         try {
             if (gameTick % ENTITIES_EVERY == 0) entities(sp, sightings, gameTick);
-            if (gameTick % BLOCKS_EVERY == 7) blocks(sp, sightings, gameTick, rare);
+            if (lookAtBlocks) blocks(sp, sightings, gameTick, rare);
         } catch (RuntimeException error) {
             System.err.println("[MineAgent] Sight recording failed: " + error.getMessage());
         }

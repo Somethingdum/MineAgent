@@ -1398,8 +1398,12 @@ public class AgentLoop {
                     }
                     haltNow();
                     standDown();
-                    goTo(link.get().from(), java.util.List.of(), false, "xzy");
-                    crossing = new Crossing(to, tick);
+                    var portal = link.get().from();
+                    // Standing in the portal already (it came through it): out first, then back in.
+                    var out = com.mineagent.engine.world.PlaceKeeper.standingInPortal(me)
+                            ? com.mineagent.engine.world.PlaceKeeper.besidePortal(me) : null;
+                    goTo(out != null ? out : portal, java.util.List.of(), false, "xzy");
+                    crossing = new Crossing(to, portal, tick, out != null ? Crossing.Stage.OUT : Crossing.Stage.IN, tick);
                     speakToOwner("Through the portal " + com.mineagent.engine.world.PlaceKeeper.whereFrom(here, link.get().from())
                             .replaceAll("\\.$", "") + ", then on to " + to.name() + " in "
                             + com.mineagent.engine.world.PlaceKeeper.dimensionName(to.at().dim()) + ".");
@@ -1456,8 +1460,24 @@ public class AgentLoop {
     /** New chunks it looks over on one "find" or "explore" before it stops and says so. */
     static final int EXPLORE_CHUNKS = 64;
 
-    /** On its way through a portal to a place in another dimension. */
-    private record Crossing(com.mineagent.engine.world.RouteMemory.Place to, long since) {}
+    /**
+     * On its way through a portal to a place in another dimension (MA5.6): OUT of the portal it stands in, WAITING a
+     * second outside it (the game's cooldown runs down only out of the portal), then IN, standing in it until the
+     * game takes it through (four seconds for a player).
+     */
+    private record Crossing(com.mineagent.engine.world.RouteMemory.Place to, com.mineagent.engine.world.RouteMemory.Point portal,
+                            long since, Stage stage, long stageSince) {
+        enum Stage { OUT, WAITING, IN }
+
+        Crossing next(Stage s, long tick) {
+            return new Crossing(to, portal, since, s, tick);
+        }
+    }
+
+    /** Ticks it waits out of a portal before stepping back in: past a player's 10-tick portal cooldown. */
+    static final long PORTAL_STEP_OUT = 20L;
+    /** Ticks in a portal without being taken through before it steps out and tries again (80 are needed). */
+    static final long PORTAL_RETRY = 200L;
 
     private volatile Crossing crossing;
 
@@ -1466,6 +1486,7 @@ public class AgentLoop {
         Crossing c = crossing;
         if (c == null || me == null) return;
         var here = com.mineagent.engine.world.PlaceKeeper.point(me);
+        boolean inPortal = com.mineagent.engine.world.PlaceKeeper.standingInPortal(me);
         if (here.dim().equals(c.to().at().dim())) {
             crossing = null;
             goTo(c.to().at(), placeKeeper.wayTo(here, c.to()), false);
@@ -1473,6 +1494,17 @@ public class AgentLoop {
         } else if (tick - c.since() > 3_000L) {
             crossing = null;
             say("I couldn't get through the portal.");
+        } else if (c.stage() == Crossing.Stage.OUT && !inPortal) {
+            crossing = c.next(Crossing.Stage.WAITING, tick);
+        } else if (c.stage() == Crossing.Stage.WAITING && tick - c.stageSince() >= PORTAL_STEP_OUT) {
+            goTo(c.portal(), java.util.List.of(), false, "xzy");
+            crossing = c.next(Crossing.Stage.IN, tick);
+        } else if (c.stage() == Crossing.Stage.IN && inPortal && tick - c.stageSince() >= PORTAL_RETRY) {
+            var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
+            if (out != null) {
+                goTo(out, java.util.List.of(), false, "xzy");
+                crossing = c.next(Crossing.Stage.OUT, tick);
+            }
         }
     }
 

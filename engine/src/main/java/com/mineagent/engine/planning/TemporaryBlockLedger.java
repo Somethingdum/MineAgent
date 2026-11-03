@@ -52,7 +52,8 @@ public final class TemporaryBlockLedger {
     private ResourceKey<Level> activeBreakDimension;
     private int activeBreakTicks;
     private int activeBreakTimeout;
-    private long lastDecisionTick = Long.MIN_VALUE;
+    // Not Long.MIN_VALUE: "now - MIN_VALUE" overflows to a negative number, and no cleanup was ever decided.
+    private long lastDecisionTick = -DECISION_INTERVAL_TICKS;
 
     public TemporaryBlockLedger(ServerPlayer player) {
         this.player = player;

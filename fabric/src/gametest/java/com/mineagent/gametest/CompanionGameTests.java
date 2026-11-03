@@ -1333,8 +1333,10 @@ public class CompanionGameTests implements FabricGameTest {
                         com.mineagent.engine.world.ChunkSummaries.Kind.LAND, body.getBlockY(), false));
             }
         }
+        // On the way it goes: it heads for the middle of each new chunk south, so 3 blocks to the side of that line.
         BlockPos rel0 = rel(helper, body.blockPosition());
-        bellAndVillagers(helper, rel0.getX() + 2, rel0.getZ() + 76);
+        int lineX = rel(helper, new BlockPos((cx << 4) + 8, body.getBlockY(), body.getBlockZ())).getX();
+        bellAndVillagers(helper, lineX + 3, rel0.getZ() + 76);
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "find a village"));
         helper.onEachTick(() -> {
             trace(helper, s, "find village");
@@ -1359,14 +1361,26 @@ public class CompanionGameTests implements FabricGameTest {
         Scene s = scene(helper, "Traveller");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         var level = helper.getLevel();
-        // An obsidian frame four wide and five high, its inside lit, at x 8..11, z 6.
+        // An obsidian frame four wide and five high at x 8..11, z 6, then its inside lit. The whole frame goes first:
+        // a portal block checks its frame whenever a neighbour changes, and one lit inside half a frame goes out (the
+        // first run of this scene built them together, and the portal was gone before it got there).
         for (int x = 8; x <= 11; x++) {
             for (int y = 1; y <= 5; y++) {
-                boolean edge = x == 8 || x == 11 || y == 1 || y == 5;
-                helper.setBlock(new BlockPos(x, y, 6), edge ? Blocks.OBSIDIAN.defaultBlockState()
-                        : Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
-                                net.minecraft.core.Direction.Axis.X));
+                if (x == 8 || x == 11 || y == 1 || y == 5) helper.setBlock(new BlockPos(x, y, 6), Blocks.OBSIDIAN);
             }
+        }
+        var lit = Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
+                net.minecraft.core.Direction.Axis.X);
+        for (int x = 9; x <= 10; x++) {
+            for (int y = 2; y <= 4; y++) {
+                // As lighting a portal places them: told to clients, no shape updates among themselves.
+                level.setBlock(helper.absolutePos(new BlockPos(x, y, 6)), lit, 2 | 16);
+            }
+        }
+        if (!level.getBlockState(helper.absolutePos(new BlockPos(9, 2, 6))).is(Blocks.NETHER_PORTAL)) {
+            tidy(s);
+            fail(helper, "the scene's portal did not stay lit");
+            return;
         }
         BlockPos home = helper.absolutePos(new BlockPos(3, 1, 1));
         s.owner().teleportTo(level, home.getX() + 0.5, home.getY(), home.getZ() + 0.5, 0.0f, 0.0f);

@@ -33,8 +33,16 @@ public final class PlaceKeeper {
             new com.mineagent.engine.memory.Sightings(null, com.mineagent.engine.memory.Sightings.DEFAULT_MAX);
     private volatile com.mineagent.engine.memory.store.MemoryStore store;
     private static final com.google.gson.Gson GSON = new com.google.gson.Gson();
-    private long lastLook = Long.MIN_VALUE;
-    private long lastSurvey = Long.MIN_VALUE;
+    /*
+     * When it looks (MA5.6, MA5.7). These were tick counters starting at Long.MIN_VALUE, and "now - MIN_VALUE"
+     * overflows to a negative number, so it never looked at where it stood or surveyed the land at all.
+     */
+    private final LookSchedule structureLook = new LookSchedule(LOOK_EVERY, 40, 16.0);
+    private final LookSchedule bellLook = new LookSchedule(BELL_EVERY, BELL_EVERY, 0.0);
+    private final LookSchedule blockLook = new LookSchedule(SightRecorder.BLOCKS_EVERY, SightRecorder.BLOCKS_MOVING, 8.0);
+    private final LookSchedule surveyLook = new LookSchedule(SURVEY_EVERY, 40, 32.0);
+    /** How often it puts a bell it has seen together with the villagers it has seen about it, in ticks. */
+    static final int BELL_EVERY = 20;
     /** How often it notes the chunks around it, in ticks, and how far (in chunks). */
     static final int SURVEY_EVERY = 200;
     static final int SURVEY_RADIUS = 3;
@@ -141,18 +149,20 @@ public final class PlaceKeeper {
         if (gameTick % RECORD_EVERY == 0) {
             memory.walked(point(sp), underground(sp.serverLevel(), sp.blockPosition()), gameTick);
         }
-        SightRecorder.tick(sp, sightings, gameTick, rareSight);
-        if (gameTick - lastSurvey >= SURVEY_EVERY) {
-            lastSurvey = gameTick;
+        SightRecorder.tick(sp, sightings, gameTick, blockLook.due(gameTick, sp.getX(), sp.getY(), sp.getZ()), rareSight);
+        if (surveyLook.due(gameTick, sp.getX(), sp.getY(), sp.getZ())) {
             try {
                 survey(sp);
             } catch (RuntimeException error) {
                 System.err.println("[MineAgent] Chunk survey failed: " + error.getMessage());
             }
         }
-        if (gameTick - lastLook < LOOK_EVERY) return Optional.empty();
-        lastLook = gameTick;
         try {
+            if (bellLook.due(gameTick, sp.getX(), sp.getY(), sp.getZ())) {
+                Optional<RouteMemory.Place> byBell = villageFromBell(sp, gameTick);
+                if (byBell.isPresent()) return byBell;
+            }
+            if (!structureLook.due(gameTick, sp.getX(), sp.getY(), sp.getZ())) return Optional.empty();
             return lookAround(sp, gameTick);
         } catch (RuntimeException error) {
             System.err.println("[MineAgent] Place check failed: " + error.getMessage());
@@ -169,6 +179,54 @@ public final class PlaceKeeper {
             }
         }
         return false;
+    }
+
+    /** Its feet or head in a nether portal block. */
+    public static boolean standingInPortal(ServerPlayer sp) {
+        if (sp == null) return false;
+        ServerLevel level = sp.serverLevel();
+        BlockPos feet = sp.blockPosition();
+        return level.getBlockState(feet).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)
+                || level.getBlockState(feet.above()).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL);
+    }
+
+    /**
+     * A spot a step or two out of the portal it stands in, square to the portal's face, where it can stand (MA5.6);
+     * null if there is none. A player who came through a portal has to step out and back in to go back: while they
+     * stand in it the game keeps restarting its cooldown.
+     */
+    public static RouteMemory.Point besidePortal(ServerPlayer sp) {
+        if (sp == null) return null;
+        ServerLevel level = sp.serverLevel();
+        BlockPos feet = sp.blockPosition();
+        var in = level.getBlockState(feet);
+        if (!in.is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) in = level.getBlockState(feet.above());
+        var axis = in.hasProperty(net.minecraft.world.level.block.NetherPortalBlock.AXIS)
+                ? in.getValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS) : net.minecraft.core.Direction.Axis.X;
+        // A portal across x is walked through along z, and one across z along x.
+        var side = axis == net.minecraft.core.Direction.Axis.X ? net.minecraft.core.Direction.SOUTH : net.minecraft.core.Direction.EAST;
+        String dim = level.dimension().location().toString();
+        for (int d = 1; d <= 3; d++) {
+            for (var dir : new net.minecraft.core.Direction[] {side, side.getOpposite()}) {
+                for (int dy : new int[] {0, 1, -1}) {
+                    BlockPos p = feet.relative(dir, d).above(dy);
+                    if (canStandOutside(level, p)) return new RouteMemory.Point(dim, p.getX(), p.getY(), p.getZ());
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean canStandOutside(ServerLevel level, BlockPos feet) {
+        if (!level.isLoaded(feet)) return false;
+        var f = level.getBlockState(feet);
+        var h = level.getBlockState(feet.above());
+        var portal = net.minecraft.world.level.block.Blocks.NETHER_PORTAL;
+        return !f.is(portal) && !h.is(portal)
+                && com.mineagent.engine.pathing.util.BlockHelper.isPassable(f)
+                && com.mineagent.engine.pathing.util.BlockHelper.isPassable(h)
+                && f.getFluidState().isEmpty() && h.getFluidState().isEmpty()
+                && com.mineagent.engine.pathing.util.BlockHelper.canStandOn(level.getBlockState(feet.below()));
     }
 
     /** A bell with villagers about it is a village, whatever built it (MA5.6). */
@@ -191,8 +249,6 @@ public final class PlaceKeeper {
     }
 
     private Optional<RouteMemory.Place> lookAround(ServerPlayer sp, long gameTick) {
-        Optional<RouteMemory.Place> byBell = villageFromBell(sp, gameTick);
-        if (byBell.isPresent()) return byBell;
         ServerLevel level = sp.serverLevel();
         BlockPos at = sp.blockPosition();
         var manager = level.structureManager();
