@@ -1622,7 +1622,15 @@ public class CompanionGameTests implements FabricGameTest {
     public void aLongTripGetsThereAndMapsTheWay(GameTestHelper helper) {
         Scene s = scene(helper, "Voyager");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
-        BlockPos start = s.body().blockPosition();
+        // Out of the test grid first: the other scenes' areas, walled in barrier blocks, lie along the way from here.
+        // 4,000 blocks off, the flat world is open ground.
+        var level = helper.getLevel();
+        BlockPos far = helper.absolutePos(new BlockPos(3, 0, 3)).offset(4_000, 0, 4_000);
+        level.getChunk(far.getX() >> 4, far.getZ() >> 4); // made now, so its ground is known
+        int groundY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, far.getX(), far.getZ());
+        s.owner().teleportTo(level, far.getX() + 0.5, groundY, far.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().teleportTo(level, far.getX() + 1.5, groundY, far.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos start = new BlockPos(far.getX() + 1, groundY, far.getZ());
         BlockPos goal = start.offset(0, 0, 256);
         helper.runAfterDelay(5, () -> {
             var args = new com.google.gson.JsonObject();
@@ -1646,7 +1654,7 @@ public class CompanionGameTests implements FabricGameTest {
                 if (mapped >= along - 1) helper.succeed();
                 else fail(helper, "there, but only " + mapped + " of the " + along + " chunks along the way are mapped");
             } else if (helper.getTick() >= 2300) {
-                String how = String.format("%.0f blocks short after 2300 ticks, at %s", left, rel(helper, body.blockPosition()).toShortString());
+                String how = String.format("%.0f blocks short after 2300 ticks, %d blocks along", left, body.getBlockZ() - start.getZ());
                 tidy(s);
                 fail(helper, how);
             }
