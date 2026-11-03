@@ -245,7 +245,10 @@ public final class ServerPacketHandler {
                 var cfg = MineAgentEngine.getConfig();
                 String apiKey = cfg.llm().apiKey();
                 String rawName = cfg.companion().name();
-                String name = (rawName == null || rawName.isBlank() || "MineAgent".equals(rawName))
+                // An SMH companion is called "MineAgent" ("MineAgent 2" for a second), never "smh/auto".
+                String name = MineAgentEngine.usesSmh(cfg.llm().model())
+                        ? MineAgentEngine.freeCompanionName(sender.getUUID(), null, cfg.llm().model())
+                        : (rawName == null || rawName.isBlank() || "MineAgent".equals(rawName))
                         ? cfg.llm().model() : rawName;
                 MineAgentEngine.spawnCompanion(sender, name, cfg.llm().provider(),
                         apiKey, cfg.llm().model(),

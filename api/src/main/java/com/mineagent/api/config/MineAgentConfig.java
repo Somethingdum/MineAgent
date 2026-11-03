@@ -20,9 +20,19 @@ public record MineAgentConfig(
         double temperature,
         int maxTokens
     ) {
+        /**
+         * SMH on this PC (SMH plan 69; the user, 2026-11-03: "Just drag and drop to the folder. And start SMH."):
+         * smh answers the game on this PC at this address with no key, and picks the model for each call's role.
+         */
         public static final LLMConfig DEFAULTS = new LLMConfig(
-            "deepseek", "", "deepseek-chat", "", 0.7, 4096
+            "openai-compatible", "", "smh/auto", "http://127.0.0.1:47821/apps", 0.7, 4096
         );
+
+        /** The upstream default this fork shipped before SMH: untouched, it reached no model (it has no key). */
+        public static boolean untouchedOldDefault(String provider, String apiKey, String model, String baseUrl) {
+            return "deepseek".equals(provider) && (apiKey == null || apiKey.isBlank())
+                    && "deepseek-chat".equals(model) && (baseUrl == null || baseUrl.isBlank());
+        }
     }
 
     public record CompanionConfig(
@@ -122,6 +132,11 @@ public record MineAgentConfig(
                 nonNull(rawLlm.apiKey),
                 nonBlank(rawLlm.model, LLMConfig.DEFAULTS.model),
                 nonNull(rawLlm.baseUrl), temperature, maxTokens);
+        // A file written by an older jar with the old, keyless default: SMH on this PC instead (it never worked).
+        if (LLMConfig.untouchedOldDefault(llm.provider, llm.apiKey, llm.model, llm.baseUrl)) {
+            llm = new LLMConfig(LLMConfig.DEFAULTS.provider, "", LLMConfig.DEFAULTS.model,
+                    LLMConfig.DEFAULTS.baseUrl, temperature, maxTokens);
+        }
 
         CompanionConfig rawCompanion = loaded.companion != null
                 ? loaded.companion : CompanionConfig.DEFAULTS;

@@ -544,7 +544,8 @@ public final class MineAgentEngine {
         // variant is allowed, e.g. gpt-5.6-sol and gpt-5.6-mini are OK).
         for (UUID cid : existing) {
             CompanionState s = COMPANIONS.get(cid);
-            if (s != null && model != null && model.equalsIgnoreCase(s.loop.getModel())) {
+            // SMH picks the model for each call itself: every SMH companion may say "smh/auto".
+            if (s != null && model != null && !usesSmh(model) && model.equalsIgnoreCase(s.loop.getModel())) {
                 owner.sendSystemMessage(Component.literal(
                         "§c[MineAgent] You already have a companion using model '"
                                 + model + "'. Each companion must use a different model."));
@@ -778,6 +779,36 @@ public final class MineAgentEngine {
                 CompanionGameMode.SURVIVAL.wireName());
     }
 
+    /** A model id SMH answers (smh/auto, smh/act, ...): SMH picks the model, so companions may share it. */
+    public static boolean usesSmh(String model) {
+        return model != null && model.toLowerCase(Locale.ROOT).startsWith("smh/");
+    }
+
+    /**
+     * The name a new companion gets: {@code wanted}, or, for an SMH companion (whose model id is no name), the
+     * configured companion name ("MineAgent"); "MineAgent 2", "MineAgent 3" when the owner already has one by it.
+     */
+    public static String freeCompanionName(UUID ownerUuid, String wanted, String model) {
+        String base = wanted == null || wanted.isBlank() || usesSmh(wanted) ? null : wanted.trim();
+        if (base == null) {
+            String configured = config.companion().name();
+            boolean plain = configured == null || configured.isBlank() || "MineAgent".equals(configured);
+            base = usesSmh(model) ? (configured == null || configured.isBlank() ? "MineAgent" : configured.trim())
+                    : plain ? model : configured.trim();
+        }
+        java.util.Set<String> taken = new java.util.HashSet<>();
+        for (UUID cid : ownerUuid == null ? List.<UUID>of() : OWNER_TO_ALL_COMPANIONS.getOrDefault(ownerUuid, Collections.emptyList())) {
+            CompanionState s = COMPANIONS.get(cid);
+            if (s != null) taken.add(s.companion.companionName().toLowerCase(Locale.ROOT));
+        }
+        if (!taken.contains(base.toLowerCase(Locale.ROOT))) return base;
+        for (int n = 2; n < 100; n++) {
+            String next = base + " " + n;
+            if (!taken.contains(next.toLowerCase(Locale.ROOT))) return next;
+        }
+        return base;
+    }
+
     public static CompanionEntity configureAndSpawnCompanion(
             ServerPlayer owner, String name, String providerId, String apiKey,
             boolean reuseStoredApiKey,
@@ -793,7 +824,7 @@ public final class MineAgentEngine {
         String resolvedKey = apiKey == null || apiKey.isBlank()
                 ? (mayReuseStoredKey ? previous.apiKey() : "") : apiKey;
         String resolvedName = name == null || name.isBlank()
-                ? resolvedModel : name.trim();
+                ? freeCompanionName(owner == null ? null : owner.getUUID(), null, resolvedModel) : name.trim();
         String resolvedEffort = reasoningEffort == null || reasoningEffort.isBlank()
                 ? null : reasoningEffort.trim().toLowerCase(Locale.ROOT);
         CompanionGameMode gameMode = CompanionGameMode.parse(requestedGameMode)
@@ -2001,13 +2032,17 @@ public final class MineAgentEngine {
                 // skip persistCompanion (the disk record already exists and the
                 // in-memory skin cache is still empty — persisting now would
                 // overwrite the on-disk skinValue with null).
+                // Saved by an older jar with the old keyless default (it never reached a model): SMH on this PC.
+                boolean moveToSmh = MineAgentConfig.LLMConfig.untouchedOldDefault(saved.providerId(), saved.apiKey(),
+                        saved.model(), baseUrl);
+                var llmNow = config.llm();
                 CompanionEntity companion = spawnCompanion(
                         player,
                         saved.companionName(),
-                        saved.providerId(),
-                        saved.apiKey(),
-                        saved.model(),
-                        baseUrl,
+                        moveToSmh ? llmNow.provider() : saved.providerId(),
+                        moveToSmh ? llmNow.apiKey() : saved.apiKey(),
+                        moveToSmh ? llmNow.model() : saved.model(),
+                        moveToSmh ? (llmNow.baseUrl().isEmpty() ? null : llmNow.baseUrl()) : baseUrl,
                         saved.temperature(),
                         saved.reasoningEffort(),
                         CompanionGameMode.orDefault(saved.gameMode()),

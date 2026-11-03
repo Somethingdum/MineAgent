@@ -152,6 +152,11 @@ tasks.register('verifyReleaseArtifacts') {
                     if (parsed.id != 'mineagent' || parsed.version != project.version.toString()) {
                         throw new GradleException("Wrong Fabric identity/version in ${artifact.name}")
                     }
+                    // One jar into mods is the whole install (SMH plan 69): Fabric API must be inside it.
+                    def nested = archive.entries().toList().any { it.name.startsWith('META-INF/jars/fabric-api-') && it.name.endsWith('.jar') }
+                    if (!nested || !(parsed.jars ?: []).any { it.file?.startsWith('META-INF/jars/fabric-api-') }) {
+                        throw new GradleException("${artifact.name} does not carry Fabric API inside it")
+                    }
                 } else {
                     def normalized = source.replace(' ', '').replace('\t', '')
                     if (!normalized.contains('modId="mineagent"')

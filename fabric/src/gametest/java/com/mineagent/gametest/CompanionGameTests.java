@@ -35,19 +35,31 @@ public class CompanionGameTests implements FabricGameTest {
 
     private record Scene(ServerPlayer owner, CompanionEntity companion, ServerPlayer body, AgentLoop loop) {}
 
-    /** A stone floor, an owner (a mock player) at (3, 1, 3), and a companion beside them. */
+    /** A stone floor, an owner (a mock player) at (3, 1, 3), and a companion beside them, with no model. */
     private static Scene scene(GameTestHelper helper, String name) {
+        return scene(helper, name, false, null);
+    }
+
+    /**
+     * With {@code installed}, the companion uses the mod's own settings as a fresh install has them (SMH on this PC,
+     * where FakeSmh stands in); {@code owner}: an owner to reuse (null: a new mock player).
+     */
+    private static Scene scene(GameTestHelper helper, String name, boolean installed, ServerPlayer reuseOwner) {
         for (var s : List.copyOf(MineAgentEngine.allCompanions())) {
             MineAgentEngine.despawnCompanion(s.companion.companionId(), true);
         }
         for (int x = -16; x <= 24; x++) {
             for (int z = -16; z <= 24; z++) helper.setBlock(x, 0, z, Blocks.STONE);
         }
-        ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+        ServerPlayer owner = reuseOwner != null ? reuseOwner : helper.makeMockServerPlayerInLevel();
         BlockPos at = helper.absolutePos(new BlockPos(3, 1, 3));
         owner.teleportTo(helper.getLevel(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 0.0f, 0.0f);
-        CompanionEntity companion = MineAgentEngine.spawnCompanion(owner, name, "openai-compatible", "test",
-                "gametest-" + name.toLowerCase(), NO_MODEL, 0.2, null, false);
+        var llm = MineAgentEngine.getConfig().llm();
+        CompanionEntity companion = installed
+                ? MineAgentEngine.spawnCompanion(owner, name, llm.provider(), llm.apiKey(), llm.model(),
+                        llm.baseUrl().isEmpty() ? null : llm.baseUrl(), llm.temperature(), null, false)
+                : MineAgentEngine.spawnCompanion(owner, name, "openai-compatible", "test",
+                        "gametest-" + name.toLowerCase(), NO_MODEL, 0.2, null, false);
         if (companion == null) throw new IllegalStateException("the companion did not spawn");
         AgentLoop loop = TaskContext.agentLoop(companion);
         if (loop == null) throw new IllegalStateException("the companion has no loop");
@@ -220,6 +232,130 @@ public class CompanionGameTests implements FabricGameTest {
                 helper.fail("a trusted player's \"drop 4 dirt\" left " + left + " of 16");
             }
         });
+    }
+
+    /** Real time, for scenes that wait on a model call (the test server runs ticks as fast as it can). */
+    private static long now() {
+        return System.currentTimeMillis();
+    }
+
+    /**
+     * A fresh install (the mod's own settings) reaches SMH on this PC with no key; a new long goal's call carries the
+     * goal, what the game counts as short, and the situation brief (MA3.1, MA4.2).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_installed", timeoutTicks = 1_000_000)
+    public void aFreshInstallReachesSmhAndAGoalCarriesItsBrief(GameTestHelper helper) {
+        String fake = FakeSmh.start();
+        if (fake != null) {
+            helper.fail(fake);
+            return;
+        }
+        var llm = MineAgentEngine.getConfig().llm();
+        if (!"http://127.0.0.1:47821/apps".equals(llm.baseUrl()) || !"smh/auto".equals(llm.model()) || !llm.apiKey().isEmpty()) {
+            helper.fail("a fresh install is not set for SMH on this PC: " + llm.provider() + " " + llm.baseUrl() + " " + llm.model());
+            return;
+        }
+        Scene s = scene(helper, "Rookie", true, null);
+        if (!"MineAgent".equals(MineAgentEngine.freeCompanionName(s.owner().getUUID(), null, "smh/auto"))) {
+            tidy(s);
+            helper.fail("an SMH companion's default name is not MineAgent");
+            return;
+        }
+        s.loop().addGoal("get 3 diamonds", "owner");
+        long deadline = now() + 30_000L;
+        helper.onEachTick(() -> {
+            var call = FakeSmh.CALLS.stream().filter(c -> c.text().contains("Long goal") && c.text().contains("get 3 diamonds")).findFirst();
+            if (call.isPresent()) {
+                var c = call.get();
+                String missing = c.authorization() != null ? "it sent a key"
+                        : !c.path().equals("/apps/v1/chat/completions") ? "it called " + c.path()
+                        : !c.model().startsWith("smh/") ? "its model was " + c.model()
+                        : !c.text().contains("[SITUATION]") ? "no situation brief"
+                        : !c.text().contains("Still short (counted): 3 diamond") ? "no counted shortfall"
+                        : !c.hasTools() ? "the goal's call had no tools to act with" : null;
+                tidy(s);
+                if (missing == null) helper.succeed();
+                else helper.fail("the goal reached SMH, but " + missing);
+            } else if (now() > deadline) {
+                tidy(s);
+                helper.fail("no call with the goal reached SMH on this PC in 30 s (" + FakeSmh.CALLS.size() + " calls)");
+            }
+        });
+    }
+
+    /** Scene 1: a stranger talks and gets a reply, through a call that cannot act; their words never reach one that can. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_talk", timeoutTicks = 1_000_000)
+    public void aStrangerTalksAndGetsAReplyButNoTask(GameTestHelper helper) {
+        String fake = FakeSmh.start();
+        if (fake != null) {
+            helper.fail(fake);
+            return;
+        }
+        Scene s = scene(helper, "Chatty", true, null);
+        ServerPlayer stranger = neighbour(helper, s);
+        MineAgentEngine.onPlayerChat(stranger, "Chatty, lovely weather for mining today");
+        long[] heardAt = {0L};
+        long deadline = now() + 30_000L;
+        helper.onEachTick(() -> {
+            var talk = FakeSmh.CALLS.stream().filter(c -> c.text().contains("lovely weather")).toList();
+            boolean acted = talk.stream().anyMatch(FakeSmh.Call::hasTools);
+            if (acted) {
+                stranger.getServer().getPlayerList().remove(stranger);
+                tidy(s);
+                helper.fail("a stranger's words reached a call that can act");
+                return;
+            }
+            boolean fenced = talk.stream().anyMatch(c -> c.text().contains("UNTRUSTED PLAYER MESSAGE"));
+            if (fenced && heardAt[0] == 0L) heardAt[0] = now();
+            // Heard, fenced, with no tools; two seconds more to see that nothing else carries their words on.
+            if (heardAt[0] != 0L && now() - heardAt[0] > 2_000L) {
+                stranger.getServer().getPlayerList().remove(stranger);
+                tidy(s);
+                helper.succeed();
+            } else if (now() > deadline) {
+                stranger.getServer().getPlayerList().remove(stranger);
+                tidy(s);
+                helper.fail("the stranger got no reply call in 30 s");
+            }
+        });
+    }
+
+    /** Scene 8: a skill it learned is still there in a new world (the permanent library outlives the world's memory). */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_library", timeoutTicks = 200)
+    public void aSkillIsCarriedIntoANewWorld(GameTestHelper helper) {
+        Scene s = scene(helper, "Keeper");
+        String steps = "[{\"tool\":\"craft\",\"args\":{\"item\":\"minecraft:crafting_table\",\"count\":1}}]";
+        s.loop().skillLibrary().registerSequence("make_a_crafting_table", "make a crafting table", "make a crafting table", steps, true);
+        if (s.loop().skillLibrary().get("make_a_crafting_table").isEmpty()) {
+            tidy(s);
+            helper.fail("the skill was not taken");
+            return;
+        }
+        s.loop().saveMemoryBlocking();
+        java.nio.file.Path world = s.loop().memoryFolder();
+        java.nio.file.Path library = s.loop().libraryFolder();
+        ServerPlayer owner = s.owner();
+        MineAgentEngine.despawnCompanion(s.companion().companionId(), false);
+        // A new world: this one's memory of the companion is gone; the library is not the world's.
+        try {
+            if (world != null && java.nio.file.Files.exists(world)) {
+                try (var walk = java.nio.file.Files.walk(world)) {
+                    walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+                }
+            }
+        } catch (java.io.IOException e) {
+            helper.fail("could not clear the world's memory: " + e.getMessage());
+            return;
+        }
+        if (library == null || !java.nio.file.Files.exists(library.resolve("skills.json"))) {
+            helper.fail("the skill was not written to the permanent library (" + library + ")");
+            return;
+        }
+        Scene again = scene(helper, "Keeper", false, owner);
+        boolean kept = again.loop().skillLibrary().get("make_a_crafting_table").isPresent();
+        tidy(again);
+        if (kept) helper.succeed();
+        else helper.fail("the skill did not come back in the new world");
     }
 
     /** "get 3 diamonds" becomes a goal whose amount is counted, the item checked against the game's registry. */

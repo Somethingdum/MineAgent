@@ -302,6 +302,11 @@ public class MemoryPersistence {
         }
     }
 
+    /** This companion's memory folder in the world. */
+    public Path memoryFolder() {
+        return memoryDir;
+    }
+
     /** This companion's library folder, or null without a library. */
     public Path libraryDir() {
         Path root = libraryRoot;

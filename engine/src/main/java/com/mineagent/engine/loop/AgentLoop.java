@@ -1682,6 +1682,25 @@ public class AgentLoop {
         }
     }
 
+    private volatile long lastSmhHintMs;
+
+    /**
+     * A failed call, told to the owner: in plain words when it is SMH that failed (not running, no model, a key it
+     * refused, its game endpoint off; llm/SmhHint), at most once a minute; else the provider's own message.
+     */
+    private void sayCallFailure(String fallback, RuntimeException e, String msg) {
+        Integer status = e instanceof com.mineagent.api.llm.provider.LLMProviderException p ? p.statusCode() : null;
+        String hint = com.mineagent.engine.llm.SmhHint.forFailure(baseUrl, status, msg, e.getCause() != null ? e.getCause() : e);
+        if (hint == null) {
+            speakToOwner(fallback);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastSmhHintMs < 60_000L) return;
+        lastSmhHintMs = now;
+        speakToOwner(hint);
+    }
+
     /** Hostiles within 16 blocks, nearest first, read on the server thread (the brief is built on the model's). */
     private void noteHostiles(net.minecraft.server.level.ServerPlayer player) {
         if (player == null) return;
@@ -2388,6 +2407,20 @@ public class AgentLoop {
             + "best record unless this fight is clearly different. Kite skeletons and witches only with good reason; never "
             + "press a creeper without a shield. Retreat when outnumbered and hurt. You may also try a new combination: "
             + "it is kept, rated by the game like the stances, and dropped if it does worse.";
+
+    /** Save this companion's memory and library now, on this thread (the game tests; shutdown saves the same way). */
+    public void saveMemoryBlocking() {
+        if (persistence != null) persistence.saveAll();
+    }
+
+    /** This companion's memory folder in the world (null without a world), and its permanent library folder. */
+    public java.nio.file.Path memoryFolder() {
+        return persistence == null ? null : persistence.memoryFolder();
+    }
+
+    public java.nio.file.Path libraryFolder() {
+        return persistence == null ? null : persistence.libraryDir();
+    }
 
     /** Save this companion's memory and library now, off the server thread (the settings panel's changes). */
     public void saveMemoryNow() {
@@ -3598,7 +3631,7 @@ public class AgentLoop {
                 }
 
                 if (!retryable) {
-                    speakToOwner("§c[Error] LLM request failed: " + msg);
+                    sayCallFailure("§c[Error] LLM request failed: " + msg, e, msg);
                     return null;
                 }
 
@@ -3614,8 +3647,7 @@ public class AgentLoop {
                 } else {
                     System.err.println("[MineAgent] All LLM retries exhausted");
                     // Notify the owner about the failure
-                    speakToOwner("§c[Error] LLM call failed after " + MAX_RETRIES
-                            + " retries: " + msg);
+                    sayCallFailure("§c[Error] LLM call failed after " + MAX_RETRIES + " retries: " + msg, e, msg);
                     return null;
                 }
             }

@@ -53,6 +53,9 @@ dependencies {
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.property('fabric_loader_version')}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.property('fabric_version')}"
+    // Fabric API inside the jar (SMH plan 69; the user, 2026-11-03: "Just drag and drop to the folder. And start
+    // SMH."): one jar into mods is enough. Fabric Loader uses this copy only when no newer Fabric API is there.
+    include "net.fabricmc.fabric-api:fabric-api:${project.property('fabric_version')}"
 
     // API module
     implementation project(':api')

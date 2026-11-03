@@ -21,6 +21,9 @@ public final class ProviderPresets {
 
     public static final List<Preset> ALL = List.of(
             CUSTOM,
+            // SMH on this PC (SMH plan 69): no key; SMH picks the model for each call's role.
+            preset("smh", "SMH (this PC)", "openai-compatible",
+                    "smh/auto", "http://127.0.0.1:47821/apps"),
             preset("deepseek", "DeepSeek", "openai-compatible",
                     "deepseek-chat", "https://api.deepseek.com"),
             preset("openai", "OpenAI", "openai-compatible",
