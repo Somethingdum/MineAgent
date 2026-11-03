@@ -284,7 +284,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     shortBecause = lastWhy; // no room for the next food; the last one ran out
                     return finish();
                 }
-                return fail("that chest is already full");
+                // Nothing to do: an answer, not a failure (a stock order looks again later).
+                say("That chest is already full.");
+                outcome = "already full";
+                phase = Phase.DONE;
+                return TaskState.SUCCESS;
             }
         } else if (target == 0) {
             target = 64;

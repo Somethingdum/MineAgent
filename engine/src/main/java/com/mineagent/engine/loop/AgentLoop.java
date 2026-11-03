@@ -743,6 +743,13 @@ public class AgentLoop {
         journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
                 + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
         var command = com.mineagent.engine.chat.CommandParser.parse(message, companion.companionName());
+        // "Keep this chest full of spruce logs" (MA9.2): a standing order to fill the chest they mean.
+        String said0 = com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName());
+        var keep = java.util.regex.Pattern.compile("^keep (this|that|the|my|a) (?:chest|barrel) (?:full of|filled with|stocked with|topped up with) (.{2,60})$")
+                .matcher(said0);
+        if (fromOwner && keep.matches()) {
+            message = "fill " + keep.group(1) + " chest with " + keep.group(2) + " until I say stop";
+        }
         // "Do X, then Y" (MA6.3): goals in that order, each run by code where code knows it.
         if (fromOwner && (command.isEmpty() || command.get().kind() != com.mineagent.engine.chat.CommandParser.Kind.AFK
                 && command.get().kind() != com.mineagent.engine.chat.CommandParser.Kind.GOAL_ADD)
@@ -3120,6 +3127,8 @@ public class AgentLoop {
     private boolean orderSeen;
     /** Set while the heartbeat dispatches the active goal's order, so the order's handler doesn't make a second goal. */
     private String dispatchingGoal;
+    /** Ticks a standing order waits before it is done again. */
+    static final long STANDING_PAUSE = 1_200L;
     /** How the last order's task ended, and what it said. */
     private volatile TaskState lastOrderState;
     private volatile String lastOrderNote = "";
@@ -3192,7 +3201,8 @@ public class AgentLoop {
                 orderRungs.remove(g.id());
             }
             if (com.mineagent.engine.goal.Orders.stands(g.text())) {
-                orderSince = now; // again, until it's stopped
+                // Again, until it's stopped; a minute on, so a full chest is looked at, not hammered (MA9.2).
+                orderSince = now + STANDING_PAUSE;
                 return;
             }
             var next = goalBook.markDone(g.id());
@@ -3286,7 +3296,10 @@ public class AgentLoop {
             // One order that stands ("make me 64 torches until I say stop"), when code runs it: a standing goal.
             var one = com.mineagent.engine.goal.Orders.order(line);
             if (!one.standing() || orderIn(one.text(), companion.companionName()).isEmpty()) return false;
-            if (orderIn(line, companion.companionName()).isPresent()) return false; // the order reads it itself ("mine iron until I say stop")
+            var whole = orderIn(line, companion.companionName());
+            if (whole.isPresent() && whole.get().kind() == com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE) {
+                return false; // mining reads "until I say stop" itself
+            }
             orders = List.of(one);
         }
         List<String> texts = new ArrayList<>();

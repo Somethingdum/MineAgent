@@ -2610,6 +2610,41 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA9.2: "keep this chest full of spruce logs": the chest by its owner is filled from the spruce near, a
+     * second chest further off is left alone, and the order stands: with the chest full it looks again later, and says
+     * nothing failed.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_stock", timeoutTicks = 1600)
+    public void keepThisChestFullOfSpruceLogs(GameTestHelper helper) {
+        Scene s = scene(helper, "Stocker");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(5, 1, 3, Blocks.CHEST);
+        helper.setBlock(9, 1, 3, Blocks.CHEST);
+        BlockPos mine = helper.absolutePos(new BlockPos(5, 1, 3)), other = helper.absolutePos(new BlockPos(9, 1, 3));
+        var c = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(mine);
+        for (int i = 0; i < c.getContainerSize() - 1; i++) c.setItem(i, new ItemStack(Items.DIRT, 64));
+        c.setItem(c.getContainerSize() - 1, new ItemStack(Items.SPRUCE_LOG, 60));
+        c.setChanged();
+        for (int y = 1; y <= 5; y++) helper.setBlock(11, y, 9, Blocks.SPRUCE_LOG);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "keep this chest full of spruce logs"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "stock");
+            int logs = inChest(helper, mine, Items.SPRUCE_LOG), stray = inChest(helper, other, Items.SPRUCE_LOG);
+            String failed = lastSaid(s, "I couldn't");
+            if (logs == 64 && helper.getTick() > 200) {
+                boolean standing = s.loop().goalBook().active().map(g -> com.mineagent.engine.goal.Orders.stands(g.text())).orElse(false);
+                tidy(s);
+                if (stray == 0 && failed.isEmpty() && standing) helper.succeed();
+                else fail(helper, "filled; other chest " + stray + ", failed: " + failed + ", still standing " + standing);
+            } else if (helper.getTick() >= 1500) {
+                String how = "logs in the chest " + logs + ", other chest " + stray + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {
