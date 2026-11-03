@@ -69,6 +69,8 @@ public class MemoryPersistence {
     private static final String MIGRATED_SKILL_FILE = "learned_skills.migrated.json";
     /** The hard-coded ratings of skills, goals and tactics (learning/Scorecard), with the library when there is one. */
     private static final String SCORE_FILE = "scores.json";
+    /** Fighting ways the model came up with, kept beside the scores that rate them (combat/TacticBook). */
+    private static final String TACTICS_FILE = "tactics.json";
     /** This world's practice record: done, failed and too hard (learning/Curriculum, MA2.1). */
     private static final String CURRICULUM_FILE = "curriculum.json";
     /** This world's goal book: long goals and standing stock orders (planning/GoalBook, MA3.1). */
@@ -108,6 +110,7 @@ public class MemoryPersistence {
     private volatile com.mineagent.engine.learning.Scorecard scorecard;
     private volatile com.mineagent.engine.learning.Curriculum curriculum;
     private volatile com.mineagent.engine.planning.GoalBook goalBook;
+    private volatile com.mineagent.engine.combat.TacticBook tacticBook;
     private final CognitiveMap cognitiveMap;
     private final PlaceEventMemory placeEventMemory;
     private final ImportanceEvaluator importanceEvaluator;
@@ -239,6 +242,38 @@ public class MemoryPersistence {
         this.scorecard = card;
     }
 
+    public synchronized void setTacticBook(com.mineagent.engine.combat.TacticBook book) {
+        this.tacticBook = book;
+    }
+
+    private Path tacticFile() {
+        Path library = libraryDir();
+        return library != null ? library.resolve(TACTICS_FILE) : memoryDir.resolve(TACTICS_FILE);
+    }
+
+    private void saveTactics() throws IOException {
+        var book = tacticBook;
+        if (book == null) return;
+        JsonObject data = new JsonObject();
+        data.addProperty("version", FORMAT_VERSION);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        data.add("state", GSON.toJsonTree(book.exportState()));
+        writeAtomic(tacticFile(), GSON.toJson(data));
+    }
+
+    private void loadTactics() throws IOException {
+        var book = tacticBook;
+        Path file = tacticFile();
+        if (book == null || !Files.exists(file)) return;
+        JsonObject data = readRoot(file);
+        if (!data.has("state") || !data.get("state").isJsonObject()) throw new IOException("tactics state is missing");
+        try {
+            book.importState(GSON.fromJson(data.get("state"), com.mineagent.engine.combat.TacticBook.State.class));
+        } catch (RuntimeException malformed) {
+            throw new IOException("invalid tactics state", malformed);
+        }
+    }
+
     private Path scoreFile() {
         Path library = libraryDir();
         return library != null ? library.resolve(SCORE_FILE) : memoryDir.resolve(SCORE_FILE);
@@ -320,6 +355,9 @@ public class MemoryPersistence {
         try { saveGoalBook(); } catch (Exception e) {
             System.err.println("[MineAgent] Save goal book failed: " + e.getMessage());
         }
+        try { saveTactics(); } catch (Exception e) {
+            System.err.println("[MineAgent] Save tactics failed: " + e.getMessage());
+        }
         try { saveSemanticWorld(); } catch (Exception e) {
             System.err.println("[MineAgent] Save semantic world failed: " + e.getMessage());
         }
@@ -374,6 +412,11 @@ public class MemoryPersistence {
         loadWithQuarantine(SKILL_FILE, "learned skills", this::loadSkills);
         loadWithQuarantine(CURRICULUM_FILE, "curriculum", this::loadCurriculum);
         loadWithQuarantine(GOAL_BOOK_FILE, "goal book", this::loadGoalBook);
+        try {
+            loadTactics();
+        } catch (Exception failure) {
+            System.err.println("[MineAgent] Load tactics failed: " + failure.getMessage());
+        }
         try {
             loadScores();
         } catch (Exception failure) {

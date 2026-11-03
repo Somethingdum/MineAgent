@@ -188,7 +188,12 @@ public final class MobDefenseChain implements TaskChain {
                 fled = true;
             }
             if (loop != null && fightTicks % 40 == 1) {
-                tactics = loop.tacticsFor(fightMob);
+                // Mid-fight, only the model's word on whom to strike first applies: the fight stays rated under the
+                // way it began with, and the rest of the advice is tried in a later fight (combat/TacticBook).
+                List<String> order = loop.advisedTargetOrder();
+                if (tactics != null && !order.isEmpty() && !order.equals(tactics.targetOrder())) {
+                    tactics = new Tactics(tactics.stance(), order, tactics.retreatHealth(), tactics.useShield(), tactics.crits());
+                }
                 loop.adviseFight(situation(s, a));
             }
             if (targetMob != null) watchHeadway(targetMob, target, sp);
@@ -502,13 +507,14 @@ public final class MobDefenseChain implements TaskChain {
         fightTicks = 0;
         fightAnchor = s.anchor();
         fightMob = target.type();
-        tactics = loop != null ? loop.tacticsFor(fightMob) : Tactics.of("balanced", config.healthFlee());
+        var choice = loop != null ? loop.choiceFor(fightMob) : null;
+        tactics = choice != null ? choice.tactics() : Tactics.of("balanced", config.healthFlee());
+        String way = choice != null ? choice.name() : "balanced";
         trackedTarget = null;
         if (GearUp.run(sp)) bodyLog.report("put on its best gear");
         // Getting away from what is never fought (the warden) is not a fight to rate a stance by.
-        if (loop != null && !MobPolicy.of(fightMob).mustFlee()) loop.fightBegan(fightMob, tactics.stance(), sp);
-        bodyLog.report((s.setup().duty() == Duty.GUARD ? "on guard: " : "") + "fighting " + fightMob
-                + " (" + tactics.stance() + ")");
+        if (loop != null && !MobPolicy.of(fightMob).mustFlee()) loop.fightBegan(fightMob, way, sp);
+        bodyLog.report((s.setup().duty() == Duty.GUARD ? "on guard: " : "") + "fighting " + fightMob + " (" + way + ")");
     }
 
     private void endFight(AgentLoop loop, Scorecard.Outcome outcome) {
@@ -574,8 +580,8 @@ public final class MobDefenseChain implements TaskChain {
         AgentLoop loop = TaskContext.agentLoop(companion);
         if (loop != null) {
             JsonObject records = new JsonObject();
-            for (String stance : CombatBrain.stances()) {
-                records.addProperty(stance, loop.scorecard().describe("fight:" + fightMob + ":" + stance));
+            for (String way : loop.tacticNames(fightMob)) {
+                records.addProperty(way, loop.scorecard().describe(com.mineagent.engine.combat.TacticBook.key(fightMob, way)));
             }
             o.add("record_against_" + fightMob, records);
         }

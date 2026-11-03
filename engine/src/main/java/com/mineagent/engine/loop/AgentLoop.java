@@ -204,6 +204,8 @@ public class AgentLoop {
 
     // ── Combat (SMH plan 69, block 3): what it guards, how it fights, every fight rated by the game ──
     /** A guarded spot, or a guarded player or creature (its UUID); null: not guarding. */
+    /** Fighting ways the model came up with, rated beside the stances (combat/TacticBook); kept with the scores. */
+    private final com.mineagent.engine.combat.TacticBook tacticBook = new com.mineagent.engine.combat.TacticBook();
     /** Skill repair (learning/SkillRepair): repairs under way, by base skill, and the last failures of each skill. */
     private final Set<String> repairsInFlight = ConcurrentHashMap.newKeySet();
     private final Map<String, Deque<String>> skillFailures = new ConcurrentHashMap<>();
@@ -485,6 +487,7 @@ public class AgentLoop {
             p.setScorecard(scorecard);
             p.setCurriculum(curriculum);
             p.setGoalBook(goalBook);
+            p.setTacticBook(tacticBook);
             p.loadAll();
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
@@ -2213,13 +2216,33 @@ public class AgentLoop {
      * game has rated best against this mob (a stance never tried gets its trial first: learning by results).
      */
     public com.mineagent.engine.combat.Tactics tacticsFor(String mobType) {
+        return choiceFor(mobType).tactics();
+    }
+
+    /**
+     * How to fight {@code mobType}, and the name the fight is rated under: the model's advice of the last 10 s (kept
+     * in the tactic book as a variant of its own), else the way the game has rated best against this mob, the four
+     * stances and the kept variants alike (one never tried gets its trial first).
+     */
+    public com.mineagent.engine.combat.TacticBook.Choice choiceFor(String mobType) {
         double flee = MineAgentEngine.getConfig().survival().healthFlee();
         var advised = advisedTactics;
-        if (advised != null && System.currentTimeMillis() - advisedAtMs < 10_000L) return advised;
-        List<String> keys = new ArrayList<>();
-        for (String stance : com.mineagent.engine.combat.CombatBrain.stances()) keys.add("fight:" + mobType + ":" + stance);
-        String best = scorecard.rank(keys).get(0);
-        return com.mineagent.engine.combat.Tactics.of(best.substring(best.lastIndexOf(':') + 1), flee);
+        if (advised != null && System.currentTimeMillis() - advisedAtMs < 10_000L) {
+            String name = tacticBook.adopt(mobType, advised, flee, scorecard, System.currentTimeMillis());
+            return new com.mineagent.engine.combat.TacticBook.Choice(name, advised);
+        }
+        return tacticBook.best(mobType, scorecard, flee);
+    }
+
+    /** The model's word on which mob to strike first, mid-fight (the rest of its advice waits for the next fight). */
+    public List<String> advisedTargetOrder() {
+        var advised = advisedTactics;
+        return advised != null && System.currentTimeMillis() - advisedAtMs < 10_000L ? advised.targetOrder() : List.of();
+    }
+
+    /** Every way it may fight this mob, rated: the four stances, then the variants kept. */
+    public List<String> tacticNames(String mobType) {
+        return tacticBook.names(mobType);
     }
 
     /** A fight began against {@code mobType}, fought in {@code stance}: measured from here (health, time, a death). */
@@ -2235,6 +2258,10 @@ public class AgentLoop {
         var episode = fightEpisode.end(outcome, currentGameTickSafe());
         double score = scorecard.record(episode, currentGameTickSafe());
         advisedTactics = null;
+        // A variant that has had its trial and does worse than the best stance is dropped.
+        for (String dropped : tacticBook.prune(fightMob, scorecard)) {
+            onBodyLog("[TACTICS] dropped " + dropped + " against " + fightMob + ": the game rated it worse than the best stance");
+        }
         if (episode != null && (episode.died() || outcome != com.mineagent.engine.learning.Scorecard.Outcome.DONE || score < 60)) {
             writeLesson("fighting " + fightMob, episode, score);
         }
@@ -2261,6 +2288,9 @@ public class AgentLoop {
                     com.mineagent.engine.combat.Tactics.parse(replyContent(sideCall(request)), flee).ifPresent(t -> {
                         advisedTactics = t;
                         advisedAtMs = System.currentTimeMillis();
+                        // Kept as a way to fight this mob, to be tried and rated in later fights.
+                        String mob = fightMob;
+                        if (mob != null && !mob.isBlank()) tacticBook.adopt(mob, t, flee, scorecard, advisedAtMs);
                     });
                 } catch (Exception e) {
                     System.err.println("[MineAgent] Fight advice failed: " + e.getMessage());
@@ -2278,7 +2308,8 @@ public class AgentLoop {
             + "as the game measured it) and answer with JSON only: {\"stance\":\"aggressive|balanced|defensive|kite|retreat\","
             + "\"target_order\":[\"mob type\"],\"retreat_health\":8,\"shield\":true,\"crits\":true}. Prefer the stance with the "
             + "best record unless this fight is clearly different. Kite skeletons and witches only with good reason; never "
-            + "press a creeper without a shield. Retreat when outnumbered and hurt.";
+            + "press a creeper without a shield. Retreat when outnumbered and hurt. You may also try a new combination: "
+            + "it is kept, rated by the game like the stances, and dropped if it does worse.";
 
     /** Save this companion's memory and library now, off the server thread (the settings panel's changes). */
     public void saveMemoryNow() {
