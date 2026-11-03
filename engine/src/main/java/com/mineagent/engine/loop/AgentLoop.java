@@ -1103,7 +1103,7 @@ public class AgentLoop {
         double flee = MineAgentEngine.getConfig().survival().healthFlee();
         // Practice is AUTO's (Andy Omega §59): in servant, escort and parked mode it never starts work of its own,
         // and on guard it stays on guard.
-        boolean auto = agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO && !guarding();
+        boolean auto = (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO || afkKeepBusy()) && !guarding();
         if (!curriculum.due(auto && agentSettings.curriculum(), inProgress || skillRuntime.active(), sinceOrder,
                 hostileNear, player.getHealth(), flee, now)) return;
         curriculum.asking(now);
@@ -1233,11 +1233,12 @@ public class AgentLoop {
             case AFK -> {
                 if (!fromOwner) return false;
                 ownerActivity.saidAfk(net.minecraft.Util.getMillis());
-                speakToOwner("I'll keep watch until you're back.");
+                startAfkOrder(com.mineagent.engine.loop.AfkOrders.parse(c.value()));
             }
             case BACK -> {
                 if (!fromOwner) return false;
                 ownerActivity.saidBack();
+                endAfkOrder();
             }
             case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, FIND_PLACE -> {
                 return placeCommand(c, self, fromOwner);
@@ -2183,6 +2184,7 @@ public class AgentLoop {
      */
     private void goalHeartbeat(net.minecraft.server.level.ServerPlayer player) {
         if (player == null || suspended || inProgress || goalStepInFlight.get() || guarding()) return;
+        if (afkShelterStarted && afkSheltering()) return; // walled in until they're back
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
         var active = goalBook.active();
         if (active.isEmpty() && goalBook.stock().isEmpty()) return;
@@ -2458,6 +2460,7 @@ public class AgentLoop {
                 saveMemoryNow();
             });
             watchOwnerActivity(owner);
+            watchAfkOrder();
             keepNearAfkOwner(player, owner, gameTick);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
@@ -2740,8 +2743,12 @@ public class AgentLoop {
         }
         // An AFK owner who is exposed is guarded, as on "guard me" (SMH plan 70, MA5.4); fishing, close by. At a
         // mob farm's hoppers, exposed or not, only what comes right at them: the farm's own mobs are theirs.
-        if (owner != null && com.mineagent.engine.settings.Switches.afkGuard() && ownerActivity.afk() && owner.isAlive() && owner.serverLevel() == self.serverLevel()
-                && (exposed(owner) || ownerAtFarm)) {
+        // "Going AFK, make sure I don't die": guarded wherever they are, while they're away.
+        boolean keepThemSafe = afkOrder.guardMe();
+        if (owner != null && (com.mineagent.engine.settings.Switches.afkGuard() || keepThemSafe)
+                && (ownerActivity.afk() || (keepThemSafe && ownerActivity.awaitingAfk()))
+                && owner.isAlive() && owner.serverLevel() == self.serverLevel()
+                && (exposed(owner) || ownerAtFarm || keepThemSafe)) {
             double radius = owner.fishing != null ? 6.0 : ownerAtFarm ? 4.0 : 12.0;
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, owner.position(), owner.getUUID(), radius);
         }
@@ -3070,6 +3077,7 @@ public class AgentLoop {
         var change = ownerActivity.update(now, owner.getLastActionTime(), com.mineagent.engine.settings.Switches.afkAfterMillis());
         if (change == OwnerActivity.Change.CAME_BACK) {
             clearAfkFarm();
+            endAfkOrder();
             String line = ownerActivity.welcomeBack(now, whileAway());
             journal.record("back", "you came back to the keys", currentGameTickSafe());
             speakToOwner(line);
@@ -3095,12 +3103,101 @@ public class AgentLoop {
     private long leashTurnedAt;
     private boolean leashTurned;
 
+    /** What they asked for while they're AFK ("Going AFK, ..."), until they're back; NONE when nothing. */
+    private volatile com.mineagent.engine.loop.AfkOrders.Order afkOrder = com.mineagent.engine.loop.AfkOrders.Order.NONE;
+    private volatile long afkOrderAt;
+    private volatile boolean afkShelterStarted;
+
+    /** What they asked for while they're AFK (the game tests). */
+    public com.mineagent.engine.loop.AfkOrders.Order afkOrder() {
+        return afkOrder;
+    }
+
+    /** Walled in, or to be once its job is done, until they're back (the shelter task holds while this is true). */
+    public boolean afkSheltering() {
+        return afkOrder.shelter();
+    }
+
+    /**
+     * "Going AFK, ..." (SMH plan 70, MA5.4): what it says back, the job put in its goal book (it works on it, and when
+     * it's done finds something else to do), and the shelter at once when walling itself in is all it was asked.
+     */
+    private void startAfkOrder(com.mineagent.engine.loop.AfkOrders.Order order) {
+        afkOrder = order;
+        afkOrderAt = System.currentTimeMillis();
+        afkShelterStarted = false;
+        String said = com.mineagent.engine.loop.AfkOrders.reply(order, com.mineagent.engine.settings.Switches.afkGuard());
+        if (order.any()) journal.record("afk-order", "while you're away: " + describe(order), currentGameTickSafe());
+        speakToOwner(said);
+        if (order.task() != null) {
+            String goal = addGoal(order.task(), "owner");
+            if (goal.startsWith("I can't")) speakToOwner(goal);
+        } else if (order.shelter()) {
+            startShelter();
+        }
+    }
+
+    private static String describe(com.mineagent.engine.loop.AfkOrders.Order o) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        if (o.guardMe()) parts.add("keep you safe");
+        if (o.stayWithin() > 0) parts.add("stay within " + o.stayWithin() + " blocks");
+        if (o.task() != null) parts.add(o.task());
+        if (o.shelter()) parts.add("block myself in");
+        if (o.careful()) parts.add("play it safe");
+        return String.join("; ", parts);
+    }
+
+    private void startShelter() {
+        afkShelterStarted = true;
+        haltNow();
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                new com.mineagent.engine.task.ShelterTask.ShelterRecord("shelter-" + UUID.randomUUID()), reply -> { });
+    }
+
+    /** They're back, or never went: what they asked for while away is over (a job in the goal book stays). */
+    private void endAfkOrder() {
+        afkOrder = com.mineagent.engine.loop.AfkOrders.Order.NONE;
+        afkShelterStarted = false;
+    }
+
+    /**
+     * Each tick while there is an order: once its job is done, the shelter if it was asked for; and if they never
+     * went AFK after all (they kept at the keys past the AFK time, and a minute more), the order is over.
+     */
+    private void watchAfkOrder() {
+        var o = afkOrder;
+        if (!o.any()) return;
+        long waited = System.currentTimeMillis() - afkOrderAt;
+        long allowed = Math.max(300_000L, com.mineagent.engine.settings.Switches.afkAfterMillis() + 60_000L);
+        if (!ownerActivity.afk() && !ownerActivity.awaitingAfk() && waited > allowed) {
+            endAfkOrder();
+            return;
+        }
+        if (o.shelter() && !afkShelterStarted && goalBook.active().isEmpty() && !inProgress) {
+            LiveBodyState body = liveBodyState.get();
+            if (body == null || body.taskId() == null) startShelter();
+        }
+    }
+
+    /**
+     * While they're AFK and it has nothing to do, it finds its own work, as in auto mode (the "keep busy" switch,
+     * on): "AFK just means I'm away, likely stay busy". Not while it keeps them safe or is walled in, nor with a goal
+     * of theirs still open.
+     */
+    private boolean afkKeepBusy() {
+        var o = afkOrder;
+        return com.mineagent.engine.settings.Switches.afkKeepBusy() && ownerActivity.afk()
+                && agentSettings.workMode() != com.mineagent.engine.settings.WorkMode.PARKED
+                && !o.guardMe() && !o.shelter() && goalBook.active().isEmpty();
+    }
+
     /** What happened while they were away, from its journal, for the welcome-back line: at most three things. */
     private java.util.List<String> whileAway() {
         java.util.List<String> notes = new java.util.ArrayList<>();
         for (var e : journal.recent(200)) {
             if (e.tick() < afkSinceTick) continue;
             if (!java.util.List.of("stored", "find", "goal", "death", "place").contains(e.kind())) continue;
+            if (e.text().startsWith("new goal")) continue; // theirs: they know
             String t = e.kind().equals("stored") ? "put in " + e.text() : e.text();
             if (!notes.contains(t)) notes.add(t);
         }
@@ -3133,8 +3230,11 @@ public class AgentLoop {
                 clearAfkFarm();
             }
         }
-        // A distance only if they set one: none by default.
-        double leash = com.mineagent.engine.loop.AfkRules.leash(com.mineagent.engine.settings.Switches.afkStayWithin());
+        if (afkShelterStarted && afkSheltering()) return; // walled in: it stays where it is
+        // A distance only if they set one ("stay within 40" with going AFK, or the setting): none by default.
+        int within = afkOrder.stayWithin() > 0 ? afkOrder.stayWithin() : com.mineagent.engine.settings.Switches.afkStayWithin();
+        if (afkOrder.guardMe()) within = 0; // guarding keeps it by them already
+        double leash = com.mineagent.engine.loop.AfkRules.leash(within);
         double away = me.distanceTo(owner);
         if (away <= leash) {
             leashTurned = false;

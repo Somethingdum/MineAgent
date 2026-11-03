@@ -38,6 +38,12 @@ public final class CommandParser {
     private static final Pattern ESCORT = Pattern.compile("^(protect me|guard me|defend me|keep me safe|escort me|cover me|watch over me)$");
     /** Going AFK, or back (SMH plan 70, MA5.4). */
     private static final Pattern AFK = Pattern.compile("^(afk|brb|bbl|be right back|going afk|gonna go afk|gonna be afk|i'?m afk|i'?m going afk|back in a (?:bit|sec|second|min|minute|few)|gtg for a (?:bit|sec|second|min|minute))$");
+    /**
+     * "Going AFK, fill up a chest with food while I'm out": AFK, and what to do meanwhile, any length (MA5.4). A comma,
+     * colon, dash or "and" after the AFK words is needed, so "afk farm is broken" is not taken for going AFK.
+     */
+    private static final Pattern AFK_WITH = Pattern.compile("^(?:(?:i'?m |i am )?(?:going |gonna go |gonna be |going to be |about to go )?afk"
+            + "|brb|be right back|(?:i'?m )?stepping (?:away|out))(?:\\s*[,:;\u2013\u2014-]+\\s*|\\s+(?:and|so)\\s+)(.{2,300})$");
     private static final Pattern BACK = Pattern.compile("^(back|i'?m back|back now|i'?m here now|here now)$");
     // Places and the way back (SMH plan 70, MA5.6).
     /** A place's name, with the article it was said with ("the mine"): route memory matches with or without it. */
@@ -100,6 +106,8 @@ public final class CommandParser {
         String t = normalise(line, companionName);
         Matcher g = GOAL.matcher(t);
         if (g.matches()) return Optional.of(new Command(Kind.GOAL_ADD, g.group(1).strip(), null));
+        Matcher afk = AFK_WITH.matcher(t);
+        if (afk.matches()) return Optional.of(new Command(Kind.AFK, afk.group(1).strip(), null));
         if (t.isEmpty() || t.split(" ").length > 8) return Optional.empty();
         if (NEGATION.matcher(t).matches()) return Optional.of(new Command(Kind.STOP, null, null));
         if (STOP.matcher(t).matches()) return Optional.of(new Command(Kind.STOP, null, null));

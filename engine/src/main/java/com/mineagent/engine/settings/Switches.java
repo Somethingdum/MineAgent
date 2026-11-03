@@ -38,6 +38,8 @@ public final class Switches {
     /** While its owner is AFK, keep within this many blocks of them; 0: no limit (the default). */
     public static int afkStayWithin() { return b().afkStayWithin(); }
     public static boolean afkFarmLeftAlone() { return b().afkFarmLeftAlone(); }
+    /** While its owner is AFK and it has nothing to do, it finds its own work (on). */
+    public static boolean afkKeepBusy() { return b().afkKeepBusy(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

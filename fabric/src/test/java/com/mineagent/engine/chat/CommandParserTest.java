@@ -130,4 +130,19 @@ final class CommandParserTest {
         assertEquals("FIND_PLACE:diamonds", parsed("find me diamonds"));
         assertEquals("FIND_PLACE:", parsed("explore"));
     }
+
+    @Test void goingAfkWithWhatToDoMeanwhile() {
+        var c = CommandParser.parse("Going AFK, fill up a chest with food while I'm out.", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.AFK, c.kind());
+        assertEquals("fill up a chest with food while i'm out", c.value(), "any length; the order goes with it");
+        assertEquals("make sure i dont die", CommandParser.parse("Going AFK, make sure I dont die", "Pal").orElseThrow().value());
+        assertEquals("block yourself in, don't die",
+                CommandParser.parse("Going AFK, block yourself in, don't die", "Pal").orElseThrow().value());
+        assertEquals("keep me safe", CommandParser.parse("brb - keep me safe", "Pal").orElseThrow().value());
+        assertEquals("smelt the iron", CommandParser.parse("going afk and smelt the iron", "Pal").orElseThrow().value());
+        var plain = CommandParser.parse("going afk", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.AFK, plain.kind());
+        assertNull(plain.value());
+        assertTrue(CommandParser.parse("afk farm is broken", "Pal").isEmpty(), "talk about an AFK farm is not going AFK");
+    }
 }

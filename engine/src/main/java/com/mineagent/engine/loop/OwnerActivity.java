@@ -62,6 +62,11 @@ public final class OwnerActivity {
         return afk;
     }
 
+    /** They said they're going AFK and have done nothing since: AFK starts at the next look. */
+    public synchronized boolean awaitingAfk() {
+        return saidAfkAt > 0L;
+    }
+
     /** A fight it won while they were away, for the line it says when they're back. */
     public synchronized void wonFight() {
         if (afk) fightsWon++;

@@ -123,6 +123,7 @@ public record MineAgentConfig(
      *                         up to 256)
      * @param afkFarmLeftAlone at a farm its owner is AFK at, place and break nothing within 16 blocks of them and
      *                         leave the farm's mobs be
+     * @param afkKeepBusy      while its owner is AFK and it has nothing to do, it finds its own work, as in auto mode
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -140,10 +141,11 @@ public record MineAgentConfig(
         boolean avoidMobs,
         boolean longTrips,
         int afkStayWithin,
-        boolean afkFarmLeftAlone
+        boolean afkFarmLeftAlone,
+        boolean afkKeepBusy
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true
+            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true
         );
     }
 
@@ -245,7 +247,7 @@ public record MineAgentConfig(
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
-                rawBehaviour.afkFarmLeftAlone);
+                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

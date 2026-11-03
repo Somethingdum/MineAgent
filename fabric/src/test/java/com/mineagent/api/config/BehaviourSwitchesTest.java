@@ -49,6 +49,7 @@ final class BehaviourSwitchesTest {
         assertFalse(d.afkGuardMe(), "guarding an AFK owner is optional, off");
         assertEquals(0, d.afkStayWithin(), "no distance to keep within");
         assertTrue(d.afkFarmLeftAlone(), "a farm they're AFK at is still left alone");
+        assertTrue(d.afkKeepBusy(), "AFK just means away: it keeps busy");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

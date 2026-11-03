@@ -49,6 +49,12 @@ public final class TaskRegistration {
                 StoreItemsTask::new
         );
 
+        // Walled in while its owner is away, when asked (SMH plan 70, MA5.4)
+        CompanionTaskFactory.register(
+                ShelterTask.ShelterRecord.class,
+                ShelterTask::new
+        );
+
         // Mining
         CompanionTaskFactory.register(
                 AutoMineTool.MineBlockTaskRecord.class,

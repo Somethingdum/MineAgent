@@ -1772,4 +1772,119 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** What it last said to its owner, from its journal (empty if nothing yet). */
+    private static String lastSaid(Scene s, String startingWith) {
+        var said = s.loop().journal().recent(40).stream()
+                .filter(e -> "said".equals(e.kind()) && e.text().startsWith(startingWith)).toList();
+        return said.isEmpty() ? "" : said.get(said.size() - 1).text();
+    }
+
+    /** Plan 70, MA5.4, the owner's words: "Going AFK, make sure I dont die": kept safe under a roof too, until they're back. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_keep_safe", timeoutTicks = 300)
+    public void goingAfkMakeSureIDontDie(GameTestHelper helper) {
+        Scene s = scene(helper, "Minder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 1; x <= 5; x++) for (int z = 1; z <= 5; z++) helper.setBlock(x, 3, z, Blocks.STONE); // not out in the open
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "Going AFK, make sure I dont die"));
+        boolean[] guarded = {false};
+        helper.onEachTick(() -> {
+            var setup = s.loop().combatSetup(s.body(), s.owner());
+            boolean guarding = setup.duty() == com.mineagent.engine.combat.CombatBrain.Duty.GUARD
+                    && s.owner().getUUID().equals(setup.ward());
+            if (!guarded[0] && guarding && s.loop().ownerAfk()) {
+                guarded[0] = true;
+                String said = lastSaid(s, "Got it");
+                if (!said.contains("keep you safe")) {
+                    tidy(s);
+                    fail(helper, "it guarded them but said: " + said);
+                    return;
+                }
+                MineAgentEngine.onPlayerChat(s.owner(), "back");
+            } else if (guarded[0] && !s.loop().ownerAfk()) {
+                boolean stoodDown = !guarding && !s.loop().afkOrder().any();
+                tidy(s);
+                if (stoodDown) helper.succeed();
+                else fail(helper, "back, but it still keeps them safe: duty " + setup.duty());
+            } else if (helper.getTick() >= 250) {
+                String how = "afk " + s.loop().ownerAfk() + ", duty " + setup.duty() + ", order " + s.loop().afkOrder();
+                tidy(s);
+                fail(helper, "it never kept the AFK owner safe: " + how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.4, the owner's words: "Going AFK, block yourself in, don't die". With dirt in its pack it walls
+     * itself in, sides and roof, and waits; when they're back it takes the walls down.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_shelter", timeoutTicks = 900)
+    public void goingAfkBlockYourselfInDontDie(GameTestHelper helper) {
+        Scene s = scene(helper, "Hermit");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(2, new ItemStack(Items.DIRT, 16));
+        // The owner a few steps off, so nobody stands where its walls go.
+        BlockPos away = helper.absolutePos(new BlockPos(3, 1, 10));
+        s.owner().teleportTo(helper.getLevel(), away.getX() + 0.5, away.getY(), away.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "Going AFK, block yourself in, don't die"));
+        int[] phase = {0};
+        BlockPos[] in = {null};
+        float health = s.body().getHealth();
+        helper.onEachTick(() -> {
+            trace(helper, s, "afk shelter");
+            var level = helper.getLevel();
+            BlockPos at = s.body().blockPosition();
+            java.util.List<BlockPos> walls = new java.util.ArrayList<>();
+            for (var d : new net.minecraft.core.Direction[] {net.minecraft.core.Direction.NORTH, net.minecraft.core.Direction.EAST,
+                    net.minecraft.core.Direction.SOUTH, net.minecraft.core.Direction.WEST}) {
+                walls.add(at.relative(d));
+                walls.add(at.above().relative(d));
+            }
+            walls.add(at.above(2));
+            long closed = walls.stream().filter(p -> !com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p))).count();
+            if (phase[0] == 0 && closed == walls.size()) {
+                phase[0] = 1;
+                in[0] = at;
+                helper.runAfterDelay(60, () -> MineAgentEngine.onPlayerChat(s.owner(), "back"));
+            } else if (phase[0] == 1 && !at.equals(in[0]) && helper.getTick() > 0 && s.loop().ownerAfk()) {
+                tidy(s);
+                fail(helper, "walled in, it left its shelter before the owner was back");
+            } else if (phase[0] == 1 && !s.loop().ownerAfk() && !s.loop().afkOrder().any()) {
+                phase[0] = 2;
+            } else if (phase[0] == 2 && closed <= 3) {
+                boolean unhurt = s.body().getHealth() >= health;
+                tidy(s);
+                if (unhurt) helper.succeed();
+                else fail(helper, "out again, but hurt: " + s.body().getHealth());
+            } else if (helper.getTick() >= 850) {
+                String how = "phase " + phase[0] + ", " + closed + " of " + walls.size() + " walls up, dirt left "
+                        + s.body().getInventory().countItem(Items.DIRT) + ", said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.4, the owner's words: "Going AFK, fill up a chest with food while I'm out." The job is its goal
+     * while they're away (the model works it; then it finds something else to do), and it says so.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_job", timeoutTicks = 200)
+    public void goingAfkFillUpAChestWithFood(GameTestHelper helper) {
+        Scene s = scene(helper, "Larder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "Going AFK, fill up a chest with food while I'm out."));
+        helper.runAfterDelay(20, () -> {
+            var goal = s.loop().goalBook().active();
+            String said = lastSaid(s, "Got it");
+            boolean job = goal.isPresent() && goal.get().text().contains("fill up a chest with food")
+                    && !goal.get().text().contains("while");
+            boolean told = said.contains("fill up a chest with food, then find something else to do");
+            boolean afk = s.loop().ownerAfk();
+            String how = "goal " + goal.map(g -> g.text()).orElse("none") + "; said: " + said + "; afk " + afk;
+            tidy(s);
+            if (job && told && afk) helper.succeed();
+            else fail(helper, how);
+        });
+    }
 }
