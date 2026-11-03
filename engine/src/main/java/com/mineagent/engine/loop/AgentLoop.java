@@ -208,6 +208,8 @@ public class AgentLoop {
     private final com.mineagent.engine.planning.PlanReview planReview = new com.mineagent.engine.planning.PlanReview();
     /** Hostiles within 16 blocks, taken on the server thread each second for the situation brief (MA4.2). */
     private volatile List<com.mineagent.engine.planning.SituationBrief.Hostile> nearbyHostiles = List.of();
+    /** What it guards, read on the server thread with the hostiles (the brief is built on the model's thread). */
+    private volatile String guardLine = "";
     /** Fighting ways the model came up with, rated beside the stances (combat/TacticBook); kept with the scores. */
     private final com.mineagent.engine.combat.TacticBook tacticBook = new com.mineagent.engine.combat.TacticBook();
     /** Skill repair (learning/SkillRepair): repairs under way, by base skill, and the last failures of each skill. */
@@ -1258,9 +1260,9 @@ public class AgentLoop {
             }
             case RESUME -> {
                 var g = goalBook.resume();
-                if (g.isEmpty()) {
-                    speakToOwner("There's no goal to go back to. Say \"goal: ...\" to give me one.");
-                } else if (onSelfGoal(goalPrompt(g.get(), null))) {
+                // No long goal to go back to: "continue" is the model's to read, as before.
+                if (g.isEmpty()) return false;
+                if (onSelfGoal(goalPrompt(g.get(), null))) {
                     speakToOwner("Back to " + g.get().id() + ": " + truncateForLog(g.get().text(), 120) + ".");
                 } else {
                     speakToOwner("Goal " + g.get().id() + " is next, once I'm off guard and out of parked mode.");
@@ -1714,6 +1716,7 @@ public class AgentLoop {
         }
         found.sort(Comparator.comparingInt(com.mineagent.engine.planning.SituationBrief.Hostile::distance));
         nearbyHostiles = List.copyOf(found);
+        guardLine = guarding() ? guardState() : "";
     }
 
     /**
@@ -1721,6 +1724,15 @@ public class AgentLoop {
      * stands, hostiles within 16 blocks, the last three lessons that match. Never sent to a stranger.
      */
     public String situationBrief() {
+        try {
+            return briefNow();
+        } catch (RuntimeException e) {
+            // Never the reason a call fails: the brief is a help, not a need.
+            return com.mineagent.engine.planning.SituationBrief.build(null, null, nearbyHostiles, List.of());
+        }
+    }
+
+    private String briefNow() {
         String doing;
         if (skillRuntime.active()) doing = "running the skill " + skillRuntime.snapshot().skillName();
         else if (curriculum.current() != null) doing = "practising: " + curriculum.current();
@@ -1728,7 +1740,7 @@ public class AgentLoop {
             LiveBodyState body = liveBodyState.get();
             String goal = planner.exportState().goal();
             doing = body != null && body.taskId() != null ? body.taskName()
-                    : goal != null && !goal.isBlank() ? goal : guarding() ? "guarding " + guardState() : "nothing";
+                    : goal != null && !goal.isBlank() ? goal : guarding() ? "guarding " + guardLine : "nothing";
         }
         String goalLine = goalBook.active().map(g -> com.mineagent.engine.planning.GoalBook.line(g, null)).orElse(null);
         List<String> lessons = reflection.matchingLessons(activeOwnerGoal, 3);
@@ -2424,9 +2436,12 @@ public class AgentLoop {
 
     /** Save this companion's memory and library now, off the server thread (the settings panel's changes). */
     public void saveMemoryNow() {
-        if (persistence == null) return;
+        if (persistence == null || closed) return;
         try {
-            talkExecutor.submit(() -> persistence.saveAll());
+            // A save queued before the companion went (despawned, its memory perhaps deleted) is dropped.
+            talkExecutor.submit(() -> {
+                if (!closed) persistence.saveAll();
+            });
         } catch (java.util.concurrent.RejectedExecutionException ignored) {
             // shutting down: saved on close
         }
@@ -5323,7 +5338,11 @@ public class AgentLoop {
      *  forces a shutdown with {@link ExecutorService#shutdownNow()} so the
      *  JVM can exit. Previously shutdown() returned immediately without
      *  waiting, which could orphan a running turn mid-LLM-call. */
+    /** Set when the loop shuts down: no save is started after it (shutdown saves once itself). */
+    private volatile boolean closed;
+
     public void shutdown() {
+        closed = true;
         synchronized (this) {
             suspended = true;
             eventGeneration.incrementAndGet();

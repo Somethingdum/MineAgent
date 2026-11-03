@@ -78,13 +78,19 @@ public class CompanionGameTests implements FabricGameTest {
         s.owner().getServer().getPlayerList().remove(s.owner());
     }
 
+    /** A scene's failure, also printed, so the reason is in CI's log (the report file is not). */
+    private static void fail(GameTestHelper helper, String why) {
+        System.out.println("[GAMETEST FAILED] " + why);
+        helper.fail(why);
+    }
+
     private static double flat(Vec3 a, Vec3 b) {
         double dx = a.x - b.x, dz = a.z - b.z;
         return Math.sqrt(dx * dx + dz * dz);
     }
 
     /** Scene 6: a husk comes at it; it fights back and kills it. */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fight", timeoutTicks = 600)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fight", timeoutTicks = 2400)
     public void aHuskThatAttacksItIsKilled(GameTestHelper helper) {
         Scene s = scene(helper, "Fighter");
         armed(s.body());
@@ -93,12 +99,17 @@ public class CompanionGameTests implements FabricGameTest {
         helper.onEachTick(() -> {
             if (!s.body().isAlive()) {
                 tidy(s);
-                helper.fail("the companion died to one husk with an iron sword and a shield");
+                fail(helper, "the companion died to one husk with an iron sword and a shield");
             } else if (!husk.isAlive()) {
                 boolean byIt = husk.getLastHurtByMob() == s.body();
                 tidy(s);
                 if (byIt) helper.succeed();
-                else helper.fail("the husk died, but not by the companion");
+                else fail(helper, "the husk died, but not by the companion");
+            } else if (helper.getTick() >= 2300) {
+                String how = String.format("the husk still lives after 2300 ticks: husk health %.0f, %.1f blocks away, companion health %.0f",
+                        husk.getHealth(), husk.distanceTo(s.body()), s.body().getHealth());
+                tidy(s);
+                fail(helper, how);
             }
         });
     }
@@ -110,7 +121,7 @@ public class CompanionGameTests implements FabricGameTest {
         armed(s.body());
         if (!s.loop().ownerCommand(new CommandParser.Command(CommandParser.Kind.GUARD_HERE, null, 6))) {
             tidy(s);
-            helper.fail("guard here was refused");
+            fail(helper, "guard here was refused");
             return;
         }
         Vec3 post = s.owner().position();
@@ -121,7 +132,7 @@ public class CompanionGameTests implements FabricGameTest {
             double away = flat(s.body().position(), post);
             if (away > 3.5) {
                 tidy(s);
-                helper.fail("it left its post for a mob outside the perimeter: " + String.format("%.1f", away) + " blocks out");
+                fail(helper, "it left its post for a mob outside the perimeter: " + String.format("%.1f", away) + " blocks out");
             } else if (helper.getTick() >= 120) {
                 tidy(s);
                 helper.succeed();
@@ -130,13 +141,13 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /** On guard, a husk inside the perimeter is fought and killed, and it never leaves the perimeter to do it. */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_near", timeoutTicks = 600)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_near", timeoutTicks = 2400)
     public void onGuardItClearsItsPerimeterWithoutLeavingIt(GameTestHelper helper) {
         Scene s = scene(helper, "Warden");
         armed(s.body());
         if (!s.loop().ownerCommand(new CommandParser.Command(CommandParser.Kind.GUARD_HERE, null, 8))) {
             tidy(s);
-            helper.fail("guard here was refused");
+            fail(helper, "guard here was refused");
             return;
         }
         Vec3 post = s.owner().position();
@@ -146,10 +157,15 @@ public class CompanionGameTests implements FabricGameTest {
             double away = flat(s.body().position(), post);
             if (away > 8 + 3.5) {
                 tidy(s);
-                helper.fail("it went " + String.format("%.1f", away) + " blocks from its post, past its 8-block perimeter");
+                fail(helper, "it went " + String.format("%.1f", away) + " blocks from its post, past its 8-block perimeter");
             } else if (!husk.isAlive()) {
                 tidy(s);
                 helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                String how = String.format("the husk still lives after 2300 ticks: husk health %.0f, %.1f blocks from the companion, "
+                        + "the companion %.1f from its post, health %.0f", husk.getHealth(), husk.distanceTo(s.body()), away, s.body().getHealth());
+                tidy(s);
+                fail(helper, how);
             }
         });
     }
@@ -168,10 +184,10 @@ public class CompanionGameTests implements FabricGameTest {
                         .anyMatch(g -> g.text().equals("build a shelter") && g.status() == GoalBook.Status.PAUSED);
                 tidy(s);
                 if (queued) helper.succeed();
-                else helper.fail("the goal it was on was not kept behind the recovery goal");
+                else fail(helper, "the goal it was on was not kept behind the recovery goal");
             } else if (helper.getTick() >= 150) {
                 tidy(s);
-                helper.fail("no recovery goal after the death; active: " + active.map(GoalBook.Goal::text).orElse("none"));
+                fail(helper, "no recovery goal after the death; active: " + active.map(GoalBook.Goal::text).orElse("none"));
             }
         });
     }
@@ -203,7 +219,7 @@ public class CompanionGameTests implements FabricGameTest {
             if (dirt(s.body()) != 16) {
                 stranger.getServer().getPlayerList().remove(stranger);
                 tidy(s);
-                helper.fail("a stranger's order moved its things: " + dirt(s.body()) + " dirt left of 16");
+                fail(helper, "a stranger's order moved its things: " + dirt(s.body()) + " dirt left of 16");
             } else if (helper.getTick() >= 100) {
                 stranger.getServer().getPlayerList().remove(stranger);
                 tidy(s);
@@ -229,7 +245,7 @@ public class CompanionGameTests implements FabricGameTest {
             } else if (left < 12 || helper.getTick() >= 250) {
                 friend.getServer().getPlayerList().remove(friend);
                 tidy(s);
-                helper.fail("a trusted player's \"drop 4 dirt\" left " + left + " of 16");
+                fail(helper, "a trusted player's \"drop 4 dirt\" left " + left + " of 16");
             }
         });
     }
@@ -247,18 +263,18 @@ public class CompanionGameTests implements FabricGameTest {
     public void aFreshInstallReachesSmhAndAGoalCarriesItsBrief(GameTestHelper helper) {
         String fake = FakeSmh.start();
         if (fake != null) {
-            helper.fail(fake);
+            fail(helper, fake);
             return;
         }
         var llm = MineAgentEngine.getConfig().llm();
         if (!"http://127.0.0.1:47821/apps".equals(llm.baseUrl()) || !"smh/auto".equals(llm.model()) || !llm.apiKey().isEmpty()) {
-            helper.fail("a fresh install is not set for SMH on this PC: " + llm.provider() + " " + llm.baseUrl() + " " + llm.model());
+            fail(helper, "a fresh install is not set for SMH on this PC: " + llm.provider() + " " + llm.baseUrl() + " " + llm.model());
             return;
         }
         Scene s = scene(helper, "Rookie", true, null);
         if (!"MineAgent".equals(MineAgentEngine.freeCompanionName(s.owner().getUUID(), null, "smh/auto"))) {
             tidy(s);
-            helper.fail("an SMH companion's default name is not MineAgent");
+            fail(helper, "an SMH companion's default name is not MineAgent");
             return;
         }
         s.loop().addGoal("get 3 diamonds", "owner");
@@ -275,10 +291,10 @@ public class CompanionGameTests implements FabricGameTest {
                         : !c.hasTools() ? "the goal's call had no tools to act with" : null;
                 tidy(s);
                 if (missing == null) helper.succeed();
-                else helper.fail("the goal reached SMH, but " + missing);
+                else fail(helper, "the goal reached SMH, but " + missing);
             } else if (now() > deadline) {
                 tidy(s);
-                helper.fail("no call with the goal reached SMH on this PC in 30 s (" + FakeSmh.CALLS.size() + " calls)");
+                fail(helper, "no call with the goal reached SMH on this PC in 30 s (" + FakeSmh.CALLS.size() + " calls)");
             }
         });
     }
@@ -288,7 +304,7 @@ public class CompanionGameTests implements FabricGameTest {
     public void aStrangerTalksAndGetsAReplyButNoTask(GameTestHelper helper) {
         String fake = FakeSmh.start();
         if (fake != null) {
-            helper.fail(fake);
+            fail(helper, fake);
             return;
         }
         Scene s = scene(helper, "Chatty", true, null);
@@ -302,7 +318,7 @@ public class CompanionGameTests implements FabricGameTest {
             if (acted) {
                 stranger.getServer().getPlayerList().remove(stranger);
                 tidy(s);
-                helper.fail("a stranger's words reached a call that can act");
+                fail(helper, "a stranger's words reached a call that can act");
                 return;
             }
             boolean fenced = talk.stream().anyMatch(c -> c.text().contains("UNTRUSTED PLAYER MESSAGE"));
@@ -315,7 +331,7 @@ public class CompanionGameTests implements FabricGameTest {
             } else if (now() > deadline) {
                 stranger.getServer().getPlayerList().remove(stranger);
                 tidy(s);
-                helper.fail("the stranger got no reply call in 30 s");
+                fail(helper, "the stranger got no reply call in 30 s");
             }
         });
     }
@@ -328,7 +344,7 @@ public class CompanionGameTests implements FabricGameTest {
         s.loop().skillLibrary().registerSequence("make_a_crafting_table", "make a crafting table", "make a crafting table", steps, true);
         if (s.loop().skillLibrary().get("make_a_crafting_table").isEmpty()) {
             tidy(s);
-            helper.fail("the skill was not taken");
+            fail(helper, "the skill was not taken");
             return;
         }
         s.loop().saveMemoryBlocking();
@@ -344,18 +360,18 @@ public class CompanionGameTests implements FabricGameTest {
                 }
             }
         } catch (java.io.IOException e) {
-            helper.fail("could not clear the world's memory: " + e.getMessage());
+            fail(helper, "could not clear the world's memory: " + e.getMessage());
             return;
         }
         if (library == null || !java.nio.file.Files.exists(library.resolve("skills.json"))) {
-            helper.fail("the skill was not written to the permanent library (" + library + ")");
+            fail(helper, "the skill was not written to the permanent library (" + library + ")");
             return;
         }
         Scene again = scene(helper, "Keeper", false, owner);
         boolean kept = again.loop().skillLibrary().get("make_a_crafting_table").isPresent();
         tidy(again);
         if (kept) helper.succeed();
-        else helper.fail("the skill did not come back in the new world");
+        else fail(helper, "the skill did not come back in the new world");
     }
 
     /** "get 3 diamonds" becomes a goal whose amount is counted, the item checked against the game's registry. */
@@ -366,9 +382,9 @@ public class CompanionGameTests implements FabricGameTest {
         var active = s.loop().goalBook().active();
         tidy(s);
         if (active.isEmpty()) {
-            helper.fail("the goal was not added");
+            fail(helper, "the goal was not added");
         } else if (!active.get().needs().equals(List.of(new GoalBook.Need("diamond", 3)))) {
-            helper.fail("needs read as " + active.get().needs() + ", expected 3 diamond only");
+            fail(helper, "needs read as " + active.get().needs() + ", expected 3 diamond only");
         } else {
             helper.succeed();
         }

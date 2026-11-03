@@ -92,6 +92,7 @@ public final class MobDefenseChain implements TaskChain {
     private final CompanionBodyLog bodyLog;
     private final AgentPlayer companion;
     private PlayerNav nav;
+    private net.minecraft.world.level.Level navLevel;
 
     /** What getPriority saw this tick, reused by tick(). */
     private Snapshot seen;
@@ -596,8 +597,13 @@ public final class MobDefenseChain implements TaskChain {
     }
 
     private PlayerNav nav() {
-        if (nav == null || nav.player() == null) {
+        // A path finder knows one world's blocks: a new one after a change of dimension (as FollowChain does).
+        var level = serverPlayer().level();
+        if (nav == null || nav.player() == null || navLevel != level) {
+            if (nav != null) nav.cancel();
             nav = new PlayerNav(companion, TaskContext.navCaches(companion));
+            navLevel = level;
+            navGoal = null;
         }
         return nav;
     }
