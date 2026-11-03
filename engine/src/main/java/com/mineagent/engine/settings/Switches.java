@@ -10,6 +10,11 @@ import com.mineagent.engine.MineAgentEngine;
 public final class Switches {
     private Switches() {}
 
+    /** All the switches as they are now. */
+    public static MineAgentConfig.BehaviourConfig behaviour() {
+        return b();
+    }
+
     private static MineAgentConfig.BehaviourConfig b() {
         MineAgentConfig config = MineAgentEngine.getConfig();
         return config == null || config.behaviour() == null ? MineAgentConfig.BehaviourConfig.DEFAULTS : config.behaviour();

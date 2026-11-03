@@ -24,7 +24,19 @@ public class AgentSettingsScreen extends Screen {
     private static final int BUTTON_HEIGHT = 20;
     private static final int ROW = 24;
     private static final int LINE = 12;
-    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "goals", "combat", "callrate"};
+    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "goals", "combat", "callrate",
+            "behaviour"};
+
+    /** The behaviour switches as the panel names them (SMH plan 70, Switches). */
+    private static final String[][] SWITCHES = {
+            {"neverBreakBuilt", "Keep built blocks"}, {"rememberPlaced", "Remember placed"}, {"closeDoors", "Close doors"},
+            {"afkGuard", "Guard me AFK"}, {"sleepWithPlayers", "Sleep with players"}, {"routeMemory", "Route memory"},
+            {"sprint", "Sprint"}, {"saveWithWorld", "Save with world"}, {"swim", "Swim"}, {"waterDrops", "Water drops"},
+            {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"}};
+    private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};
+    private static final int[] THINGS_SEEN = {10_000, 50_000, 100_000, 200_000};
+    private static final int[] JOURNAL_DAYS = {30, 90, 365, 3_650};
+    private static final int[] CHESTS = {1_024, 4_096, 8_192, 16_384};
     private static final int[] GUARD_RADII = {8, 12, 16, 24};
     private static int guardRadiusChoice = 1;
     private static final int GOALS_SHOWN = 5;
@@ -80,6 +92,7 @@ public class AgentSettingsScreen extends Screen {
                 case "learning" -> learning(state);
                 case "goals" -> goals(state);
                 case "combat" -> combat(state);
+                case "behaviour" -> behaviour(state);
                 default -> callRate(state);
             }
         }
@@ -245,6 +258,45 @@ public class AgentSettingsScreen extends Screen {
             goalField.setValue("");
             command("mineagent goal add " + text);
         }).bounds(left + innerWidth - 80, y + 4, 80, BUTTON_HEIGHT).build());
+    }
+
+    /** Each switch on or off, and how much it remembers: set on the server with /mineagent setconfig, then shown again. */
+    private void behaviour(JsonObject s) {
+        JsonObject b = s.has("behaviour") && s.get("behaviour").isJsonObject() ? s.getAsJsonObject("behaviour") : new JsonObject();
+        JsonObject m = s.has("memory") && s.get("memory").isJsonObject() ? s.getAsJsonObject("memory") : new JsonObject();
+        int cols = 3;
+        int gap = 4;
+        int w = (innerWidth - gap * (cols - 1)) / cols;
+        int y = contentTop;
+        int i = 0;
+        for (String[] sw : SWITCHES) {
+            boolean on = !b.has(sw[0]) || b.get(sw[0]).getAsBoolean();
+            int x = left + (i % cols) * (w + gap);
+            this.addRenderableWidget(Button.builder(Component.literal(sw[1] + ": " + (on ? "on" : "off")), ignored -> {
+                command("mineagent setconfig behaviour." + sw[0] + " " + (on ? "off" : "on"));
+                command("mineagent settings");
+            }).bounds(x, y + (i / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
+            i++;
+        }
+        i = cycle(b, "afkMinutes", "behaviour.afkMinutes", "AFK after", " min", AFK_MINUTES, i, cols, w, gap, y);
+        i = cycle(m, "thingsSeen", "memory.thingsSeen", "Things seen", "", THINGS_SEEN, i, cols, w, gap, y);
+        i = cycle(m, "journalDays", "memory.journalDays", "Journal", " days", JOURNAL_DAYS, i, cols, w, gap, y);
+        cycle(m, "chests", "memory.chests", "Chests", "", CHESTS, i, cols, w, gap, y);
+    }
+
+    /** A setting stepped through a few values; the one after its present value is sent. */
+    private int cycle(JsonObject from, String field, String key, String label, String unit, int[] values,
+                      int i, int cols, int w, int gap, int y) {
+        int now = from.has(field) ? from.get(field).getAsInt() : values[0];
+        int next = values[0];
+        for (int v : values) if (v > now) { next = v; break; }
+        final int send = next;
+        int x = left + (i % cols) * (w + gap);
+        this.addRenderableWidget(Button.builder(Component.literal(label + ": " + String.format("%,d", now) + unit), ignored -> {
+            command("mineagent setconfig " + key + " " + send);
+            command("mineagent settings");
+        }).bounds(x, y + (i / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
+        return i + 1;
     }
 
     /** Guard here or stand down, whom it may attack, and how its fights have gone, as the game rated them. */

@@ -184,6 +184,7 @@
   "screen.mineagent.agent.goal_done": "Done",
   "screen.mineagent.agent.goal_drop": "Drop",
   "screen.mineagent.agent.tab.combat": "Combat",
+  "screen.mineagent.agent.tab.behaviour": "Behaviour",
   "screen.mineagent.agent.not_guarding": "Not guarding. Stand where it should guard and press Guard here.",
   "screen.mineagent.agent.guarding": "Guarding %s, %s blocks around.",
   "screen.mineagent.agent.guard_here": "Guard here",

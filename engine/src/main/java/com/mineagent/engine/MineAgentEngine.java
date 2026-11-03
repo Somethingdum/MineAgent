@@ -2792,10 +2792,22 @@ public final class MineAgentEngine {
                                                 comp.name(), comp.gameMode(), value,
                                                 comp.instantBreak(), comp.creativeReach());
                                         default -> {
+                                            // The behaviour switches and memory sizes (SMH plan 70).
+                                            var changed = com.mineagent.engine.settings.SettingsCommand.withSetting(
+                                                    config, StringArgumentType.getString(ctx, "key"), value);
+                                            if (changed != null) {
+                                                config = changed;
+                                                if (configDirPath != null) config.save(configDirPath);
+                                                source.sendSuccess(() -> Component.literal(
+                                                        "§a[MineAgent] Config updated: §f" + key + "§a = §f" + value), false);
+                                                return 1;
+                                            }
                                             source.sendFailure(Component.literal(
-                                                    "§c[MineAgent] Unknown key: " + key));
+                                                    "§c[MineAgent] Unknown key or value: " + key));
                                             source.sendFailure(Component.literal(
-                                                    "§7Valid: provider, model, apikey, baseurl, temperature, name, skin"));
+                                                    "§7Valid: provider, model, apikey, baseurl, temperature, name, skin,"
+                                                            + " behaviour.<switch> on|off, behaviour.afkMinutes <n>,"
+                                                            + " memory.thingsSeen|journalDays|chests <n>"));
                                             return 0;
                                         }
                                     }
