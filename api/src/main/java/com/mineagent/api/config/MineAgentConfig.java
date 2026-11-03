@@ -124,6 +124,8 @@ public record MineAgentConfig(
      * @param afkFarmLeftAlone at a farm its owner is AFK at, place and break nothing within 16 blocks of them and
      *                         leave the farm's mobs be
      * @param afkKeepBusy      while its owner is AFK and it has nothing to do, it finds its own work, as in auto mode
+     * @param huntForOrders    hunt animals for what an order needs ("fill a chest with food"): grown farm animals only,
+     *                         never pets, horses, ones with a name or the last two of a kind near it
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -142,10 +144,11 @@ public record MineAgentConfig(
         boolean longTrips,
         int afkStayWithin,
         boolean afkFarmLeftAlone,
-        boolean afkKeepBusy
+        boolean afkKeepBusy,
+        boolean huntForOrders
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true
+            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true
         );
     }
 
@@ -247,7 +250,7 @@ public record MineAgentConfig(
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
-                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy);
+                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

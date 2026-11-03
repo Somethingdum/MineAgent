@@ -35,6 +35,12 @@ public final class ProductionPlanner {
     static final double WALK_PER_BLOCK = 9.0;
     /** A block it has never seen: a search first, priced as this many ticks for every block mined. */
     static final double UNSEEN = 400.0;
+    /** Going to a furnace, loading it, emptying it: about 5 seconds each it lights. */
+    static final double TEND_TICKS = 100.0;
+    /** Going off to get fuel at all (to the trees, to coal) when what it carries would do: 10 seconds. */
+    static final double ERRAND_TICKS = 200.0;
+    /** Finding something it hasn't seen (trees from a desert, coal it hasn't come across): about two minutes. */
+    static final double SEARCH_TICKS = 2_400.0;
     /** Ticks a craft takes (a player's click), and fetching one stack from a chest it knows. */
     static final double CRAFT_TICKS = 4.0;
     static final double FETCH_PER_STACK = 20.0;
@@ -59,12 +65,16 @@ public final class ProductionPlanner {
     private final List<Step> steps = new ArrayList<>();
     private final Map<String, Integer> toolsMade = new LinkedHashMap<>();
     private final List<String> problems = new ArrayList<>();
+    /** Sources not to use: found no more of. */
+    private final Set<String> without;
+    private int smokers, blasts;
 
-    public enum Action { FETCH, MINE, CRAFT, SMELT }
+    public enum Action { FETCH, MINE, HUNT, CRAFT, SMELT }
 
     /**
      * One step of the job: FETCH {@code count} of {@code item} from its chests; MINE {@code blocks} of {@code block}
-     * for {@code count} of {@code item} with {@code tool}; CRAFT {@code batches} of {@code recipe} for {@code count}
+     * for {@code count} of {@code item} with {@code tool}; HUNT {@code blocks} animals ({@code block},
+     * "entity:minecraft:cow") for {@code count} of what they drop; CRAFT {@code batches} of {@code recipe} for {@code count}
      * of {@code item}; SMELT {@code count} of {@code input} into {@code item} in {@code furnaces} furnaces burning
      * {@code fuelCount} {@code fuel}.
      */
@@ -86,35 +96,73 @@ public final class ProductionPlanner {
                 switch (s.action()) {
                     case FETCH -> parts.add(String.format(Locale.ROOT, "%,d %s from my chests", s.count(), plural(s.item(), s.count())));
                     case MINE -> parts.add(String.format(Locale.ROOT, "mine %,d %s", s.blocks(), plural(s.block(), s.blocks())));
-                    case SMELT -> parts.add(String.format(Locale.ROOT, "smelt %,d %s into %s in %d %s with %,d %s",
-                            s.count(), plural(s.input(), s.count()), name(s.item()), s.furnaces(), s.furnaces() == 1 ? "furnace" : "furnaces",
-                            s.fuelCount(), plural(s.fuel(), s.fuelCount())));
+                    case HUNT -> parts.add(String.format(Locale.ROOT, "hunt %,d %s", s.blocks(), plural(s.block(), s.blocks())));
+                    case SMELT -> {
+                        String station = s.recipe() != null && s.recipe().contains("smoking") ? "smoker"
+                                : s.recipe() != null && s.recipe().contains("blasting") ? "blast furnace" : "furnace";
+                        parts.add(String.format(Locale.ROOT, "%s %,d %s into %s in %d %s with %,d %s",
+                                station.equals("smoker") ? "cook" : "smelt", s.count(), plural(s.input(), s.count()), name(s.item()),
+                                s.furnaces(), s.furnaces() == 1 ? station : station + "s",
+                                s.fuelCount(), plural(s.fuel(), s.fuelCount())));
+                    }
                     case CRAFT -> {
                         if (!s.item().equals(item)) parts.add(String.format(Locale.ROOT, "craft %,d %s", s.count(), plural(s.item(), s.count())));
                     }
                 }
             }
             String head = String.format(Locale.ROOT, "%,d %s", count, plural(item, count));
-            String minutes = ticks < 1_200 ? "under a minute" : String.format(Locale.ROOT, "about %d minutes", Math.round(ticks / 1_200.0));
+            long m = Math.round(ticks / 1_200.0);
+            String minutes = ticks < 1_200 ? "under a minute" : m <= 1 ? "about a minute" : String.format(Locale.ROOT, "about %d minutes", m);
             return head + ": " + String.join(", ", parts) + "; " + minutes + ".";
         }
     }
 
-    private ProductionPlanner(Book book, Have have) {
+    private ProductionPlanner(Book book, Have have, Set<String> without) {
         this.book = book;
         this.have = have;
+        this.without = without;
         carried.putAll(have.carried());
         stored.putAll(have.stored());
         tools.addAll(have.tools());
         furnaces = have.furnaces();
+        smokers = have.smokers();
+        blasts = have.blastFurnaces();
         table = have.table();
     }
 
     /** The cheapest way to have {@code count} of {@code item}, start to finish. */
     public static Plan plan(Book book, Have have, String item, int count) {
-        ProductionPlanner p = new ProductionPlanner(book, have);
+        return plan(book, have, item, count, Set.of());
+    }
+
+    /**
+     * As {@link #plan(Book, Have, String, int)}, without the sources in {@code without} (blocks or animals it found no
+     * more of on the way).
+     */
+    public static Plan plan(Book book, Have have, String item, int count, Set<String> without) {
+        ProductionPlanner p = new ProductionPlanner(book, have, without == null ? Set.of() : without);
+        // A furnace (or smoker, or blast furnace) it carries is counted as one it can use, not as an item to spend
+        // as well; unless furnaces are the order.
+        p.stationsNotItems("minecraft:furnace", have.furnaces(), item);
+        p.stationsNotItems("minecraft:smoker", have.smokers(), item);
+        p.stationsNotItems("minecraft:blast_furnace", have.blastFurnaces(), item);
         if (count > 0) p.make(item, count, 0, new HashSet<>());
         return p.finish(item, count);
+    }
+
+    /**
+     * The most of {@code item} it can make, up to {@code count}, without those sources: the whole when it can, else
+     * the largest part (it ran out of cows; the raw beef it carries is still cooked). 0 when none.
+     */
+    public static int most(Book book, Have have, String item, int count, Set<String> without) {
+        if (plan(book, have, item, count, without).possible()) return count;
+        int lo = 0, hi = count - 1;
+        while (lo < hi) {
+            int mid = (lo + hi + 1) / 2;
+            if (plan(book, have, item, mid, without).possible()) lo = mid;
+            else hi = mid - 1;
+        }
+        return lo;
     }
 
     private Plan finish(String item, int count) {
@@ -126,7 +174,8 @@ public final class ProductionPlanner {
         for (Step s : merged) {
             switch (s.action()) {
                 case FETCH -> ticks += FETCH_PER_STACK * Math.ceil(s.count() / 64.0);
-                case MINE -> {
+                case MINE, HUNT -> {
+                    if (!mined.containsKey(s.block())) ticks += getThere(s.block());
                     mined.merge(s.block(), s.blocks(), Integer::sum);
                     ticks += s.blocks() * (breakTicks(s.block(), s.item()) + MINE_WALK);
                 }
@@ -143,6 +192,14 @@ public final class ProductionPlanner {
         return new Plan(item, count, merged, mined, new LinkedHashMap<>(toolsMade), built, fuel, ticks, List.copyOf(problems));
     }
 
+    /** Getting to where a block or animal is, once: nothing for stone; there and back to one it has seen; a search. */
+    private double getThere(String block) {
+        Where w = have.where(block);
+        if (w == Where.COMMON) return 0;
+        if (w == Where.KNOWN) return 2.0 * WALK_PER_BLOCK * have.knownDistance().getOrDefault(block, 32);
+        return SEARCH_TICKS;
+    }
+
     // ── Pricing ─────────────────────────────────────────────────────
 
     /** Ticks for one more of {@code item} made the cheapest way, from scratch (what it has is priced elsewhere). */
@@ -154,6 +211,8 @@ public final class ProductionPlanner {
         double best = Double.POSITIVE_INFINITY;
         for (Source s : book.sources(item)) best = Math.min(best, mineUnit(s, path));
         for (Recipe r : book.recipes(item)) best = Math.min(best, recipeUnit(r, path));
+        // No more to be had, but some in hand (the beef it carries once the cows are gone): those are used.
+        if (Double.isInfinite(best) && available(item) > 0) best = 0;
         path.remove(item);
         memo.put(item, best);
         return best;
@@ -163,7 +222,8 @@ public final class ProductionPlanner {
     private final Set<String> noSilk = new HashSet<>();
 
     private double mineUnit(Source s, Set<String> path) {
-        if (s.perBlock() <= 0 || (s.silkTouch() && noSilk.contains(s.item()))) return Double.POSITIVE_INFINITY;
+        if (s.perBlock() <= 0 || (s.silkTouch() && noSilk.contains(s.item())) || without.contains(s.block())
+                || Production.animal(s.block()) && without.contains(Production.ENTITY + "*")) return Double.POSITIVE_INFINITY;
         double wear = toolWear(s, path);
         if (Double.isInfinite(wear)) return wear;
         Where where = have.where(s.block());
@@ -188,7 +248,8 @@ public final class ProductionPlanner {
 
     private double recipeUnit(Recipe r, Set<String> path) {
         if (r.kind() == Kind.STONECUT || r.kind() == Kind.CAMPFIRE) return Double.POSITIVE_INFINITY; // stations it doesn't run yet
-        if ((r.kind() == Kind.BLAST || r.kind() == Kind.SMOKE)) return Double.POSITIVE_INFINITY; // a furnace does those too
+        // A smoker or blast furnace when it has one (twice as quick for food or ore); it doesn't build them.
+        if (r.kind() == Kind.BLAST && blasts == 0 || r.kind() == Kind.SMOKE && smokers == 0) return Double.POSITIVE_INFINITY;
         double in = 0;
         for (Need n : r.needs()) {
             double cheapest = Double.POSITIVE_INFINITY;
@@ -196,7 +257,8 @@ public final class ProductionPlanner {
             in += cheapest * n.count();
             if (Double.isInfinite(in)) return in;
         }
-        double work = r.cooked() ? r.cookTicks() / TYPICAL_FURNACES + fuelPerSmelt(path) * r.cookTicks() / SMELT_TICKS : CRAFT_TICKS;
+        double stations = r.kind() == Kind.SMELT ? TYPICAL_FURNACES : Math.max(1, r.kind() == Kind.SMOKE ? smokers : blasts);
+        double work = r.cooked() ? r.cookTicks() / stations + fuelPerSmelt(path) * r.cookTicks() / SMELT_TICKS : CRAFT_TICKS;
         return (in + work) / Math.max(1, r.outputCount());
     }
 
@@ -368,7 +430,8 @@ public final class ProductionPlanner {
             spendUses(s, blocks);
             if (toolName.isEmpty()) toolName = s.tool();
         }
-        steps.add(new Step(Action.MINE, s.item(), count, null, 0, s.block(), blocks, toolName, null, null, 0, 0, false));
+        steps.add(new Step(Production.animal(s.block()) ? Action.HUNT : Action.MINE, s.item(), count, null, 0, s.block(), blocks,
+                toolName, null, null, 0, 0, false));
         // What is mined beyond the order and the tools made on the way is left over, for later steps.
         int surplus = (int) Math.floor(blocks * s.perBlock()) - count - extra;
         if (surplus > 0) carried.merge(s.item(), surplus, Integer::sum);
@@ -441,50 +504,104 @@ public final class ProductionPlanner {
         if (made > count) carried.merge(r.output(), made - count, Integer::sum);
     }
 
-    private void smelt(Recipe r, int items, int depth, Set<String> path) {
-        Need in = r.needs().get(0);
-        String input = pick(in, items * in.count(), path);
-        make(input, items * in.count(), depth + 1, path);
-        // Furnaces and fuel together: each furnace takes whole pieces of fuel's worth (a coal, 8 items), so the
-        // furnaces worth lighting depend on the fuel; the cheapest pair of the time saved, the furnaces built and the
-        // fuel not already had.
-        memo.clear();
-        double furnaceCost = unit("minecraft:furnace", new HashSet<>(path));
-        String fuel = null;
-        FurnaceSplit.Split chosen = null;
-        double bestTotal = Double.POSITIVE_INFINITY;
+    /** The fuel and furnaces for a smelt, and what they cost all told (the time, the furnaces built, fuel got). */
+    private record Cook(Recipe recipe, String fuel, FurnaceSplit.Split split, double total) {}
+
+    private int stationsFor(Kind kind) {
+        return kind == Kind.SMELT ? furnaces : kind == Kind.SMOKE ? smokers : kind == Kind.BLAST ? blasts : 0;
+    }
+
+    /**
+     * The cheapest fuel and number of stations for {@code items} of {@code r}: each takes whole pieces of fuel's worth
+     * (a coal, 8 items; a smoker or blast furnace burns fuel twice as fast as it cooks twice as fast), so the stations
+     * worth lighting depend on the fuel. Furnaces may be built; smokers and blast furnaces are only the ones it has.
+     */
+    private Cook bestCook(Recipe r, int items, Set<String> path) {
+        boolean furnace = r.kind() == Kind.SMELT;
+        int haveStations = stationsFor(r.kind());
+        if (!furnace && haveStations == 0) return null;
+        int mostStations = furnace ? MAX_FURNACES : haveStations;
+        Map<Integer, Double> buildCost = new HashMap<>();
+        Cook best = null;
         for (var e : book.fuelTicks().entrySet()) {
             if (e.getValue() < SMELT_TICKS / 2) continue;
+            int burn = furnace ? e.getValue() : e.getValue() / 2;
             memo.clear();
             double fuelUnit = unit(e.getKey(), new HashSet<>(path));
             int haveFuel = available(e.getKey());
-            for (int f = Math.max(1, furnaces); f <= MAX_FURNACES; f++) {
-                var sp = FurnaceSplit.split(items, f, r.cookTicks(), e.getValue());
-                int extra = Math.max(0, sp.furnaces() - furnaces);
-                double build = extra == 0 ? 0 : Double.isInfinite(furnaceCost) ? Double.POSITIVE_INFINITY : extra * furnaceCost;
+            for (int f = 1; f <= Math.max(mostStations, haveStations); f++) {
+                var sp = FurnaceSplit.split(items, f, r.cookTicks(), burn);
+                int extra = Math.max(0, sp.furnaces() - haveStations);
+                double build = extra == 0 ? 0 : !furnace ? Double.POSITIVE_INFINITY
+                        : buildCost.computeIfAbsent(extra, n -> furnacesCost(n, path));
                 int buy = Math.max(0, sp.fuelTotal() - haveFuel);
-                double fuelCost = buy == 0 ? 0 : buy * fuelUnit;
-                double total = sp.ticks() + build + fuelCost;
-                if (total < bestTotal - 1e-9 || (Math.abs(total - bestTotal) < 1e-9 && chosen != null && sp.furnaces() < chosen.furnaces())) {
-                    bestTotal = total;
-                    fuel = e.getKey();
-                    chosen = sp;
+                double fuelCost = buy == 0 ? 0 : buy * fuelUnit + ERRAND_TICKS;
+                double total = sp.ticks() + build + fuelCost + sp.furnaces() * TEND_TICKS;
+                if (best == null || total < best.total() - 1e-9
+                        || (Math.abs(total - best.total()) < 1e-9 && sp.furnaces() < best.split().furnaces())) {
+                    best = new Cook(r, e.getKey(), sp, total);
                 }
-                if (sp.furnaces() < f) break; // more furnaces than pieces of fuel light nothing more
+                if (sp.furnaces() < f) break; // more stations than pieces of fuel light nothing more
             }
         }
-        if (fuel == null || chosen == null || Double.isInfinite(bestTotal)) {
+        return best == null || Double.isInfinite(best.total()) ? null : best;
+    }
+
+    private void stationsNotItems(String station, int stations, String order) {
+        if (station.equals(order)) return;
+        int carriedN = carried.getOrDefault(station, 0);
+        if (carriedN > 0) carried.put(station, Math.max(0, carriedN - Math.max(0, stations)));
+    }
+
+    /** Nested plans for furnaces' cost, at most this deep. */
+    private int nesting;
+
+    /**
+     * What {@code n} more furnaces cost from what it has now, all of it (a first pickaxe when it has none, the
+     * cobblestone mined for them): a plan of their own, so the price is the job's and not an average per furnace.
+     */
+    private double furnacesCost(int n, Set<String> path) {
+        if (nesting >= 2) {
+            memo.clear();
+            return n * unit("minecraft:furnace", new HashSet<>(path));
+        }
+        Have now = new Have(new HashMap<>(carried), new HashMap<>(stored), new ArrayList<>(tools), furnaces, table,
+                have.blocks(), have.knownDistance(), smokers, blasts);
+        ProductionPlanner sub = new ProductionPlanner(book, now, without);
+        sub.nesting = nesting + 1;
+        sub.make("minecraft:furnace", n, 0, new HashSet<>(path));
+        Plan p = sub.finish("minecraft:furnace", n);
+        return p.possible() ? p.ticks() : Double.POSITIVE_INFINITY;
+    }
+
+    private void smelt(Recipe r, int items, int depth, Set<String> path) {
+        // What goes in first (every way of cooking it takes the same), then the way: the same thing cooked another
+        // way it has the station for (beef in its smoker, iron in its blast furnace), whichever costs less for this
+        // many, the furnaces it would build counted from what is left.
+        Need in = r.needs().get(0);
+        String input = pick(in, items * in.count(), path);
+        make(input, items * in.count(), depth + 1, path);
+        Cook chosen = bestCook(r, items, path);
+        for (Recipe alt : book.recipes(r.output())) {
+            if (alt == r || !alt.cooked() || alt.kind() == Kind.CAMPFIRE || !alt.needs().equals(r.needs())) continue;
+            Cook c = bestCook(alt, items, path);
+            if (c != null && (chosen == null || c.total() < chosen.total())) chosen = c;
+        }
+        if (chosen == null) {
             problems.add("I have no fuel and know no way to get any");
             return;
         }
-        int best = chosen.furnaces();
-        int build = Math.max(0, best - furnaces);
-        if (build > 0) make("minecraft:furnace", build, depth + 1, path);
-        furnaces = Math.max(furnaces, best);
-        int fuelCount = chosen.fuelTotal();
-        make(fuel, fuelCount, depth + 1, path);
+        r = chosen.recipe();
+        int best = chosen.split().furnaces();
+        if (r.kind() == Kind.SMELT) {
+            int build = Math.max(0, best - furnaces);
+            if (build > 0) make("minecraft:furnace", build, depth + 1, path);
+            furnaces = Math.max(furnaces, best);
+        }
+        int fuelCount = chosen.split().fuelTotal();
+        make(chosen.fuel(), fuelCount, depth + 1, path);
         steps.add(new Step(Action.SMELT, r.output(), items * Math.max(1, r.outputCount()), r.id(), items, null, 0, null,
-                input, fuel, fuelCount, best, false));
+                input, chosen.fuel(), fuelCount, best, false));
     }
 
     /** Of an ingredient's choices, one it has enough of for the whole job, else the cheapest. */
@@ -534,7 +651,7 @@ public final class ProductionPlanner {
     /** "minecraft:stone_bricks" as a person says it: "stone bricks". */
     public static String name(String id) {
         if (id == null) return "";
-        String n = id.substring(id.indexOf(':') + 1).replace('_', ' ');
+        String n = id.substring(id.lastIndexOf(':') + 1).replace('_', ' ');
         return n;
     }
 
@@ -547,6 +664,7 @@ public final class ProductionPlanner {
     public static String plural(String id, int count) {
         String n = name(id);
         if (count == 1) return n;
+        if (Production.animal(id)) return n.equals("sheep") || n.endsWith("fish") ? n : n + "s"; // 5 cows, 3 sheep, 4 chickens
         String last = n.contains(" ") ? n.substring(n.lastIndexOf(' ') + 1) : n;
         if (MASS.contains(n) || MASS.contains(last) || n.endsWith("s") || n.endsWith("ore") || n.endsWith("dust")) return n;
         if (n.endsWith("ch") || n.endsWith("sh") || n.endsWith("x")) return n + "es";

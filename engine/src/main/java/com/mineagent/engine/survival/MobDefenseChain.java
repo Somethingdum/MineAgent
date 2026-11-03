@@ -643,7 +643,7 @@ public final class MobDefenseChain implements TaskChain {
     }
 
     /** The best sword or axe (else any tool) into the hand: a real hotbar swap. */
-    private static void equipWeapon(ServerPlayer player) {
+    public static void equipWeapon(ServerPlayer player) {
         var inv = player.getInventory();
         int best = -1;
         int bestTier = 0;

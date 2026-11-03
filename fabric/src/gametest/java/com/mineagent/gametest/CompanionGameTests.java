@@ -1866,25 +1866,154 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * Plan 70, MA5.4, the owner's words: "Going AFK, fill up a chest with food while I'm out." The job is its goal
-     * while they're away (the model works it; then it finds something else to do), and it says so.
+     * Plan 70, MA5.4 and MA7.1, the owner's words: "Going AFK, fill up a chest with food while I'm out." It says so,
+     * and does it itself, no model: the chest by them, food it can make here (cows in the field, hunted and cooked),
+     * never the last two cows, and when there is no more to be had it says how far it got.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_job", timeoutTicks = 200)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_job", timeoutTicks = 3600)
     public void goingAfkFillUpAChestWithFood(GameTestHelper helper) {
         Scene s = scene(helper, "Larder");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = almostFullChest(helper, 0);
+        var cows = field(helper, 6);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(1, new ItemStack(Items.FURNACE, 4));
+        inv.setItem(2, new ItemStack(Items.COAL, 4));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "Going AFK, fill up a chest with food while I'm out."));
-        helper.runAfterDelay(20, () -> {
-            var goal = s.loop().goalBook().active();
+        helper.onEachTick(() -> {
+            trace(helper, s, "afk food");
             String said = lastSaid(s, "Got it");
-            boolean job = goal.isPresent() && goal.get().text().contains("fill up a chest with food")
-                    && !goal.get().text().contains("while");
-            boolean told = said.contains("fill up a chest with food, then find something else to do");
-            boolean afk = s.loop().ownerAfk();
-            String how = "goal " + goal.map(g -> g.text()).orElse("none") + "; said: " + said + "; afk " + afk;
-            tidy(s);
-            if (job && told && afk) helper.succeed();
-            else fail(helper, how);
+            String done = lastSaid(s, "Done");
+            int food = inChest(helper, chest, Items.COOKED_BEEF);
+            long alive = cows.stream().filter(net.minecraft.world.entity.Entity::isAlive).count();
+            if (!done.isEmpty()) {
+                boolean told = said.contains("fill up a chest with food, then find something else to do");
+                String how = "said " + said + "; done: " + done + "; cooked beef in the chest " + food + "; cows alive " + alive
+                        + "; afk " + s.loop().ownerAfk();
+                tidy(s);
+                // 4 cows it may take give 4 to 12 beef; the last two are left.
+                if (told && food >= 4 && alive == 2 && done.contains("cooked beef") && done.contains("cows")) helper.succeed();
+                else fail(helper, how);
+            } else if (helper.getTick() >= 3500) {
+                String how = "said " + said + "; last: " + lastSaid(s, "") + "; cooked beef in the chest " + food + "; cows alive "
+                        + alive + "; carries beef " + inv.countItem(Items.BEEF) + ", cooked " + inv.countItem(Items.COOKED_BEEF);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** A field fenced round (0 to 14 each way) with {@code cows} grown cows in it. */
+    private static java.util.List<net.minecraft.world.entity.animal.Cow> field(GameTestHelper helper, int cows) {
+        for (int i = -1; i <= 15; i++) {
+            helper.setBlock(i, 1, -1, Blocks.OAK_FENCE);
+            helper.setBlock(i, 1, 15, Blocks.OAK_FENCE);
+            helper.setBlock(-1, 1, i, Blocks.OAK_FENCE);
+            helper.setBlock(15, 1, i, Blocks.OAK_FENCE);
+        }
+        java.util.List<net.minecraft.world.entity.animal.Cow> out = new java.util.ArrayList<>();
+        for (int i = 0; i < cows; i++) out.add(helper.spawn(EntityType.COW, new BlockPos(9 + (i % 3) * 2, 1, 8 + (i / 3) * 3)));
+        return out;
+    }
+
+    /**
+     * Plan 70, MA7.1: "put 4 cooked beef in this chest", with cows in the field: it hunts them (a stone sword, the
+     * swing fully charged), picks up the beef, cooks it in the furnace it carries, and puts 4 in; it never takes the
+     * last two.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hunt", timeoutTicks = 2400)
+    public void putFourCookedBeefInThisChest(GameTestHelper helper) {
+        Scene s = scene(helper, "Hunter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = almostFullChest(helper, 0);
+        var cows = field(helper, 6);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(1, new ItemStack(Items.FURNACE, 1));
+        inv.setItem(2, new ItemStack(Items.COAL, 1));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "put 4 cooked beef in this chest"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "hunt");
+            int food = inChest(helper, chest, Items.COOKED_BEEF);
+            String done = lastSaid(s, "Done");
+            long alive = cows.stream().filter(net.minecraft.world.entity.Entity::isAlive).count();
+            if (food >= 4 && !done.isEmpty()) {
+                String plan = lastSaid(s, "On it");
+                tidy(s);
+                if (food == 4 && alive >= 2 && plan.contains("hunt") && plan.contains("cows") && done.contains("hunted")) helper.succeed();
+                else fail(helper, "4 in, but cows alive " + alive + ", plan: " + plan + ", done: " + done);
+            } else if (helper.getTick() >= 2300) {
+                String how = "the chest holds " + food + " cooked beef; cows alive " + alive + "; carries beef " + inv.countItem(Items.BEEF)
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
+    public void eightRawIronInEightIngotsOut(GameTestHelper helper) {
+        Scene s = scene(helper, "Smith");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.RAW_IRON, 8));
+        inv.setItem(2, new ItemStack(Items.COAL, 1));
+        inv.setItem(3, new ItemStack(Items.FURNACE, 1));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 8 iron ingots"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "smelt iron");
+            String done = lastSaid(s, "Done");
+            if (!done.isEmpty()) {
+                String plan = lastSaid(s, "On it");
+                int ingots = inv.countItem(Items.IRON_INGOT), raw = inv.countItem(Items.RAW_IRON), coal = inv.countItem(Items.COAL);
+                tidy(s);
+                if (ingots == 8 && raw == 0 && coal == 0 && plan.contains("smelt 8 raw iron into iron ingot in 1 furnace with 1 coal")
+                        && done.contains("1 coal used")) helper.succeed();
+                else fail(helper, "ingots " + ingots + ", raw " + raw + ", coal " + coal + "; plan: " + plan + "; done: " + done);
+            } else if (helper.getTick() >= 2300) {
+                String how = "ingots " + inv.countItem(Items.IRON_INGOT) + ", raw " + inv.countItem(Items.RAW_IRON) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA7.9: 64 stone bricks made from cobblestone with the 4 furnaces it carries (8 coal: two each), into an
+     * empty chest, and the chest read back from its memory.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bricks_64", timeoutTicks = 5000)
+    public void sixtyFourStoneBricksWithFourFurnaces(GameTestHelper helper) {
+        Scene s = scene(helper, "Bricklayer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = almostFullChest(helper, 0);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.COBBLESTONE, 64));
+        inv.setItem(2, new ItemStack(Items.COAL, 8));
+        inv.setItem(3, new ItemStack(Items.FURNACE, 4));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "fill this chest with stone bricks"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "bricks 64");
+            int bricks = inChest(helper, chest, Items.STONE_BRICKS);
+            String done = lastSaid(s, "Your chest is full");
+            if (bricks == 64 && !done.isEmpty()) {
+                String plan = lastSaid(s, "On it");
+                int furnaces = furnacesAround(helper);
+                var dim = helper.getLevel().dimension().location().toString();
+                var remembered = s.loop().chestMemory().near(dim, chest.getX(), chest.getY(), chest.getZ(), 1.0);
+                boolean readBack = !remembered.isEmpty() && remembered.get(0).items().getOrDefault("stone_bricks",
+                        remembered.get(0).items().getOrDefault("minecraft:stone_bricks", 0)) == 64;
+                tidy(s);
+                if (furnaces == 4 && readBack && plan.contains("smelt 64 cobblestone into stone in 4 furnaces with 8 coal")) helper.succeed();
+                else fail(helper, "filled, but furnaces " + furnaces + ", remembered " + remembered + ", plan: " + plan);
+            } else if (helper.getTick() >= 4900) {
+                String how = "the chest holds " + bricks + " stone bricks; carries cobblestone " + inv.countItem(Items.COBBLESTONE)
+                        + ", stone " + inv.countItem(Items.STONE) + ", coal " + inv.countItem(Items.COAL) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
         });
     }
 
@@ -1928,6 +2057,20 @@ public class CompanionGameTests implements FabricGameTest {
                 && r.cookTicks() == 200 && r.needs().get(0).anyOf().contains("minecraft:cobblestone"));
         boolean coal = book.fuelTicks().getOrDefault("minecraft:coal", 0) == 1600;
         boolean uses = book.durability().getOrDefault("minecraft:stone_pickaxe", 0) == 131;
+        // MA7.1's own checks: iron ore needs a stone pickaxe; a cow drops beef (its loot table, rolled in memory).
+        boolean iron = book.sources("minecraft:raw_iron").stream().anyMatch(x -> x.block().equals("minecraft:iron_ore") && x.tier() == 2)
+                && book.sources("minecraft:raw_iron").stream().noneMatch(x -> x.block().equals("minecraft:iron_ore") && x.tier() < 2);
+        boolean beef = book.sources("minecraft:beef").stream().anyMatch(x -> x.block().equals("entity:minecraft:cow")
+                && x.perBlock() >= 1.0 && x.perBlock() <= 3.0);
+        boolean noPets = book.sourcesByItem().values().stream().flatMap(java.util.List::stream)
+                .noneMatch(x -> x.block().equals("entity:minecraft:wolf") || x.block().equals("entity:minecraft:horse")
+                        || x.block().equals("entity:minecraft:cat"));
+        boolean smoker = book.recipes("minecraft:cooked_beef").stream().anyMatch(r -> r.kind() == com.mineagent.engine.planning.production.Production.Kind.SMOKE
+                && r.cookTicks() == 100);
+        boolean blast = book.recipes("minecraft:iron_ingot").stream().anyMatch(r -> r.kind() == com.mineagent.engine.planning.production.Production.Kind.BLAST
+                && r.cookTicks() == 100);
+        boolean foods = com.mineagent.engine.planning.production.GameKnowledge.foods().containsKey("minecraft:cooked_beef")
+                && !com.mineagent.engine.planning.production.GameKnowledge.foods().containsKey("minecraft:rotten_flesh");
         var have = new com.mineagent.engine.planning.production.Production.Have(java.util.Map.of("minecraft:coal", 216, "minecraft:oak_log", 16),
                 java.util.Map.of(), java.util.List.of(new com.mineagent.engine.planning.production.Production.Tool("pickaxe", 2, false, 131)),
                 0, true, java.util.Map.of("minecraft:stone", com.mineagent.engine.planning.production.Production.Where.COMMON,
@@ -1935,10 +2078,13 @@ public class CompanionGameTests implements FabricGameTest {
         var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, "minecraft:stone_bricks", 1_728);
         System.out.println("[SCENE knowledge] " + book.recipesByOutput().size() + " items with recipes, " + book.sourcesByItem().size()
                 + " with blocks that drop them; a chest of stone bricks: " + plan.summary());
-        String how = String.format("recipe %b, cobblestone from stone %b, silk %b, not by hand %b, smelt %b, coal %b, uses %b, plan %s",
-                recipe, cobble, silk, noHand, smelt, coal, uses, plan.summary());
+        String how = String.format("recipe %b, cobblestone from stone %b, silk %b, not by hand %b, smelt %b, coal %b, uses %b, "
+                        + "iron needs stone %b (%s), cow beef %b (%s), no pets %b, smoker %b, blast %b, foods %b, plan %s",
+                recipe, cobble, silk, noHand, smelt, coal, uses, iron, book.sources("minecraft:raw_iron"), beef,
+                book.sources("minecraft:beef"), noPets, smoker, blast, foods, plan.summary());
+        System.out.println("[SCENE knowledge] " + how);
         tidy(s);
-        if (recipe && cobble && silk && noHand && smelt && coal && uses && plan.possible()
+        if (recipe && cobble && silk && noHand && smelt && coal && uses && iron && beef && noPets && smoker && blast && foods && plan.possible()
                 && plan.steps().stream().anyMatch(x -> x.action() == com.mineagent.engine.planning.production.ProductionPlanner.Action.SMELT)) helper.succeed();
         else fail(helper, how);
     }

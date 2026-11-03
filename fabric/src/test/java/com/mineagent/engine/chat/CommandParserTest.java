@@ -151,7 +151,10 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.PRODUCE, fill.kind());
         assertEquals("chest|stone bricks", fill.value());
         assertEquals(0, fill.count().intValue(), "as many as fill it");
-        assertEquals("chest|stone bricks", CommandParser.parse("I want an entire chest of stone bricks", "Pal").orElseThrow().value());
+        assertEquals("anychest|stone bricks", CommandParser.parse("I want an entire chest of stone bricks", "Pal").orElseThrow().value(),
+                "a chest's worth: the one by me, or one it puts down");
+        assertEquals("anychest|food", CommandParser.parse("fill up a chest with food", "Pal").orElseThrow().value());
+        assertEquals("chest|food", CommandParser.parse("fill my chest with food", "Pal").orElseThrow().value());
         assertEquals("chest|cobblestone", CommandParser.parse("fill it with cobblestone", "Pal").orElseThrow().value());
         var put = CommandParser.parse("put 2 stacks of torches in this chest", "Pal").orElseThrow();
         assertEquals("chest|torches", put.value());

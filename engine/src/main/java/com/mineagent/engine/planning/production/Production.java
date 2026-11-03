@@ -11,6 +11,13 @@ import java.util.Map;
 public final class Production {
     private Production() {}
 
+    /** A source that is an animal, not a block: "entity:minecraft:cow" (its drops, from its loot table). */
+    public static final String ENTITY = "entity:";
+
+    public static boolean animal(String block) {
+        return block != null && block.startsWith(ENTITY);
+    }
+
     /** How a recipe is made: a crafting grid (2 by 2 in the inventory, 3 by 3 at a table), a furnace kind, a cutter. */
     public enum Kind { CRAFT, SMELT, BLAST, SMOKE, CAMPFIRE, STONECUT }
 
@@ -48,7 +55,13 @@ public final class Production {
      * (placed nearby or carried), whether a crafting table is at hand, and where each mineable block is.
      */
     public record Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
-                       boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance) {
+                       boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance, int smokers,
+                       int blastFurnaces) {
+        public Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
+                    boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance) {
+            this(carried, stored, tools, furnaces, table, blocks, knownDistance, 0, 0);
+        }
+
         public int count(String item) {
             return carried.getOrDefault(item, 0) + stored.getOrDefault(item, 0);
         }

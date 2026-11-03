@@ -51,7 +51,7 @@ public final class CommandParser {
      * negative number of stacks, or 0 for as many as fill the chest.
      */
     private static final String HOW_MANY = "(a couple of stacks of|a stack of|\\d{1,2} stacks of|\\d{1,4}|an?|one)";
-    private static final Pattern FILL = Pattern.compile("^fill (?:up )?(?:(?:this|that|the|my|our) )?(?:chest|barrel)(?: up)? (?:with|full of) (.{2,60})$");
+    private static final Pattern FILL = Pattern.compile("^fill (?:up )?(?:(this|that|the|my|our|a|an|another|one) )?(?:chest|barrel)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern FILL_IT = Pattern.compile("^fill (?:it|this|that)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern CHEST_OF = Pattern.compile("^(?:i (?:want|need)|make me|get me|give me|i'?d like)\\s+(?:an? )?(?:(?:entire|full|whole) )?chest(?:ful)? of (.{2,60})$");
     private static final Pattern PUT_IN = Pattern.compile("^(?:put|make|craft|get)(?: me)? " + HOW_MANY + " (.{2,60}?) (?:in|into) (?:this|that|the|my|our) chest$");
@@ -121,10 +121,17 @@ public final class CommandParser {
         if (g.matches()) return Optional.of(new Command(Kind.GOAL_ADD, g.group(1).strip(), null));
         Matcher afk = AFK_WITH.matcher(t);
         if (afk.matches()) return Optional.of(new Command(Kind.AFK, afk.group(1).strip(), null));
+        // "This chest": the one they mean. "A chest": that one if there is one by them, else one it puts down.
         Matcher make = FILL.matcher(t);
-        if (!make.matches()) make = FILL_IT.matcher(t);
-        if (!make.matches()) make = CHEST_OF.matcher(t);
+        if (make.matches()) {
+            String art = make.group(1);
+            boolean any = art == null || art.equals("a") || art.equals("an") || art.equals("another") || art.equals("one");
+            return Optional.of(new Command(Kind.PRODUCE, (any ? "anychest|" : "chest|") + make.group(2).strip(), 0));
+        }
+        make = FILL_IT.matcher(t);
         if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, "chest|" + make.group(1).strip(), 0));
+        make = CHEST_OF.matcher(t);
+        if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, "anychest|" + make.group(1).strip(), 0));
         make = PUT_IN.matcher(t);
         if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, "chest|" + make.group(2).strip(), howMany(make.group(1))));
         make = MAKE.matcher(t);

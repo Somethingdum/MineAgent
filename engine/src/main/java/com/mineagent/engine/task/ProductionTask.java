@@ -51,16 +51,29 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         public final String item;
         /** How many; 0: as many as fill the chest. */
         public final int count;
-        /** Where they go; null: it keeps them. */
+        /** Where they go; null: it keeps them (or puts down a chest of its own, {@link #placeChest}). */
         public final BlockPos chest;
+        /** "Fill up a chest", none near: it makes one, puts it down where it works, and fills that. */
+        public final boolean placeChest;
 
         public ProduceRecord(String toolCallId, String item, int count, BlockPos chest) {
+            this(toolCallId, item, count, chest, false);
+        }
+
+        public ProduceRecord(String toolCallId, String item, int count, BlockPos chest, boolean placeChest) {
             super(toolCallId);
             this.item = item;
             this.count = Math.max(0, count);
             this.chest = chest == null ? null : chest.immutable();
+            this.placeChest = placeChest && chest == null;
         }
     }
+
+    /**
+     * The order "food": the cheapest good food it can make here, priced per point of hunger it fills; when the
+     * animals for one run out, the next (a chest of food is cooked beef, then porkchops, then chicken...).
+     */
+    public static final String FOOD = "food";
 
     /** The most of the order it makes a round: 8 stacks and what goes into them fit its pack. */
     static final int ROUND = 8 * 64;
@@ -71,6 +84,26 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     private Phase phase = Phase.START;
     private boolean begun;
+    /** What it is making now (the order's item; for "food", the food it chose). */
+    private String itemId;
+    private BlockPos chestPos;
+    /** First making the chest it fills. */
+    private boolean makingChest;
+    /** Sources it found no more of: the plan is made again without them. */
+    private final java.util.Set<String> without = new java.util.LinkedHashSet<>();
+    /** "Hunt for orders" off: every animal left out of its plans (the planner reads this mark). */
+    private static final String NO_HUNTING = Production.ENTITY + "*";
+    { if (!com.mineagent.engine.settings.Switches.huntForOrders()) without.add(NO_HUNTING); }
+    /** Why the last food stopped, for a "food" order whose next food has no room. */
+    private String lastWhy = "";
+    /** Foods tried and given up on, for a "food" order. */
+    private final java.util.Set<String> foodsDone = new java.util.HashSet<>();
+    /** What went in, by item (a "food" order may be several). */
+    private final Map<String, Integer> deliveredBy = new LinkedHashMap<>();
+    /** Animals it hunted, by kind. */
+    private final Map<String, Integer> hunted = new LinkedHashMap<>();
+    /** Why the order stopped short, said at the end. */
+    private String shortBecause = "";
     private int target;
     private int delivered;
     private int roundCount;
@@ -149,7 +182,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         nav.cancel();
         TaskContext.inputDriver(player).clear();
         outcome = why;
-        say(capital(why) + (delivered > 0 ? String.format(" (%,d %s in so far).", delivered, ProductionPlanner.plural(record.item, delivered)) : "."));
+        say(capital(why) + (delivered > 0 ? String.format(" (%,d %s in so far).", delivered, ProductionPlanner.plural(itemId, delivered)) : "."));
         phase = Phase.FAILED;
         return TaskState.FAILED;
     }
@@ -158,37 +191,132 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     private TaskState begin() {
         ServerPlayer sp = sp();
-        if (BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(record.item)).isEmpty()) {
-            return fail("I don't know an item called " + ProductionPlanner.name(record.item));
+        if (itemId == null) {
+            itemId = record.item;
+            chestPos = record.chest;
+            if (record.placeChest && chestPos == null) {
+                // A chest of its own, first: made if it has none, put down where it starts.
+                if (count(sp, net.minecraft.world.item.Items.CHEST) == 0) {
+                    var plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), null),
+                            "minecraft:chest", 1);
+                    if (!plan.possible()) return fail("I have no chest to fill and can't make one: " + plan.summary().replaceAll("[.]$", ""));
+                    todo.clear();
+                    todo.addAll(plan.steps());
+                    makingChest = true;
+                    phase = Phase.STEPS;
+                    step = null;
+                    return TaskState.RUNNING;
+                }
+                return putChestDown();
+            }
         }
-        target = record.count;
-        if (record.chest != null) {
-            Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), record.chest);
-            if (c == null) return fail("there is no chest at " + record.chest.toShortString());
-            int room = room(c, item(record.item));
+        if (FOOD.equals(itemId)) {
+            String food = chooseFood(sp);
+            if (food == null) return fail("I can't see a way to make food here: no animals I may hunt near, and nothing to cook");
+            itemId = food;
+        }
+        if (BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(itemId)).isEmpty()) {
+            return fail("I don't know an item called " + ProductionPlanner.name(itemId));
+        }
+        target = record.count == 0 ? 0 : record.count - delivered;
+        if (chestPos != null) {
+            Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), chestPos);
+            if (c == null) return fail("there is no chest at " + chestPos.toShortString());
+            int room = room(c, item(itemId));
             if (target == 0) target = room;
             else target = Math.min(target, room);
-            if (target == 0) return fail("that chest is already full");
+            if (target == 0) {
+                if (delivered > 0) {
+                    shortBecause = lastWhy; // no room for the next food; the last one ran out
+                    return finish();
+                }
+                return fail("that chest is already full");
+            }
         } else if (target == 0) {
             target = 64;
         }
-        var plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), record.chest),
-                record.item, target);
-        if (!plan.possible()) return fail(plan.summary().replaceAll("[.]$", ""));
-        say("On it. " + plan.summary());
+        // From here, target counts what goes in all told, this item and any before it.
+        target += delivered;
+        var plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos),
+                itemId, target - delivered, without);
+        if (!plan.possible()) {
+            int most = ProductionPlanner.most(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos),
+                    itemId, Math.min(ROUND, target - delivered), without);
+            if (most <= 0) return fail(plan.summary().replaceAll("[.]$", ""));
+            plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos),
+                    itemId, most, without);
+            say("On it, as far as I can: " + plan.summary());
+        } else {
+            say((delivered > 0 ? "Now " : "On it. ") + plan.summary());
+        }
         phase = Phase.ROUND;
         return TaskState.RUNNING;
+    }
+
+    /** The chest it made, put down beside where it stands; then the order begins. */
+    private TaskState putChestDown() {
+        ServerPlayer sp = sp();
+        makingChest = false;
+        if (count(sp, net.minecraft.world.item.Items.CHEST) == 0) return fail("I made no chest to fill");
+        BlockPos at = sp.blockPosition();
+        for (int r = 1; r <= 2; r++) {
+            for (BlockPos p : ring(at, r)) {
+                var level = sp.serverLevel();
+                var st = level.getBlockState(p);
+                if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
+                if (Placement.placeBlock(sp, p.immutable(), Blocks.CHEST.defaultBlockState())) {
+                    chestPos = p.immutable();
+                    say("I've put a chest down here, at " + chestPos.toShortString() + ", to fill.");
+                    var loop = TaskContext.agentLoop(player);
+                    if (loop != null) loop.noteChest(level.dimension().location().toString(), p.getX(), p.getY(), p.getZ(), Map.of(), level.getGameTime());
+                    wait = 2;
+                    phase = Phase.START;
+                    return TaskState.RUNNING;
+                }
+            }
+        }
+        return fail("I have a chest but nowhere here to put it");
+    }
+
+    /**
+     * Of the foods the game has, the one it can make here for the least work per point of hunger it fills (meat it
+     * can hunt and cook, bread from wheat it has...); null if none.
+     */
+    private String chooseFood(ServerPlayer sp) {
+        var book = GameKnowledge.book(sp);
+        var have = GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos);
+        String best = null;
+        double bestCost = Double.POSITIVE_INFINITY;
+        for (var e : GameKnowledge.foods().entrySet()) {
+            if (foodsDone.contains(e.getKey())) continue;
+            var plan = ProductionPlanner.plan(book, have, e.getKey(), 16, without);
+            if (!plan.possible()) continue;
+            double cost = plan.ticks() / (16.0 * Math.max(1f, e.getValue()));
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = e.getKey();
+            }
+        }
+        return best;
     }
 
     private TaskState round() {
         ServerPlayer sp = sp();
         int left = target - delivered;
         if (left <= 0) return finish();
-        int carried = count(sp, item(record.item));
+        int carried = count(sp, item(itemId));
         roundCount = Math.min(left, ROUND);
-        var plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), record.chest),
-                record.item, roundCount);
-        if (!plan.possible()) return fail(plan.summary().replaceAll("[.]$", ""));
+        var book = GameKnowledge.book(sp);
+        var have = GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos);
+        var plan = ProductionPlanner.plan(book, have, itemId, roundCount, without);
+        if (!plan.possible()) {
+            if (without.stream().allMatch(NO_HUNTING::equals)) return fail(plan.summary().replaceAll("[.]$", ""));
+            // It ran out of something on the way (the cows near here): what it can still make, then the rest.
+            int most = ProductionPlanner.most(book, have, itemId, roundCount, without);
+            if (most <= 0) return ranOut();
+            roundCount = most;
+            plan = ProductionPlanner.plan(book, have, itemId, most, without);
+        }
         todo.clear();
         toolsToMake.clear();
         for (Step s : plan.steps()) {
@@ -205,17 +333,56 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
+    /**
+     * No more of what it was using within reach: for "food", the next food; otherwise done with what it has made,
+     * saying why.
+     */
+    private TaskState ranOut() {
+        // The first few it ran out of, animals first, in the order it found them gone.
+        List<String> gone = new ArrayList<>();
+        List<String> ran = new ArrayList<>(without);
+        ran.remove(NO_HUNTING);
+        for (String w : ran) if (Production.animal(w) && gone.size() < 3) gone.add(ProductionPlanner.plural(w, 2));
+        for (String w : ran) if (!Production.animal(w) && gone.size() < 3) gone.add(ProductionPlanner.plural(w, 2));
+        String list = gone.size() <= 1 ? String.join("", gone)
+                : String.join(", ", gone.subList(0, gone.size() - 1)) + " or " + gone.get(gone.size() - 1);
+        String why = "no more " + list + (ran.size() > gone.size() ? " (or anything else to make it from)" : "") + " near here"
+                + (ran.stream().anyMatch(Production::animal) ? "; I leave two of each kind to breed" : "");
+        lastWhy = why;
+        if (FOOD.equals(record.item)) {
+            foodsDone.add(itemId);
+            String next = chooseFood(sp());
+            if (next != null) {
+                itemId = next;
+                phase = Phase.START;
+                return TaskState.RUNNING;
+            }
+        }
+        if (delivered == 0) return fail("I couldn't make any " + ProductionPlanner.name(itemId) + ": " + why);
+        shortBecause = why;
+        return finish();
+    }
+
     private TaskState finish() {
         ServerPlayer sp = sp();
         long minutes = Math.max(1, (sp.level().getGameTime() - startedAt) / 1_200L);
-        String what = String.format("%,d %s", delivered, ProductionPlanner.plural(record.item, delivered));
-        StringBuilder line = new StringBuilder(record.chest != null && record.count == 0 ? "Your chest is full: " + what
-                : record.chest != null ? "Done: " + what + " in your chest" : "Done: " + what);
+        List<String> parts0 = new ArrayList<>();
+        deliveredBy.forEach((k, v) -> parts0.add(String.format("%,d %s", v, ProductionPlanner.plural(k, v))));
+        String what = parts0.isEmpty() ? String.format("%,d %s", delivered, ProductionPlanner.plural(itemId, delivered)) : String.join(", ", parts0);
+        boolean full = shortBecause.isEmpty();
+        StringBuilder line = new StringBuilder(chestPos != null && record.count == 0 && full ? "Your chest is full: " + what
+                : chestPos != null ? "Done: " + what + " in your chest" : "Done: " + what);
+        if (!full) line.append(", as much as I could: ").append(shortBecause);
         line.append(". About ").append(minutes).append(minutes == 1 ? " minute" : " minutes");
         if (!used.isEmpty()) {
             List<String> parts = new ArrayList<>();
             used.forEach((k, v) -> parts.add(String.format("%,d %s", v, ProductionPlanner.plural(k, v))));
             line.append("; ").append(String.join(", ", parts)).append(" used");
+        }
+        if (!hunted.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            hunted.forEach((k, v) -> parts.add(String.format("%,d %s", v, ProductionPlanner.plural(k, v))));
+            line.append("; hunted ").append(String.join(", ", parts));
         }
         say(line.append('.').toString());
         outcome = what;
@@ -228,6 +395,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private TaskState steps() {
         if (step == null) {
             if (todo.isEmpty()) {
+                if (makingChest) return putChestDown();
                 phase = Phase.DEPOSIT;
                 return TaskState.RUNNING;
             }
@@ -240,6 +408,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         TaskState s = switch (step.action()) {
             case FETCH -> fetch();
             case MINE -> mine();
+            case HUNT -> hunt();
             case CRAFT -> craft();
             case SMELT -> smelt();
         };
@@ -261,7 +430,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         BlockPos chest = null;
         for (var c : loop.chestMemory().near(dim, sp.getBlockX(), sp.getBlockY(), sp.getBlockZ(), 64.0)) {
             BlockPos p = new BlockPos(c.x(), c.y(), c.z());
-            if (!p.equals(record.chest) && c.items().getOrDefault(path, 0) > 0) {
+            if (!p.equals(chestPos) && c.items().getOrDefault(path, 0) > 0) {
                 chest = p;
                 break;
             }
@@ -300,9 +469,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             sub = null;
             int after = count(sp, item(step.item())) - itemBefore;
             if (st != TaskState.SUCCESS && after <= lastGot) {
-                if (++stalls >= 3) {
-                    return fail("I couldn't find more " + ProductionPlanner.name(step.block()) + " within 32 blocks");
-                }
+                if (++stalls >= 3) return outOf(step.block());
             } else {
                 stalls = 0;
             }
@@ -327,6 +494,170 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     private int lastGot;
+
+    /** None of this source left within reach: the round is planned again without it. */
+    private TaskState outOf(String source) {
+        if (sub != null) sub.interrupt();
+        sub = null;
+        nav.cancel();
+        walkingTo = null;
+        TaskContext.inputDriver(player).clear();
+        without.add(source);
+        todo.clear();
+        step = null;
+        prey = null;
+        lootAt = null;
+        phase = Phase.ROUND;
+        return TaskState.RUNNING;
+    }
+
+    // ── Hunting ─────────────────────────────────────────────────────
+
+    /** How far it looks for animals round where it is, and how far it goes to a herd it has seen. */
+    static final int HUNT_RADIUS = 48;
+    static final int HERD_SEEN = 256;
+
+    private net.minecraft.world.entity.Entity prey;
+    private int preyTicks;
+    private BlockPos lootAt;
+    private int lootWait;
+    private BlockPos chasing;
+    private int chaseTicks;
+    private BlockPos herdSeen;
+    private int herdTrips;
+    private final java.util.Set<java.util.UUID> unreachable = new java.util.HashSet<>();
+
+    /**
+     * Animals hunted for what they drop (SMH plan 70, MA7.1), as a player does: the nearest grown one of the kind,
+     * never a pet, a horse, one that fights back or one with a name, never in your AFK farm, and never the last two of
+     * a kind near here, so they breed back; walked up to, hit when the swing is fully charged, its drops picked up.
+     * When none are near, it goes to where it last saw some; when there are none there either, the round is planned
+     * again without them.
+     */
+    private TaskState hunt() {
+        ServerPlayer sp = sp();
+        ServerLevel level = sp.serverLevel();
+        Item it = item(step.item());
+        int got = count(sp, it) - itemBefore;
+        // Its drops first: they go in a few seconds' walk.
+        if (lootAt != null) {
+            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive());
+            if (drops.isEmpty() || --lootWait <= 0 || navFailed) {
+                lootAt = null;
+                chasing = null;
+                nav.cancel();
+            } else {
+                net.minecraft.world.entity.item.ItemEntity near = drops.get(0);
+                for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
+                chase(near.blockPosition(), 0);
+                return TaskState.RUNNING;
+            }
+        }
+        if (got >= step.count()) {
+            nav.cancel();
+            TaskContext.inputDriver(player).clear();
+            return TaskState.SUCCESS;
+        }
+        String kind = step.block().substring(Production.ENTITY.length());
+        var type = BuiltInRegistries.ENTITY_TYPE.getOptional(ResourceLocation.tryParse(kind)).orElse(null);
+        if (type == null) return outOf(step.block());
+        if (prey != null && !prey.isAlive()) {
+            hunted.merge(step.block(), 1, Integer::sum);
+            lootAt = prey.blockPosition().immutable();
+            lootWait = 100;
+            prey = null;
+            chasing = null;
+            navFailed = false;
+            wait = 12; // its drops can be picked up after 10 ticks
+            return TaskState.RUNNING;
+        }
+        if (prey != null && (prey.isRemoved() || !GameKnowledge.huntable(prey) || ++preyTicks > 900)) {
+            unreachable.add(prey.getUUID());
+            prey = null;
+        }
+        if (prey == null) {
+            prey = choosePrey(sp, type);
+            preyTicks = 0;
+            chasing = null;
+            navFailed = false;
+            if (prey == null) {
+                // None to take here: where it last saw a herd of them, once or twice; then it is out of them.
+                var loop = TaskContext.agentLoop(player);
+                if (herdSeen == null && loop != null && herdTrips < 2) {
+                    String dim = level.dimension().location().toString();
+                    for (var f : loop.placeKeeper().sightings().nearest(ResourceLocation.tryParse(kind).getPath(), dim,
+                            sp.getBlockX(), sp.getBlockY(), sp.getBlockZ(), 4, HERD_SEEN)) {
+                        BlockPos at = new BlockPos(f.sighting().x(), f.sighting().y(), f.sighting().z());
+                        if (f.sighting().kind() == com.mineagent.engine.memory.Sightings.Kind.ANIMAL && at.distSqr(sp.blockPosition()) > 24 * 24) {
+                            herdSeen = at;
+                            herdTrips++;
+                            break;
+                        }
+                    }
+                }
+                if (herdSeen == null) return outOf(step.block());
+                if (sp.blockPosition().distSqr(herdSeen) <= 8 * 8 || navFailed) {
+                    herdSeen = null;
+                    chasing = null;
+                    navFailed = false;
+                    if (herdTrips >= 2) return outOf(step.block());
+                    return TaskState.RUNNING;
+                }
+                chase(herdSeen, 4);
+                return TaskState.RUNNING;
+            }
+        }
+        if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, prey) || !sp.hasLineOfSight(prey)) {
+            chase(prey.blockPosition(), 1);
+            if (navFailed) {
+                unreachable.add(prey.getUUID());
+                prey = null;
+                navFailed = false;
+            }
+            return TaskState.RUNNING;
+        }
+        nav.cancel();
+        chasing = null;
+        TaskContext.inputDriver(player).clear();
+        com.mineagent.engine.survival.MobDefenseChain.equipWeapon(sp);
+        var to = prey.position().add(0, prey.getBbHeight() * 0.5, 0).subtract(sp.getEyePosition());
+        sp.setYRot((float) Math.toDegrees(Math.atan2(-to.x, to.z)));
+        sp.setXRot((float) -Math.toDegrees(Math.atan2(to.y, Math.sqrt(to.x * to.x + to.z * to.z))));
+        sp.setYHeadRot(sp.getYRot());
+        if (sp.getAttackStrengthScale(0.5f) >= 0.9f) com.mineagent.engine.act.Interaction.attackEntity(sp, prey);
+        return TaskState.RUNNING;
+    }
+
+    /** The nearest one it may take: grown, not a pet, not in your AFK farm, and not one of the last two near here. */
+    private net.minecraft.world.entity.Entity choosePrey(ServerPlayer sp, net.minecraft.world.entity.EntityType<?> type) {
+        ServerLevel level = sp.serverLevel();
+        String dim = level.dimension().location().toString();
+        var all = level.getEntities((net.minecraft.world.entity.Entity) null,
+                new net.minecraft.world.phys.AABB(sp.blockPosition()).inflate(HUNT_RADIUS, 24, HUNT_RADIUS),
+                e -> e.getType() == type && GameKnowledge.huntable(e)
+                        && !com.mineagent.engine.world.AfkFarms.protects(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
+        if (all.size() <= GameKnowledge.LEAVE) return null;
+        net.minecraft.world.entity.Entity best = null;
+        for (var e : all) {
+            if (unreachable.contains(e.getUUID())) continue;
+            if (best == null || e.distanceToSqr(sp) < best.distanceToSqr(sp)) best = e;
+        }
+        return best;
+    }
+
+    /** Toward something that moves: the way made again when it has moved or every two seconds. */
+    private void chase(BlockPos p, int radius) {
+        if (chasing == null || chasing.distManhattan(p) >= 2 || ++chaseTicks >= 40) {
+            chasing = p.immutable();
+            chaseTicks = 0;
+            arrived = false;
+            navFailed = false;
+            if (radius <= 0) nav.navigateTo(p.getX(), p.getY(), p.getZ());
+            else nav.navigateNear(p.getX(), p.getY(), p.getZ(), radius);
+        }
+        nav.tick();
+    }
 
     private static String toolKind(String tool) {
         String t = tool.substring(tool.indexOf(':') + 1);
@@ -437,13 +768,26 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             // Where it works: here, the first time; back here after.
             if (workSpot == null) workSpot = sp.blockPosition();
             if (!sp.blockPosition().equals(workSpot)) return walkTo(workSpot, 0);
-            furnaces.removeIf(f -> !level.getBlockState(f).is(Blocks.FURNACE));
+            var station = station(sp);
+            furnaces.removeIf(f -> !level.getBlockState(f).is(station));
             for (BlockPos p : ring(workSpot, 2)) {
                 if (furnaces.size() >= step.furnaces()) break;
-                if (furnaces.contains(p) || !level.getBlockState(p).is(Blocks.FURNACE)) continue;
+                if (furnaces.contains(p) || !level.getBlockState(p).is(station)) continue;
                 furnaces.add(p.immutable());
             }
-            while (furnaces.size() < step.furnaces() && count(sp, net.minecraft.world.item.Items.FURNACE) > 0) {
+            // Then ones already standing near (the plan counted them), nearest first.
+            if (furnaces.size() < step.furnaces()) {
+                List<BlockPos> near = new ArrayList<>();
+                for (BlockPos p : BlockPos.betweenClosed(workSpot.offset(-12, -4, -12), workSpot.offset(12, 4, 12))) {
+                    if (level.isLoaded(p) && level.getBlockState(p).is(station) && !furnaces.contains(p)) near.add(p.immutable());
+                }
+                near.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(workSpot)));
+                for (BlockPos p : near) {
+                    if (furnaces.size() >= step.furnaces()) break;
+                    furnaces.add(p);
+                }
+            }
+            while (furnaces.size() < step.furnaces() && count(sp, station.asItem()) > 0) {
                 BlockPos spot = null;
                 for (BlockPos p : ring(workSpot, 2)) {
                     if (furnaces.contains(p)) continue;
@@ -454,12 +798,12 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                         break;
                     }
                 }
-                if (spot == null || !Placement.placeBlock(sp, spot, Blocks.FURNACE.defaultBlockState())) break;
+                if (spot == null || !Placement.placeBlock(sp, spot, station.defaultBlockState())) break;
                 furnaces.add(spot);
             }
             if (furnaces.isEmpty()) return fail("I have no furnace to smelt " + ProductionPlanner.name(step.input()) + " in");
             // Each furnace's share, in whole pieces of fuel's worth, and the fuel for it: as the plan priced it.
-            int fuelTicks = Math.max(1, GameKnowledge.book(sp).fuelTicks().getOrDefault(step.fuel(), 1_600));
+            int fuelTicks = fuelTicks(sp); // a smoker or blast furnace burns it twice as fast
             var split = com.mineagent.engine.planning.production.FurnaceSplit.split(step.count(), furnaces.size(), cookTicks(sp), fuelTicks);
             while (furnaces.size() > split.furnaces()) furnaces.remove(furnaces.size() - 1);
             share = split.items().clone();
@@ -471,7 +815,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         // Each pass: take what is done, top up each furnace's input to its share, and its fuel to what that burns.
         boolean anyBusy = false;
-        int fuelTicks = Math.max(1, GameKnowledge.book(sp).fuelTicks().getOrDefault(step.fuel(), 1_600));
+        int fuelTicks = fuelTicks(sp); // a smoker or blast furnace burns it twice as fast
         int cook = cookTicks(sp);
         for (int i = 0; i < furnaces.size(); i++) {
             BlockPos f = furnaces.get(i);
@@ -510,6 +854,21 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
+    private int fuelTicks(ServerPlayer sp) {
+        int t = Math.max(1, GameKnowledge.book(sp).fuelTicks().getOrDefault(step.fuel(), 1_600));
+        return station(sp) == Blocks.FURNACE ? t : Math.max(1, t / 2);
+    }
+
+    /** What this smelt is done in: a furnace, or the smoker or blast furnace its recipe is for. */
+    private net.minecraft.world.level.block.Block station(ServerPlayer sp) {
+        for (var r : GameKnowledge.book(sp).recipes(step.item())) {
+            if (!r.id().equals(step.recipe())) continue;
+            if (r.kind() == Production.Kind.SMOKE) return Blocks.SMOKER;
+            if (r.kind() == Production.Kind.BLAST) return Blocks.BLAST_FURNACE;
+        }
+        return Blocks.FURNACE;
+    }
+
     private int cookTicks(ServerPlayer sp) {
         for (var r : GameKnowledge.book(sp).recipes(step.item())) if (r.id().equals(step.recipe())) return Math.max(1, r.cookTicks());
         return 200;
@@ -537,15 +896,17 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     private TaskState deposit() {
         ServerPlayer sp = sp();
-        Item it = item(record.item);
-        if (record.chest == null) {
-            delivered += Math.min(roundCount, count(sp, it));
+        Item it = item(itemId);
+        if (chestPos == null) {
+            int kept = Math.min(roundCount, count(sp, it));
+            delivered += kept;
+            deliveredBy.merge(itemId, kept, Integer::sum);
             phase = Phase.ROUND;
             return TaskState.RUNNING;
         }
-        if (!sp.canInteractWithBlock(record.chest, 0.0)) return walkTo(record.chest);
-        Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), record.chest);
-        if (c == null) return fail("the chest at " + record.chest.toShortString() + " is gone");
+        if (!sp.canInteractWithBlock(chestPos, 0.0)) return walkTo(chestPos);
+        Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), chestPos);
+        if (c == null) return fail("the chest at " + chestPos.toShortString() + " is gone");
         int want = Math.min(target - delivered, count(sp, it));
         int before = want;
         var inv = sp.getInventory();
@@ -563,15 +924,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         TaskContext.syncInventory(sp);
         int put = before - want;
         delivered += put;
+        if (put > 0) deliveredBy.merge(itemId, put, Integer::sum);
         var loop = TaskContext.agentLoop(player);
         if (loop != null) {
-            loop.noteChest(sp.serverLevel().dimension().location().toString(), record.chest.getX(), record.chest.getY(),
-                    record.chest.getZ(), contents(c), sp.level().getGameTime());
+            loop.noteChest(sp.serverLevel().dimension().location().toString(), chestPos.getX(), chestPos.getY(),
+                    chestPos.getZ(), contents(c), sp.level().getGameTime());
         }
         if (put == 0 && room(c, it) == 0) return finish(); // full
         if (delivered < target) {
-            say(String.format("%,d of %,d %s in the chest.", delivered, target, ProductionPlanner.plural(record.item, target)));
-            if (put == 0) return fail("I made the " + ProductionPlanner.name(record.item) + " but couldn't put them in the chest");
+            say(String.format("%,d of %,d %s in the chest.", delivered, target, ProductionPlanner.plural(itemId, target)));
+            if (put == 0) return fail("I made the " + ProductionPlanner.name(itemId) + " but couldn't put them in the chest");
         }
         phase = Phase.ROUND;
         return TaskState.RUNNING;

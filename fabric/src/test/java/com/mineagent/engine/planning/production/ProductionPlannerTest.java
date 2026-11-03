@@ -49,12 +49,24 @@ final class ProductionPlannerTest {
         add.accept(new Recipe(m("torch"), Kind.CRAFT, m("torch"), 4,
                 List.of(new Need(List.of(m("coal"), m("charcoal")), 1), new Need(List.of(m("stick")), 1)), false, 0));
         add.accept(new Recipe(m("charcoal"), Kind.SMELT, m("charcoal"), 1, List.of(new Need(List.of(m("oak_log")), 1)), false, 200));
+        add.accept(new Recipe(m("cooked_beef"), Kind.SMELT, m("cooked_beef"), 1, List.of(new Need(List.of(m("beef")), 1)), false, 200));
+        add.accept(new Recipe(m("cooked_beef_from_smoking"), Kind.SMOKE, m("cooked_beef"), 1, List.of(new Need(List.of(m("beef")), 1)), false, 100));
+        add.accept(new Recipe(m("cooked_beef_from_campfire_cooking"), Kind.CAMPFIRE, m("cooked_beef"), 1, List.of(new Need(List.of(m("beef")), 1)), false, 600));
+        add.accept(new Recipe(m("iron_ingot_from_smelting_raw_iron"), Kind.SMELT, m("iron_ingot"), 1, List.of(new Need(List.of(m("raw_iron")), 1)), false, 200));
+        add.accept(new Recipe(m("iron_ingot_from_blasting_raw_iron"), Kind.BLAST, m("iron_ingot"), 1, List.of(new Need(List.of(m("raw_iron")), 1)), false, 100));
+        add.accept(new Recipe(m("iron_pickaxe"), Kind.CRAFT, m("iron_pickaxe"), 1,
+                List.of(new Need(List.of(m("iron_ingot")), 3), new Need(List.of(m("stick")), 2)), true, 0));
         Map<String, List<Source>> s = new HashMap<>();
         java.util.function.Consumer<Source> src = x -> s.computeIfAbsent(x.item(), k -> new ArrayList<>()).add(x);
         src.accept(new Source(m("cobblestone"), m("stone"), "pickaxe", 1, false, 1.0, 12));
         src.accept(new Source(m("stone"), m("stone"), "pickaxe", 1, true, 1.0, 12));
         src.accept(new Source(m("oak_log"), m("oak_log"), "axe", 0, false, 1.0, 60));
         src.accept(new Source(m("coal"), m("coal_ore"), "pickaxe", 1, false, 1.0, 23));
+        src.accept(new Source(m("raw_iron"), m("iron_ore"), "pickaxe", 2, false, 1.0, 23));
+        src.accept(new Source(m("diamond"), m("diamond_ore"), "pickaxe", 3, false, 1.0, 23));
+        // A cow, from its loot table: 1-3 beef (2 on average), 0-2 leather; a kill priced by its health.
+        src.accept(new Source(m("beef"), "entity:minecraft:cow", "", 0, false, 2.0, 120));
+        src.accept(new Source(m("leather"), "entity:minecraft:cow", "", 0, false, 1.0, 120));
         Map<String, Integer> fuel = Map.of(m("coal"), 1600, m("charcoal"), 1600, m("oak_log"), 300, m("oak_planks"), 300,
                 m("spruce_planks"), 300, m("stick"), 100);
         Map<String, Integer> uses = Map.of(m("wooden_pickaxe"), 59, m("stone_pickaxe"), 131, m("iron_pickaxe"), 250,
@@ -68,6 +80,15 @@ final class ProductionPlannerTest {
         w.putAll(where);
         return new Have(carried, stored, tools, furnaces, table, w, Map.of());
     }
+
+    static Have have(Map<String, Integer> carried, List<Tool> tools, int furnaces, int smokers, int blasts, Map<String, Where> where,
+                     Map<String, Integer> distance) {
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, m("oak_log"), Where.COMMON));
+        w.putAll(where);
+        return new Have(carried, Map.of(), tools, furnaces, true, w, distance, smokers, blasts);
+    }
+
+    static final String COW = "entity:minecraft:cow";
 
     static Step only(Plan p, Action a, String item) {
         var list = p.steps().stream().filter(s -> s.action() == a && s.item().equals(item)).toList();
@@ -146,9 +167,9 @@ final class ProductionPlannerTest {
     }
 
     @Test void somethingItCannotGetSaysWhy() {
-        var p = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, false, Map.of()), m("diamond"), 3);
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, false, Map.of()), m("netherite_ingot"), 3);
         assertFalse(p.possible());
-        assertTrue(p.summary().startsWith("I can't see a way to make 3 diamond"), p.summary());
+        assertTrue(p.summary().startsWith("I can't see a way to make 3 netherite ingot: I know no way to get netherite ingot"), p.summary());
     }
 
     @Test void whatItAlreadyCarriesIsEnough() {
@@ -156,6 +177,92 @@ final class ProductionPlannerTest {
                 m("stone_bricks"), 64);
         assertTrue(p.steps().isEmpty(), p.steps().toString());
         assertTrue(p.possible());
+    }
+
+    // ── Hunting and cooking (MA7.1, MA7.5) ──────────────────────────
+
+    @Test void foodFromTheCowsNearCookedInFurnacesItBuilds() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("coal"), 4), List.of(new Tool("pickaxe", 2, false, 131)), 0, 0, 0,
+                Map.of(COW, Where.KNOWN), Map.of(COW, 20)), m("cooked_beef"), 16);
+        assertTrue(p.possible(), p.problems().toString());
+        var hunt = only(p, Action.HUNT, m("beef"));
+        assertEquals(COW, hunt.block());
+        assertEquals(8, hunt.blocks(), "2 beef a cow on average");
+        var cook = only(p, Action.SMELT, m("cooked_beef"));
+        assertEquals(m("cooked_beef"), cook.recipe(), "no smoker: a furnace");
+        assertEquals(m("coal"), cook.fuel());
+        assertEquals(2, cook.fuelCount(), "a coal cooks 8");
+        assertTrue(p.summary().contains("hunt 8 cows"), p.summary());
+    }
+
+    @Test void aSmokerItHasCooksASmallBatch() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("coal"), 4, m("beef"), 16), List.of(), 0, 1, 0, Map.of(), Map.of()),
+                m("cooked_beef"), 16);
+        assertTrue(p.possible(), p.problems().toString());
+        var cook = only(p, Action.SMELT, m("cooked_beef"));
+        assertEquals(m("cooked_beef_from_smoking"), cook.recipe(), "its smoker, twice as quick, and no furnace to build");
+        assertEquals(1, cook.furnaces());
+        assertEquals(2, cook.fuelCount(), "a smoker burns a coal in 8 too");
+        assertEquals(0, p.furnacesBuilt());
+        assertTrue(p.summary().contains("cook 16 beef into cooked beef in 1 smoker"), p.summary());
+    }
+
+    @Test void aBigBatchIsWorthFurnacesBesideTheSmoker() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("coal"), 64, m("beef"), 512), List.of(new Tool("pickaxe", 2, false, 131)),
+                0, 1, 0, Map.of(), Map.of()), m("cooked_beef"), 512);
+        assertTrue(p.possible(), p.problems().toString());
+        var cook = only(p, Action.SMELT, m("cooked_beef"));
+        assertEquals(m("cooked_beef"), cook.recipe(), "one smoker would take 51,200 ticks: furnaces are quicker");
+        assertTrue(cook.furnaces() > 1 && p.furnacesBuilt() > 0, p.summary());
+    }
+
+    @Test void aBlastFurnaceItHasSmeltsTheOre() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("coal"), 1, m("raw_iron"), 8), List.of(), 0, 0, 1, Map.of(), Map.of()),
+                m("iron_ingot"), 8);
+        assertTrue(p.possible(), p.problems().toString());
+        var smelt = only(p, Action.SMELT, m("iron_ingot"));
+        assertEquals(m("iron_ingot_from_blasting_raw_iron"), smelt.recipe());
+        assertEquals(1, smelt.fuelCount(), "8 raw iron, one coal");
+    }
+
+    @Test void noCowsLeftNearItCooksWhatItCarries() {
+        var book = vanilla();
+        var h = have(Map.of(m("coal"), 4, m("beef"), 6), List.of(), 1, 0, 0, Map.of(COW, Where.KNOWN), Map.of(COW, 10));
+        var without = java.util.Set.of(COW);
+        assertFalse(ProductionPlanner.plan(book, h, m("cooked_beef"), 16, without).possible(), "no cows: no more beef");
+        assertEquals(6, ProductionPlanner.most(book, h, m("cooked_beef"), 16, without), "the 6 beef it has");
+        assertEquals(16, ProductionPlanner.most(book, h, m("cooked_beef"), 16, java.util.Set.of()), "with the cows, all of it");
+        assertEquals(0, ProductionPlanner.most(book, have(Map.of(), List.of(), 1, 0, 0, Map.of(), Map.of()), m("cooked_beef"), 16, without));
+    }
+
+    // ── The planner's own checks (MA7.2) ────────────────────────────
+
+    @Test void threeDiamondsFromAStonePickaxe() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("coal"), 8, m("oak_planks"), 8), List.of(new Tool("pickaxe", 2, false, 131)),
+                1, 0, 0, Map.of(m("iron_ore"), Where.KNOWN, m("diamond_ore"), Where.KNOWN), Map.of(m("iron_ore"), 30, m("diamond_ore"), 60)),
+                m("diamond"), 3);
+        assertTrue(p.possible(), p.problems().toString());
+        assertEquals(1, p.toolsMade().getOrDefault(m("iron_pickaxe"), 0).intValue(), "an iron pickaxe first: " + p.toolsMade());
+        assertEquals(3, p.mined().get(m("iron_ore")).intValue(), "3 iron for it");
+        assertEquals(3, only(p, Action.SMELT, m("iron_ingot")).count());
+        assertEquals(3, p.mined().get(m("diamond_ore")).intValue());
+        int iron = indexOf(p, Action.MINE, m("raw_iron"));
+        int pick = indexOf(p, Action.CRAFT, m("iron_pickaxe"));
+        int dia = indexOf(p, Action.MINE, m("diamond"));
+        assertTrue(iron >= 0 && iron < pick && pick < dia, "iron, then the pickaxe, then the diamonds: " + p.steps());
+    }
+
+    @Test void seventyThreeIronAndTheFuelForThem() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("coal"), 20), List.of(new Tool("pickaxe", 2, false, 131)), 0, 0, 0,
+                Map.of(m("iron_ore"), Where.KNOWN), Map.of(m("iron_ore"), 16)), m("iron_ingot"), 73);
+        assertTrue(p.possible(), p.problems().toString());
+        var smelt = only(p, Action.SMELT, m("iron_ingot"));
+        assertEquals(73, smelt.count());
+        assertEquals(73, p.mined().get(m("iron_ore")).intValue());
+        // Whole coals per furnace: each burns ceil(its share / 8), never less than 73 / 8 all told.
+        var split = FurnaceSplit.split(73, smelt.furnaces(), 200, 1600);
+        assertEquals(split.fuelTotal(), smelt.fuelCount(), p.summary());
+        assertTrue(smelt.fuelCount() >= 10 && smelt.fuelCount() <= 10 + smelt.furnaces(), p.summary());
     }
 
     static int indexOf(Plan p, Action a, String item) {

@@ -108,6 +108,7 @@ public final class GameKnowledge {
         }
 
         Map<String, List<Source>> sources = sources(sp, level);
+        animals(sp, level).forEach((item, list) -> sources.computeIfAbsent(item, k -> new ArrayList<>()).addAll(list));
         Map<String, Integer> fuel = new HashMap<>();
         for (var e : AbstractFurnaceBlockEntity.getFuel().entrySet()) fuel.put(id(e.getKey()), e.getValue());
         Map<String, Integer> durability = new HashMap<>();
@@ -239,6 +240,85 @@ public final class GameKnowledge {
         return null;
     }
 
+    private static final String ENTITY = Production.ENTITY;
+    /** Adults of a kind it leaves where it hunts, so they breed back. */
+    public static final int LEAVE = 2;
+
+    /**
+     * What each animal drops (MA7.1: "mob drops from loot tables rolled in memory"): its own loot table rolled for a
+     * kill by the companion, a few times, in memory; nothing spawned. Animals only: it hunts for food and materials,
+     * it doesn't go looking for fights. The kill is priced by its health.
+     */
+    private static Map<String, List<Source>> animals(ServerPlayer sp, ServerLevel level) {
+        Map<String, List<Source>> out = new HashMap<>();
+        var server = level.getServer();
+        for (var type : BuiltInRegistries.ENTITY_TYPE) {
+            if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;
+            try {
+                var entity = type.create(level);
+                if (!(entity instanceof net.minecraft.world.entity.animal.Animal living) || !huntable(living)) {
+                    if (entity != null) entity.discard();
+                    continue;
+                }
+                living.moveTo(sp.getX(), sp.getY(), sp.getZ());
+                var table = server.reloadableRegistries().getLootTable(living.getLootTable()); // a sheep's by its colour: wool too
+                Map<String, Double> got = new HashMap<>();
+                int rolls = 4;
+                for (int i = 0; i < rolls; i++) {
+                    var params = new net.minecraft.world.level.storage.loot.LootParams.Builder(level)
+                            .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.THIS_ENTITY, living)
+                            .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN, sp.position())
+                            .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.DAMAGE_SOURCE, level.damageSources().playerAttack(sp))
+                            .withOptionalParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ATTACKING_ENTITY, sp)
+                            .withOptionalParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.DIRECT_ATTACKING_ENTITY, sp)
+                            .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.LAST_DAMAGE_PLAYER, sp)
+                            .create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.ENTITY);
+                    for (ItemStack d : table.getRandomItems(params)) got.merge(id(d.getItem()), d.getCount() / (double) rolls, Double::sum);
+                }
+                living.discard();
+                int ticks = 60 + (int) Math.ceil(living.getMaxHealth() / 4.0) * 12; // the walk to it, a hit every 12 ticks
+                String source = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type);
+                for (var e : got.entrySet()) {
+                    if (e.getValue() <= 0) continue;
+                    out.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(new Source(e.getKey(), source, "", 0, false, e.getValue(), ticks));
+                }
+            } catch (RuntimeException e) {
+                // A mob a mod builds oddly: left out.
+            }
+        }
+        return out;
+    }
+
+    /**
+     * An animal it may hunt for what it drops: a farm animal, grown. Never a pet or one that can be tamed, a horse or
+     * the like, one that fights back (a wolf, a bee, a polar bear, a llama), or one with a name.
+     */
+    public static boolean huntable(net.minecraft.world.entity.Entity e) {
+        return e instanceof net.minecraft.world.entity.animal.Animal a && a.isAlive()
+                && !(a instanceof net.minecraft.world.entity.TamableAnimal)
+                && !(a instanceof net.minecraft.world.entity.animal.horse.AbstractHorse)
+                && !(a instanceof net.minecraft.world.entity.NeutralMob)
+                && !a.isBaby() && !a.hasCustomName() && !a.isLeashed();
+    }
+
+    /** Foods the game has, by how much they feed (nutrition plus saturation), most first. */
+    public static Map<String, Float> foods() {
+        List<Map.Entry<String, Float>> all = new ArrayList<>();
+        for (Item item : BuiltInRegistries.ITEM) {
+            ItemStack stack = new ItemStack(item);
+            var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
+            if (food == null || food.nutrition() < 4 || stack.getMaxStackSize() < 16) continue;
+            String id = id(item);
+            if (id.contains("rotten") || id.contains("spider_eye") || id.contains("poison") || id.contains("pufferfish")
+                    || id.contains("golden") || id.contains("enchanted") || id.contains("chorus") || id.contains("suspicious")) continue;
+            all.add(Map.entry(id, food.nutrition() + food.saturation()));
+        }
+        all.sort((a, b) -> Float.compare(b.getValue(), a.getValue()));
+        Map<String, Float> out = new java.util.LinkedHashMap<>();
+        for (var e : all) out.put(e.getKey(), e.getValue());
+        return out;
+    }
+
     /** Blocks next to it everywhere: never a search to find (stone underground, earth, sand, trees). */
     static final Set<String> COMMON = Set.of("minecraft:stone", "minecraft:deepslate", "minecraft:dirt", "minecraft:grass_block",
             "minecraft:sand", "minecraft:gravel", "minecraft:netherrack", "minecraft:cobblestone", "minecraft:andesite",
@@ -255,7 +335,7 @@ public final class GameKnowledge {
         Map<String, Integer> carried = new HashMap<>();
         List<Tool> tools = new ArrayList<>();
         var silk = level.registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolderOrThrow(Enchantments.SILK_TOUCH);
-        int furnaces = 0;
+        int furnaces = 0, smokers = 0, blasts = 0;
         boolean table = false;
         var inv = sp.getInventory();
         for (int i = 0; i < inv.getContainerSize(); i++) {
@@ -268,6 +348,8 @@ public final class GameKnowledge {
                         EnchantmentHelper.getItemEnchantmentLevel(silk, s) > 0, Math.max(0, s.getMaxDamage() - s.getDamageValue() - 1)));
             }
             if (s.is(Items.FURNACE)) furnaces += s.getCount();
+            if (s.is(Items.SMOKER)) smokers += s.getCount();
+            if (s.is(Items.BLAST_FURNACE)) blasts += s.getCount();
             if (s.is(Items.CRAFTING_TABLE)) table = true;
         }
         BlockPos at = sp.blockPosition();
@@ -275,6 +357,8 @@ public final class GameKnowledge {
             if (!level.isLoaded(p)) continue;
             var st = level.getBlockState(p);
             if (st.is(Blocks.FURNACE)) furnaces++;
+            else if (st.is(Blocks.SMOKER)) smokers++;
+            else if (st.is(Blocks.BLAST_FURNACE)) blasts++;
             else if (st.is(Blocks.CRAFTING_TABLE)) table = true;
         }
         Map<String, Integer> stored = new HashMap<>();
@@ -299,6 +383,33 @@ public final class GameKnowledge {
                 distance.put(bid, d);
             }
         }
+        // Animals near (more than the two of a kind it leaves), then ones it has seen, for what they drop.
+        Map<String, Integer> herd = new HashMap<>();
+        Map<String, Integer> herdAt = new HashMap<>();
+        for (var e : level.getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(at).inflate(48), GameKnowledge::huntable)) {
+            String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
+            herd.merge(key, 1, Integer::sum);
+            herdAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);
+        }
+        herd.forEach((key, n) -> {
+            if (n > LEAVE) {
+                where.put(key, Where.KNOWN);
+                distance.put(key, herdAt.get(key));
+            }
+        });
+        if (loop != null) {
+            for (var type : BuiltInRegistries.ENTITY_TYPE) {
+                if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;
+                if (where.containsKey(ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type)) || herd.containsKey(ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type))) continue;
+                String what = BuiltInRegistries.ENTITY_TYPE.getKey(type).getPath();
+                var near = loop.placeKeeper().sightings().nearest(what, dim, at.getX(), at.getY(), at.getZ(), 1, 96);
+                if (!near.isEmpty() && near.get(0).sighting().kind() == com.mineagent.engine.memory.Sightings.Kind.ANIMAL) {
+                    String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type);
+                    where.put(key, Where.KNOWN);
+                    distance.put(key, (int) near.get(0).distance());
+                }
+            }
+        }
         if (loop != null) {
             var seen = loop.placeKeeper().sightings();
             for (Block b : BuiltInRegistries.BLOCK) {
@@ -312,6 +423,6 @@ public final class GameKnowledge {
                 }
             }
         }
-        return new Have(carried, stored, tools, furnaces, table, where, distance);
+        return new Have(carried, stored, tools, furnaces, table, where, distance, smokers, blasts);
     }
 }

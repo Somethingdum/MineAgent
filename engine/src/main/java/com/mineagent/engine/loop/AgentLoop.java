@@ -1104,7 +1104,9 @@ public class AgentLoop {
         // Practice is AUTO's (Andy Omega §59): in servant, escort and parked mode it never starts work of its own,
         // and on guard it stays on guard.
         boolean auto = (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO || afkKeepBusy()) && !guarding();
-        if (!curriculum.due(auto && agentSettings.curriculum(), inProgress || skillRuntime.active(), sinceOrder,
+        LiveBodyState body = liveBodyState.get();
+        boolean taskRunning = body != null && body.taskId() != null; // an order it is doing (a chest to fill)
+        if (!curriculum.due(auto && agentSettings.curriculum(), inProgress || skillRuntime.active() || taskRunning, sinceOrder,
                 hostileNear, player.getHealth(), flee, now)) return;
         curriculum.asking(now);
         List<String> names = new ArrayList<>();
@@ -1233,7 +1235,7 @@ public class AgentLoop {
             case AFK -> {
                 if (!fromOwner) return false;
                 ownerActivity.saidAfk(net.minecraft.Util.getMillis());
-                startAfkOrder(com.mineagent.engine.loop.AfkOrders.parse(c.value()));
+                startAfkOrder(com.mineagent.engine.loop.AfkOrders.parse(c.value()), self);
             }
             case BACK -> {
                 if (!fromOwner) return false;
@@ -1242,7 +1244,7 @@ public class AgentLoop {
             }
             case PRODUCE -> {
                 if (!fromOwner) return false;
-                return produceCommand(c, self);
+                return produceCommand(c, self, false);
             }
             case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, FIND_PLACE -> {
                 return placeCommand(c, self, fromOwner);
@@ -2990,35 +2992,48 @@ public class AgentLoop {
      * the chest they look at (or the nearest within 6 blocks of them), and the production task does the rest. Words it
      * can't match to an item go to the model.
      */
-    private boolean produceCommand(com.mineagent.engine.chat.CommandParser.Command c, com.mineagent.engine.entity.CompanionEntity self) {
+    private boolean produceCommand(com.mineagent.engine.chat.CommandParser.Command c, com.mineagent.engine.entity.CompanionEntity self,
+                                   boolean whileAway) {
         var me = self.serverPlayer();
         var owner = self.serverPlayerOwner();
         if (me == null) return false;
         String words = c.value();
-        boolean toChest = words.startsWith("chest|");
-        if (toChest) words = words.substring("chest|".length());
-        String item = com.mineagent.engine.planning.production.GameKnowledge.itemFor(words);
+        boolean anyChest = words.startsWith("anychest|");
+        boolean toChest = anyChest || words.startsWith("chest|");
+        if (toChest) words = words.substring(words.indexOf('|') + 1);
+        String item = FOOD_WORDS.matcher(words).matches() ? com.mineagent.engine.task.ProductionTask.FOOD
+                : com.mineagent.engine.planning.production.GameKnowledge.itemFor(words);
         if (item == null) return false;
         int count = c.count() == null ? 1 : c.count();
         if (count < 0) {
-            var it = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.tryParse(item));
-            count = -count * new net.minecraft.world.item.ItemStack(it).getMaxStackSize();
+            int stack = item.equals(com.mineagent.engine.task.ProductionTask.FOOD) ? 64 : new net.minecraft.world.item.ItemStack(
+                    net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.tryParse(item))).getMaxStackSize();
+            count = -count * stack;
         }
         net.minecraft.core.BlockPos chest = null;
+        boolean placeChest = false;
         if (toChest) {
             chest = owner != null && owner.serverLevel() == me.serverLevel() ? chestMeant(owner) : null;
-            if (chest == null) {
+            if (chest == null && anyChest) {
+                placeChest = true; // "a chest": none by them, so one of its own
+            } else if (chest == null) {
                 speakToOwner("Which chest? Stand by it, or look at it, and say it again.");
                 return true;
             }
         }
-        haltNow();
-        standDown();
+        if (!whileAway) {
+            haltNow();
+            standDown();
+        }
         journal.record("order", "make " + (count == 0 ? "a chest full of" : count) + " " + words, currentGameTickSafe());
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                "produce-" + UUID.randomUUID(), item, count, chest), reply -> { });
+                "produce-" + UUID.randomUUID(), item, count, chest, placeChest), reply -> { });
         return true;
     }
+
+    /** Words that mean food in general, not one food: "food", "something to eat", "cooked meat". */
+    private static final java.util.regex.Pattern FOOD_WORDS = java.util.regex.Pattern.compile(
+            "^(?:some )?(?:good |cooked |hot )?(?:food|foods|meat|meals?|grub|something to eat|things to eat|stuff to eat)$");
 
     /** The chest they are looking at, within 6 blocks; else the nearest chest or barrel within 6 of them. */
     private static net.minecraft.core.BlockPos chestMeant(net.minecraft.server.level.ServerPlayer owner) {
@@ -3187,7 +3202,7 @@ public class AgentLoop {
      * "Going AFK, ..." (SMH plan 70, MA5.4): what it says back, the job put in its goal book (it works on it, and when
      * it's done finds something else to do), and the shelter at once when walling itself in is all it was asked.
      */
-    private void startAfkOrder(com.mineagent.engine.loop.AfkOrders.Order order) {
+    private void startAfkOrder(com.mineagent.engine.loop.AfkOrders.Order order, com.mineagent.engine.entity.CompanionEntity self) {
         afkOrder = order;
         afkOrderAt = System.currentTimeMillis();
         afkShelterStarted = false;
@@ -3195,6 +3210,11 @@ public class AgentLoop {
         if (order.any()) journal.record("afk-order", "while you're away: " + describe(order), currentGameTickSafe());
         speakToOwner(said);
         if (order.task() != null) {
+            // An order it knows how to do itself ("fill up a chest with food") goes straight to that; others to its
+            // goal book and the model.
+            var known = com.mineagent.engine.chat.CommandParser.parse(order.task(), companion.companionName());
+            if (known.isPresent() && known.get().kind() == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE
+                    && produceCommand(known.get(), self, true)) return;
             String goal = addGoal(order.task(), "owner");
             if (goal.startsWith("I can't")) speakToOwner(goal);
         } else if (order.shelter()) {
