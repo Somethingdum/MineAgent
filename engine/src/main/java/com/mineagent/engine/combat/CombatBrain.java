@@ -112,21 +112,31 @@ public final class CombatBrain {
         return h.attacking() && h.lineOfSight() && (p.preferRanged() || h.drawingBow()) && h.distance() <= 16.0;
     }
 
+    /** It is going for the owner or a trusted player within 24 blocks (plan 69, MA3.5): the companion steps in. */
+    static boolean protecting(Hostile h) {
+        return (h.targetsOwner() || h.targetsWard()) && h.distance() <= 24.0;
+    }
+
     /**
-     * How far from the anchor it may go after this hostile: the duty's leash, longer for an archer shooting at it
-     * or its charge (16 blocks; a guard goes 8 past its perimeter for one shooting in, no farther).
+     * How far from the anchor it may go after this hostile: the duty's leash; 16 blocks for an archer shooting at it
+     * or its charge; 24 for one going for the owner or a trusted player (then back to the work). A guard keeps to its
+     * perimeter, and goes 8 past it only for an archer shooting in.
      */
     public static double leashFor(Hostile h, Context c) {
         double leash = c.leash();
-        if (h == null || !shooting(h)) return leash;
-        return c.duty() == Duty.GUARD ? c.perimeter() + 8.0 : Math.max(leash, 16.0);
+        if (h == null) return leash;
+        if (c.duty() == Duty.GUARD) return shooting(h) ? c.perimeter() + 8.0 : leash;
+        if (protecting(h)) leash = Math.max(leash, 24.0);
+        if (shooting(h)) leash = Math.max(leash, 16.0);
+        return leash;
     }
 
     /**
      * Whether a hostile is the companion's business given its duty: never a mob far off that threatens no one.
      * Always: one in its face (4 blocks) or a creeper close. Guarding: anything inside the perimeter, or shooting
-     * into it from just outside; nothing farther. Working: only what attacks it or the owner close by, and an archer
-     * shooting at it (it does not chase every mob in the cave). Escort: what threatens the owner. Idle: what attacks it.
+     * into it from just outside; nothing farther. Working: only what attacks it close by, an archer shooting at it, or
+     * what goes for the owner or a trusted player within 24 blocks (it does not chase every mob in the cave). Escort:
+     * what threatens the owner. Idle: what attacks it or them.
      */
     public static boolean relevant(Hostile h, Context c) {
         MobPolicy p = MobPolicy.of(h.type());
@@ -137,9 +147,9 @@ public final class CombatBrain {
         double leash = leashFor(h, c);
         return switch (c.duty()) {
             case GUARD -> h.fromAnchor() <= c.perimeter() || (shooting(h) && h.fromAnchor() <= leash);
-            case WORKING -> h.attacking() && (h.distance() <= 8.0 || shooting(h)) && h.fromAnchor() <= leash + 4.0;
+            case WORKING -> h.attacking() && (h.distance() <= 8.0 || shooting(h) || protecting(h)) && h.fromAnchor() <= leash + 4.0;
             case ESCORT -> h.attacking() && h.fromAnchor() <= leash + 4.0;
-            case IDLE -> h.attacking() && h.distance() <= 16.0;
+            case IDLE -> h.attacking() && (h.distance() <= 16.0 || protecting(h));
         };
     }
 

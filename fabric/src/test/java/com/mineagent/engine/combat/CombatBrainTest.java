@@ -135,6 +135,21 @@ final class CombatBrainTest {
                 "an archer 10 past the perimeter is not chased");
     }
 
+    @Test void itStepsInForTheOwnerOrATrustedPlayerThenGoesBack() {
+        // A zombie going for the owner 15 blocks away while it mines: it goes (MA3.5)...
+        Hostile atOwner = new Hostile("zombie", 15, 0, 20, false, true, false, false, true, 0, true, 15, false);
+        assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(atOwner), STRONG, BALANCED, WORK).posture());
+        assertEquals(Move.APPROACH, act(atOwner, STRONG, 1.0, true, false, false, WORK).move());
+        Hostile farOff = new Hostile("zombie", 20, 0, 20, false, true, false, false, true, 0, true, 20, false);
+        assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(farOff), STRONG, BALANCED).posture(), "idle, 20 out");
+        // ...past 24 blocks it does not, and one at it from 12 while it works still waits until it is close.
+        Hostile tooFar = new Hostile("zombie", 30, 0, 20, false, true, false, false, true, 0, true, 30, false);
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(tooFar), STRONG, BALANCED, WORK).posture());
+        // A guard keeps to what it guards.
+        Hostile outside = new Hostile("zombie", 15, 0, 20, false, true, false, false, true, 0, true, 15, false);
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(outside), STRONG, BALANCED, GUARD).posture());
+    }
+
     @Test void arrowsArePredictedFromWhereTheyAreGoing() {
         assertTrue(ArrowPredictor.incoming(10, 1.5, 0, -1.5, 0.05, 0, ArrowPredictor.ARROW_GRAVITY, 0, 1, 0));
         assertFalse(ArrowPredictor.incoming(10, 1.5, 0, 1.5, 0, 0, ArrowPredictor.ARROW_GRAVITY, 0, 1, 0), "going away");

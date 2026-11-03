@@ -109,6 +109,8 @@ public final class MobDefenseChain implements TaskChain {
     private final Map<UUID, Long> letGo = new HashMap<>();
     private int repath;
     private Vec3 navGoal;
+    /** The last day it geared up at dusk (MA3.6). */
+    private long gearedDay = -1;
 
     public MobDefenseChain(AgentPlayer companion, SurvivalConfig config) {
         this.companion = companion;
@@ -145,6 +147,7 @@ public final class MobDefenseChain implements TaskChain {
             }
             // Nothing left to fight: the fight is over (ended here, so a body task holding the body cannot keep it open).
             if (fighting) endFight(TaskContext.agentLoop(companion), fled ? Scorecard.Outcome.RETREATED : Scorecard.Outcome.DONE);
+            gearUpAtDusk();
             if (s.setup().duty() == Duty.GUARD && s.anchor() != null) {
                 return s.context().selfFromAnchor() > nearEnough(s) ? PRIORITY_RETURN : PRIORITY_HOLD_POST;
             }
@@ -241,12 +244,23 @@ public final class MobDefenseChain implements TaskChain {
         List<Mob> mobs = new ArrayList<>();
         boolean drawing = false;
         letGo.values().removeIf(until -> until < now);
+        // Whom it protects besides itself (MA3.5): the owner and trusted players within 24 blocks.
+        List<Player> charges = new ArrayList<>();
+        if (owner != null && owner.level() == sp.level()) charges.add(owner);
+        List<String> trusted = loop != null ? loop.getAgentSettings().trusted() : List.of();
+        if (!trusted.isEmpty()) {
+            for (Player p : sp.level().players()) {
+                if (p != sp && p != owner && p.isAlive() && p.distanceTo(sp) <= 24.0
+                        && trusted.contains(p.getUUID().toString().toLowerCase(Locale.ROOT))) charges.add(p);
+            }
+        }
         for (Mob mob : sp.level().getEntitiesOfClass(Mob.class, box, Mob::isAlive)) {
             boolean enemy = mob instanceof Enemy;
             LivingEntity aim = mob.getTarget();
             boolean targetsSelf = aim == sp;
-            boolean targetsOwner = aim != null && (aim == owner
-                    || (aim instanceof Player p && ownerUuid != null && MineAgentEngine.isCompanionOwnedBy(p.getUUID(), ownerUuid)));
+            boolean targetsOwner = (aim != null && (charges.contains(aim)
+                    || (aim instanceof Player p && ownerUuid != null && MineAgentEngine.isCompanionOwnedBy(p.getUUID(), ownerUuid))))
+                    || hurtOneOf(mob, charges);
             boolean targetsWard = aim != null && setup.ward() != null && aim.getUUID().equals(setup.ward());
             if (!enemy && !(mob instanceof NeutralMob && (targetsSelf || targetsOwner || targetsWard))) continue;
             if (mob instanceof Creeper && !avoidCreepers && !targetsSelf) continue;
@@ -290,6 +304,14 @@ public final class MobDefenseChain implements TaskChain {
         Snapshot s = new Snapshot(now, setup, anchor, context, hostiles, mobs, self, assessment, arrow, arrowFrom, drawing);
         seen = s;
         return s;
+    }
+
+    /** It hit one of them in the last 5 s (it may have turned to someone else since). */
+    private static boolean hurtOneOf(Mob mob, List<Player> charges) {
+        for (Player p : charges) {
+            if (p.getLastHurtByMob() == mob && p.tickCount - p.getLastHurtByMobTimestamp() < 100) return true;
+        }
+        return false;
     }
 
     private static AABB scanBox(ServerPlayer sp, Vec3 anchor, AgentLoop.CombatSetup setup) {
@@ -441,9 +463,10 @@ public final class MobDefenseChain implements TaskChain {
             return;
         }
         if (raised) return;
-        if (!(sp.getOffhandItem().getItem() instanceof ShieldItem)
-                && !TaskContext.selectInventoryItemForHand(companion, "minecraft:shield", InteractionHand.OFF_HAND)) {
-            return;
+        if (!(sp.getOffhandItem().getItem() instanceof ShieldItem)) {
+            // A totem in the off hand stays there: it saves a life, the shield only saves hits.
+            if (sp.getOffhandItem().is(net.minecraft.world.item.Items.TOTEM_OF_UNDYING)) return;
+            if (!TaskContext.selectInventoryItemForHand(companion, "minecraft:shield", InteractionHand.OFF_HAND)) return;
         }
         if (sp.isUsingItem()) sp.stopUsingItem();
         Interaction.useItem(sp, InteractionHand.OFF_HAND);
@@ -460,6 +483,17 @@ public final class MobDefenseChain implements TaskChain {
         }
     }
 
+    /** Once each dusk (game time 12 500 to 13 500), before the night's mobs: the best armour and the shield on. */
+    private void gearUpAtDusk() {
+        ServerPlayer sp = serverPlayer();
+        long day = sp.level().getDayTime();
+        long time = Math.floorMod(day, 24_000L);
+        long today = Math.floorDiv(day, 24_000L);
+        if (time < 12_500L || time >= 13_500L || today == gearedDay) return;
+        gearedDay = today;
+        if (GearUp.run(sp)) bodyLog.report("dusk: put on its best gear");
+    }
+
     // ── The fight's record ──────────────────────────────────────────────
 
     private void beginFight(AgentLoop loop, Snapshot s, Hostile target, ServerPlayer sp) {
@@ -470,6 +504,7 @@ public final class MobDefenseChain implements TaskChain {
         fightMob = target.type();
         tactics = loop != null ? loop.tacticsFor(fightMob) : Tactics.of("balanced", config.healthFlee());
         trackedTarget = null;
+        if (GearUp.run(sp)) bodyLog.report("put on its best gear");
         // Getting away from what is never fought (the warden) is not a fight to rate a stance by.
         if (loop != null && !MobPolicy.of(fightMob).mustFlee()) loop.fightBegan(fightMob, tactics.stance(), sp);
         bodyLog.report((s.setup().duty() == Duty.GUARD ? "on guard: " : "") + "fighting " + fightMob
