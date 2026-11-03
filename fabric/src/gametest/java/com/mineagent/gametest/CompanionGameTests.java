@@ -2026,7 +2026,7 @@ public class CompanionGameTests implements FabricGameTest {
                 boolean allTaken = true;
                 for (int[] o : seen) allTaken &= !is(helper, o[0], o[1], o[2], Blocks.IRON_ORE);
                 boolean unseenLeft = is(helper, 8, 4, 5, Blocks.IRON_ORE);
-                String plan = lastSaid(s, "On it");
+                String plan = lastSaid(s, "On it: ");
                 tidy(s);
                 if (raw == 4 && allTaken && unseenLeft && done.startsWith("Mined 4 raw iron") && plan.contains("branch")) helper.succeed();
                 else fail(helper, "raw iron " + raw + ", all opened taken " + allTaken + ", unseen left " + unseenLeft + "; plan: " + plan + "; done: " + done);
@@ -2137,10 +2137,48 @@ public class CompanionGameTests implements FabricGameTest {
                 boolean first = !lastSaid(s, "Food for the trip first").isEmpty();
                 boolean mined = !lastSaid(s, "Mined").isEmpty();
                 tidy(s);
-                if (food >= 4 && first && !mined && ready.contains("going without torches")) helper.succeed();
+                // It may eat some of what it cooked on the way (hunting makes it hungry); torches it can't make here.
+                if (food >= 4 && first && !mined && ready.contains("torches")) helper.succeed();
                 else fail(helper, "cooked beef " + food + ", said food first " + first + ", mined already " + mined + "; ready: " + ready);
             } else if (helper.getTick() >= 3100) {
                 String how = "cooked beef " + inv.countItem(Items.COOKED_BEEF) + ", beef " + inv.countItem(Items.BEEF) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA7.6, gathering well: "make me a crafting table" with no oak anywhere, a birch tree in sight and two
+     * birch planks lying on the ground: the planks on the ground first (closest source first), the rest from the birch
+     * (any log will do, and birch is the one here), never a search for oak.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_gather", timeoutTicks = 1600)
+    public void noOakHereItUsesTheBirchAndThePlanksOnTheGround(GameTestHelper helper) {
+        Scene s = scene(helper, "Gatherer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int y = 1; y <= 4; y++) helper.setBlock(9, y, 8, Blocks.BIRCH_LOG);
+        BlockPos drop = helper.absolutePos(new BlockPos(6, 1, 5));
+        var planks = new net.minecraft.world.entity.item.ItemEntity(helper.getLevel(), drop.getX() + 0.5, drop.getY() + 0.1, drop.getZ() + 0.5,
+                new ItemStack(Items.BIRCH_PLANKS, 2));
+        planks.setDeltaMovement(0, 0, 0);
+        helper.getLevel().addFreshEntity(planks);
+        var inv = s.body().getInventory();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a crafting table"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "gather");
+            String done = lastSaid(s, "Done");
+            if (!done.isEmpty()) {
+                String plan = lastSaid(s, "On it");
+                boolean table = inv.countItem(Items.CRAFTING_TABLE) >= 1;
+                boolean pickedUp = !planks.isAlive();
+                boolean birch = plan.contains("birch log") && !plan.contains("oak");
+                tidy(s);
+                if (table && pickedUp && birch) helper.succeed();
+                else fail(helper, "table " + table + ", planks picked up " + pickedUp + "; plan: " + plan + "; done: " + done);
+            } else if (helper.getTick() >= 1500) {
+                String how = "table " + inv.countItem(Items.CRAFTING_TABLE) + ", birch planks " + inv.countItem(Items.BIRCH_PLANKS)
+                        + ", logs " + inv.countItem(Items.BIRCH_LOG) + "; said: " + lastSaid(s, "");
                 tidy(s);
                 fail(helper, how);
             }

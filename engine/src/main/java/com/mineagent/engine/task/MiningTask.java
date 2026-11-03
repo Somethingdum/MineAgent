@@ -260,7 +260,8 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             }
             case 2 -> {
                 if (com.mineagent.engine.settings.Switches.sparePickaxe() && pickaxes(sp) < 2) {
-                    return errand("minecraft:stone_pickaxe", 1, null);
+                    // One more than the stone ones it has: the one in hand is not the spare.
+                    return errand("minecraft:stone_pickaxe", ProductionTask.count(sp, Items.STONE_PICKAXE) + 1, null);
                 }
                 readyStage++;
             }

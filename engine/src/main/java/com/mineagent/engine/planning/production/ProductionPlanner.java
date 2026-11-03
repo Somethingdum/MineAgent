@@ -90,7 +90,8 @@ public final class ProductionPlanner {
 
         /** The plan in a line a person reads: what makes it, what it uses, about how long. */
         public String summary() {
-            if (!possible()) return "I can't see a way to make " + count + " " + name(item) + ": " + String.join("; ", problems) + ".";
+            if (!possible()) return String.format(Locale.ROOT, "I can't see a way to make %,d %s: %s.", count, plural(item, count),
+                    String.join("; ", problems));
             List<String> parts = new ArrayList<>();
             for (Step s : steps) {
                 switch (s.action()) {
@@ -112,6 +113,7 @@ public final class ProductionPlanner {
                 }
             }
             String head = String.format(Locale.ROOT, "%,d %s", count, plural(item, count));
+            if (parts.isEmpty()) return head + ": I have " + (count == 1 ? "it" : "them") + " already.";
             long m = Math.round(ticks / 1_200.0);
             String minutes = ticks < 1_200 ? "under a minute" : m <= 1 ? "about a minute" : String.format(Locale.ROOT, "about %d minutes", m);
             return head + ": " + String.join(", ", parts) + "; " + minutes + ".";
@@ -346,7 +348,7 @@ public final class ProductionPlanner {
             }
         }
         if (Double.isInfinite(best)) {
-            problems.add("I know no way to get " + name(item));
+            problems.add(whyNot(item, p));
             return;
         }
         if (bestSource != null && bestSource.silkTouch()) {
@@ -367,6 +369,42 @@ public final class ProductionPlanner {
         }
         if (bestSource != null) mine(bestSource, left, depth, p);
         else craft(bestRecipe, left, depth, p);
+    }
+
+    /**
+     * Why there is no way to {@code item}, a level down: what its nearest recipe lacks ("no coal or charcoal, and no
+     * stick to be had"), or that nothing makes it and nothing near drops it.
+     */
+    private String whyNot(String item, Set<String> path) {
+        String best = null;
+        int fewest = Integer.MAX_VALUE;
+        for (Recipe r : book.recipes(item)) {
+            if (r.kind() == Kind.STONECUT || r.kind() == Kind.CAMPFIRE) continue;
+            List<String> lacking = new ArrayList<>();
+            for (Need n : r.needs()) {
+                boolean any = false;
+                for (String alt : n.anyOf()) {
+                    memo.clear();
+                    if (!Double.isInfinite(unit(alt, new HashSet<>(path)))) {
+                        any = true;
+                        break;
+                    }
+                }
+                if (!any) {
+                    List<String> names = new ArrayList<>();
+                    for (String alt : n.anyOf().subList(0, Math.min(3, n.anyOf().size()))) names.add(name(alt));
+                    lacking.add(String.join(" or ", names));
+                }
+            }
+            if (!lacking.isEmpty() && lacking.size() < fewest) {
+                fewest = lacking.size();
+                best = String.format(Locale.ROOT, "%s needs %s, and I have none and know of none near", plural(item, 2), String.join(" and ", lacking));
+            }
+        }
+        if (best != null) return best;
+        return book.recipes(item).isEmpty() && book.sources(item).isEmpty()
+                ? "I know no way to get " + name(item)
+                : "I know of no " + name(item) + " near here, nor anything to make it from";
     }
 
     private int available(String item) {

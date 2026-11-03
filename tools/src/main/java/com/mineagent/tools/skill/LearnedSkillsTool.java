@@ -65,7 +65,9 @@ public class LearnedSkillsTool implements Tool {
 
         var skillLib = loop.skillLibrary();
         String query = ToolArgs.getString(args, "query", "");
-        var skills = skillLib.relevant(query, query.isBlank() ? 5 : 3);
+        // By what the job needs first, then the skills those name, then word overlap, within a budget (MA7.7).
+        var skills = query.isBlank() ? skillLib.relevant(query, 5)
+                : skillLib.forNeeds(query, null, 3, com.mineagent.engine.skill.SkillLibrary.OFFER_BUDGET);
 
         if (skills.isEmpty()) {
             JsonObject result = new JsonObject();

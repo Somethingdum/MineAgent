@@ -3670,7 +3670,7 @@ public class AgentLoop {
         if (mechanismExplorer.hasRelevantNovelty(intent)) {
             exposeExtraTools(Set.of("explore_mechanism"));
         }
-        if (!skillLib.retrieve(intent).isEmpty()) {
+        if (!skillLib.forNeeds(intent, null, 3, SkillLibrary.OFFER_BUDGET).isEmpty()) {
             exposeExtraTools(Set.of("execute_skill", "load_skill", "list_learned_skills"));
         }
     }

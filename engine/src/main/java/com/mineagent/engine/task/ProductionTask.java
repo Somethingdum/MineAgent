@@ -403,8 +403,24 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (tool) toolsToMake.merge(s.item(), s.count(), Integer::sum);
             else todo.add(s);
         }
+        // What lies on the ground near that the plan counted on: picked up first.
+        wanted.clear();
+        wanted.add(itemId);
+        for (Step st : plan.steps()) {
+            if (st.item() != null) wanted.add(st.item());
+            if (st.input() != null) wanted.add(st.input());
+            if (st.fuel() != null) wanted.add(st.fuel());
+            if (st.recipe() != null) {
+                for (var r : book.recipes(st.item())) {
+                    if (!r.id().equals(st.recipe())) continue;
+                    for (var n : r.needs()) wanted.addAll(n.anyOf());
+                }
+            }
+        }
+        gleaning = true;
         if (carried >= roundCount && todo.isEmpty()) {
-            phase = Phase.DEPOSIT;
+            phase = Phase.STEPS;
+            step = null;
             return TaskState.RUNNING;
         }
         phase = Phase.STEPS;
@@ -472,6 +488,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     // ── Steps ───────────────────────────────────────────────────────
 
     private TaskState steps() {
+        if (gleaning) {
+            if (glean(sp())) return TaskState.RUNNING;
+            gleaning = false;
+        }
         if (step == null) {
             if (todo.isEmpty()) {
                 if (makingChest) return putChestDown();
@@ -574,6 +594,49 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     private int lastGot;
+
+    // ── Closest source first (MA7.6) ────────────────────────────────
+
+    /** Items the round's plan uses: what lies near of these is picked up before anything is mined or made. */
+    private final java.util.Set<String> wanted = new java.util.HashSet<>();
+    private boolean gleaning;
+    private final java.util.Set<java.util.UUID> ignoredDrops = new java.util.HashSet<>();
+    private java.util.UUID gleanTarget;
+    private int gleanTicks;
+
+    /** The nearest wanted thing on the ground, walked to (it is picked up on arrival); false when there is none left. */
+    private boolean glean(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        String dim = level.dimension().location().toString();
+        net.minecraft.world.entity.item.ItemEntity best = null;
+        for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                new net.minecraft.world.phys.AABB(sp.blockPosition()).inflate(GameKnowledge.GROUND, 6, GameKnowledge.GROUND),
+                x -> x.isAlive() && !ignoredDrops.contains(x.getUUID())
+                        && wanted.contains(BuiltInRegistries.ITEM.getKey(x.getItem().getItem()).toString())
+                        && !com.mineagent.engine.world.AfkFarms.protects(dim, x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
+            if (best == null || e.distanceToSqr(sp) < best.distanceToSqr(sp)) best = e;
+        }
+        if (best == null) {
+            gleanTarget = null;
+            chasing = null;
+            return false;
+        }
+        if (!best.getUUID().equals(gleanTarget)) {
+            gleanTarget = best.getUUID();
+            gleanTicks = 0;
+            chasing = null;
+            navFailed = false;
+        }
+        if (navFailed || ++gleanTicks > 300) {
+            // Out of its reach (in lava, up a cliff): left.
+            ignoredDrops.add(best.getUUID());
+            navFailed = false;
+            chasing = null;
+            return true;
+        }
+        chase(best.blockPosition(), 0);
+        return true;
+    }
 
     /** None of this source left within reach: the round is planned again without it. */
     private TaskState outOf(String source) {

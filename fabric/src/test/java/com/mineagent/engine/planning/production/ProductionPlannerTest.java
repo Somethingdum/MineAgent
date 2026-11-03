@@ -180,7 +180,12 @@ final class ProductionPlannerTest {
     @Test void somethingItCannotGetSaysWhy() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, false, Map.of()), m("netherite_ingot"), 3);
         assertFalse(p.possible());
-        assertTrue(p.summary().startsWith("I can't see a way to make 3 netherite ingot: I know no way to get netherite ingot"), p.summary());
+        assertTrue(p.summary().startsWith("I can't see a way to make 3 netherite ingots: I know no way to get netherite ingot"), p.summary());
+        // A level down: what the recipe lacks, when it has searched and seen none.
+        var torches = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, false, Map.of()), m("torch"), 16,
+                java.util.Set.of(Production.UNSEEN, m("oak_log")));
+        assertFalse(torches.possible());
+        assertTrue(torches.summary().contains("torches needs coal or charcoal"), torches.summary());
     }
 
     @Test void whatItAlreadyCarriesIsEnough() {

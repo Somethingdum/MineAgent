@@ -138,6 +138,89 @@ public class SkillLibrary {
                 .toList();
     }
 
+    /** Characters of skills (names, descriptions, triggers) offered to the model for one job at most. */
+    public static final int OFFER_BUDGET = 1_200;
+
+    /** The tools a job's words call for (SMH plan 70, MA7.7): mining wants auto_mine, making things craft... */
+    private static final Map<String, List<String>> CAPABILITIES = Map.ofEntries(
+            Map.entry("auto_mine", List.of("mine", "dig", "quarry", "tunnel", "ore", "stone", "log", "wood", "chop", "挖", "采")),
+            Map.entry("craft", List.of("craft", "make", "build me", "tool", "pickaxe", "sword", "torch", "plank", "制作", "合成")),
+            Map.entry("produce", List.of("make", "fill", "chest of", "stack", "smelt", "cook", "ingot", "brick")),
+            Map.entry("melee_attack", List.of("fight", "kill", "attack", "hunt", "defend", "guard", "打", "杀")),
+            Map.entry("ranged_attack", List.of("shoot", "bow", "arrow", "crossbow")),
+            Map.entry("build", List.of("build", "house", "wall", "shelter", "bridge", "建")),
+            Map.entry("goto", List.of("go ", "walk", "travel", "find", "explore", "come", "去")),
+            Map.entry("transfer_items", List.of("chest", "store", "put away", "take from", "deposit")),
+            Map.entry("collect_items", List.of("pick up", "collect", "gather")),
+            Map.entry("use_item", List.of("plant", "farm", "bucket", "water", "use ")),
+            Map.entry("eat_item", List.of("eat", "hungry", "food")),
+            Map.entry("interact_entity", List.of("trade", "villager", "breed", "shear", "feed")));
+
+    /** The tools {@code query} calls for, by its words. */
+    public static Set<String> capabilities(String query) {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        String q = query == null ? "" : query.toLowerCase(Locale.ROOT);
+        CAPABILITIES.forEach((tool, words) -> {
+            for (String w : words) if (q.contains(w)) { out.add(tool); break; }
+        });
+        return out;
+    }
+
+    /** The tools a skill's steps use. */
+    static Set<String> toolsOf(Skill skill) {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        try {
+            for (JsonElement e : JsonParser.parseString(skill.actionSequence()).getAsJsonArray()) {
+                if (e.isJsonObject() && e.getAsJsonObject().has("tool")) out.add(e.getAsJsonObject().get("tool").getAsString());
+            }
+        } catch (RuntimeException ignored) {
+            // a skill that doesn't parse uses nothing
+        }
+        return out;
+    }
+
+    /**
+     * The skills to offer the model for a job (SMH plan 70, MA7.7, "skills chosen by need"): first the reliable ones
+     * that use the tools the job needs, most of them covered first; then the skills those name (a skill that is done
+     * first, named in another's steps or description); then the rest by word overlap, as before. Within
+     * {@code budget} characters and {@code limit} skills, so a library of hundreds never floods the prompt.
+     */
+    public List<Skill> forNeeds(String query, Set<String> needed, int limit, int budget) {
+        if (limit <= 0 || skills.isEmpty()) return List.of();
+        Set<String> tools = needed == null || needed.isEmpty() ? capabilities(query) : needed;
+        List<Skill> reliable = skills.values().stream().filter(sk -> sk.successRate() > 0.7).toList();
+        List<Skill> out = new ArrayList<>();
+        int[] used = {0};
+        java.util.function.Predicate<Skill> take = sk -> {
+            if (out.contains(sk) || out.size() >= limit) return false;
+            int size = sk.name().length() + sk.description().length() + sk.triggerCondition().length();
+            if (used[0] + size > budget) return false;
+            used[0] += size;
+            out.add(sk);
+            return true;
+        };
+        // 1. By capability: the more of the needed tools a skill uses, the earlier; then its success. 2. Each with what
+        // it names (a skill done first), right after it, so a prerequisite is never crowded out.
+        if (!tools.isEmpty()) {
+            reliable.stream()
+                    .map(sk -> Map.entry(sk, (int) toolsOf(sk).stream().filter(tools::contains).count()))
+                    .filter(e -> e.getValue() > 0)
+                    .sorted(Comparator.<Map.Entry<Skill, Integer>>comparingInt(Map.Entry::getValue).reversed()
+                            .thenComparing(e -> e.getKey().successRate(), Comparator.reverseOrder())
+                            .thenComparing(e -> e.getKey().name()))
+                    .forEach(e -> {
+                        if (!take.test(e.getKey())) return;
+                        String text = (e.getKey().actionSequence() + " " + e.getKey().description()).toLowerCase(Locale.ROOT);
+                        for (Skill other : reliable) {
+                            if (other != e.getKey() && text.contains(other.name().toLowerCase(Locale.ROOT))) take.test(other);
+                        }
+                    });
+        }
+        // 3. Word overlap, as before.
+        for (Skill sk : relevant(query, Math.max(limit, 8))) take.test(sk);
+        return out;
+    }
+
     private static double rated(com.mineagent.engine.learning.Scorecard card, Skill skill, int totalRuns, double relevance) {
         if (card == null || relevance <= 0.0) return relevance;
         double value = Math.min(1.0, card.choiceValue("skill:" + skill.name(), totalRuns));
