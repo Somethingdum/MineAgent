@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED }
+        WHAT_HAPPENED, FIND_PLACE }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -67,6 +67,9 @@ public final class CommandParser {
             + "|where have you put|where did you store|where'?s the chest with|which chest has) (.{2,40})$");
     private static final Pattern WHAT_HAPPENED = Pattern.compile("^(?:what did (?:we|you) do|what happened|what have you been"
             + " (?:doing|up to)|what did you get up to)(?: (today|yesterday|while i was (?:away|gone|out)|since i left))?$");
+    private static final Pattern FIND_PLACE = Pattern.compile("^(?:find|look for|search for|go find|go look for|scout for"
+            + "|explore for|go and find|hunt for)(?: me| us)? (?:a |an |the |some |another )?([a-z][a-z ]{2,24})$");
+    private static final Pattern EXPLORE = Pattern.compile("^(?:explore|go exploring|scout around|explore around|explore a bit)$");
     private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
     private static final Pattern STATUS = Pattern.compile("^(status|sitrep|report|what are you doing|what r u doing|what're you doing|how'?s it going)$");
     private static final Pattern CANCEL = Pattern.compile("^(cancel|abort|nevermind|never mind|forget it|cancel that|cancel the goal|drop it)$");
@@ -138,6 +141,9 @@ public final class CommandParser {
             return Optional.of(new Command(Kind.WHAT_HAPPENED, when, null));
         }
         if (WHAT_MISSED.matcher(t).matches()) return Optional.of(new Command(Kind.WHAT_HAPPENED, "away", null));
+        if (EXPLORE.matcher(t).matches()) return Optional.of(new Command(Kind.FIND_PLACE, "", null));
+        m = FIND_PLACE.matcher(t);
+        if (m.matches()) return Optional.of(new Command(Kind.FIND_PLACE, m.group(1).strip(), null));
         m = WHERE_PLACE.matcher(t);
         if (m.matches()) return Optional.of(new Command(Kind.WHERE_PLACE, m.group(1).strip(), null));
         if (STATUS.matcher(t).matches()) return Optional.of(new Command(Kind.STATUS, null, null));

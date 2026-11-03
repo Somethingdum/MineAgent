@@ -132,4 +132,18 @@ final class RouteMemoryTest {
         assertEquals(1, back.routes().size());
         assertEquals(1, back.trips().size());
     }
+
+    @Test void aPortalItWentThroughIsLinkedBothWaysAndKept() {
+        RouteMemory m = new RouteMemory();
+        var ow = new RouteMemory.Point("minecraft:overworld", 100, 64, 100);
+        var nether = new RouteMemory.Point("minecraft:the_nether", 12, 70, 12);
+        assertTrue(m.portalTo("minecraft:the_nether", ow).isEmpty(), "no link before it has been through");
+        m.linkPortal(ow, nether, 50);
+        assertEquals(nether, m.portalTo("minecraft:the_nether", new RouteMemory.Point("minecraft:overworld", 90, 64, 90)).orElseThrow().to());
+        assertEquals(ow, m.portalTo("minecraft:overworld", nether).orElseThrow().to());
+        assertEquals(2, m.places().stream().filter(p -> "portal".equals(p.kind())).count());
+        RouteMemory back = new RouteMemory();
+        back.importPlaces(m.exportPlaces());
+        assertTrue(back.portalTo("minecraft:the_nether", ow).isPresent());
+    }
 }

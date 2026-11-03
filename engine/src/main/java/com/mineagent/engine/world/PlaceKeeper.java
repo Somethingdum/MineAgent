@@ -127,8 +127,17 @@ public final class PlaceKeeper {
      * Each tick: the trail, and every few seconds what structure it stands in. A place found for the first time is
      * returned, to tell its owner about.
      */
+    /** Where it was a moment ago, to see it go through a portal. */
+    private RouteMemory.Point lastSeenAt;
+
     public Optional<RouteMemory.Place> tick(ServerPlayer sp, long gameTick) {
         if (sp == null || !sp.isAlive() || sp.isSpectator()) return Optional.empty();
+        RouteMemory.Point now = point(sp);
+        // Through a nether portal: it arrives standing in one (MA5.6). Death, a command or the End are not portals.
+        if (lastSeenAt != null && !lastSeenAt.dim().equals(now.dim()) && inNetherPortal(sp.serverLevel(), sp.blockPosition())) {
+            memory.linkPortal(lastSeenAt, now, gameTick);
+        }
+        lastSeenAt = now;
         if (gameTick % RECORD_EVERY == 0) {
             memory.walked(point(sp), underground(sp.serverLevel(), sp.blockPosition()), gameTick);
         }
@@ -151,7 +160,39 @@ public final class PlaceKeeper {
         }
     }
 
+    static boolean inNetherPortal(ServerLevel level, BlockPos feet) {
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 2; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (level.getBlockState(feet.offset(dx, dy, dz)).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** A bell with villagers about it is a village, whatever built it (MA5.6). */
+    private Optional<RouteMemory.Place> villageFromBell(ServerPlayer sp, long gameTick) {
+        RouteMemory.Point here = point(sp);
+        var bells = sightings.nearest("bell", here.dim(), here.x(), here.y(), here.z(), 1, 32);
+        if (bells.isEmpty()) return Optional.empty();
+        var bell = bells.get(0).sighting();
+        int villagers = 0;
+        for (var v : sightings.nearest("villager", here.dim(), bell.x(), bell.y(), bell.z(), 8, 48)) villagers += v.sighting().count();
+        if (villagers < 2) return Optional.empty();
+        RouteMemory.Point at = new RouteMemory.Point(here.dim(), bell.x(), bell.y() + 1, bell.z());
+        // A village it already knows (a big one is wider than 64 blocks): not a new one.
+        boolean known = memory.places().stream().anyMatch(p -> "village".equals(p.kind()) && p.at().dim().equals(at.dim())
+                && p.at().distance(at) <= 160.0);
+        if (known) return Optional.empty();
+        int before = memory.places().size();
+        RouteMemory.Place place = memory.found("village", at, gameTick);
+        return memory.places().size() > before ? Optional.of(place) : Optional.empty();
+    }
+
     private Optional<RouteMemory.Place> lookAround(ServerPlayer sp, long gameTick) {
+        Optional<RouteMemory.Place> byBell = villageFromBell(sp, gameTick);
+        if (byBell.isPresent()) return byBell;
         ServerLevel level = sp.serverLevel();
         BlockPos at = sp.blockPosition();
         var manager = level.structureManager();
@@ -213,6 +254,31 @@ public final class PlaceKeeper {
                 chunks.put(dim, cx, cz, new ChunkSummaries.Summary(kind, heights.get(heights.size() / 2), high - low > 6));
             }
         }
+    }
+
+    /** The kinds of place it can recognise by walking into one, as {@link #kindOf} names them. */
+    public static final java.util.Set<String> KINDS = java.util.Set.of("village", "mineshaft", "shipwreck", "ruined portal",
+            "ocean ruin", "outpost", "mansion", "ocean monument", "fortress", "bastion", "desert temple", "jungle temple",
+            "witch hut", "igloo", "stronghold", "ancient city", "trial chambers", "trail ruins", "end city");
+
+    /** A kind of place from a person's words ("villages", "a desert pyramid" is a desert temple), or null. */
+    public static String kindFromWords(String words) {
+        if (words == null) return null;
+        String w = words.toLowerCase(java.util.Locale.ROOT).strip().replaceFirst("^(?:a|an|the|some|another) ", "");
+        if (w.endsWith("es") && KINDS.contains(w.substring(0, w.length() - 2))) w = w.substring(0, w.length() - 2);
+        else if (w.endsWith("s") && KINDS.contains(w.substring(0, w.length() - 1))) w = w.substring(0, w.length() - 1);
+        w = switch (w) {
+            case "pillager outpost" -> "outpost";
+            case "woodland mansion" -> "mansion";
+            case "monument" -> "ocean monument";
+            case "nether fortress" -> "fortress";
+            case "bastion remnant" -> "bastion";
+            case "desert pyramid" -> "desert temple";
+            case "jungle pyramid" -> "jungle temple";
+            case "swamp hut" -> "witch hut";
+            default -> w;
+        };
+        return KINDS.contains(w) ? w : null;
     }
 
     /**

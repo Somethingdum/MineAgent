@@ -123,4 +123,11 @@ final class CommandParserTest {
         assertEquals("STATUS", parsed("what are you doing?"));
         assertEquals("WHERE_PLACE:the village", parsed("where's the village"));
     }
+
+    @Test void findingAndExploringAreUnderstood() {
+        assertEquals("FIND_PLACE:village", parsed("find a village"));
+        assertEquals("FIND_PLACE:ruined portal", parsed("Steve, go look for a ruined portal"));
+        assertEquals("FIND_PLACE:diamonds", parsed("find me diamonds"));
+        assertEquals("FIND_PLACE:", parsed("explore"));
+    }
 }

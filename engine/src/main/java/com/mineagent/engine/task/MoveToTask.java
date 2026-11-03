@@ -91,6 +91,7 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
             if (legs.isEmpty()) planLongTrip();
             leg = legs.isEmpty() ? -1 : 0;
             skipped = 0;
+            allowTimeFor(TaskContext.serverPlayer(player));
         }
         startLegOrGoal();
 
@@ -121,6 +122,26 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
         if (!way.isEmpty()) way.remove(way.size() - 1);
         legs = way;
         coarseLegs = !way.isEmpty();
+    }
+
+    /**
+     * A long trip, or one by waypoints, gets the time its length needs (MA5.10): at a slow 2 blocks a second, twice
+     * over, never less than the 5 minutes every task has.
+     */
+    private void allowTimeFor(ServerPlayer sp) {
+        double length = 0;
+        double px = sp.getX(), py = sp.getY(), pz = sp.getZ();
+        for (int[] p : legs) {
+            length += Math.sqrt(Math.pow(p[0] - px, 2) + Math.pow(p[1] - py, 2) + Math.pow(p[2] - pz, 2));
+            px = p[0];
+            py = p[1];
+            pz = p[2];
+        }
+        int tz = record.z != null ? record.z : (int) pz;
+        length += Math.sqrt(Math.pow(record.x - px, 2) + Math.pow(tz - pz, 2));
+        long need = (long) (length / 2.0 * 20.0 * 2.0);
+        long now = sp.level().getGameTime();
+        if (record.deadline() > 0L && now + need > record.deadline()) record.extendDeadlineTo(now + need);
     }
 
     /** The next waypoint not already passed, or the goal itself once they're all passed. */

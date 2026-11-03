@@ -37,6 +37,12 @@ public final class TaskRegistration {
                 MoveToTask::new
         );
 
+        // Looking for a place it has never seen (SMH plan 70, MA5.6)
+        CompanionTaskFactory.register(
+                ExploreTask.ExploreRecord.class,
+                ExploreTask::new
+        );
+
         // Mining
         CompanionTaskFactory.register(
                 AutoMineTool.MineBlockTaskRecord.class,

@@ -1238,7 +1238,7 @@ public class AgentLoop {
                 if (!fromOwner) return false;
                 ownerActivity.saidBack();
             }
-            case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK -> {
+            case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, FIND_PLACE -> {
                 return placeCommand(c, self, fromOwner);
             }
             case WHERE_SEEN, WHERE_PUT, WHAT_HAPPENED -> {
@@ -1388,9 +1388,21 @@ public class AgentLoop {
                 }
                 var to = place.get();
                 if (!to.at().dim().equals(here.dim())) {
-                    speakToOwner(capitalised(to.name()) + " is in "
-                            + com.mineagent.engine.world.PlaceKeeper.dimensionName(to.at().dim())
-                            + "; I can't take us through a portal on my own yet.");
+                    // Through a portal it has been through before (MA5.6); a link is never guessed.
+                    var link = memory.portalTo(to.at().dim(), here);
+                    if (link.isEmpty()) {
+                        speakToOwner(capitalised(to.name()) + " is in "
+                                + com.mineagent.engine.world.PlaceKeeper.dimensionName(to.at().dim())
+                                + ", and I haven't been through a portal from here to there yet.");
+                        return true;
+                    }
+                    haltNow();
+                    standDown();
+                    goTo(link.get().from(), java.util.List.of(), false, "xzy");
+                    crossing = new Crossing(to, tick);
+                    speakToOwner("Through the portal " + com.mineagent.engine.world.PlaceKeeper.whereFrom(here, link.get().from())
+                            .replaceAll("\\.$", "") + ", then on to " + to.name() + " in "
+                            + com.mineagent.engine.world.PlaceKeeper.dimensionName(to.at().dim()) + ".");
                     return true;
                 }
                 haltNow();
@@ -1414,11 +1426,54 @@ public class AgentLoop {
                 goTo(back.get(back.size() - 1), back.subList(0, back.size() - 1), out);
                 speakToOwner(out ? "Leading the way out, the way we came in." : "Going back the way we came.");
             }
+            case FIND_PLACE -> {
+                String kind = c.value().isEmpty() ? null : com.mineagent.engine.world.PlaceKeeper.kindFromWords(c.value());
+                if (!c.value().isEmpty() && kind == null) return false; // "find me diamonds" is the model's to plan
+                if (kind != null) {
+                    var known = memory.find(kind, here);
+                    if (known.isPresent() && known.get().at().dim().equals(here.dim())) {
+                        haltNow();
+                        standDown();
+                        goTo(known.get().at(), placeKeeper.wayTo(here, known.get()), false);
+                        speakToOwner("I know " + aOrAn(kind) + ": heading to " + known.get().name() + ", "
+                                + com.mineagent.engine.world.PlaceKeeper.whereFrom(here, known.get().at()));
+                        return true;
+                    }
+                }
+                haltNow();
+                standDown();
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ExploreTask.ExploreRecord(
+                        "explore-" + UUID.randomUUID(), kind, EXPLORE_CHUNKS), reply -> { });
+                speakToOwner(kind == null ? "Exploring new ground." : "Looking for " + aOrAn(kind) + " over ground I haven't seen.");
+            }
             default -> {
                 return false;
             }
         }
         return true;
+    }
+
+    /** New chunks it looks over on one "find" or "explore" before it stops and says so. */
+    static final int EXPLORE_CHUNKS = 64;
+
+    /** On its way through a portal to a place in another dimension. */
+    private record Crossing(com.mineagent.engine.world.RouteMemory.Place to, long since) {}
+
+    private volatile Crossing crossing;
+
+    /** Through the portal: on to the place; or it says it couldn't get through. */
+    private void watchCrossing(net.minecraft.server.level.ServerPlayer me, long tick) {
+        Crossing c = crossing;
+        if (c == null || me == null) return;
+        var here = com.mineagent.engine.world.PlaceKeeper.point(me);
+        if (here.dim().equals(c.to().at().dim())) {
+            crossing = null;
+            goTo(c.to().at(), placeKeeper.wayTo(here, c.to()), false);
+            say("Through. On to " + c.to().name() + ", " + com.mineagent.engine.world.PlaceKeeper.whereFrom(here, c.to().at()));
+        } else if (tick - c.since() > 3_000L) {
+            crossing = null;
+            say("I couldn't get through the portal.");
+        }
     }
 
     /**
@@ -1535,8 +1590,13 @@ public class AgentLoop {
     /** A trip by the goto task, through waypoints first; done early in the open when {@code stopInOpen}. */
     private void goTo(com.mineagent.engine.world.RouteMemory.Point to,
                       java.util.List<com.mineagent.engine.world.RouteMemory.Point> via, boolean stopInOpen) {
+        goTo(to, via, stopInOpen, "block");
+    }
+
+    private void goTo(com.mineagent.engine.world.RouteMemory.Point to,
+                      java.util.List<com.mineagent.engine.world.RouteMemory.Point> via, boolean stopInOpen, String mode) {
         var args = new com.google.gson.JsonObject();
-        args.addProperty("goal_mode", "block");
+        args.addProperty("goal_mode", mode);
         args.addProperty("x", to.x());
         args.addProperty("y", to.y());
         args.addProperty("z", to.z());
@@ -2335,6 +2395,7 @@ public class AgentLoop {
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
             doorKeeper.tick(player, gameTick);
+            watchCrossing(player, gameTick);
             if (com.mineagent.engine.settings.Switches.routeMemory()) placeKeeper.tick(player, gameTick).ifPresent(place -> {
                 journal.record("find", "found " + aOrAn(place.kind()) + " (" + place.name() + ") at " + place.at().x() + ", "
                         + place.at().y() + ", " + place.at().z(), gameTick, place.at().dim(), place.at().x(), place.at().y(), place.at().z());

@@ -1286,4 +1286,116 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** A bell on the ground and two villagers standing by it (their AI off), at (x, 1, z). */
+    private static void bellAndVillagers(GameTestHelper helper, int x, int z) {
+        helper.setBlock(x, 1, z, Blocks.BELL);
+        for (int i = 0; i < 2; i++) {
+            var v = helper.spawn(EntityType.VILLAGER, new BlockPos(x + 2 + i, 1, z + 1));
+            v.setNoAi(true);
+        }
+    }
+
+    /** Plan 70, MA5.6: a bell with villagers about it is a village, whatever built it, and is remembered. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bell_village", timeoutTicks = 400)
+    public void aBellWithVillagersIsAVillage(GameTestHelper helper) {
+        Scene s = scene(helper, "Townie");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        bellAndVillagers(helper, 8, 6);
+        helper.onEachTick(() -> {
+            var village = s.loop().placeKeeper().memory().find("village", null);
+            if (village.isPresent()) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 350) {
+                tidy(s);
+                fail(helper, "no village from a bell and two villagers in plain view");
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.6: "find a village" with none known: it walks to ground it has never seen and finds the one there.
+     * Everything round it but the way south is marked as seen, so the nearest new ground is that way.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_find_village", timeoutTicks = 1400)
+    public void itGoesLookingForAVillageOnNewGround(GameTestHelper helper) {
+        Scene s = scene(helper, "Scout");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var body = s.body();
+        String dim = body.serverLevel().dimension().location().toString();
+        int cx = body.getBlockX() >> 4, cz = body.getBlockZ() >> 4;
+        var chunks = s.loop().placeKeeper().chunks();
+        for (int x = cx - 7; x <= cx + 7; x++) {
+            for (int z = cz - 7; z <= cz + 7; z++) {
+                if (x == cx && z > cz) continue;
+                chunks.put(dim, x, z, new com.mineagent.engine.world.ChunkSummaries.Summary(
+                        com.mineagent.engine.world.ChunkSummaries.Kind.LAND, body.getBlockY(), false));
+            }
+        }
+        BlockPos rel0 = rel(helper, body.blockPosition());
+        bellAndVillagers(helper, rel0.getX() + 2, rel0.getZ() + 76);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "find a village"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "find village");
+            var village = s.loop().placeKeeper().memory().find("village", null);
+            if (village.isPresent()) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 1300) {
+                String how = "after 1300 ticks, at " + rel(helper, s.body().blockPosition()).toShortString();
+                tidy(s);
+                fail(helper, "it never found the village: " + how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.6: it walks into a lit nether portal, goes through, and the portal is remembered at both ends; then
+     * "go home" from the Nether takes it back through the same portal and home.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_portal", timeoutTicks = 2400)
+    public void throughAPortalAndBackHome(GameTestHelper helper) {
+        Scene s = scene(helper, "Traveller");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var level = helper.getLevel();
+        // An obsidian frame four wide and five high, its inside lit, at x 8..11, z 6.
+        for (int x = 8; x <= 11; x++) {
+            for (int y = 1; y <= 5; y++) {
+                boolean edge = x == 8 || x == 11 || y == 1 || y == 5;
+                helper.setBlock(new BlockPos(x, y, 6), edge ? Blocks.OBSIDIAN.defaultBlockState()
+                        : Blocks.NETHER_PORTAL.defaultBlockState().setValue(net.minecraft.world.level.block.NetherPortalBlock.AXIS,
+                                net.minecraft.core.Direction.Axis.X));
+            }
+        }
+        BlockPos home = helper.absolutePos(new BlockPos(3, 1, 1));
+        s.owner().teleportTo(level, home.getX() + 0.5, home.getY(), home.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(2, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
+        sendTo(helper, s, helper.absolutePos(new BlockPos(9, 2, 6)), "portal-in");
+        int[] phase = {0};
+        helper.onEachTick(() -> {
+            var body = s.body();
+            String dim = body.serverLevel().dimension().location().toString();
+            var memory = s.loop().placeKeeper().memory();
+            if (phase[0] == 0 && dim.equals("minecraft:the_nether")) {
+                boolean linked = memory.portalTo("minecraft:overworld",
+                        com.mineagent.engine.world.PlaceKeeper.point(body)).isPresent();
+                if (!linked) {
+                    tidy(s);
+                    fail(helper, "through to the Nether, but the portal was not remembered");
+                    return;
+                }
+                phase[0] = 1;
+                helper.runAfterDelay(100, () -> MineAgentEngine.onPlayerChat(s.owner(), "go home"));
+            } else if (phase[0] == 1 && dim.equals("minecraft:overworld")
+                    && flat(body.position(), Vec3.atBottomCenterOf(home)) <= 2.5) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                String how = "phase " + phase[0] + ", in " + dim + " at " + body.blockPosition().toShortString();
+                tidy(s);
+                fail(helper, "after 2300 ticks: " + how);
+            }
+        });
+    }
 }

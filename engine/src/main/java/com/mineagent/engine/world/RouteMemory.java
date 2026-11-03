@@ -28,7 +28,7 @@ public final class RouteMemory {
     static final double ROUTE_STEP = 16.0;
 
     public record Point(String dim, int x, int y, int z) {
-        double distance(Point o) {
+        public double distance(Point o) {
             double dx = x - o.x, dy = y - o.y, dz = z - o.z;
             return Math.sqrt(dx * dx + dy * dy + dz * dz);
         }
@@ -50,7 +50,47 @@ public final class RouteMemory {
     public record Trip(String from, String to, long ended, List<Point> points) {}
 
     /** Places and routes, for the memory store. */
-    public record PlacesState(List<Place> places, List<Route> routes, int nextId) {}
+    public record PlacesState(List<Place> places, List<Route> routes, int nextId, List<PortalLink> portals) {}
+
+    /**
+     * A portal it went through (MA5.6): where it stepped in, and where it came out in the other dimension. Kept only
+     * once it has been through: a link is never guessed from coordinates.
+     */
+    public record PortalLink(Point from, Point to, long tick) {}
+
+    private final List<PortalLink> portals = new ArrayList<>();
+
+    /** It went through a portal from {@code from} and came out at {@code to}: both ends remembered, linked both ways. */
+    public synchronized void linkPortal(Point from, Point to, long tick) {
+        if (from == null || to == null || from.dim().equals(to.dim())) return;
+        portals.removeIf(l -> (l.from().dim().equals(from.dim()) && l.from().distance(from) <= 8.0)
+                || (l.from().dim().equals(to.dim()) && l.from().distance(to) <= 8.0));
+        portals.add(new PortalLink(from, to, tick));
+        portals.add(new PortalLink(to, from, tick));
+        while (portals.size() > 256) portals.remove(0);
+        found("portal", from, tick);
+        found("portal", to, tick);
+        placesVersion++;
+    }
+
+    /** The nearest portal it has been through, in {@code near}'s dimension, that leads to {@code toDim}. */
+    public synchronized Optional<PortalLink> portalTo(String toDim, Point near) {
+        PortalLink best = null;
+        double bestD = Double.MAX_VALUE;
+        for (PortalLink l : portals) {
+            if (!l.from().dim().equals(near.dim()) || !l.to().dim().equals(toDim)) continue;
+            double d = l.from().distance(near);
+            if (d < bestD) {
+                bestD = d;
+                best = l;
+            }
+        }
+        return Optional.ofNullable(best);
+    }
+
+    public synchronized List<PortalLink> portals() {
+        return List.copyOf(portals);
+    }
 
     /** The trail under way. */
     public record TrailState(List<Point> trail, String trailFrom) {}
@@ -409,7 +449,7 @@ public final class RouteMemory {
     }
 
     public synchronized PlacesState exportPlaces() {
-        return new PlacesState(List.copyOf(places.values()), List.copyOf(routes), nextId);
+        return new PlacesState(List.copyOf(places.values()), List.copyOf(routes), nextId, List.copyOf(portals));
     }
 
     public synchronized TrailState exportTrail() {
@@ -423,6 +463,8 @@ public final class RouteMemory {
         if (s.places() != null) for (Place p : s.places()) if (p != null && p.id() != null && p.at() != null) places.put(p.id(), p);
         if (s.routes() != null) for (Route r : s.routes()) if (r != null && r.waypoints() != null) routes.add(r);
         nextId = Math.max(s.nextId(), places.size() + 1);
+        portals.clear();
+        if (s.portals() != null) for (PortalLink l : s.portals()) if (l != null && l.from() != null && l.to() != null) portals.add(l);
     }
 
     public synchronized void importTrail(TrailState s) {
