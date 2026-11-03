@@ -237,6 +237,8 @@ public final class TodowriteTool implements Tool {
             }
             state.get().loop.rollingPlanner().onPlanReplaced(goal, gameTick);
             state.get().loop.planGraph().refreshReadiness(state.get().loop.semanticWorldModel(), gameTick);
+            // A new plan of four steps or more gets a second read (SMH plan 69, MA4.1); a repair does not.
+            if (!"repair".equals(updateMode)) state.get().loop.onPlanAccepted(goal);
         }
 
         JsonObject result = new JsonObject();

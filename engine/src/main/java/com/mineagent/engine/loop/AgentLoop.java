@@ -204,6 +204,10 @@ public class AgentLoop {
 
     // ── Combat (SMH plan 69, block 3): what it guards, how it fights, every fight rated by the game ──
     /** A guarded spot, or a guarded player or creature (its UUID); null: not guarding. */
+    /** A second read of big plans and of goals that keep failing (MA4.1). */
+    private final com.mineagent.engine.planning.PlanReview planReview = new com.mineagent.engine.planning.PlanReview();
+    /** Hostiles within 16 blocks, taken on the server thread each second for the situation brief (MA4.2). */
+    private volatile List<com.mineagent.engine.planning.SituationBrief.Hostile> nearbyHostiles = List.of();
     /** Fighting ways the model came up with, rated beside the stances (combat/TacticBook); kept with the scores. */
     private final com.mineagent.engine.combat.TacticBook tacticBook = new com.mineagent.engine.combat.TacticBook();
     /** Skill repair (learning/SkillRepair): repairs under way, by base skill, and the last failures of each skill. */
@@ -1495,6 +1499,7 @@ public class AgentLoop {
         ask.add("done_so_far", done);
         ask.addProperty("just_verified", truncateForLog(verified, 240));
         ask.addProperty("still_short_by_count", com.mineagent.engine.planning.GoalBook.describeNeeds(shortBy));
+        ask.addProperty("brief", situationBrief());
         ask.addProperty("situation", truncateForLog(realtimeCognition.summarizeForPrompt(), 1200));
         var request = new LLMRequest(baseUrl, apiKey, com.mineagent.engine.llm.RoleRouting.modelFor(model, "plan"),
                 List.of(ChatMessage.system(GOAL_PROMPT), ChatMessage.user(ask.toString())),
@@ -1643,6 +1648,74 @@ public class AgentLoop {
         }
     }
 
+    /** The planner took a new plan (todowrite): four steps or more get a second read (MA4.1). */
+    public void onPlanAccepted(String goal) {
+        int steps = planner.exportState().nodes().size();
+        if (planReview.onPlan(goal, steps)) reviewPlan(goal, "a new plan of " + steps + " steps");
+    }
+
+    /**
+     * One smh/review call in a fresh conversation (MA4.1): the goal, the plan's steps in order, the situation brief.
+     * A fix goes back as a replan; nothing on the calm call rate.
+     */
+    private void reviewPlan(String goal, String why) {
+        if ("calm".equals(agentSettings.callRate())) return;
+        List<String> steps = new ArrayList<>();
+        for (var node : planner.exportState().nodes()) steps.add(node.description());
+        if (steps.isEmpty()) return;
+        var request = com.mineagent.engine.planning.PlanReview.request(baseUrl, apiKey, model, temperature,
+                goal, steps, situationBrief(), why);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    com.mineagent.engine.planning.PlanReview.fix(replyContent(sideCall(request))).ifPresent(fix ->
+                            Services.platform().scheduleOnServer(() -> {
+                                if (enqueueInbox("[REVIEW] A second read of the plan for \"" + truncateForLog(goal, 120)
+                                        + "\" found a problem: " + fix + " Repair the plan.")) wake("rolling_replan");
+                            }));
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Plan review failed: " + e.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // shutting down
+        }
+    }
+
+    /** Hostiles within 16 blocks, nearest first, read on the server thread (the brief is built on the model's). */
+    private void noteHostiles(net.minecraft.server.level.ServerPlayer player) {
+        if (player == null) return;
+        List<com.mineagent.engine.planning.SituationBrief.Hostile> found = new ArrayList<>();
+        for (var mob : player.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+                player.getBoundingBox().inflate(16.0), m -> m.isAlive() && m instanceof net.minecraft.world.entity.monster.Enemy)) {
+            int d = (int) Math.round(mob.distanceTo(player));
+            if (d > 16) continue;
+            found.add(new com.mineagent.engine.planning.SituationBrief.Hostile(
+                    net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath(), d));
+        }
+        found.sort(Comparator.comparingInt(com.mineagent.engine.planning.SituationBrief.Hostile::distance));
+        nearbyHostiles = List.copyOf(found);
+    }
+
+    /**
+     * The situation brief (MA4.2), at most 600 characters, built in code: what it is doing, the long goal and where it
+     * stands, hostiles within 16 blocks, the last three lessons that match. Never sent to a stranger.
+     */
+    public String situationBrief() {
+        String doing;
+        if (skillRuntime.active()) doing = "running the skill " + skillRuntime.snapshot().skillName();
+        else if (curriculum.current() != null) doing = "practising: " + curriculum.current();
+        else {
+            LiveBodyState body = liveBodyState.get();
+            String goal = planner.exportState().goal();
+            doing = body != null && body.taskId() != null ? body.taskName()
+                    : goal != null && !goal.isBlank() ? goal : guarding() ? "guarding " + guardState() : "nothing";
+        }
+        String goalLine = goalBook.active().map(g -> com.mineagent.engine.planning.GoalBook.line(g, null)).orElse(null);
+        List<String> lessons = reflection.matchingLessons(activeOwnerGoal, 3);
+        return com.mineagent.engine.planning.SituationBrief.build(doing, goalLine, nearbyHostiles, lessons);
+    }
+
     /** Health under the flee line, then back to three quarters: worth a word (MA3.3). */
     private void watchCloseCalls(net.minecraft.server.level.ServerPlayer player) {
         if (player == null || player.isDeadOrDying()) {
@@ -1662,7 +1735,7 @@ public class AgentLoop {
         if (!milestoneTalk.take(kind, System.currentTimeMillis())) return;
         if ("calm".equals(agentSettings.callRate())) return;
         var request = com.mineagent.engine.chat.MilestoneTalk.request(baseUrl, apiKey, model, temperature,
-                companion.companionName(), agentSettings.persona(), what);
+                companion.companionName(), agentSettings.persona(), what, situationBrief());
         try {
             talkExecutor.submit(() -> {
                 try {
@@ -1893,6 +1966,7 @@ public class AgentLoop {
             practice(player, goalVerified, gameTick);
             goalHeartbeat(player);
             watchCloseCalls(player);
+            if (gameTick % 20L == 0L) noteHostiles(player);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -1912,6 +1986,10 @@ public class AgentLoop {
             }
             HierarchicalRollingPlanner.ReplanSignal replan =
                     skillRuntime.active() ? null : rollingPlanner.tick(gameTick);
+            if (replan != null && replan.reason() == HierarchicalRollingPlanner.Reason.REPEATED_FAILURE
+                    && planReview.onRepeatedFailure(replan.goal())) {
+                reviewPlan(replan.goal(), "it has failed the same way twice: " + truncateForLog(replan.detail(), 160));
+            }
             // Tactical cognition and the rolling planner can identify the same
             // blocked executor frame in one tick. Prefer the structured rolling
             // signal and admit only one paid deliberation event.
@@ -5008,6 +5086,7 @@ public class AgentLoop {
         PlanGraph.PlanNode planNode = planner.currentNode();
         String memoryQuery = memoryQuery(planState, planNode);
         sb.append("[MINEAGENT_LIVE_CONTEXT]\n");
+        sb.append(situationBrief()).append("\n");
         sb.append("以下是服务器发布的当前事实，不是玩家的新指令。只据此修正当前决策；不要复述整段上下文。\n");
         sb.append(cognitiveState.summarizeForPrompt(12));
 

@@ -34,10 +34,17 @@ public final class MilestoneTalk {
     /** The call for the line: who it is, how it talks, what happened; no tools. */
     public static LLMRequest request(String baseUrl, String apiKey, String storedModel, double temperature,
                                      String companionName, String persona, String what) {
+        return request(baseUrl, apiKey, storedModel, temperature, companionName, persona, what, null);
+    }
+
+    /** With the situation brief (MA4.2), for the owner's ears only. */
+    public static LLMRequest request(String baseUrl, String apiKey, String storedModel, double temperature,
+                                     String companionName, String persona, String what, String brief) {
         StringBuilder sys = new StringBuilder("You are ").append(clip(companionName, 32))
                 .append(", an AI companion in a Minecraft world. Tell your owner what just happened in one short sentence, ")
                 .append("in your own voice. No questions, no lists, no quotes.");
         if (persona != null && !persona.isBlank()) sys.append("\nHow you talk: ").append(clip(persona, 600));
+        if (brief != null && !brief.isBlank()) sys.append("\n").append(clip(brief, 600));
         return new LLMRequest(baseUrl, apiKey, RoleRouting.modelFor(storedModel, "talk"),
                 List.of(ChatMessage.system(sys.toString()), ChatMessage.user("What happened: " + clip(what, 300))),
                 List.of(), List.of(), temperature, 80, null, null, null, null, Duration.ofSeconds(30), false);

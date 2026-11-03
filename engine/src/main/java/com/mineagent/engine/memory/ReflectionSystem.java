@@ -208,6 +208,21 @@ public class ReflectionSystem {
      * 获取与当前任务相关的反思。
      * 改进：使用更灵活的匹配，不依赖硬编码关键词。
      */
+    /** The latest lessons (written by LessonWriter) that match a task, or apply anywhere; at most {@code limit}, oldest first. */
+    public List<String> matchingLessons(String taskDescription, int limit) {
+        String lowerTask = taskDescription != null ? taskDescription.toLowerCase() : "";
+        List<String> out = new ArrayList<>();
+        synchronized (reflections) {
+            for (Reflection r : reflections) {
+                if (r == null || !"lesson".equals(r.level()) || r.lesson() == null || r.trigger() == null) continue;
+                if ("general".equals(r.applicability()) || (!lowerTask.isBlank() && isContextMatch(lowerTask, r.trigger().toLowerCase()))) {
+                    out.add(r.lesson());
+                }
+            }
+        }
+        return out.size() > limit ? new ArrayList<>(out.subList(out.size() - limit, out.size())) : out;
+    }
+
     public List<Reflection> recallRelevantFailures(String taskDescription, String toolName) {
         List<Reflection> relevant = new ArrayList<>();
         String lowerTask = taskDescription != null ? taskDescription.toLowerCase() : "";
