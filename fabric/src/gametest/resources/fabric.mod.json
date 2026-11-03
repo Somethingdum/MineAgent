@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "mineagent-gametest",
+  "version": "1.0.0",
+  "name": "MineAgent game tests",
+  "description": "Scenes that check the companion in a running game (SMH plan 69, MA4.4). Never shipped.",
+  "license": "LGPL-3.0-only",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": [
+      "com.mineagent.gametest.CompanionGameTests"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "=1.21.1",
+    "mineagent": "*",
+    "fabric-gametest-api-v1": "*"
+  }
+}

@@ -39,6 +39,11 @@ sourceSets {
             srcDir project(':tools').file('src/main/resources')
         }
     }
+    // Game tests (SMH plan 69, MA4.4): a separate test mod, run on a headless server by runGametest; never in the jar.
+    gametest {
+        compileClasspath += main.compileClasspath + main.output
+        runtimeClasspath += main.runtimeClasspath + main.output
+    }
 }
 
 dependencies {
@@ -59,7 +64,26 @@ dependencies {
 loom {
     accessWidenerPath = file("src/main/resources/mineagent.accesswidener")
 
+    mods {
+        mineagent {
+            sourceSet sourceSets.main
+        }
+        "mineagent-gametest" {
+            sourceSet sourceSets.gametest
+        }
+    }
+
     runs {
+        // ./gradlew :fabric:runGametest: the scenes in src/gametest on a headless server; it exits with the number
+        // of scenes that failed, and writes build/gametest/junit.xml.
+        gametest {
+            server()
+            name "Game Test"
+            source sourceSets.gametest
+            vmArg "-Dfabric-api.gametest"
+            vmArg "-Dfabric-api.gametest.report-file=${project.buildDir}/gametest/junit.xml"
+            runDir "build/gametest"
+        }
         client {
             client()
             setConfigName("Fabric Client")

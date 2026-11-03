@@ -69,6 +69,43 @@ jobs:
           path: out/mineagent-fabric.jar
           if-no-files-found: error
 
+  # The companion in a running game (plan 69, MA4.4): the scenes in fabric/src/gametest on a headless server.
+  # The server exits with the number of scenes that failed. Kept apart from build for now, so a red scene
+  # shows here without holding back the jar.
+  gametest:
+    name: Game tests (Fabric, headless server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run the scenes
+        timeout-minutes: 20
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :fabric:runGametest
+
+      - name: Keep the report and the server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gametest-report
+          path: |
+            fabric/build/gametest/junit.xml
+            fabric/build/gametest/logs/latest.log
+          if-no-files-found: warn
+
   # The jar SMH's laptop setup downloads (plan 69, MA4.3):
   # https://github.com/Somethingdum/MineAgent/releases/download/smh-latest/mineagent-fabric.jar
   smh-latest:
