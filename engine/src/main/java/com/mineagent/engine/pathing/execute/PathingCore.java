@@ -150,6 +150,19 @@ public class PathingCore {
                     mob instanceof net.minecraft.world.entity.monster.Creeper));
             if (out.size() >= 64) break;
         }
+        // The deep dark (MA8.7): a sculk sensor hears a step within 8 blocks, and a shrieker calls the warden; kept out of
+        // their hearing. Only looked for where the deep dark is, below Y 0.
+        if (body.getBlockY() < 0) {
+            var at = body.blockPosition();
+            int found = 0;
+            for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-16, -8, -16), at.offset(16, 8, 16))) {
+                var st = body.level().getBlockState(p);
+                if (!com.mineagent.engine.survival.HardRules.listening(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString())) continue;
+                out.add(new com.mineagent.engine.pathing.util.MobAvoidance.Danger(p.getX(), p.getY(), p.getZ(),
+                        com.mineagent.engine.survival.HardRules.HEARS, 40.0));
+                if (++found >= 32) break;
+            }
+        }
         // Places it keeps dying (MA8.6): kept off like a mob, harder.
         String dim = body.level().dimension().location().toString();
         for (var z : com.mineagent.engine.learning.DangerZones.of(body.getUUID()).zones(dim, body.level().getGameTime())) {

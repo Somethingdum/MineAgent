@@ -46,6 +46,15 @@ public final class UseItemTool implements Tool {
             return;
         }
         String itemId = ToolArgs.getString(args, "item_id");
+        // Drinking an ominous bottle and walking into a village starts a raid (SMH plan 70, MA8.7): never.
+        var held = ((com.mineagent.engine.entity.CompanionEntity) player).serverPlayer();
+        String heldId = held == null ? null : BuiltInRegistries.ITEM.getKey(held.getItemInHand(
+                "offhand".equals(hand) ? net.minecraft.world.InteractionHand.OFF_HAND : net.minecraft.world.InteractionHand.MAIN_HAND).getItem()).toString();
+        if (com.mineagent.engine.survival.HardRules.neverUse(itemId == null ? null : itemId.trim())
+                || itemId == null && com.mineagent.engine.survival.HardRules.neverUse(heldId)) {
+            reply.accept(ToolArgs.errorJson("Never drunk: an ominous bottle starts a raid at the next village."));
+            return;
+        }
         if (itemId != null) {
             ResourceLocation id = ResourceLocation.tryParse(itemId.trim());
             if (id == null || !BuiltInRegistries.ITEM.containsKey(id)) {

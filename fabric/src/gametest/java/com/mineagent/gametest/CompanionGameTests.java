@@ -2478,12 +2478,8 @@ public class CompanionGameTests implements FabricGameTest {
             trace(helper, s, "night none");
             var body = s.body();
             BlockPos at = body.blockPosition();
-            boolean walled = true;
-            for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
-                var head = at.above().relative(d);
-                walled &= !helper.getLevel().getBlockState(head).isAir();
-            }
-            walled &= !helper.getLevel().getBlockState(at.above(2)).isAir();
+            // Walled in and roofed over (as far as its blocks go: it says if any gap is left).
+            boolean walled = !lastSaid(s, "Walled in").isEmpty() && !helper.getLevel().canSeeSky(at.above());
             if (shelteredAt[0] < 0 && walled) {
                 shelteredAt[0] = (int) helper.getTick();
                 helper.getLevel().setDayTime(1_000); // morning

@@ -247,7 +247,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         }
         switch (readyStage) {
             case 0 -> {
-                int want = com.mineagent.engine.settings.Switches.readyFood();
+                int want = com.mineagent.engine.survival.HardRules.tripFood(com.mineagent.engine.settings.Switches.readyFood(), hard(sp));
                 int have = food(sp);
                 if (have < want) return errand(ProductionTask.FOOD, want - have, "Food for the trip first.");
                 readyStage++;
@@ -267,7 +267,12 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             }
             default -> {
                 int food = food(sp), torches = ProductionTask.count(sp, Items.TORCH), picks = pickaxes(sp);
-                if (food < com.mineagent.engine.settings.Switches.readyFood()) without.add(food == 0 ? "food" : "enough food");
+                if (!com.mineagent.engine.survival.HardRules.maySetOut(food, hard(sp))) {
+                    return fail("on Hard, hunger kills, and I have no food for the trip and couldn't make any here");
+                }
+                if (food < com.mineagent.engine.survival.HardRules.tripFood(com.mineagent.engine.settings.Switches.readyFood(), hard(sp))) {
+                    without.add(food == 0 ? "food" : "enough food");
+                }
                 if (torches < com.mineagent.engine.settings.Switches.readyTorches()) without.add(torches == 0 ? "torches" : "enough torches");
                 if (com.mineagent.engine.settings.Switches.sparePickaxe() && picks < 2) without.add("a spare pickaxe");
                 say("Ready: " + food + " food, " + torches + " torches, " + picks + (picks == 1 ? " pickaxe" : " pickaxes")
@@ -276,6 +281,10 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             }
         }
         return TaskState.RUNNING;
+    }
+
+    private static boolean hard(ServerPlayer sp) {
+        return sp.serverLevel().getDifficulty() == net.minecraft.world.Difficulty.HARD;
     }
 
     private TaskState errand(String item, int count, String line) {

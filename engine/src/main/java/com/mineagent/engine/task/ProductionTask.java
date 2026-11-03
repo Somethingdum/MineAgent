@@ -1293,13 +1293,19 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
-    /** A block it carries put down on the ring {@code r} round it. */
+    /**
+     * A block it carries put down near it: the ring {@code r} round it first, then further out to 3; only where a block
+     * can go (air, grass), never over a crop or into water.
+     */
     private static boolean placeNear(ServerPlayer sp, net.minecraft.world.level.block.state.BlockState state, int r) {
         ServerLevel level = sp.serverLevel();
-        for (BlockPos p : ring(sp.blockPosition(), r)) {
-            var st = level.getBlockState(p);
-            if (BlockHelper.isPassable(st) && st.getFluidState().isEmpty() && BlockHelper.canStandOn(level.getBlockState(p.below()))
-                    && Placement.placeBlock(sp, p.immutable(), state)) return true;
+        for (int ring = Math.max(1, r); ring <= 3; ring++) {
+            for (BlockPos p : ring(sp.blockPosition(), ring)) {
+                var st = level.getBlockState(p);
+                if ((st.isAir() || st.canBeReplaced()) && !(st.getBlock() instanceof net.minecraft.world.level.block.CropBlock)
+                        && st.getFluidState().isEmpty() && BlockHelper.canStandOn(level.getBlockState(p.below()))
+                        && Placement.placeBlock(sp, p.immutable(), state)) return true;
+            }
         }
         return false;
     }
