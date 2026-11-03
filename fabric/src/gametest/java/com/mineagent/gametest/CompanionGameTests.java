@@ -1632,6 +1632,16 @@ public class CompanionGameTests implements FabricGameTest {
         s.body().teleportTo(level, far.getX() + 1.5, groundY, far.getZ() + 0.5, 0.0f, 0.0f);
         BlockPos start = new BlockPos(far.getX() + 1, groundY, far.getZ());
         BlockPos goal = start.offset(0, 0, 256);
+        // The route's ground made and kept loaded for the scene: the scene is the trip, not how fast a CI machine
+        // makes new chunks (it waits for them as a player would, up to a minute in a trip; MoveToTask).
+        java.util.List<long[]> forced = new java.util.ArrayList<>();
+        for (int cz = start.getZ() >> 4; cz <= (goal.getZ() >> 4) + 1; cz++) {
+            for (int cx = (start.getX() >> 4) - 1; cx <= (start.getX() >> 4) + 1; cx++) {
+                level.setChunkForced(cx, cz, true);
+                forced.add(new long[] {cx, cz});
+            }
+        }
+        Runnable unforce = () -> forced.forEach(c -> level.setChunkForced((int) c[0], (int) c[1], false));
         helper.runAfterDelay(5, () -> {
             var args = new com.google.gson.JsonObject();
             args.addProperty("goal_mode", "xz");
@@ -1651,11 +1661,13 @@ public class CompanionGameTests implements FabricGameTest {
                 for (int z = start.getZ() >> 4; z <= goal.getZ() >> 4; z++) if (chunks.seen(dim, cx, z)) mapped++;
                 int along = (goal.getZ() >> 4) - (start.getZ() >> 4) + 1;
                 tidy(s);
+                unforce.run();
                 if (mapped >= along - 1) helper.succeed();
                 else fail(helper, "there, but only " + mapped + " of the " + along + " chunks along the way are mapped");
             } else if (helper.getTick() >= 2300) {
                 String how = String.format("%.0f blocks short after 2300 ticks, %d blocks along", left, body.getBlockZ() - start.getZ());
                 tidy(s);
+                unforce.run();
                 fail(helper, how);
             }
         });

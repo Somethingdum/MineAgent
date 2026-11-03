@@ -181,13 +181,19 @@ public final class PlaceKeeper {
         return false;
     }
 
-    /** Its feet or head in a nether portal block. */
+    /**
+     * Any part of its body in a nether portal block: the game counts a player as inside a portal when their box touches
+     * one at all, so a body 0.6 wide standing beside a portal can still be in it.
+     */
     public static boolean standingInPortal(ServerPlayer sp) {
         if (sp == null) return false;
         ServerLevel level = sp.serverLevel();
-        BlockPos feet = sp.blockPosition();
-        return level.getBlockState(feet).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)
-                || level.getBlockState(feet.above()).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL);
+        var box = sp.getBoundingBox().deflate(1.0E-7);
+        for (BlockPos p : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ),
+                BlockPos.containing(box.maxX, box.maxY, box.maxZ))) {
+            if (level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) return true;
+        }
+        return false;
     }
 
     /**
@@ -201,7 +207,8 @@ public final class PlaceKeeper {
         ServerLevel level = sp.serverLevel();
         BlockPos feet = sp.blockPosition();
         String dim = level.dimension().location().toString();
-        for (int r = 1; r <= 4; r++) {
+        // Two blocks out first: one block out, a body 0.6 wide can still touch the portal.
+        for (int r : new int[] {2, 3, 4, 1}) {
             for (int dy : new int[] {0, 1, -1, 2, -2, -3}) {
                 for (int dx = -r; dx <= r; dx++) {
                     for (int dz = -r; dz <= r; dz++) {

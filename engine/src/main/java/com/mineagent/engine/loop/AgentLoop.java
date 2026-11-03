@@ -1508,6 +1508,11 @@ public class AgentLoop {
             var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
             if (out != null) goTo(out, java.util.List.of(), false, "xzy");
             crossing = c.next(Crossing.Stage.OUT, tick);
+        } else if (c.stage() == Crossing.Stage.WAITING && inPortal) {
+            // Still touching it, so its cooldown restarts: further out, then wait again from there.
+            var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
+            if (out != null) goTo(out, java.util.List.of(), false, "xzy");
+            crossing = c.next(Crossing.Stage.OUT, tick);
         } else if (c.stage() == Crossing.Stage.WAITING && tick - c.stageSince() >= PORTAL_STEP_OUT) {
             goTo(c.portal(), java.util.List.of(), false, "xzy");
             crossing = c.next(Crossing.Stage.IN, tick);

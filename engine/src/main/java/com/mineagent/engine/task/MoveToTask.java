@@ -210,6 +210,27 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
         return !com.mineagent.engine.world.PlaceKeeper.underground(sp.serverLevel(), sp.blockPosition());
     }
 
+    /** Ticks it waited in this trip for the ground ahead to load, and the most it waits. */
+    private int waitedForGround;
+    static final int MAX_GROUND_WAIT = 1_200;
+
+    /** The chunk about 20 blocks ahead toward where it is going now is not loaded yet. */
+    private boolean groundAheadUnloaded(ServerPlayer sp) {
+        double tx, tz;
+        if (leg >= 0 && leg < legs.size()) {
+            tx = legs.get(leg)[0] + 0.5;
+            tz = legs.get(leg)[2] + 0.5;
+        } else {
+            tx = record.x + 0.5;
+            tz = (record.z != null ? record.z : sp.getBlockZ()) + 0.5;
+        }
+        double dx = tx - sp.getX(), dz = tz - sp.getZ(), d = Math.sqrt(dx * dx + dz * dz);
+        if (d < 1.0) return false;
+        double ahead = Math.min(20.0, d);
+        int ax = (int) Math.floor(sp.getX() + dx / d * ahead), az = (int) Math.floor(sp.getZ() + dz / d * ahead);
+        return sp.serverLevel().getChunkSource().getChunkNow(ax >> 4, az >> 4) == null;
+    }
+
     /** A failed walk, with why, in the log (counts and reasons, nothing of anyone's). */
     private TaskState failed() {
         System.out.println("[MineAgent] MoveTo failed" + (leg >= 0 ? " on leg " + (leg + 1) + " of " + legs.size() : "")
@@ -245,6 +266,13 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
         if (lastProgressPos != null && currentPos.distanceTo(lastProgressPos) > 1.0) {
             lease.onProgress(gameTime);
             lastProgressPos = currentPos;
+        }
+
+        // Waiting for the ground ahead to load is not being stuck: a player waits for the world too (SMH plan 70,
+        // MA5.10). Up to a minute of it in a trip.
+        if (groundAheadUnloaded(sp) && waitedForGround < MAX_GROUND_WAIT) {
+            waitedForGround++;
+            lease.onProgress(gameTime);
         }
 
         // Tick the lease (checks grace period)
