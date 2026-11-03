@@ -99,6 +99,7 @@ public final class MovementHelper {
     private static boolean canClear(CalculationContext ctx, BlockState state) {
         return BlockHelper.isPassable(state)
                 || BlockHelper.canOpenByHand(state)
+                || BlockHelper.isClosedIronDoor(state)
                 || (ctx.allowDigThrough() && BlockHelper.isBreakable(state));
     }
 
@@ -124,6 +125,10 @@ public final class MovementHelper {
         // Wooden doors, trapdoors and fence gates need a real interaction,
         // but do not require dig-through permission or destroy the structure.
         if (BlockHelper.canOpenByHand(state)) return 1.0d;
+        // An iron door is opened by its button or lever (SMH plan 70, MA5.3); with none, it is a wall.
+        if (BlockHelper.isClosedIronDoor(state)) {
+            return BlockHelper.doorActivator(ctx::getBlockState, x, y, z) != null ? 2.0d : Double.POSITIVE_INFINITY;
+        }
         if (!ctx.allowDigThrough()) return Double.POSITIVE_INFINITY;
         if (!BlockHelper.isBreakable(state)) return Double.POSITIVE_INFINITY;
         // SMH plan 70, MA5.1: what it really costs. Nothing someone built is broken to get somewhere; no break lets

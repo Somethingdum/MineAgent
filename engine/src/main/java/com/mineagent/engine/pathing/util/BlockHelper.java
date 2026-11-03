@@ -121,6 +121,40 @@ public final class BlockHelper {
         return BreakCost.classify(id, state.hasBlockEntity());
     }
 
+    /** A closed iron door: never opened by hand, only by a button, lever or plate (SMH plan 70, MA5.3). */
+    public static boolean isClosedIronDoor(BlockState state) {
+        return state != null && state.getBlock() instanceof net.minecraft.world.level.block.DoorBlock door
+                && !door.type().canOpenByHand()
+                && state.hasProperty(net.minecraft.world.level.block.DoorBlock.OPEN)
+                && !state.getValue(net.minecraft.world.level.block.DoorBlock.OPEN);
+    }
+
+    /**
+     * The button or lever that opens the iron door at x, y, z (either half): one within a block of the door, beside
+     * it or above it. Null when there is none, and then the door is a wall it never breaks. Whether it can reach the
+     * one found from where it stands is settled when it tries.
+     */
+    public static BlockPos doorActivator(BreakSafety.BlockAt world, int x, int y, int z) {
+        BlockState here = world.at(x, y, z);
+        if (here == null) return null;
+        int lower = here.hasProperty(net.minecraft.world.level.block.DoorBlock.HALF)
+                && here.getValue(net.minecraft.world.level.block.DoorBlock.HALF)
+                == net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER ? y - 1 : y;
+        for (int dy = -1; dy <= 2; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dz == 0 && (dy == 0 || dy == 1)) continue; // the door itself
+                    BlockState s = world.at(x + dx, lower + dy, z + dz);
+                    if (s != null && (s.getBlock() instanceof net.minecraft.world.level.block.ButtonBlock
+                            || s.getBlock() instanceof net.minecraft.world.level.block.LeverBlock)) {
+                        return new BlockPos(x + dx, lower + dy, z + dz);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     /** Whether a closed vanilla passage can be opened by an ordinary hand click. */
     public static boolean canOpenByHand(BlockState state) {
         if (state == null) return false;

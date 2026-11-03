@@ -338,6 +338,8 @@ public class AgentLoop {
     private final PersonaProfile persona;
     private final EmotionState emotion;
     private final PlaceEventMemory placeMemory;
+    private final com.mineagent.engine.pathing.execute.DoorKeeper doorKeeper =
+            new com.mineagent.engine.pathing.execute.DoorKeeper();
     private final SkillLibrary skillLib;
     private final DecisionCache decisionCache;
     private final TheoryOfMind theoryOfMind;
@@ -2000,6 +2002,7 @@ public class AgentLoop {
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
+            doorKeeper.tick(player, gameTick);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -2493,6 +2496,9 @@ public class AgentLoop {
 
     public EmotionState emotion() { return emotion; }
     public PlaceEventMemory placeMemory() { return placeMemory; }
+
+    /** The doors it opened on its way and will shut once past (SMH plan 70, MA5.3). */
+    public com.mineagent.engine.pathing.execute.DoorKeeper doorKeeper() { return doorKeeper; }
     public com.mineagent.engine.memory.CognitiveMap cognitiveMap() { return cognitiveMap; }
     public SkillLibrary skillLibrary() { return skillLib; }
     public TheoryOfMind theoryOfMind() { return theoryOfMind; }

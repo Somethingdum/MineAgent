@@ -70,6 +70,11 @@ public final class TemporaryBlockLedger {
                 player.level().getGameTime(), 0));
     }
 
+    /** Whether it placed the block here itself, for its own way (a bridge or pillar it will clear). */
+    public synchronized boolean owns(BlockPos position) {
+        return position != null && entries.containsKey(key(player.level().dimension(), position));
+    }
+
     /**
      * Perform at most one low-level cleanup action. Returning true means the
      * caller must not run idle wandering or pickup steering on the same tick.

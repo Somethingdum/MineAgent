@@ -112,6 +112,32 @@ public abstract class Movement {
                 com.mineagent.engine.act.Interaction.interactBlock(sp, cell,
                         net.minecraft.world.InteractionHand.MAIN_HAND);
                 if (BlockHelper.isPassable(sp.level().getBlockState(cell))) {
+                    // Shut again once it has passed (SMH plan 70, MA5.3).
+                    var keeper = doorKeeper(player);
+                    if (keeper != null) keeper.opened(sp.level(), cell, sp.level().getGameTime());
+                    markProgress();
+                    continue;
+                }
+                return false;
+            }
+            if (BlockHelper.isClosedIronDoor(state)) {
+                // An iron door: press its button or pull its lever (SMH plan 70, MA5.3). If the one found is out of
+                // reach or sight (on the far side), nothing opens, the edge stalls and is replanned without it.
+                var level0 = sp.level();
+                BlockPos activator = BlockHelper.doorActivator((bx, by, bz) -> {
+                    BlockPos at = new BlockPos(bx, by, bz);
+                    return level0.isLoaded(at) ? level0.getBlockState(at) : null;
+                }, cell.getX(), cell.getY(), cell.getZ());
+                if (activator == null) return false;
+                sp.setShiftKeyDown(false);
+                com.mineagent.engine.act.Interaction.interactBlock(sp, activator,
+                        net.minecraft.world.InteractionHand.MAIN_HAND);
+                if (BlockHelper.isPassable(level0.getBlockState(cell))) {
+                    if (level0.getBlockState(activator).getBlock()
+                            instanceof net.minecraft.world.level.block.LeverBlock) {
+                        var keeper = doorKeeper(player);
+                        if (keeper != null) keeper.pulled(level0, cell, activator, level0.getGameTime());
+                    }
                     markProgress();
                     continue;
                 }
@@ -121,7 +147,8 @@ public abstract class Movement {
             // SMH plan 70, MA5.1: checked again at the moment of breaking, since the world can change after the plan.
             // Refusing stalls this edge, which then fails and is replanned without it.
             var level = sp.level();
-            if (BlockHelper.kindOf(state) != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL
+            boolean own = TaskContext.temporaryBlocks(player).owns(cell);
+            if ((!own && BlockHelper.kindOf(state) != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL)
                     || !com.mineagent.engine.pathing.util.BreakSafety.safeToBreak((bx, by, bz) -> {
                         BlockPos at = new BlockPos(bx, by, bz);
                         return level.isLoaded(at) ? level.getBlockState(at) : null;
@@ -134,6 +161,11 @@ public abstract class Movement {
             return false;
         }
         return true;
+    }
+
+    private static com.mineagent.engine.pathing.execute.DoorKeeper doorKeeper(AgentPlayer player) {
+        var loop = TaskContext.agentLoop(player);
+        return loop == null ? null : loop.doorKeeper();
     }
 
     /** Ensure the destination has real support before walking into it. */

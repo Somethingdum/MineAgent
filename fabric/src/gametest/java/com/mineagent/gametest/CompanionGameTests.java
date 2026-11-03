@@ -185,12 +185,10 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * Plan 70, MA5.1: shut in a house of planks with its door on the far side, sent just past the back wall, it goes
-     * out through the door and around. It used to dig two blocks through the wall.
+     * A house of planks from (6, 1, 6) to (14, 4, 14) with a roof, its door at (10, 1, 14) facing south, the companion
+     * inside at (10, 1, 10). Returns the goal just past the back wall, at (10, 1, 3).
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_house", timeoutTicks = 1600)
-    public void itUsesTheDoorNotTheWall(GameTestHelper helper) {
-        Scene s = scene(helper, "Housemate");
+    private static BlockPos house(GameTestHelper helper, Scene s, net.minecraft.world.level.block.Block door) {
         for (int x = 6; x <= 14; x++) {
             for (int z = 6; z <= 14; z++) {
                 boolean edge = x == 6 || x == 14 || z == 6 || z == 14;
@@ -198,7 +196,7 @@ public class CompanionGameTests implements FabricGameTest {
                 helper.setBlock(x, 4, z, Blocks.OAK_PLANKS);
             }
         }
-        var lower = Blocks.OAK_DOOR.defaultBlockState()
+        var lower = door.defaultBlockState()
                 .setValue(net.minecraft.world.level.block.DoorBlock.FACING, net.minecraft.core.Direction.SOUTH)
                 .setValue(net.minecraft.world.level.block.DoorBlock.HALF,
                         net.minecraft.world.level.block.state.properties.DoubleBlockHalf.LOWER);
@@ -207,34 +205,116 @@ public class CompanionGameTests implements FabricGameTest {
                 net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER));
         BlockPos inside = helper.absolutePos(new BlockPos(10, 1, 10));
         s.body().teleportTo(helper.getLevel(), inside.getX() + 0.5, inside.getY(), inside.getZ() + 0.5, 0.0f, 0.0f);
-        BlockPos goal = helper.absolutePos(new BlockPos(10, 1, 3));
+        return helper.absolutePos(new BlockPos(10, 1, 3));
+    }
+
+    /** A stone button on the wall beside the door, at (9, 2, 13) inside or (9, 2, 15) outside. */
+    private static void button(GameTestHelper helper, boolean inside) {
+        helper.setBlock(new BlockPos(9, 2, inside ? 13 : 15), Blocks.STONE_BUTTON.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.ButtonBlock.FACE,
+                        net.minecraft.world.level.block.state.properties.AttachFace.WALL)
+                .setValue(net.minecraft.world.level.block.ButtonBlock.FACING,
+                        inside ? net.minecraft.core.Direction.NORTH : net.minecraft.core.Direction.SOUTH));
+    }
+
+    private static void sendTo(GameTestHelper helper, Scene s, BlockPos goal, String id) {
         helper.runAfterDelay(5, () -> {
             var args = new com.google.gson.JsonObject();
             args.addProperty("goal_mode", "xzy");
             args.addProperty("x", goal.getX());
             args.addProperty("y", goal.getY());
             args.addProperty("z", goal.getZ());
-            new com.mineagent.tools.movement.MoveToTool().onServerCall("house-1", args, s.companion(), reply -> {});
+            new com.mineagent.tools.movement.MoveToTool().onServerCall(id, args, s.companion(), reply -> {});
         });
-        helper.onEachTick(() -> {
-            int broken = 0;
-            for (int x = 6; x <= 14; x++) {
-                for (int y = 1; y <= 3; y++) {
-                    if (!helper.getBlockState(new BlockPos(x, y, 6)).is(Blocks.OAK_PLANKS)) broken++;
-                }
+    }
+
+    private static int brokenWall(GameTestHelper helper) {
+        int broken = 0;
+        for (int x = 6; x <= 14; x++) {
+            for (int z = 6; z <= 14; z++) {
+                boolean edge = x == 6 || x == 14 || z == 6 || z == 14;
+                if (!edge || (x == 10 && z == 14)) continue;
+                for (int y = 1; y <= 3; y++) if (!helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.OAK_PLANKS)) broken++;
             }
+        }
+        return broken;
+    }
+
+    private static boolean doorOpen(GameTestHelper helper) {
+        var state = helper.getBlockState(new BlockPos(10, 1, 14));
+        return state.hasProperty(net.minecraft.world.level.block.DoorBlock.OPEN)
+                && state.getValue(net.minecraft.world.level.block.DoorBlock.OPEN);
+    }
+
+    /**
+     * Plan 70, MA5.1 and MA5.3: shut in a house of planks with its door on the far side, sent just past the back wall,
+     * it goes out through the door and around, and shuts the door behind it. It used to dig two blocks through the wall.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_house", timeoutTicks = 1600)
+    public void itUsesTheDoorNotTheWall(GameTestHelper helper) {
+        Scene s = scene(helper, "Housemate");
+        BlockPos goal = house(helper, s, Blocks.OAK_DOOR);
+        sendTo(helper, s, goal, "house-1");
+        helper.onEachTick(() -> {
+            int broken = brokenWall(helper);
             double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
             if (broken > 0) {
                 tidy(s);
-                fail(helper, broken + " planks of the back wall were broken");
+                fail(helper, broken + " planks of the house were broken");
+            } else if (off <= 1.5 && !doorOpen(helper)) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 1500) {
+                String how = String.format("after 1500 ticks: %.1f blocks off, at %s, door %s", off,
+                        s.body().blockPosition().toShortString(), doorOpen(helper) ? "left open" : "shut");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA5.3: an iron door with a button inside: it presses the button and goes out, the wall left whole. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_iron_door", timeoutTicks = 1600)
+    public void itPressesTheButtonOfAnIronDoor(GameTestHelper helper) {
+        Scene s = scene(helper, "Doorman");
+        BlockPos goal = house(helper, s, Blocks.IRON_DOOR);
+        button(helper, true);
+        button(helper, false);
+        sendTo(helper, s, goal, "iron-1");
+        helper.onEachTick(() -> {
+            int broken = brokenWall(helper);
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (broken > 0 || !helper.getBlockState(new BlockPos(10, 1, 14)).is(Blocks.IRON_DOOR)) {
+                tidy(s);
+                fail(helper, "the house or its iron door was broken");
             } else if (off <= 1.5) {
                 tidy(s);
                 helper.succeed();
             } else if (helper.getTick() >= 1500) {
-                String how = String.format("not there after 1500 ticks: %.1f blocks off, at %s", off,
-                        s.body().blockPosition().toShortString());
+                String how = String.format("after 1500 ticks: %.1f blocks off, at %s", off, s.body().blockPosition().toShortString());
                 tidy(s);
                 fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA5.3: an iron door with nothing to open it is a wall: it stays inside and breaks nothing. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_iron_wall", timeoutTicks = 700)
+    public void anIronDoorWithNoButtonIsAWall(GameTestHelper helper) {
+        Scene s = scene(helper, "Shutin");
+        BlockPos goal = house(helper, s, Blocks.IRON_DOOR);
+        sendTo(helper, s, goal, "iron-2");
+        helper.onEachTick(() -> {
+            if (brokenWall(helper) > 0 || !helper.getBlockState(new BlockPos(10, 1, 14)).is(Blocks.IRON_DOOR)) {
+                tidy(s);
+                fail(helper, "it broke out of the house");
+            } else if (helper.getTick() >= 600) {
+                BlockPos at = s.body().blockPosition();
+                BlockPos rel = helper.relativePos(at);
+                boolean inside = rel.getX() > 6 && rel.getX() < 14 && rel.getZ() > 6 && rel.getZ() < 14;
+                tidy(s);
+                if (inside) helper.succeed();
+                else fail(helper, "it got out of a house it could not open: at " + rel.toShortString());
             }
         });
     }

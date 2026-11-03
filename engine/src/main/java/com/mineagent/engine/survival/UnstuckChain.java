@@ -402,6 +402,18 @@ public final class UnstuckChain implements TaskChain {
     private void startOrContinueBreak(ServerPlayer sp, BlockPos target) {
         if (target == null || !isBlocking(sp.level().getBlockState(target))) return;
         if (target.equals(activeBreakTarget)) return;
+        // SMH plan 70, MA5.1: being stuck is no licence to break what someone built, or to let lava or water in.
+        // Its own bridge and pillar blocks are its to break. Refused, it backs away and tries another way.
+        var level = sp.level();
+        var state = level.getBlockState(target);
+        boolean own = com.mineagent.engine.task.TaskContext.temporaryBlocks(companion).owns(target);
+        boolean built = com.mineagent.engine.pathing.util.BlockHelper.kindOf(state)
+                != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL;
+        boolean unsafe = !com.mineagent.engine.pathing.util.BreakSafety.safeToBreak((x, y, z) -> {
+            BlockPos at = new BlockPos(x, y, z);
+            return level.isLoaded(at) ? level.getBlockState(at) : null;
+        }, target.getX(), target.getY(), target.getZ());
+        if ((built && !own) || unsafe) return;
         abortActiveBreak(sp);
         int expected = BlockDigger.expectedBreakTicks(sp, target);
         if (expected == Integer.MAX_VALUE) return;
