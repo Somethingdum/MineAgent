@@ -77,14 +77,24 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
         TaskContext.inputDriver(player).clear();
     }
 
-    /** The open cells round {@code at} it fills: the floor if there is none, its sides at feet and head, the roof. */
+    /**
+     * The open cells round {@code at} it fills: the floor if there is none, its sides at feet and head, and the roof
+     * (with one block on a wall first to set it against, when nothing else touches it).
+     */
     static List<BlockPos> open(ServerLevel level, BlockPos at) {
         List<BlockPos> cells = new ArrayList<>();
         if (!BlockHelper.canStandOn(level.getBlockState(at.below()))) cells.add(at.below());
         Direction[] sides = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
         for (Direction d : sides) cells.add(at.relative(d));
         for (Direction d : sides) cells.add(at.above().relative(d));
-        cells.add(at.above(2));
+        // A block is set against a face of one beside it, and the walls are only corner to corner with the roof: as a
+        // player does, one block on top of a wall first, then the roof against it.
+        BlockPos roof = at.above(2);
+        boolean roofHasFace = false;
+        for (Direction d : sides) roofHasFace |= !BlockHelper.isPassable(level.getBlockState(roof.relative(d)));
+        roofHasFace |= !BlockHelper.isPassable(level.getBlockState(roof.above()));
+        if (!roofHasFace) cells.add(roof.relative(Direction.NORTH));
+        cells.add(roof);
         cells.removeIf(p -> !BlockHelper.isPassable(level.getBlockState(p)));
         return cells;
     }
