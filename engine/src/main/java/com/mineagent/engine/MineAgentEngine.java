@@ -1640,6 +1640,60 @@ public final class MineAgentEngine {
      * owner's own: the command acts only on companions the sender owns. A player is named while online,
      * or by UUID.
      */
+    /**
+     * The companion a goal command is for: the sender's own (primary) companion, else one whose owner trusts them
+     * (plan 69, MA3.1: goals are for the owner and trusted players).
+     */
+    private static Optional<CompanionState> goalCompanionFor(ServerPlayer player) {
+        Optional<CompanionState> own = getCompanionByOwner(player.getUUID());
+        if (own.isPresent()) return own;
+        String id = player.getUUID().toString().toLowerCase(Locale.ROOT);
+        for (CompanionState s : allCompanions()) {
+            if (s.loop != null && s.loop.getAgentSettings().trusted().contains(id)) return Optional.of(s);
+        }
+        return Optional.empty();
+    }
+
+    private static int listGoals(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CompanionState> state = goalCompanionFor(player);
+        if (state.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] No companion takes goals from you."));
+            return 0;
+        }
+        List<String> lines = state.get().loop.goalLines();
+        if (lines.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("§e[MineAgent] No goals. Add one with /mineagent goal add <what to do>."), false);
+            return 1;
+        }
+        source.sendSuccess(() -> Component.literal("§e[MineAgent] Goals:"), false);
+        for (String line : lines) source.sendSuccess(() -> Component.literal("§7 - " + line), false);
+        return 1;
+    }
+
+    private static int goalCommand(CommandSourceStack source, String what, String arg, int count) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CompanionState> state = goalCompanionFor(player);
+        if (state.isEmpty()) {
+            source.sendFailure(Component.literal("§c[MineAgent] No companion takes goals from you."));
+            return 0;
+        }
+        var loop = state.get().loop;
+        boolean owner = player.getUUID().equals(state.get().companion.ownerUuid());
+        String said = switch (what) {
+            case "add" -> loop.addGoal(arg, owner ? "owner" : player.getName().getString());
+            case "switch" -> loop.switchGoal(arg);
+            case "drop" -> loop.dropGoal(arg);
+            case "done" -> loop.finishGoal(arg);
+            case "stock" -> loop.setStock(arg, count);
+            default -> "?";
+        };
+        source.sendSuccess(() -> Component.literal("§a[MineAgent] " + said), false);
+        // The owner's panel shows the book as it is now.
+        if (owner) sendSettings(source);
+        return 1;
+    }
+
     private static int changeTrust(CommandSourceStack source, String who, boolean trust) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
         List<CompanionState> mine = getCompanionsByOwner(owner.getUUID());
@@ -1710,7 +1764,15 @@ public final class MineAgentEngine {
         for (var skill : all.subList(0, Math.min(24, all.size()))) {
             skills.add(new com.mineagent.engine.settings.SettingsCommand.SkillLine(skill.name(), card.describe("skill:" + skill.name())));
         }
-        String json = com.mineagent.engine.settings.SettingsCommand.state(settings, trusted, skills,
+        List<com.mineagent.engine.settings.SettingsCommand.GoalLine> goals = new ArrayList<>();
+        var goalLines = state.loop.goalLines();
+        var book = state.loop.goalBook().list();
+        for (int i = 0; i < book.size() && goals.size() < 8; i++) {
+            var g = book.get(i);
+            goals.add(new com.mineagent.engine.settings.SettingsCommand.GoalLine(g.id(),
+                    g.status().name().toLowerCase(Locale.ROOT), i < goalLines.size() ? goalLines.get(i) : g.text()));
+        }
+        String json = com.mineagent.engine.settings.SettingsCommand.state(settings, trusted, skills, goals,
                 state.loop.getModel(), state.loop.getBaseUrl(),
                 state.loop.getApiKey() != null && !state.loop.getApiKey().isBlank());
         com.mineagent.engine.network.MineAgentNetwork.sendUiActionTo(owner, state.companion.companionId(), "settings_state", json);
@@ -2231,6 +2293,27 @@ public final class MineAgentEngine {
                                     StringArgumentType.getString(ctx, "skill")))))
                     .then(literal("test")
                         .executes(ctx -> testConnection(ctx.getSource()))))
+                // ── goal: the goal book, for the owner and trusted players (SMH plan 69, MA3.1) ──
+                .then(literal("goal")
+                    .executes(ctx -> listGoals(ctx.getSource()))
+                    .then(literal("list").executes(ctx -> listGoals(ctx.getSource())))
+                    .then(literal("add")
+                        .then(argument("text", StringArgumentType.greedyString())
+                            .executes(ctx -> goalCommand(ctx.getSource(), "add", StringArgumentType.getString(ctx, "text"), 0))))
+                    .then(literal("switch")
+                        .then(argument("id", StringArgumentType.word())
+                            .executes(ctx -> goalCommand(ctx.getSource(), "switch", StringArgumentType.getString(ctx, "id"), 0))))
+                    .then(literal("drop")
+                        .then(argument("id", StringArgumentType.word())
+                            .executes(ctx -> goalCommand(ctx.getSource(), "drop", StringArgumentType.getString(ctx, "id"), 0))))
+                    .then(literal("done")
+                        .then(argument("id", StringArgumentType.word())
+                            .executes(ctx -> goalCommand(ctx.getSource(), "done", StringArgumentType.getString(ctx, "id"), 0))))
+                    .then(literal("stock")
+                        .then(argument("item", StringArgumentType.word())
+                            .then(argument("count", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 2304))
+                                .executes(ctx -> goalCommand(ctx.getSource(), "stock", StringArgumentType.getString(ctx, "item"),
+                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "count")))))))
                 // ── trust / untrust / trusted: who else the companions obey (SMH plan 69, MA1.7) ──
                 .then(literal("trust")
                     .then(argument("player", StringArgumentType.word())

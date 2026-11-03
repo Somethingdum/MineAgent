@@ -14,10 +14,12 @@ import java.util.regex.Pattern;
  * "don't", "wait no" or "actually" is a stop, never the verb after it.
  */
 public final class CommandParser {
-    public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF }
+    public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
+        GOAL_ADD, RESUME }
 
     /**
-     * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER. {@code count}: for DROP;
+     * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
+     * GOAL_ADD. {@code count}: for DROP;
      * for GUARD_HERE, the radius asked for (null: the default).
      */
     public record Command(Kind kind, String value, Integer count) {}
@@ -41,6 +43,9 @@ public final class CommandParser {
             + "(?:\\s+(?:radius|within|for|in a radius of)\\s+(\\d{1,2})(?:\\s+blocks?)?)?$");
     private static final Pattern GUARD_OFF = Pattern.compile("^(stop guarding|unguard|stand down|off duty|stop protecting(?: [a-z0-9_]+)?|you can stop guarding)$");
     private static final Pattern GUARD_PLAYER = Pattern.compile("^(?:guard|protect|defend|watch over)\\s+([a-z0-9_]{3,16})$");
+    /** "Goal: build a castle", "new goal: get 64 logs": into the goal book (MA3.1). Any length, up to 300 characters. */
+    private static final Pattern GOAL = Pattern.compile("^(?:new goal|long goal|long term goal|add goal|add a goal|goal|your goal is|your new goal is)\\s*[:,-]\\s*(.{3,300})$");
+    private static final Pattern RESUME = Pattern.compile("^(resume|carry on|continue|keep going|go on|back to work|get back to work|continue the goal|resume the goal|resume your goal)$");
     private static final Pattern DROP = Pattern.compile("^(?:drop|throw|toss|chuck)\\s+(?:(\\d{1,4}|a stack of|half a stack of|all(?: your| the)?|all of your)\\s+)?([a-z][a-z _]{1,40})$");
 
     private static final Map<String, String> ALIASES = Map.ofEntries(
@@ -56,6 +61,8 @@ public final class CommandParser {
     /** The command in a chat line (with or without its "[name]: " prefix), if it is one. */
     public static Optional<Command> parse(String line, String companionName) {
         String t = normalise(line, companionName);
+        Matcher g = GOAL.matcher(t);
+        if (g.matches()) return Optional.of(new Command(Kind.GOAL_ADD, g.group(1).strip(), null));
         if (t.isEmpty() || t.split(" ").length > 8) return Optional.empty();
         if (NEGATION.matcher(t).matches()) return Optional.of(new Command(Kind.STOP, null, null));
         if (STOP.matcher(t).matches()) return Optional.of(new Command(Kind.STOP, null, null));
@@ -72,6 +79,7 @@ public final class CommandParser {
         m = GUARD_PLAYER.matcher(t);
         if (m.matches() && !m.group(1).equals("me") && !m.group(1).equals("us")) return Optional.of(new Command(Kind.GUARD_PLAYER, m.group(1), null));
         if (STATUS.matcher(t).matches()) return Optional.of(new Command(Kind.STATUS, null, null));
+        if (RESUME.matcher(t).matches()) return Optional.of(new Command(Kind.RESUME, null, null));
         if (CANCEL.matcher(t).matches()) return Optional.of(new Command(Kind.CANCEL, null, null));
         if (EAT.matcher(t).matches()) return Optional.of(new Command(Kind.EAT, null, null));
         m = DROP.matcher(t);

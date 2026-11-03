@@ -204,6 +204,13 @@ public class AgentLoop {
 
     // ── Combat (SMH plan 69, block 3): what it guards, how it fights, every fight rated by the game ──
     /** A guarded spot, or a guarded player or creature (its UUID); null: not guarding. */
+    /** Long goals and standing stock orders (planning/GoalBook, MA3.1); saved with the world. */
+    private final com.mineagent.engine.planning.GoalBook goalBook = new com.mineagent.engine.planning.GoalBook();
+    private final java.util.concurrent.atomic.AtomicBoolean goalStepInFlight = new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** When the goal loop last gave the body a step, and last nudged it (a goal, or a stock order) when it sat idle. */
+    private volatile long lastGoalStepMs;
+    private volatile long lastGoalNudgeMs;
+    private volatile long lastStockNudgeMs;
     private volatile net.minecraft.world.phys.Vec3 guardPost;
     private volatile UUID guardWard;
     private volatile double guardRadius = 12.0;
@@ -471,6 +478,7 @@ public class AgentLoop {
             }
             p.setScorecard(scorecard);
             p.setCurriculum(curriculum);
+            p.setGoalBook(goalBook);
             p.loadAll();
             // A restored Responses response id already represents the durable
             // dialogue prefix.  Sending that prefix again duplicates turns and
@@ -558,6 +566,7 @@ public class AgentLoop {
 
     private static boolean reasonAlreadyRecorded(String reason) {
         return "owner_message".equals(reason) || "body_log".equals(reason)
+                || "goal_book".equals(reason) || "curriculum".equals(reason)
                 || "cognition_decision".equals(reason) || "team_event".equals(reason)
                 || "rolling_replan".equals(reason) || "goal_verified".equals(reason);
     }
@@ -1176,7 +1185,9 @@ public class AgentLoop {
             // Stop, stay and follow end guard duty too: otherwise a guard told to stop walks back to its post.
             case STOP -> {
                 haltNow();
-                speakToOwner(standDown() ? "Stopped, and off guard." : "Stopped.");
+                boolean wasGuarding = standDown();
+                String paused = pauseGoal();
+                speakToOwner("Stopped" + (wasGuarding ? ", and off guard" : "") + "." + paused);
             }
             case STAY -> {
                 haltNow();
@@ -1212,7 +1223,20 @@ public class AgentLoop {
             case CANCEL -> {
                 haltNow();
                 activeOwnerGoal = "";
-                speakToOwner("Cancelled.");
+                speakToOwner("Cancelled." + pauseGoal());
+            }
+            case RESUME -> {
+                var g = goalBook.resume();
+                if (g.isEmpty()) {
+                    speakToOwner("There's no goal to go back to. Say \"goal: ...\" to give me one.");
+                } else if (onSelfGoal(goalPrompt(g.get(), null))) {
+                    speakToOwner("Back to " + g.get().id() + ": " + truncateForLog(g.get().text(), 120) + ".");
+                } else {
+                    speakToOwner("Goal " + g.get().id() + " is next, once I'm off guard and out of parked mode.");
+                }
+            }
+            case GOAL_ADD -> {
+                speakToOwner(addGoal(c.value(), fromOwner ? "owner" : "trusted"));
             }
             case EAT -> {
                 runDirect("eat_item", new com.google.gson.JsonObject());
@@ -1265,7 +1289,12 @@ public class AgentLoop {
                 MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
                 speakToOwner("Guarding " + who.getName().getString() + ".");
             }
-            case GUARD_OFF -> speakToOwner(standDown() ? "Standing down." : "I wasn't guarding anything.");
+            case GUARD_OFF -> {
+                boolean was = standDown();
+                speakToOwner(was ? "Standing down." : "I wasn't guarding anything.");
+                // Off guard, back to the long goal if one is waiting.
+                if (was) goalBook.active().ifPresent(g -> onSelfGoal(goalPrompt(g, null)));
+            }
             default -> {
                 return false;
             }
@@ -1278,6 +1307,277 @@ public class AgentLoop {
         boolean was = guarding();
         if (was) setGuard(null, null, 12.0);
         return was;
+    }
+
+    // ── The goal book and the goal loop (SMH plan 69, MA3.1 and MA3.2) ──
+
+    public com.mineagent.engine.planning.GoalBook goalBook() {
+        return goalBook;
+    }
+
+    /**
+     * A step toward a long goal, given to the body as the owner's own order would be (what onOwnerMessage does,
+     * without the praise and scold reading): the goal is set, the tools picked for it, and a turn started.
+     */
+    public boolean onSelfGoal(String goal) {
+        if (goal == null || goal.isBlank()) return false;
+        // Parked it only talks; on guard it stays on guard. The goal waits in the book until then.
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED || guarding()) return false;
+        curriculum.abandon();
+        long tick = currentGameTickSafe();
+        lastOwnerCommand = goal.length() > 120 ? goal.substring(0, 120) : goal;
+        activeOwnerGoal = truncateForLog(goal, 360);
+        lastOwnerMessageTime = System.currentTimeMillis();
+        lastGoalStepMs = lastOwnerMessageTime;
+        prepareToolsForOwnerIntent(goal);
+        semanticWorldModel.recordOwnerIntent(goal, tick);
+        layeredMemory.remember(LayeredMemory.Tier.WORKING, "owner.intent",
+                truncateForLog(goal, 360), "goal_book", 1.0, tick, 400L, "current", "current");
+        cognitiveState.append("owner_intent", "goal_book", truncateForLog(goal, 300), tick);
+        if (enqueueInbox("[GOAL] " + goal)) wake("goal_book");
+        return true;
+    }
+
+    /** Add a goal to the book (the owner or a trusted player): started now if none is active. What to say back. */
+    public String addGoal(String text, String setBy) {
+        com.mineagent.engine.planning.GoalBook.Goal g;
+        try {
+            g = goalBook.add(text, setBy, currentGameTickSafe(), AgentLoop::isItemId);
+        } catch (IllegalArgumentException | IllegalStateException refused) {
+            return "I can't add that: " + refused.getMessage() + ".";
+        }
+        saveMemoryNow();
+        if (g.status() == com.mineagent.engine.planning.GoalBook.Status.ACTIVE) {
+            String said = "New goal " + g.id() + ": " + truncateForLog(g.text(), 120) + ".";
+            if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return said + " I'm parked, so I'll start when you take me out of parked mode.";
+            if (guarding()) return said + " I'll start on it when you say \"stand down\".";
+            haltNow();
+            onSelfGoal(goalPrompt(g, null));
+            return said + " I'll keep at it until it's done.";
+        }
+        return "Queued goal " + g.id() + " after " + goalBook.active().map(com.mineagent.engine.planning.GoalBook.Goal::id).orElse("the current one") + ".";
+    }
+
+    /** The book in lines a person reads, the active goal first with what it is still short of. */
+    public List<String> goalLines() {
+        var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+        Map<String, Integer> have = self == null ? Map.of() : carried(self);
+        List<String> lines = new ArrayList<>();
+        for (var g : goalBook.list()) {
+            boolean active = g.status() == com.mineagent.engine.planning.GoalBook.Status.ACTIVE;
+            lines.add(com.mineagent.engine.planning.GoalBook.line(g, active ? goalBook.unmet(i -> have.getOrDefault(i, 0)) : null));
+        }
+        for (var st : goalBook.stock()) lines.add("keep " + st.count() + " " + st.item().replace('_', ' ') + " (have " + have.getOrDefault(st.item(), 0) + ")");
+        return lines;
+    }
+
+    public String switchGoal(String id) {
+        if (!goalBook.switchTo(id)) return "No open goal " + id + ".";
+        var g = goalBook.active().orElseThrow();
+        haltNow();
+        saveMemoryNow();
+        onSelfGoal(goalPrompt(g, null));
+        return "Working on " + g.id() + ": " + truncateForLog(g.text(), 120) + ".";
+    }
+
+    public String dropGoal(String id) {
+        boolean wasActive = goalBook.active().map(g -> g.id().equalsIgnoreCase(id)).orElse(false);
+        if (goalBook.get(id).isEmpty()) return "No goal " + id + ".";
+        var next = goalBook.drop(id);
+        saveMemoryNow();
+        if (!wasActive) return "Dropped " + id + ".";
+        haltNow();
+        activeOwnerGoal = "";
+        if (next.isEmpty()) return "Dropped " + id + ". No goals left.";
+        onSelfGoal(goalPrompt(next.get(), null));
+        return "Dropped " + id + ". Next: " + next.get().id() + ", " + truncateForLog(next.get().text(), 100) + ".";
+    }
+
+    /** The owner closes a goal the count would not (a misread amount, or done another way). */
+    public String finishGoal(String id) {
+        boolean wasActive = goalBook.active().map(g -> g.id().equalsIgnoreCase(id)).orElse(false);
+        if (goalBook.get(id).isEmpty()) return "No goal " + id + ".";
+        var next = goalBook.markDone(id);
+        saveMemoryNow();
+        if (!wasActive) return "Marked " + id + " done.";
+        haltNow();
+        activeOwnerGoal = "";
+        if (next.isEmpty()) return "Marked " + id + " done. No goals left.";
+        onSelfGoal(goalPrompt(next.get(), null));
+        return "Marked " + id + " done. Next: " + next.get().id() + ".";
+    }
+
+    /** A standing order: keep at least {@code count} of an item (0 cancels it), topped up when idle. */
+    public String setStock(String item, int count) {
+        String id = item == null ? "" : item.strip().toLowerCase(Locale.ROOT).replace("minecraft:", "");
+        if (count > 0 && !isItemId(id)) return "No item called " + item + ".";
+        if (!goalBook.setStock(id, count)) return "I can keep at most " + com.mineagent.engine.planning.GoalBook.MAX_STOCK + " standing orders.";
+        saveMemoryNow();
+        return count <= 0 ? "No longer keeping " + id.replace('_', ' ') + "." : "I'll keep at least " + count + " " + id.replace('_', ' ') + " on me.";
+    }
+
+    /** Pause the long goal (the owner said stop); the words to add to the answer. */
+    private String pauseGoal() {
+        var g = goalBook.active();
+        if (g.isEmpty()) return "";
+        goalBook.pauseActive();
+        saveMemoryNow();
+        return " Goal " + g.get().id() + " is paused; say \"carry on\" to go back to it.";
+    }
+
+    /** What the body is told for a goal: the goal, where it stands, what is short, and a step if there is one. */
+    private String goalPrompt(com.mineagent.engine.planning.GoalBook.Goal g, String step) {
+        var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+        Map<String, Integer> have = self == null ? Map.of() : carried(self);
+        var shortBy = com.mineagent.engine.planning.GoalBook.unmetOf(g, i -> have.getOrDefault(i, 0));
+        StringBuilder b = new StringBuilder("Long goal ").append(g.id()).append(": ").append(g.text()).append('.');
+        if (!g.milestones().isEmpty()) {
+            b.append(" Done so far: ");
+            var ms = g.milestones();
+            for (int i = Math.max(0, ms.size() - 4); i < ms.size(); i++) {
+                b.append(truncateForLog(ms.get(i).text(), 80)).append(i < ms.size() - 1 ? "; " : ".");
+            }
+        }
+        if (!shortBy.isEmpty()) b.append(" Still short (counted): ").append(com.mineagent.engine.planning.GoalBook.describeNeeds(shortBy)).append('.');
+        if (step != null && !step.isBlank()) b.append(" Next step: ").append(step);
+        else b.append(" Work out the next step and do it.");
+        if (g.repeats() >= 1) b.append(" This step has come back ").append(g.repeats() + 1).append(" times: try a different way.");
+        return b.toString();
+    }
+
+    private static final String GOAL_PROMPT = "You keep an AI companion in Minecraft working toward a long goal, one "
+            + "step at a time. You get the goal, the steps done, the step just verified, what the game counts as still "
+            + "short, and the situation. Answer with JSON only: {\"done\":true|false,\"next\":\"one concrete step "
+            + "it can do now, in one sentence\"}. Say done only when the whole goal is met. A step should take minutes, "
+            + "not hours. If the same step keeps coming back, choose a different way.";
+
+    /** A step was verified while a long goal is active: one smh/plan call decides whether it is done or what next. */
+    private void goalStep(String verified, net.minecraft.server.level.ServerPlayer player) {
+        var active = goalBook.active();
+        if (active.isEmpty() || player == null || !goalStepInFlight.compareAndSet(false, true)) return;
+        var g = active.get();
+        long tick = currentGameTickSafe();
+        goalBook.milestone(verified == null || verified.isBlank() ? "a step" : verified, tick);
+        Map<String, Integer> have = carried(player);
+        var shortBy = goalBook.unmet(i -> have.getOrDefault(i, 0));
+        com.google.gson.JsonObject ask = new com.google.gson.JsonObject();
+        ask.addProperty("goal", g.text());
+        com.google.gson.JsonArray done = new com.google.gson.JsonArray();
+        var ms = goalBook.active().map(com.mineagent.engine.planning.GoalBook.Goal::milestones).orElse(List.of());
+        for (int i = Math.max(0, ms.size() - 8); i < ms.size(); i++) done.add(truncateForLog(ms.get(i).text(), 160));
+        ask.add("done_so_far", done);
+        ask.addProperty("just_verified", truncateForLog(verified, 240));
+        ask.addProperty("still_short_by_count", com.mineagent.engine.planning.GoalBook.describeNeeds(shortBy));
+        ask.addProperty("situation", truncateForLog(realtimeCognition.summarizeForPrompt(), 1200));
+        var request = new LLMRequest(baseUrl, apiKey, com.mineagent.engine.llm.RoleRouting.modelFor(model, "plan"),
+                List.of(ChatMessage.system(GOAL_PROMPT), ChatMessage.user(ask.toString())),
+                List.of(), List.of(), temperature, 300, null, null, null, null, Duration.ofSeconds(120), false);
+        try {
+            talkExecutor.submit(() -> {
+                try {
+                    var step = com.mineagent.engine.planning.GoalBook.parseStep(replyContent(sideCall(request)), shortBy);
+                    Services.platform().scheduleOnServer(() -> applyGoalStep(g.id(), step));
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Goal step failed: " + e.getMessage());
+                    Services.platform().scheduleOnServer(() -> applyGoalStep(g.id(), Optional.empty()));
+                } finally {
+                    goalStepInFlight.set(false);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            goalStepInFlight.set(false);
+        }
+    }
+
+    private void applyGoalStep(String goalId, Optional<com.mineagent.engine.planning.GoalBook.Step> step) {
+        var now = goalBook.active();
+        if (now.isEmpty() || !now.get().id().equals(goalId)) return; // switched, dropped or stopped meanwhile
+        var g = now.get();
+        if (step.isPresent() && step.get().done()) {
+            var next = goalBook.complete();
+            saveMemoryNow();
+            speakToOwner("Goal " + g.id() + " done: " + truncateForLog(g.text(), 120) + "."
+                    + next.map(n -> " Next up, " + n.id() + ": " + truncateForLog(n.text(), 100) + ".").orElse(""));
+            activeOwnerGoal = "";
+            next.ifPresent(n -> onSelfGoal(goalPrompt(n, null)));
+            return;
+        }
+        String nextStep = step.map(com.mineagent.engine.planning.GoalBook.Step::next).orElse("");
+        boolean claimedShort = step.map(com.mineagent.engine.planning.GoalBook.Step::claimedShort).orElse(false);
+        var stepped = goalBook.stepping(nextStep.isBlank() ? g.lastNext() : nextStep, null, claimedShort);
+        saveMemoryNow();
+        if (stepped.isEmpty()) {
+            speakToOwner(claimedShort
+                    ? "I think goal " + g.id() + " is done, but I count it short. Paused it; say \"/mineagent goal done " + g.id() + "\" to close it, or \"carry on\"."
+                    : "Goal " + g.id() + " isn't getting anywhere after " + g.steps() + " steps, so I've paused it. Say \"carry on\" to try again.");
+            activeOwnerGoal = "";
+            return;
+        }
+        onSelfGoal(goalPrompt(stepped.get(), nextStep));
+    }
+
+    /**
+     * Long unattended runs: when the body has sat idle for 45 s with a long goal active (a step failed, or the turn
+     * ended without one), it is given the goal again, at most every 90 s, counted as a step (so a goal that is not
+     * getting there pauses). With no goal, a standing stock order it is short of is topped up, at most every 5 min.
+     */
+    private void goalHeartbeat(net.minecraft.server.level.ServerPlayer player) {
+        if (player == null || suspended || inProgress || goalStepInFlight.get() || guarding()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        var active = goalBook.active();
+        if (active.isEmpty() && goalBook.stock().isEmpty()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastOwnerMessageTime < 30_000L || now - lastGoalStepMs < 45_000L) return;
+        if (skillRuntime.active() || curriculum.current() != null) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null) return;
+        synchronized (inboxLock) {
+            if (!inbox.isEmpty()) return;
+        }
+        if (player.getHealth() <= MineAgentEngine.getConfig().survival().healthFlee()) return;
+        if (active.isPresent()) {
+            if (now - lastGoalNudgeMs < 90_000L) return;
+            lastGoalNudgeMs = now;
+            var g = active.get();
+            var stepped = goalBook.stepping(g.lastNext().isBlank() ? "work on the goal" : g.lastNext(), null, false);
+            saveMemoryNow();
+            if (stepped.isEmpty()) {
+                speakToOwner("Goal " + g.id() + " isn't getting anywhere, so I've paused it. Say \"carry on\" to try again.");
+                activeOwnerGoal = "";
+                return;
+            }
+            onSelfGoal(goalPrompt(stepped.get(), stepped.get().lastNext()));
+            return;
+        }
+        if (now - lastStockNudgeMs < 300_000L) return;
+        Map<String, Integer> have = carried(player);
+        var due = goalBook.dueStock(i -> have.getOrDefault(i, 0));
+        if (due.isEmpty()) return;
+        lastStockNudgeMs = now;
+        var st = due.get().getKey();
+        onSelfGoal("Standing order: keep at least " + st.count() + " " + st.item().replace('_', ' ') + " on you; you have "
+                + due.get().getValue() + ". Get more (gather, craft or take from your own chests), then stop.");
+    }
+
+    /** What it carries, by item id without the namespace, with any log and any planks counted as families too. */
+    private static Map<String, Integer> carried(net.minecraft.server.level.ServerPlayer player) {
+        Map<String, Integer> counts = new HashMap<>();
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var stack = inv.getItem(i);
+            if (stack.isEmpty()) continue;
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
+            counts.merge(id, stack.getCount(), Integer::sum);
+            if (id.endsWith("_log") || id.endsWith("_stem")) counts.merge(com.mineagent.engine.planning.GoalBook.LOGS, stack.getCount(), Integer::sum);
+            if (id.endsWith("_planks")) counts.merge(com.mineagent.engine.planning.GoalBook.PLANKS, stack.getCount(), Integer::sum);
+        }
+        return counts;
+    }
+
+    private static boolean isItemId(String id) {
+        if (id == null || !id.matches("[a-z0-9_]{1,64}")) return false;
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace(id));
     }
 
     /** Stop now: the turn, the inbox, the task on the body and any practice. Reflexes stay. */
@@ -1311,6 +1611,7 @@ public class AgentLoop {
             if (scorecard.tier("skill:" + skill.name()).compareTo(com.mineagent.engine.learning.Scorecard.Tier.CERTIFIED) >= 0) certified++;
         }
         StringBuilder sb = new StringBuilder(agentSettings.workMode().id()).append(" mode");
+        goalBook.active().ifPresent(g -> sb.append(", long goal ").append(g.id()).append(": ").append(truncateForLog(g.text(), 60)));
         if (goal != null && !goal.isBlank()) sb.append(", working on: ").append(truncateForLog(goal, 80));
         else if (practising != null) sb.append(", practising: ").append(truncateForLog(practising, 80));
         else sb.append(", nothing on");
@@ -1324,6 +1625,7 @@ public class AgentLoop {
     /** Who decides its work (settings/WorkMode): the owner's alone to change. */
     public void changeWorkMode(String mode) {
         var next = com.mineagent.engine.settings.WorkMode.of(mode);
+        boolean wasParked = agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED;
         setAgentSettings(agentSettings.withMode(next.id()));
         MineAgentEngine.persistCompanionNow(companion.companionId());
         UUID id = companion.companionId();
@@ -1342,6 +1644,10 @@ public class AgentLoop {
             case ESCORT -> "Escort mode: I'm sticking with you and watching your back.";
             case PARKED -> "Parked: I'll hold here and only talk.";
         });
+        // Out of parked mode, back to the long goal it was on.
+        if (wasParked && next != com.mineagent.engine.settings.WorkMode.PARKED) {
+            goalBook.active().ifPresent(g -> onSelfGoal(goalPrompt(g, null)));
+        }
     }
 
     /** A call on the side (talk, curriculum): its own request; the loop's provider session is put back after. */
@@ -1384,6 +1690,7 @@ public class AgentLoop {
             boolean goalVerified = planner.verifyGoal(semanticWorldModel, gameTick);
             measureEpisodes(player, goalVerified, gameTick);
             practice(player, goalVerified, gameTick);
+            goalHeartbeat(player);
             if (result.ownerIntent() != null) {
                 var signal = result.ownerIntent();
                 theoryOfMind.observeIntent(signal.intent(), signal.confidence(),
@@ -1408,7 +1715,11 @@ public class AgentLoop {
             // signal and admit only one paid deliberation event.
             String deliberation = replan != null
                     ? replan.event() : result.deliberationEvent();
-            if (goalVerified) {
+            if (goalVerified && goalBook.active().isPresent() && curriculum.current() == null) {
+                // A long goal is under way: the goal loop decides what comes next (MA3.2), not a fresh turn.
+                goalStep(planner.exportState().goal(), player);
+                deliberation = null;
+            } else if (goalVerified) {
                 deliberation = "[GOAL_VERIFIED] goal="
                         + truncateForLog(planner.exportState().goal(), 240)
                         + "; all required milestones and acceptance conditions are satisfied";

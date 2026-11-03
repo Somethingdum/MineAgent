@@ -175,5 +175,12 @@
   "screen.mineagent.agent.mode.servant.about": "Works on what you ask, and nothing of its own.",
   "screen.mineagent.agent.mode.auto.about": "Finds its own work and practises; drops it the moment you ask.",
   "screen.mineagent.agent.mode.escort.about": "Sticks with you and keeps you alive.",
-  "screen.mineagent.agent.mode.parked.about": "Holds its place and only talks."
+  "screen.mineagent.agent.mode.parked.about": "Holds its place and only talks.",
+  "screen.mineagent.agent.tab.goals": "Goals",
+  "screen.mineagent.agent.goals_note": "Long goals it keeps at, one at a time. Amounts are counted.",
+  "screen.mineagent.agent.no_goals": "No goals yet.",
+  "screen.mineagent.agent.goal_hint": "A goal, e.g. get 64 oak logs",
+  "screen.mineagent.agent.goal_switch": "Start",
+  "screen.mineagent.agent.goal_done": "Done",
+  "screen.mineagent.agent.goal_drop": "Drop"
 }

@@ -146,6 +146,12 @@ public final class GoalBook {
         return wasActive ? promoteNext() : active();
     }
 
+    /** "Carry on": the active goal, or else the oldest queued one made active. */
+    public synchronized Optional<Goal> resume() {
+        Optional<Goal> a = active();
+        return a.isPresent() ? a : promoteNext();
+    }
+
     /** Pause the active goal (the owner said stop); nothing becomes active. */
     public synchronized void pauseActive() {
         active().ifPresent(a -> replace(a.with(Status.PAUSED)));
@@ -204,6 +210,16 @@ public final class GoalBook {
         Optional<Goal> a = active();
         if (a.isEmpty()) return List.of();
         return unmet(a.get().needs(), have);
+    }
+
+    /** A goal's amounts still short, given what it has. */
+    public static List<Need> unmetOf(Goal g, Function<String, Integer> have) {
+        return g == null ? List.of() : unmet(g.needs(), have);
+    }
+
+    /** "24 oak log, 3 diamond". */
+    public static String describeNeeds(List<Need> needs) {
+        return needs == null ? "" : describe(needs);
     }
 
     static List<Need> unmet(List<Need> needs, Function<String, Integer> have) {

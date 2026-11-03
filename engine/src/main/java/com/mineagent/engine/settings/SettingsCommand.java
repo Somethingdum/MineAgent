@@ -26,6 +26,9 @@ public final class SettingsCommand {
     /** A skill as the panel lists it: its name and its hard-coded rating. */
     public record SkillLine(String name, String score) {}
 
+    /** A goal as the panel shows it (MA3.1): its id, its status, and its line. */
+    public record GoalLine(String id, String status, String line) {}
+
     private SettingsCommand() {}
 
     public static Result apply(AgentSettings current, String key, String value) {
@@ -59,6 +62,11 @@ public final class SettingsCommand {
     /** What the panel shows, sent to the owner's client as one JSON text. No API key is ever in it. */
     public static String state(AgentSettings s, List<String> trustedNames, List<SkillLine> skills,
                                String model, String baseUrl, boolean keySet) {
+        return state(s, trustedNames, skills, List.of(), model, baseUrl, keySet);
+    }
+
+    public static String state(AgentSettings s, List<String> trustedNames, List<SkillLine> skills, List<GoalLine> goals,
+                               String model, String baseUrl, boolean keySet) {
         JsonObject o = new JsonObject();
         JsonArray trusted = new JsonArray();
         for (String t : trustedNames) trusted.add(t);
@@ -76,6 +84,15 @@ public final class SettingsCommand {
             list.add(e);
         }
         o.add("skills", list);
+        JsonArray goalList = new JsonArray();
+        for (GoalLine g : goals == null ? List.<GoalLine>of() : goals) {
+            JsonObject e = new JsonObject();
+            e.addProperty("id", g.id());
+            e.addProperty("status", g.status());
+            e.addProperty("line", g.line());
+            goalList.add(e);
+        }
+        o.add("goals", goalList);
         o.addProperty("model", model == null ? "" : model);
         o.addProperty("baseUrl", baseUrl == null ? "" : baseUrl);
         o.addProperty("keySet", keySet);

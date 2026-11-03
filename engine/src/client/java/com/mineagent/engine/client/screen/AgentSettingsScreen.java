@@ -24,7 +24,8 @@ public class AgentSettingsScreen extends Screen {
     private static final int BUTTON_HEIGHT = 20;
     private static final int ROW = 24;
     private static final int LINE = 12;
-    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "callrate"};
+    private static final String[] TABS = {"connection", "obeys", "personality", "learning", "goals", "callrate"};
+    private static final int GOALS_SHOWN = 5;
     private static final int SKILLS_SHOWN = 4;
 
     private static int tab = 0;
@@ -35,6 +36,8 @@ public class AgentSettingsScreen extends Screen {
     private EditBox playerField;
     private EditBox personaField;
     private String personaDraft;
+    private EditBox goalField;
+    private String goalDraft;
     private String testResult = "";
     private final List<Line> lines = new ArrayList<>();
 
@@ -73,6 +76,7 @@ public class AgentSettingsScreen extends Screen {
                 case "obeys" -> obeys(state);
                 case "personality" -> personality(state);
                 case "learning" -> learning(state);
+                case "goals" -> goals(state);
                 default -> callRate(state);
             }
         }
@@ -191,6 +195,55 @@ public class AgentSettingsScreen extends Screen {
         }
     }
 
+    /** The goal book (MA3.1): open goals with what can be done to each, and a box to add one. */
+    private void goals(JsonObject s) {
+        int y = contentTop;
+        line(Component.translatable("screen.mineagent.agent.goals_note"), left, y, MineAgentUiComponents.COLOR_SUBTITLE);
+        y += LINE + 4;
+        JsonArray goals = s.has("goals") && s.get("goals").isJsonArray() ? s.getAsJsonArray("goals") : new JsonArray();
+        int shown = 0;
+        for (int i = 0; i < goals.size() && shown < GOALS_SHOWN; i++) {
+            JsonObject g = goals.get(i).getAsJsonObject();
+            String id = safeWord(str(g, "id"));
+            String status = str(g, "status");
+            boolean open = status.equals("active") || status.equals("paused");
+            int color = status.equals("active") ? MineAgentUiComponents.COLOR_ACCENT
+                    : open ? MineAgentUiComponents.COLOR_TITLE : MineAgentUiComponents.COLOR_MUTED;
+            line(Component.literal(clip(str(g, "line"), open ? 52 : 70)), left, y + 6, color);
+            if (open) {
+                int bx = left + innerWidth - 150;
+                if (status.equals("paused")) {
+                    this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.goal_switch"),
+                            ignored -> command("mineagent goal switch " + id)).bounds(bx, y, 48, BUTTON_HEIGHT).build());
+                } else {
+                    this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.goal_done"),
+                            ignored -> command("mineagent goal done " + id)).bounds(bx, y, 48, BUTTON_HEIGHT).build());
+                }
+                this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.goal_drop"),
+                        ignored -> command("mineagent goal drop " + id)).bounds(bx + 52, y, 48, BUTTON_HEIGHT).build());
+            }
+            y += ROW - 2;
+            shown++;
+        }
+        if (goals.isEmpty()) {
+            line(Component.translatable("screen.mineagent.agent.no_goals"), left, y + 6, MineAgentUiComponents.COLOR_TITLE);
+            y += ROW;
+        }
+        goalField = new EditBox(this.font, left, y + 4, innerWidth - 90, BUTTON_HEIGHT,
+                Component.translatable("screen.mineagent.agent.goal_hint"));
+        goalField.setMaxLength(200);
+        goalField.setHint(Component.translatable("screen.mineagent.agent.goal_hint"));
+        if (goalDraft != null) goalField.setValue(goalDraft);
+        this.addRenderableWidget(goalField);
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.add"), ignored -> {
+            String text = goalField.getValue().replaceAll("[\\p{Cntrl}§]", " ").strip();
+            if (text.isEmpty()) return;
+            goalDraft = "";
+            goalField.setValue("");
+            command("mineagent goal add " + text);
+        }).bounds(left + innerWidth - 80, y + 4, 80, BUTTON_HEIGHT).build());
+    }
+
     private void callRate(JsonObject s) {
         int y = contentTop;
         String now = str(s, "callRate");
@@ -217,6 +270,10 @@ public class AgentSettingsScreen extends Screen {
             personaDraft = personaField.getValue();
             return;
         }
+        if (goalField != null && goalField.isFocused()) {
+            goalDraft = goalField.getValue();
+            return;
+        }
         rebuild();
     }
 
@@ -227,6 +284,8 @@ public class AgentSettingsScreen extends Screen {
 
     private void rebuild() {
         if (personaField != null) personaDraft = personaField.getValue();
+        if (goalField != null) goalDraft = goalField.getValue();
+        goalField = null;
         this.clearWidgets();
         this.init();
     }

@@ -48,6 +48,16 @@ final class CommandParserTest {
                 ? ":" + c.count() : c.value() != null ? ":" + c.value() : "")).orElse("-");
     }
 
+    @Test void longGoalsGoInTheGoalBookAndCarryOnResumes() {
+        // Number words become digits, which the goal book counts.
+        assertEquals("GOAL_ADD:build a stone castle by the river with 4 towers and a moat around it",
+                parsed("Steve, goal: build a stone castle by the river with four towers and a moat around it"));
+        assertEquals("GOAL_ADD:get 64 oak logs", parsed("new goal - get 64 oak logs"));
+        assertEquals("RESUME", parsed("carry on"));
+        assertEquals("RESUME", parsed("back to work, Steve"));
+        assertEquals("-", parsed("what is your goal"));
+    }
+
     @Test void aNegationIsAStopNeverTheVerbAfterIt() {
         assertEquals("STOP", parsed("don't go there"));
         assertEquals("STOP", parsed("wait no, follow me"));

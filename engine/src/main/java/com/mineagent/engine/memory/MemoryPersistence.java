@@ -71,6 +71,8 @@ public class MemoryPersistence {
     private static final String SCORE_FILE = "scores.json";
     /** This world's practice record: done, failed and too hard (learning/Curriculum, MA2.1). */
     private static final String CURRICULUM_FILE = "curriculum.json";
+    /** This world's goal book: long goals and standing stock orders (planning/GoalBook, MA3.1). */
+    private static final String GOAL_BOOK_FILE = "goal_book.json";
     private static final String SEMANTIC_WORLD_FILE = "semantic_world.json";
     private static final String ROLLING_PLAN_FILE = "rolling_plan.json";
     private static final String MECHANISM_FILE = "mechanism_experiments.json";
@@ -105,6 +107,7 @@ public class MemoryPersistence {
     private volatile Path libraryRoot;
     private volatile com.mineagent.engine.learning.Scorecard scorecard;
     private volatile com.mineagent.engine.learning.Curriculum curriculum;
+    private volatile com.mineagent.engine.planning.GoalBook goalBook;
     private final CognitiveMap cognitiveMap;
     private final PlaceEventMemory placeEventMemory;
     private final ImportanceEvaluator importanceEvaluator;
@@ -178,6 +181,34 @@ public class MemoryPersistence {
     /** Keep this world's practice record with its memory (MA2.1). */
     public synchronized void setCurriculum(com.mineagent.engine.learning.Curriculum c) {
         this.curriculum = c;
+    }
+
+    /** Keep this world's goal book with its memory (MA3.1). */
+    public synchronized void setGoalBook(com.mineagent.engine.planning.GoalBook book) {
+        this.goalBook = book;
+    }
+
+    private void saveGoalBook() throws IOException {
+        var book = goalBook;
+        if (book == null) return;
+        JsonObject data = new JsonObject();
+        data.addProperty("version", FORMAT_VERSION);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        data.add("state", GSON.toJsonTree(book.exportState()));
+        writeAtomic(memoryDir.resolve(GOAL_BOOK_FILE), GSON.toJson(data));
+    }
+
+    private void loadGoalBook() throws IOException {
+        var book = goalBook;
+        Path file = memoryDir.resolve(GOAL_BOOK_FILE);
+        if (book == null || !Files.exists(file)) return;
+        JsonObject data = readRoot(file);
+        if (!data.has("state") || !data.get("state").isJsonObject()) throw new IOException("goal book state is missing");
+        try {
+            book.importState(GSON.fromJson(data.get("state"), com.mineagent.engine.planning.GoalBook.State.class));
+        } catch (RuntimeException malformed) {
+            throw new IOException("invalid goal book state", malformed);
+        }
     }
 
     private void saveCurriculum() throws IOException {
@@ -286,6 +317,9 @@ public class MemoryPersistence {
         try { saveCurriculum(); } catch (Exception e) {
             System.err.println("[MineAgent] Save curriculum failed: " + e.getMessage());
         }
+        try { saveGoalBook(); } catch (Exception e) {
+            System.err.println("[MineAgent] Save goal book failed: " + e.getMessage());
+        }
         try { saveSemanticWorld(); } catch (Exception e) {
             System.err.println("[MineAgent] Save semantic world failed: " + e.getMessage());
         }
@@ -339,6 +373,7 @@ public class MemoryPersistence {
         loadWithQuarantine(EXPERIENCE_FILE, "experiences", this::loadExperiences);
         loadWithQuarantine(SKILL_FILE, "learned skills", this::loadSkills);
         loadWithQuarantine(CURRICULUM_FILE, "curriculum", this::loadCurriculum);
+        loadWithQuarantine(GOAL_BOOK_FILE, "goal book", this::loadGoalBook);
         try {
             loadScores();
         } catch (Exception failure) {
@@ -1154,6 +1189,7 @@ public class MemoryPersistence {
             Files.deleteIfExists(memoryDir.resolve(SKILL_FILE));
             Files.deleteIfExists(memoryDir.resolve(WORLD_SKILL_FILE));
             Files.deleteIfExists(memoryDir.resolve(CURRICULUM_FILE));
+            Files.deleteIfExists(memoryDir.resolve(GOAL_BOOK_FILE));
             Files.deleteIfExists(memoryDir.resolve(SEMANTIC_WORLD_FILE));
             Files.deleteIfExists(memoryDir.resolve(ROLLING_PLAN_FILE));
             Files.deleteIfExists(memoryDir.resolve(MECHANISM_FILE));
