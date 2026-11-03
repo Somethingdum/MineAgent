@@ -1793,6 +1793,8 @@ public class AgentLoop {
         if (active.isEmpty() && goalBook.stock().isEmpty()) return;
         long now = System.currentTimeMillis();
         if (now - lastOwnerMessageTime < 30_000L || now - lastGoalStepMs < 45_000L) return;
+        // SMH just said it could not be reached (or had no model): waiting spends no steps of the goal.
+        if (now - lastSmhHintMs < 300_000L) return;
         if (skillRuntime.active() || curriculum.current() != null) return;
         LiveBodyState body = liveBodyState.get();
         if (body != null && body.taskId() != null) return;
