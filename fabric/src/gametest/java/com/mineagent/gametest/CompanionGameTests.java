@@ -32,6 +32,8 @@ import java.util.List;
  */
 public class CompanionGameTests implements FabricGameTest {
     private static final String NO_MODEL = "http://127.0.0.1:9";
+    /** A dedicated server's default. */
+    private static final int SIMULATION_DISTANCE = 10;
 
     static {
         System.setProperty("mineagent.traceFights", "true"); // fights print what the companion saw and did
@@ -49,6 +51,11 @@ public class CompanionGameTests implements FabricGameTest {
      * where FakeSmh stands in); {@code owner}: an owner to reuse (null: a new mock player).
      */
     private static Scene scene(GameTestHelper helper, String name, boolean installed, ServerPlayer reuseOwner) {
+        // The test server keeps entities ticking only in the chunk a player stands in; a real server does so for 5 to
+        // 32 chunks around each player (10 by default). With none, a mob a step across a chunk border froze in place
+        // mid-fight. Give the scenes a real server's simulation distance.
+        var players = helper.getLevel().getServer().getPlayerList();
+        if (players.getSimulationDistance() < SIMULATION_DISTANCE) players.setSimulationDistance(SIMULATION_DISTANCE);
         for (var s : List.copyOf(MineAgentEngine.allCompanions())) {
             MineAgentEngine.despawnCompanion(s.companion.companionId(), true);
         }
@@ -143,10 +150,12 @@ public class CompanionGameTests implements FabricGameTest {
                 else fail(helper, "the husk died, but not by the companion");
             } else if (helper.getTick() >= 2300) {
                 String how = String.format("the husk still lives after 2300 ticks: husk health %.0f, %.1f blocks away, companion health %.0f"
-                        + " (%d server ticks and %d of game time went by; day time %d)",
+                        + " (%d server ticks and %d of game time went by; day time %d; simulation distance %d; husk's spot"
+                        + " entity-ticking %b)",
                         husk.getHealth(), husk.distanceTo(s.body()), s.body().getHealth(),
                         server.getTickCount() - serverStart, helper.getLevel().getGameTime() - gameStart,
-                        helper.getLevel().getDayTime());
+                        helper.getLevel().getDayTime(), server.getPlayerList().getSimulationDistance(),
+                        helper.getLevel().isPositionEntityTicking(husk.blockPosition()));
                 tidy(s);
                 fail(helper, how);
             }
