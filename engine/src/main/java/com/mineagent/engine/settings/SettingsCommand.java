@@ -14,7 +14,7 @@ import java.util.Locale;
  * are the owner's alone too.
  */
 public final class SettingsCommand {
-    public static final List<String> KEYS = List.of("persona", "curriculum", "experiments", "callrate");
+    public static final List<String> KEYS = List.of("mode", "persona", "curriculum", "experiments", "callrate");
 
     /** The settings after a change, or why it was refused. */
     public record Result(AgentSettings settings, String error) {
@@ -46,6 +46,9 @@ public final class SettingsCommand {
             case "experiments" -> List.of("low", "normal", "high").contains(lower)
                     ? new Result(s.withExperiments(lower), null)
                     : new Result(s, "Experiments are low, normal or high.");
+            case "mode" -> List.of("servant", "auto", "escort", "parked", "park").contains(lower)
+                    ? new Result(s.withMode(lower), null)
+                    : new Result(s, "The mode is servant, auto, escort or parked.");
             case "callrate" -> List.of("calm", "normal", "busy").contains(lower)
                     ? new Result(s.withCallRate(lower), null)
                     : new Result(s, "The call rate is calm, normal or busy.");
@@ -64,6 +67,7 @@ public final class SettingsCommand {
         o.addProperty("curriculum", s.curriculum());
         o.addProperty("experiments", s.experiments());
         o.addProperty("callRate", s.callRate());
+        o.addProperty("mode", s.mode());
         JsonArray list = new JsonArray();
         for (SkillLine line : skills) {
             JsonObject e = new JsonObject();

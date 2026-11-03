@@ -22,7 +22,60 @@ final class ScorecardTest {
         assertEquals(15.0, card.score(new Scorecard.Episode("x", Scorecard.Outcome.FAILED, false, 100, 0, 20)), 1e-9);
         assertEquals(35.0, card.score(new Scorecard.Episode("x", Scorecard.Outcome.RETREATED, false, 100, 0, 20)), 1e-9);
         assertEquals(400L, card.stat("skill:a").fastestTicks());
-        assertEquals("score 90/100 over 2 runs (best 100, last 80)", card.describe("skill:a"));
+        assertEquals("new, 2/2 done (reliability 0.34), score 90/100", card.describe("skill:a"));
+    }
+
+    @Test void theWilsonBoundMatchesAndyOmegasReferenceValues() {
+        assertEquals(0.490, Scorecard.wilson(8, 10), 0.0005);
+        assertEquals(0.764, Scorecard.wilson(19, 20), 0.0005);
+        assertEquals(0.798, Scorecard.wilson(23, 24), 0.0005);
+        assertEquals(0.787, Scorecard.wilson(28, 30), 0.0005);
+        assertEquals(0.886, Scorecard.wilson(58, 60), 0.0005);
+    }
+
+    private static final String[] BIOMES = {"plains", "forest", "desert", "taiga", "swamp"};
+
+    @Test void tiersNeedTrialsReliabilityAndDistinctSituations() {
+        Scorecard card = new Scorecard();
+        for (int i = 0; i < 10; i++) {
+            card.record(new Scorecard.Episode("skill:mine", i == 3 ? Scorecard.Outcome.FAILED : Scorecard.Outcome.DONE,
+                    false, 100, 0, 20, "biome=" + BIOMES[i % 3] + ",tool=iron"), i);
+        }
+        assertEquals(Scorecard.Tier.CANDIDATE, card.tier("skill:mine"));
+        Scorecard oneSituation = new Scorecard();
+        for (int i = 0; i < 10; i++) oneSituation.record(new Scorecard.Episode("skill:one", Scorecard.Outcome.DONE, false, 100, 0, 20, "biome=plains"), i);
+        assertEquals(Scorecard.Tier.NEW, oneSituation.tier("skill:one"), "one memorised situation is not a skill");
+    }
+
+    @Test void aCertifiedSkillThatStartsFailingIsDemotedAndTheConditionNamed() {
+        Scorecard card = new Scorecard();
+        for (int i = 0; i < 30; i++) {
+            card.record(new Scorecard.Episode("skill:iron", Scorecard.Outcome.DONE, false, 100, 0, 20,
+                    "biome=" + BIOMES[i % 5] + ",time=" + (i % 2 == 0 ? "day" : "night")), i);
+        }
+        assertEquals(Scorecard.Tier.CERTIFIED, card.tier("skill:iron"));
+        for (int i = 0; i < 20; i++) {
+            boolean ok = i % 4 == 0;
+            card.record(new Scorecard.Episode("skill:iron", ok ? Scorecard.Outcome.DONE : Scorecard.Outcome.FAILED,
+                    false, 100, 0, 20, ok ? "biome=plains" : "biome=swamp"), 100 + i);
+        }
+        assertTrue(card.stat("skill:iron").demoted());
+        assertEquals("biome=swamp", card.failureCondition("skill:iron"));
+        assertTrue(card.describe("skill:iron").contains("failures share biome=swamp"));
+    }
+
+    @Test void learningProgressSaysWhereItIsImprovingAndWhereItIsStuck() {
+        Scorecard card = new Scorecard();
+        for (int i = 0; i < 20; i++) {
+            boolean ok = i < 10 ? i % 3 == 0 : i % 5 != 0;
+            card.record(new Scorecard.Episode("skill:learn", ok ? Scorecard.Outcome.DONE : Scorecard.Outcome.FAILED, false, 100, 0, 20), i);
+            card.record(new Scorecard.Episode("skill:stuck", i % 6 == 0 ? Scorecard.Outcome.DONE : Scorecard.Outcome.FAILED, false, 100, 0, 20), i);
+            card.record(new Scorecard.Episode("skill:easy", Scorecard.Outcome.DONE, false, 100, 0, 20), i);
+        }
+        assertEquals(Scorecard.Trend.IMPROVING, card.trend("skill:learn"));
+        assertEquals(Scorecard.Trend.STUCK, card.trend("skill:stuck"));
+        assertEquals(Scorecard.Trend.MASTERED, card.trend("skill:easy"));
+        assertEquals(Scorecard.Trend.UNTESTED, card.trend("skill:never"));
     }
 
     @Test void theUntriedIsTriedAndTheBetterComesBeforeTheWorse() {

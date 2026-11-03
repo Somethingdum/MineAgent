@@ -12,8 +12,15 @@ public final class EpisodeTracker {
     private double damage;
     private double maxHealth = 20.0;
     private boolean died;
+    private String conditions = "";
 
     public void begin(String key, long tick, double health, double maxHealth) {
+        begin(key, tick, health, maxHealth, "");
+    }
+
+    /** {@code conditions}: what it runs under (biome, dimension, tool, day or night), for the scorecard. */
+    public void begin(String key, long tick, double health, double maxHealth, String conditions) {
+        this.conditions = conditions == null ? "" : conditions;
         this.key = key;
         this.startTick = tick;
         this.lastHealth = health;
@@ -41,7 +48,7 @@ public final class EpisodeTracker {
     /** The episode ended now, with this outcome; the tracker is free again. */
     public Scorecard.Episode end(Scorecard.Outcome outcome, long tick) {
         if (key == null) return null;
-        Scorecard.Episode e = new Scorecard.Episode(key, outcome, died, Math.max(0, tick - startTick), damage, maxHealth);
+        Scorecard.Episode e = new Scorecard.Episode(key, outcome, died, Math.max(0, tick - startTick), damage, maxHealth, conditions);
         key = null;
         lastHealth = Double.NaN;
         return e;

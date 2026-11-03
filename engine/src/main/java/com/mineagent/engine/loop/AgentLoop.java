@@ -609,6 +609,13 @@ public class AgentLoop {
      */
     public void onTalkOnly(String player, String message) {
         if (message == null || message.isBlank()) return;
+        // Andy Omega §21.2: an attempt to command, impersonate or inject gets the fixed line, no model; two, nothing.
+        var verdict = talkOnly.screen(player, message);
+        if (verdict == com.mineagent.engine.chat.TalkOnly.Verdict.IGNORE) return;
+        if (verdict == com.mineagent.engine.chat.TalkOnly.Verdict.REFUSE) {
+            if (talkOnly.take(player, System.currentTimeMillis())) speakToNearby(com.mineagent.engine.chat.TalkOnly.REFUSAL);
+            return;
+        }
         talkOnly.heard(player, message);
         if (!talkOnly.take(player, System.currentTimeMillis())) return;
         var request = com.mineagent.engine.chat.TalkOnly.request(baseUrl, apiKey, model, temperature,
@@ -663,6 +670,23 @@ public class AgentLoop {
     }
 
     public void onOwnerMessage(String message) {
+        onOwnerMessage(message, true);
+    }
+
+    /**
+     * An order from the owner ({@code fromOwner}) or a trusted player. A plain command ("stop", "follow me",
+     * "auto", "status", "drop 32 cobblestone") is acted on at once without a model (chat/CommandParser, after
+     * the Andy Omega plan's Lexer); parked, anything else is only talked about; the rest goes to the model.
+     */
+    public void onOwnerMessage(String message, boolean fromOwner) {
+        var command = com.mineagent.engine.chat.CommandParser.parse(message, companion.companionName());
+        if (command.isPresent() && runCommand(command.get(), fromOwner)) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) {
+            int close = message.indexOf("]: ");
+            String who = message.startsWith("[") && close > 0 ? message.substring(1, close) : "owner";
+            onTalkOnly(who, close > 0 ? message.substring(close + 3) : message);
+            return;
+        }
         // An order (the owner's, or a trusted player's) ends a practice task at once, uncounted (MA2.1).
         curriculum.abandon();
         // Track last owner command for decision cache keying
@@ -920,6 +944,27 @@ public class AgentLoop {
      * Minecraft Level or Inventory directly.
      */
     /**
+     * What an episode runs under, for certification across distinct conditions and for naming why a skill
+     * fails (Andy Omega §41.4): biome, dimension, the tier of the tool in hand, day or night.
+     */
+    private static String conditionsOf(net.minecraft.server.level.ServerPlayer player) {
+        try {
+            var level = player.serverLevel();
+            String biome = level.getBiome(player.blockPosition()).unwrapKey()
+                    .map(k -> k.location().getPath()).orElse("unknown");
+            String dim = level.dimension().location().getPath();
+            String tool = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(player.getMainHandItem().getItem()).getPath();
+            String tier = tool.contains("netherite") ? "netherite" : tool.contains("diamond") ? "diamond"
+                    : tool.contains("iron") ? "iron" : tool.contains("stone") ? "stone"
+                    : tool.contains("wooden") || tool.contains("golden") ? "wood" : "hand";
+            return "biome=" + biome + ",dim=" + dim + ",tool=" + tier + ",time=" + (level.isDay() ? "day" : "night");
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
      * Rate what the companion does, from the game alone (SMH plan 69): the owner's goal, from when it is set to
      * when its acceptance checks pass; each skill run, from start to its end. Health lost and a death count
      * against them; the model's own words never do.
@@ -941,12 +986,12 @@ public class AgentLoop {
             var episode = goalEpisode.end(com.mineagent.engine.learning.Scorecard.Outcome.FAILED, gameTick);
             writeLesson(goal, episode, scorecard.record(episode, gameTick));
         } else if (!goalEpisode.active() && goalKey != null && !goalVerified && !dead) {
-            goalEpisode.begin(goalKey, gameTick, health, max);
+            goalEpisode.begin(goalKey, gameTick, health, max, conditionsOf(player));
         }
         SkillRuntime.Snapshot run = skillRuntime.snapshot();
         if (run != null && run.runId() != null && !run.runId().equals(skillEpisodeRun) && !run.terminal()) {
             skillEpisodeRun = run.runId();
-            skillEpisode.begin("skill:" + run.skillName(), gameTick, health, max);
+            skillEpisode.begin("skill:" + run.skillName(), gameTick, health, max, conditionsOf(player));
         }
         if (run != null && skillEpisode.active() && run.runId() != null && run.runId().equals(skillEpisodeRun) && run.terminal()) {
             if (run.status() == SkillRuntime.Status.CANCELLED) skillEpisode.drop();
@@ -979,15 +1024,28 @@ public class AgentLoop {
         boolean hostileNear = !player.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                 player.getBoundingBox().inflate(16.0)).isEmpty();
         double flee = MineAgentEngine.getConfig().survival().healthFlee();
-        if (!curriculum.due(agentSettings.curriculum(), inProgress || skillRuntime.active(), sinceOrder,
+        // Practice is AUTO's (Andy Omega §59): in servant, escort and parked mode it never starts work of its own.
+        boolean auto = agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO;
+        if (!curriculum.due(auto && agentSettings.curriculum(), inProgress || skillRuntime.active(), sinceOrder,
                 hostileNear, player.getHealth(), flee, now)) return;
         curriculum.asking(now);
         List<String> names = new ArrayList<>();
         for (SkillLibrary.Skill skill : skillLib.exportAll()) names.add(skill.name());
         List<String> gaps = new ArrayList<>();
         for (var gap : mechanismExplorer.curriculum(activeOwnerGoal, gameTick, 5)) gaps.add(gap.subject());
+        // Where it is improving, where it is stuck, what it has mastered (Andy Omega §43.2), measured.
+        List<String> progress = new ArrayList<>(scorecard.weakest(names, 5));
+        var trends = scorecard.byTrend(names, 6);
+        for (var entry : List.of(
+                Map.entry(com.mineagent.engine.learning.Scorecard.Trend.IMPROVING, "improving, keep practising"),
+                Map.entry(com.mineagent.engine.learning.Scorecard.Trend.STUCK, "stuck, try a different way"),
+                Map.entry(com.mineagent.engine.learning.Scorecard.Trend.REGRESSING, "getting worse, find out why"),
+                Map.entry(com.mineagent.engine.learning.Scorecard.Trend.MASTERED, "mastered, do not repeat"))) {
+            List<String> those = trends.get(entry.getKey());
+            if (those != null && !those.isEmpty()) progress.add(entry.getValue() + ": " + String.join(", ", those));
+        }
         var request = com.mineagent.engine.learning.Curriculum.request(baseUrl, apiKey, model, temperature,
-                realtimeCognition.summarizeForPrompt(), names, scorecard.weakest(names, 5), gaps,
+                realtimeCognition.summarizeForPrompt(), names, progress, gaps,
                 curriculum.doneList(), curriculum.tooHardList(), activeOwnerGoal);
         try {
             talkExecutor.submit(() -> {
@@ -1086,6 +1144,129 @@ public class AgentLoop {
             }
         }
         return out;
+    }
+
+    /** A plain command, carried out now on the server thread; false hands it to the model instead. */
+    private boolean runCommand(com.mineagent.engine.chat.CommandParser.Command c, boolean fromOwner) {
+        var self = (com.mineagent.engine.entity.CompanionEntity) companion;
+        UUID id = companion.companionId();
+        switch (c.kind()) {
+            case STOP -> {
+                haltNow();
+                speakToOwner("Stopped.");
+            }
+            case STAY -> {
+                haltNow();
+                MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
+                speakToOwner("Staying here.");
+            }
+            case FOLLOW -> {
+                MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FOLLOW);
+                speakToOwner("Following you.");
+            }
+            case COME -> {
+                var owner = self.serverPlayerOwner();
+                if (owner == null) return false;
+                haltNow();
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("x", owner.blockPosition().getX());
+                args.addProperty("y", owner.blockPosition().getY());
+                args.addProperty("z", owner.blockPosition().getZ());
+                runDirect("goto", args);
+                speakToOwner("Coming.");
+            }
+            case MODE -> {
+                if (!fromOwner) {
+                    speakToOwner("Only my owner changes my mode.");
+                    return true;
+                }
+                changeWorkMode(c.value());
+            }
+            case STATUS -> speakToOwner(statusLine());
+            case CANCEL -> {
+                haltNow();
+                activeOwnerGoal = "";
+                speakToOwner("Cancelled.");
+            }
+            case EAT -> {
+                runDirect("eat_item", new com.google.gson.JsonObject());
+                speakToOwner("Eating.");
+            }
+            case DROP -> {
+                if (c.count() == null || !net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(
+                        net.minecraft.resources.ResourceLocation.withDefaultNamespace(c.value()))) return false;
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("item_id", "minecraft:" + c.value());
+                args.addProperty("count", c.count());
+                runDirect("drop_items", args);
+                speakToOwner("Dropping " + c.count() + " " + c.value().replace('_', ' ') + ".");
+            }
+        }
+        return true;
+    }
+
+    /** Stop now: the turn, the inbox, the task on the body and any practice. Reflexes stay. */
+    private void haltNow() {
+        curriculum.abandon();
+        cancel();
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null) {
+            var args = new com.google.gson.JsonObject();
+            args.addProperty("task_id", body.taskId());
+            runDirect("task_stop", args);
+        }
+    }
+
+    /** A tool run by code (a plain command), through the same dispatch and audit as a skill's steps. */
+    private void runDirect(String tool, com.google.gson.JsonObject args) {
+        try {
+            dispatchSkillAction("cmd-" + UUID.randomUUID(), tool, args);
+        } catch (RuntimeException e) {
+            System.err.println("[MineAgent] Command " + tool + " failed: " + e.getMessage());
+        }
+    }
+
+    /** "status": what it is doing, from the facts, never the model's account. */
+    private String statusLine() {
+        String goal = planner.exportState().goal();
+        String practising = curriculum.current();
+        var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+        int certified = 0;
+        for (SkillLibrary.Skill skill : skillLib.exportAll()) {
+            if (scorecard.tier("skill:" + skill.name()).compareTo(com.mineagent.engine.learning.Scorecard.Tier.CERTIFIED) >= 0) certified++;
+        }
+        StringBuilder sb = new StringBuilder(agentSettings.workMode().id()).append(" mode");
+        if (goal != null && !goal.isBlank()) sb.append(", working on: ").append(truncateForLog(goal, 80));
+        else if (practising != null) sb.append(", practising: ").append(truncateForLog(practising, 80));
+        else sb.append(", nothing on");
+        if (self != null) {
+            sb.append(", health ").append(Math.round(self.getHealth())).append("/").append(Math.round(self.getMaxHealth()))
+              .append(", food ").append(self.getFoodData().getFoodLevel()).append("/20");
+        }
+        return sb.append(", ").append(skillLib.size()).append(" skills (").append(certified).append(" certified).").toString();
+    }
+
+    /** Who decides its work (settings/WorkMode): the owner's alone to change. */
+    public void changeWorkMode(String mode) {
+        var next = com.mineagent.engine.settings.WorkMode.of(mode);
+        setAgentSettings(agentSettings.withMode(next.id()));
+        MineAgentEngine.persistCompanionNow(companion.companionId());
+        UUID id = companion.companionId();
+        if (next != com.mineagent.engine.settings.WorkMode.AUTO) curriculum.abandon();
+        switch (next) {
+            case ESCORT -> MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FOLLOW);
+            case PARKED -> {
+                haltNow();
+                MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
+            }
+            default -> { }
+        }
+        speakToOwner(switch (next) {
+            case SERVANT -> "Servant mode: I'll work on what you ask, and nothing of my own.";
+            case AUTO -> "Auto mode: I'll find my own work and practise. Tell me anything and I'll drop it for you.";
+            case ESCORT -> "Escort mode: I'm sticking with you and watching your back.";
+            case PARKED -> "Parked: I'll hold here and only talk.";
+        });
     }
 
     /** A call on the side (talk, curriculum): its own request; the loop's provider session is put back after. */

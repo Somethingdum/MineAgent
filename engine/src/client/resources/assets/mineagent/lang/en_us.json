@@ -151,8 +151,8 @@
   "screen.mineagent.agent.persona_hint": "For example: cheerful, short answers",
   "screen.mineagent.agent.save": "Save",
   "screen.mineagent.agent.clear": "Clear",
-  "screen.mineagent.agent.practice_on": "Practises on its own: On",
-  "screen.mineagent.agent.practice_off": "Practises on its own: Off",
+  "screen.mineagent.agent.practice_on": "Practises in Auto mode: On",
+  "screen.mineagent.agent.practice_off": "Practises in Auto mode: Off",
   "screen.mineagent.agent.experiments": "Experiments: %s",
   "screen.mineagent.agent.level.low": "Low",
   "screen.mineagent.agent.level.normal": "Normal",
@@ -166,5 +166,14 @@
   "screen.mineagent.agent.rate.busy": "Busy",
   "screen.mineagent.agent.rate.calm.about": "Calm: fewest model calls; reuses decisions it has made.",
   "screen.mineagent.agent.rate.normal.about": "Normal: more steps per turn and a longer memory of the talk.",
-  "screen.mineagent.agent.rate.busy.about": "Busy: asks its model every time, with the most steps and memory."
+  "screen.mineagent.agent.rate.busy.about": "Busy: asks its model every time, with the most steps and memory.",
+  "screen.mineagent.agent.mode": "Mode: %s",
+  "screen.mineagent.agent.mode.servant": "Servant",
+  "screen.mineagent.agent.mode.auto": "Auto",
+  "screen.mineagent.agent.mode.escort": "Escort",
+  "screen.mineagent.agent.mode.parked": "Parked",
+  "screen.mineagent.agent.mode.servant.about": "Works on what you ask, and nothing of its own.",
+  "screen.mineagent.agent.mode.auto.about": "Finds its own work and practises; drops it the moment you ask.",
+  "screen.mineagent.agent.mode.escort.about": "Sticks with you and keeps you alive.",
+  "screen.mineagent.agent.mode.parked.about": "Holds its place and only talks."
 }

@@ -1628,7 +1628,7 @@ public final class MineAgentEngine {
                     sender.distanceTo(body),
                     com.mineagent.engine.chat.ChatRouting.mentions(message, s.companion.companionName()));
             switch (route) {
-                case TRUSTED -> s.loop.onOwnerMessage("[" + name + "]: " + message);
+                case TRUSTED -> s.loop.onOwnerMessage("[" + name + "]: " + message, false);
                 case TALK -> s.loop.onTalkOnly(name, message);
                 default -> { }
             }
@@ -1727,6 +1727,11 @@ public final class MineAgentEngine {
         }
         for (CompanionState s : mine) {
             var result = com.mineagent.engine.settings.SettingsCommand.apply(s.loop.getAgentSettings(), key, value);
+            if (result.ok() && "mode".equalsIgnoreCase(key)) {
+                // A mode change has its effects (escort follows, parked halts): the loop's own path.
+                s.loop.changeWorkMode(result.settings().mode());
+                continue;
+            }
             if (!result.ok()) {
                 source.sendFailure(Component.literal("§c[MineAgent] " + result.error()));
                 return 0;
@@ -2257,6 +2262,17 @@ public final class MineAgentEngine {
                             var source = ctx.getSource();
                             ServerPlayer owner = source.getPlayerOrException();
                             String arg1 = StringArgumentType.getString(ctx, "arg1");
+
+                            // Work modes (SMH plan 69, after the Andy Omega plan §59): servant, auto, escort, parked.
+                            if (List.of("servant", "auto", "escort", "parked", "park").contains(arg1.toLowerCase(Locale.ROOT))) {
+                                List<CompanionState> mine = getCompanionsByOwner(owner.getUUID());
+                                if (mine.isEmpty()) {
+                                    source.sendFailure(Component.literal("§c[MineAgent] You don't have a companion!"));
+                                    return 0;
+                                }
+                                for (CompanionState s : mine) s.loop.changeWorkMode(arg1);
+                                return 1;
+                            }
 
                             if (arg1.equalsIgnoreCase("follow") || arg1.equalsIgnoreCase("free")) {
                                 // Set primary companion mode

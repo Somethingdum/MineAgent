@@ -24,6 +24,15 @@ final class SettingsCommandTest {
         }
     }
 
+    @Test void theModeIsServantByDefaultAndOnlyAKnownMode() {
+        assertEquals(WorkMode.SERVANT, AgentSettings.DEFAULTS.workMode());
+        assertEquals(WorkMode.ESCORT, SettingsCommand.apply(AgentSettings.DEFAULTS, "mode", "escort").settings().workMode());
+        assertEquals(WorkMode.PARKED, SettingsCommand.apply(AgentSettings.DEFAULTS, "mode", "park").settings().workMode());
+        assertFalse(SettingsCommand.apply(AgentSettings.DEFAULTS, "mode", "god").ok());
+        assertEquals(WorkMode.SERVANT, AgentSettings.fromJson("{\"trusted\":[]}").workMode(), "an old save: servant");
+        assertEquals(WorkMode.AUTO, AgentSettings.fromJson(AgentSettings.DEFAULTS.withMode("auto").toJson()).workMode());
+    }
+
     @Test void theSettingsRoundTripAsJson() {
         AgentSettings s = SettingsCommand.apply(AgentSettings.DEFAULTS, "callrate", "normal").settings();
         assertEquals(s, AgentSettings.fromJson(s.toJson()));

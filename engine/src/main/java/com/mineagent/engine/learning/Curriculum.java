@@ -68,7 +68,8 @@ public final class Curriculum {
                 .append("You choose the next practice task for an AI companion in Minecraft, so it gets better at the game. ")
                 .append("Pick ONE concrete task it can finish in a few minutes from where it is, just beyond what it already does well, ")
                 .append("written like \"Mine 3 iron ore\", \"Craft a stone pickaxe\", \"Smelt 4 iron ingots\" or \"Kill 1 zombie\". ")
-                .append("Prefer practising a skill with a low score, or something it has never done. ")
+                .append("Prefer a skill that is improving, has a low score, or something it has never done. ")
+                .append("A stuck skill needs a different way of doing it, not more of the same; never repeat a mastered one. ")
                 .append("Never repeat a done task unless its score is low; never pick a task from the too-hard list. ")
                 .append("Nothing that harms players, their builds or their pets. ")
                 .append("Answer with JSON only: {\"task\":\"...\",\"why\":\"...\"}.");
@@ -76,7 +77,7 @@ public final class Curriculum {
         if (longGoal != null && !longGoal.isBlank()) user.append("Its long goal: ").append(clip(longGoal, 240)).append('\n');
         user.append(clip(situation, 1200)).append('\n');
         user.append("Skills it has: ").append(list(skills, 30)).append('\n');
-        if (!weakest.isEmpty()) user.append("Its weakest skills by score: ").append(list(weakest, 8)).append('\n');
+        if (!weakest.isEmpty()) user.append("How its skills are going (measured by the game): ").append(list(weakest, 12)).append('\n');
         if (!opportunities.isEmpty()) user.append("Things it has not worked out yet: ").append(list(opportunities, 5)).append('\n');
         user.append("Done: ").append(list(doneList, 20)).append('\n');
         user.append("Too hard: ").append(list(tooHardList, 20));

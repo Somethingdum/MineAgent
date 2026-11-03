@@ -21,16 +21,30 @@ import java.util.UUID;
  * @param curriculum whether it practises on its own when nobody needs it (MA2.1; on by default)
  * @param experiments how much it experiments with what it does not know: low, normal or high (MA2.4; high)
  * @param callRate    how freely it calls its model: calm, normal or busy (MA2.5; busy)
+ * @param mode        who decides its work: servant, auto, escort or parked (WorkMode; servant)
  */
-public record AgentSettings(List<String> trusted, String persona, boolean curriculum, String experiments, String callRate) {
-    public static final AgentSettings DEFAULTS = new AgentSettings(List.of(), "", true, "high", "busy");
+public record AgentSettings(List<String> trusted, String persona, boolean curriculum, String experiments, String callRate,
+                            String mode) {
+    public static final AgentSettings DEFAULTS = new AgentSettings(List.of(), "", true, "high", "busy", "servant");
 
     public AgentSettings(List<String> trusted, String persona) {
-        this(trusted, persona, true, "high", "busy");
+        this(trusted, persona, true, "high", "busy", "servant");
     }
 
     public AgentSettings(List<String> trusted, String persona, boolean curriculum) {
-        this(trusted, persona, curriculum, "high", "busy");
+        this(trusted, persona, curriculum, "high", "busy", "servant");
+    }
+
+    public AgentSettings(List<String> trusted, String persona, boolean curriculum, String experiments, String callRate) {
+        this(trusted, persona, curriculum, experiments, callRate, "servant");
+    }
+
+    public WorkMode workMode() {
+        return WorkMode.of(mode);
+    }
+
+    public AgentSettings withMode(String m) {
+        return new AgentSettings(trusted, persona, curriculum, experiments, callRate, m);
     }
     /** At most this many trusted players. */
     public static final int MAX_TRUSTED = 64;
@@ -54,6 +68,7 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
             default -> "high";
         };
         callRate = CallRate.of(callRate).id();
+        mode = WorkMode.of(mode).id();
     }
 
     /** Whether this player is trusted. */
@@ -65,30 +80,30 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
         if (player == null || isTrusted(player)) return this;
         List<String> next = new ArrayList<>(trusted);
         next.add(player.toString());
-        return new AgentSettings(next, persona, curriculum, experiments, callRate);
+        return new AgentSettings(next, persona, curriculum, experiments, callRate, mode);
     }
 
     public AgentSettings withoutTrusted(UUID player) {
         if (player == null || !isTrusted(player)) return this;
         List<String> next = new ArrayList<>(trusted);
         next.remove(player.toString());
-        return new AgentSettings(next, persona, curriculum, experiments, callRate);
+        return new AgentSettings(next, persona, curriculum, experiments, callRate, mode);
     }
 
     public AgentSettings withPersona(String text) {
-        return new AgentSettings(trusted, text, curriculum, experiments, callRate);
+        return new AgentSettings(trusted, text, curriculum, experiments, callRate, mode);
     }
 
     public AgentSettings withCurriculum(boolean on) {
-        return new AgentSettings(trusted, persona, on, experiments, callRate);
+        return new AgentSettings(trusted, persona, on, experiments, callRate, mode);
     }
 
     public AgentSettings withExperiments(String level) {
-        return new AgentSettings(trusted, persona, curriculum, level, callRate);
+        return new AgentSettings(trusted, persona, curriculum, level, callRate, mode);
     }
 
     public AgentSettings withCallRate(String level) {
-        return new AgentSettings(trusted, persona, curriculum, experiments, level);
+        return new AgentSettings(trusted, persona, curriculum, experiments, level, mode);
     }
 
     public String toJson() {
@@ -100,6 +115,7 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
         obj.addProperty("curriculum", curriculum);
         obj.addProperty("experiments", experiments);
         obj.addProperty("callRate", callRate);
+        obj.addProperty("mode", mode);
         return obj.toString();
     }
 
@@ -124,7 +140,8 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
                     ? obj.get("experiments").getAsString() : "high";
             String callRate = obj.has("callRate") && obj.get("callRate").isJsonPrimitive()
                     ? obj.get("callRate").getAsString() : "busy";
-            return new AgentSettings(trusted, persona, curriculum, experiments, callRate);
+            String mode = obj.has("mode") && obj.get("mode").isJsonPrimitive() ? obj.get("mode").getAsString() : "servant";
+            return new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode);
         } catch (RuntimeException e) {
             return DEFAULTS;
         }

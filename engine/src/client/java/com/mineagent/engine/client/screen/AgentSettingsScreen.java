@@ -25,7 +25,7 @@ public class AgentSettingsScreen extends Screen {
     private static final int ROW = 24;
     private static final int LINE = 12;
     private static final String[] TABS = {"connection", "obeys", "personality", "learning", "callrate"};
-    private static final int SKILLS_SHOWN = 6;
+    private static final int SKILLS_SHOWN = 4;
 
     private static int tab = 0;
     private MineAgentUiComponents.Rect panel;
@@ -148,6 +148,19 @@ public class AgentSettingsScreen extends Screen {
 
     private void learning(JsonObject s) {
         int y = contentTop;
+        String mode = str(s, "mode").isEmpty() ? "servant" : str(s, "mode");
+        String nextMode = switch (mode) {
+            case "servant" -> "auto";
+            case "auto" -> "escort";
+            case "escort" -> "parked";
+            default -> "servant";
+        };
+        this.addRenderableWidget(Button.builder(Component.translatable("screen.mineagent.agent.mode",
+                Component.translatable("screen.mineagent.agent.mode." + mode)),
+                ignored -> command("mineagent settings set mode " + nextMode))
+                .bounds(left, y, innerWidth, BUTTON_HEIGHT).build());
+        line(Component.translatable("screen.mineagent.agent.mode." + mode + ".about"), left, y + BUTTON_HEIGHT + 4, MineAgentUiComponents.COLOR_SUBTITLE);
+        y += BUTTON_HEIGHT + 4 + LINE + 6;
         boolean practice = !s.has("curriculum") || s.get("curriculum").getAsBoolean();
         this.addRenderableWidget(Button.builder(Component.translatable(practice
                 ? "screen.mineagent.agent.practice_on" : "screen.mineagent.agent.practice_off"),
