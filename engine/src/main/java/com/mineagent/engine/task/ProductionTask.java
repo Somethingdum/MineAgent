@@ -131,7 +131,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         try {
             return switch (phase) {
-                case START -> start();
+                case START -> begin();
                 case ROUND -> round();
                 case STEPS -> steps();
                 case DEPOSIT -> deposit();
@@ -156,7 +156,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     // ── The order and its rounds ────────────────────────────────────
 
-    private TaskState start() {
+    private TaskState begin() {
         ServerPlayer sp = sp();
         if (BuiltInRegistries.ITEM.getOptional(ResourceLocation.tryParse(record.item)).isEmpty()) {
             return fail("I don't know an item called " + ProductionPlanner.name(record.item));

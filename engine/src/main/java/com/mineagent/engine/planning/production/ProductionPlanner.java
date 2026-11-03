@@ -226,7 +226,7 @@ public final class ProductionPlanner {
     }
 
     /** A tool's tier from its name, as the game tiers them. */
-    static int tierOf(String toolId) {
+    public static int tierOf(String toolId) {
         String n = toolId.substring(toolId.indexOf(':') + 1);
         if (n.startsWith("wooden_") || n.startsWith("golden_")) return 1;
         if (n.startsWith("stone_")) return 2;
