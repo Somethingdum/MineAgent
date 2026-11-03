@@ -3423,6 +3423,12 @@ public class AgentLoop {
     public ActionTransactionLedger actionLedger() { return actionLedger; }
     public LayeredMemory layeredMemory() { return layeredMemory; }
     public ResourceReservationLedger reservationLedger() { return reservationLedger; }
+
+    /** Items its jobs have promised themselves from its chests (SMH plan 70, MA7.4). */
+    private final com.mineagent.engine.planning.production.Reserves.Ledger itemReservations =
+            new com.mineagent.engine.planning.production.Reserves.Ledger();
+
+    public com.mineagent.engine.planning.production.Reserves.Ledger itemReservations() { return itemReservations; }
     public HierarchicalRollingPlanner rollingPlanner() { return rollingPlanner; }
     public MechanismExplorer mechanismExplorer() { return mechanismExplorer; }
     public SkillRuntime skillRuntime() { return skillRuntime; }

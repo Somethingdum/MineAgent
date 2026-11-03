@@ -52,6 +52,10 @@ final class BehaviourSwitchesTest {
         assertTrue(d.afkKeepBusy(), "AFK just means away: it keeps busy");
         assertTrue(d.huntForOrders(), "food gathering was asked for: it hunts for an order");
         assertTrue(d.oreSightOnly(), "fair play: only ore it has seen");
+        assertTrue(d.readyCheck(), "ready before a trip");
+        assertEquals(8, d.readyFood());
+        assertEquals(16, d.readyTorches());
+        assertTrue(d.sparePickaxe());
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

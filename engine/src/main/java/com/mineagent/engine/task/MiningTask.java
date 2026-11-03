@@ -66,7 +66,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
     /** Ore blocks one vein may run to. */
     static final int VEIN = 32;
 
-    private enum Phase { START, TOOL, DIG, VEIN, HOME, DEPOSIT, BACK, DONE, FAILED }
+    private enum Phase { START, READY, TOOL, DIG, VEIN, HOME, DEPOSIT, BACK, DONE, FAILED }
 
     private Phase phase = Phase.START;
     private boolean begun;
@@ -147,6 +147,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         try {
             return switch (phase) {
                 case START -> begin();
+                case READY -> ready();
                 case TOOL -> tool();
                 case DIG -> dig();
                 case VEIN -> vein();
@@ -217,8 +218,92 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
                 + (record.count > 0 ? ", " + record.count + " of them" : ", until you say stop")
                 + (record.here ? ", at this height" : ", at Y " + targetY + (start.getY() > targetY ? ", down a staircase" : ""))
                 + "; branch tunnels every third block.");
-        phase = Phase.TOOL;
+        phase = Phase.READY;
         return TaskState.RUNNING;
+    }
+
+    // ── Ready before it goes (MA7.4) ────────────────────────────────
+
+    private int readyStage;
+    private final List<String> without = new ArrayList<>();
+
+    /**
+     * What it should carry on a trip, first (the switch "Ready before trips"): food, torches, a spare pickaxe, each
+     * made from what it carries or can see (it hunts the cows in sight, it doesn't go looking); what it can't make it
+     * goes without, and says so.
+     */
+    private TaskState ready() {
+        ServerPlayer sp = sp();
+        if (sub != null) {
+            TaskState st = sub.tick();
+            if (st == TaskState.RUNNING) return TaskState.RUNNING;
+            sub = null;
+            readyStage++;
+            return TaskState.RUNNING;
+        }
+        if (!com.mineagent.engine.settings.Switches.readyCheck()) {
+            phase = Phase.TOOL;
+            return TaskState.RUNNING;
+        }
+        switch (readyStage) {
+            case 0 -> {
+                int want = com.mineagent.engine.settings.Switches.readyFood();
+                int have = food(sp);
+                if (have < want) return errand(ProductionTask.FOOD, want - have, "Food for the trip first.");
+                readyStage++;
+            }
+            case 1 -> {
+                int want = com.mineagent.engine.settings.Switches.readyTorches();
+                int have = ProductionTask.count(sp, Items.TORCH);
+                if (have < want) return errand("minecraft:torch", want - have, null);
+                readyStage++;
+            }
+            case 2 -> {
+                if (com.mineagent.engine.settings.Switches.sparePickaxe() && pickaxes(sp) < 2) {
+                    return errand("minecraft:stone_pickaxe", 1, null);
+                }
+                readyStage++;
+            }
+            default -> {
+                int food = food(sp), torches = ProductionTask.count(sp, Items.TORCH), picks = pickaxes(sp);
+                if (food < com.mineagent.engine.settings.Switches.readyFood()) without.add(food == 0 ? "food" : "enough food");
+                if (torches < com.mineagent.engine.settings.Switches.readyTorches()) without.add(torches == 0 ? "torches" : "enough torches");
+                if (com.mineagent.engine.settings.Switches.sparePickaxe() && picks < 2) without.add("a spare pickaxe");
+                say("Ready: " + food + " food, " + torches + " torches, " + picks + (picks == 1 ? " pickaxe" : " pickaxes")
+                        + (without.isEmpty() ? "." : "; going without " + String.join(", ", without) + ": I couldn't make them here."));
+                phase = Phase.TOOL;
+            }
+        }
+        return TaskState.RUNNING;
+    }
+
+    private TaskState errand(String item, int count, String line) {
+        if (line != null) say(line);
+        sub = new ProductionTask(player, new ProductionTask.ProduceRecord(record.toolCallId() + ":ready" + readyStage, item, count,
+                null, false, true));
+        sub.start();
+        return TaskState.RUNNING;
+    }
+
+    private static int food(ServerPlayer sp) {
+        int n = 0;
+        var foods = GameKnowledge.foods().keySet();
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
+            if (!s.isEmpty() && foods.contains(BuiltInRegistries.ITEM.getKey(s.getItem()).toString())) n += s.getCount();
+        }
+        return n;
+    }
+
+    private static int pickaxes(ServerPlayer sp) {
+        int n = 0;
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
+            if (!s.isEmpty() && s.is(net.minecraft.tags.ItemTags.PICKAXES) && s.getMaxDamage() - s.getDamageValue() > 2) n++;
+        }
+        return n;
     }
 
     /** A pickaxe good enough for the ore first (a stone one for iron; for diamonds, an iron one), made if it can be. */
@@ -495,6 +580,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         }
         if (chest != null && !sp.canInteractWithBlock(chest, 0.0)) return walk(chest, 1);
         int moved = 0;
+        boolean leftOver = false;
         if (chest != null) {
             Container c = HopperBlockEntity.getContainerAt(level, chest);
             if (c != null) {
@@ -519,7 +605,10 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
                     moved += n - rest.getCount();
                     if (before.containsKey(what)) banked.merge(what, n - rest.getCount(), Integer::sum);
                     inv.setItem(i, rest);
-                    if (!rest.isEmpty()) break; // the chest is full
+                    if (!rest.isEmpty()) {
+                        leftOver = true; // the chest is full
+                        break;
+                    }
                 }
                 c.setChanged();
                 TaskContext.syncInventory(sp);
@@ -534,7 +623,10 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
                 }
             }
         }
-        if (finishAfterHome) return finish();
+        if (finishAfterHome) {
+            if (leftOver) stopWhy = (stopWhy.isEmpty() ? "" : stopWhy + "; ") + "the chest at home is full, so I'm carrying the rest";
+            return finish();
+        }
         if (chest == null || moved == 0 || full(sp)) {
             stopWhy = chest == null ? "my pack is full and there's no chest at home" : "my pack is full and so is the chest at home";
             return finish();

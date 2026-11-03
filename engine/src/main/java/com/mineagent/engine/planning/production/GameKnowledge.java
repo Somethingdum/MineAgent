@@ -368,6 +368,24 @@ public final class GameKnowledge {
      * blocks, or carried), and where the blocks are: the common ones, ore it has seen, trees if it is in the overworld.
      */
     public static Have have(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except) {
+        return have(sp, loop, except, null, 0, 0);
+    }
+
+    /**
+     * As {@link #have(ServerPlayer, com.mineagent.engine.loop.AgentLoop, BlockPos)}, for a job: what other jobs have
+     * promised themselves from its chests left out, and the food and torches it keeps for itself ({@code keepFood},
+     * {@code keepTorches}) not counted as there to spend (SMH plan 70, MA7.4).
+     */
+    public static Have have(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except, String job, int keepFood,
+                            int keepTorches) {
+        Have h = haveAll(sp, loop, except);
+        Map<String, Integer> carried = keepFood > 0 || keepTorches > 0
+                ? Reserves.afterFloors(h.carried(), foods().keySet(), keepFood, keepTorches) : h.carried();
+        Map<String, Integer> stored = loop != null && job != null ? loop.itemReservations().free(h.stored(), job) : h.stored();
+        return new Have(carried, stored, h.tools(), h.furnaces(), h.table(), h.blocks(), h.knownDistance(), h.smokers(), h.blastFurnaces());
+    }
+
+    private static Have haveAll(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except) {
         ServerLevel level = sp.serverLevel();
         String dim = level.dimension().location().toString();
         Map<String, Integer> carried = new HashMap<>();

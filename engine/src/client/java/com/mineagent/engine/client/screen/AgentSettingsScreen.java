@@ -34,7 +34,10 @@ public class AgentSettingsScreen extends Screen {
             {"sprint", "Sprint"}, {"saveWithWorld", "Save with world"}, {"swim", "Swim"}, {"waterDrops", "Water drops"},
             {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"},
             {"afkFarmLeftAlone", "Leave my AFK farm"}, {"afkKeepBusy", "Keep busy when I'm AFK"},
-            {"huntForOrders", "Hunt for orders"}, {"oreSightOnly", "Only ore it has seen"}};
+            {"huntForOrders", "Hunt for orders"}, {"oreSightOnly", "Only ore it has seen"},
+            {"readyCheck", "Ready before trips"}, {"sparePickaxe", "Spare pickaxe"}};
+    private static final int[] READY_FOOD = {2, 4, 8, 16, 32};
+    private static final int[] READY_TORCHES = {4, 8, 16, 32, 64};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};
     /** While I'm AFK, keep within: 0 is no limit, the default. */
     private static final int[] AFK_WITHIN = {0, 16, 32, 64, 128};
@@ -284,6 +287,8 @@ public class AgentSettingsScreen extends Screen {
         }
         i = cycle(b, "afkMinutes", "behaviour.afkMinutes", "AFK after", " min", AFK_MINUTES, i, cols, w, gap, y);
         i = cycle(b, "afkStayWithin", "behaviour.afkStayWithin", "AFK: stay within", " blocks", AFK_WITHIN, i, cols, w, gap, y);
+        i = cycle(b, "readyFood", "behaviour.readyFood", "Trip food", "", READY_FOOD, i, cols, w, gap, y);
+        i = cycle(b, "readyTorches", "behaviour.readyTorches", "Trip torches", "", READY_TORCHES, i, cols, w, gap, y);
         i = cycle(m, "thingsSeen", "memory.thingsSeen", "Things seen", "", THINGS_SEEN, i, cols, w, gap, y);
         i = cycle(m, "journalDays", "memory.journalDays", "Journal", " days", JOURNAL_DAYS, i, cols, w, gap, y);
         cycle(m, "chests", "memory.chests", "Chests", "", CHESTS, i, cols, w, gap, y);

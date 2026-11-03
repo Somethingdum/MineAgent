@@ -128,6 +128,11 @@ public record MineAgentConfig(
      *                         never pets, horses, ones with a name or the last two of a kind near it
      * @param oreSightOnly     mining on its own, it takes only ore it has seen (opened by its tunnels), as a player
      *                         does; off, also ore within 2 blocks of them
+     * @param readyCheck       before a trip away from base (mining), it gets what it should carry first: food,
+     *                         torches, a spare pickaxe; and it keeps that much for itself, never spent on an order
+     * @param readyFood        food it carries for a trip (0 to 64)
+     * @param readyTorches     torches it carries for a trip (0 to 64)
+     * @param sparePickaxe     a spare pickaxe for a trip
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -148,10 +153,15 @@ public record MineAgentConfig(
         boolean afkFarmLeftAlone,
         boolean afkKeepBusy,
         boolean huntForOrders,
-        boolean oreSightOnly
+        boolean oreSightOnly,
+        boolean readyCheck,
+        int readyFood,
+        int readyTorches,
+        boolean sparePickaxe
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true
+            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
+            true, 8, 16, true
         );
     }
 
@@ -253,7 +263,9 @@ public record MineAgentConfig(
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
-                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly);
+                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly,
+                rawBehaviour.readyCheck, clamp(rawBehaviour.readyFood, 0, 64), clamp(rawBehaviour.readyTorches, 0, 64),
+                rawBehaviour.sparePickaxe);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

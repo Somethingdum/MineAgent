@@ -55,17 +55,24 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         public final BlockPos chest;
         /** "Fill up a chest", none near: it makes one, puts it down where it works, and fills that. */
         public final boolean placeChest;
+        /** Only from what it carries or has seen: no searching (an errand on the way to something else). */
+        public final boolean onlySeen;
 
         public ProduceRecord(String toolCallId, String item, int count, BlockPos chest) {
-            this(toolCallId, item, count, chest, false);
+            this(toolCallId, item, count, chest, false, false);
         }
 
         public ProduceRecord(String toolCallId, String item, int count, BlockPos chest, boolean placeChest) {
+            this(toolCallId, item, count, chest, placeChest, false);
+        }
+
+        public ProduceRecord(String toolCallId, String item, int count, BlockPos chest, boolean placeChest, boolean onlySeen) {
             super(toolCallId);
             this.item = item;
             this.count = Math.max(0, count);
             this.chest = chest == null ? null : chest.immutable();
             this.placeChest = placeChest && chest == null;
+            this.onlySeen = onlySeen;
         }
     }
 
@@ -104,6 +111,45 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private final Map<String, Integer> hunted = new LinkedHashMap<>();
     /** Why the order stopped short, said at the end. */
     private String shortBecause = "";
+    /** The trip food and torches it had when the order came, kept for itself (MA7.4): -1 until counted. */
+    private int keepFood = -1, keepTorches;
+
+    /** What it has for this job: its own trip food and torches, and what other jobs have promised themselves, left out. */
+    private com.mineagent.engine.planning.production.Production.Have have(ServerPlayer sp) {
+        if (keepFood < 0) {
+            keepFood = 0;
+            keepTorches = 0;
+            if (com.mineagent.engine.settings.Switches.readyCheck()) {
+                int food = 0;
+                var foods = GameKnowledge.foods().keySet();
+                var inv = sp.getInventory();
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    if (foods.contains(BuiltInRegistries.ITEM.getKey(inv.getItem(i).getItem()).toString())) food += inv.getItem(i).getCount();
+                }
+                keepFood = Math.min(com.mineagent.engine.settings.Switches.readyFood(), food);
+                keepTorches = Math.min(com.mineagent.engine.settings.Switches.readyTorches(), count(sp, net.minecraft.world.item.Items.TORCH));
+            }
+        }
+        return GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos, record.toolCallId(), keepFood, keepTorches);
+    }
+
+    /** What it may put in the chest of this item: what it carries less the trip food and torches it keeps. */
+    private int spare(ServerPlayer sp, Item it) {
+        if (keepFood <= 0 && keepTorches <= 0) return count(sp, it);
+        Map<String, Integer> carried = new LinkedHashMap<>();
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
+            if (!s.isEmpty()) carried.merge(BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), s.getCount(), Integer::sum);
+        }
+        return com.mineagent.engine.planning.production.Reserves.afterFloors(carried, GameKnowledge.foods().keySet(), keepFood, keepTorches)
+                .getOrDefault(BuiltInRegistries.ITEM.getKey(it).toString(), 0);
+    }
+
+    private void release() {
+        var loop = TaskContext.agentLoop(player);
+        if (loop != null) loop.itemReservations().release(record.toolCallId());
+    }
     private int target;
     private int delivered;
     private int roundCount;
@@ -182,6 +228,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         nav.cancel();
         TaskContext.inputDriver(player).clear();
         outcome = why;
+        release();
         say(capital(why) + (delivered > 0 ? String.format(" (%,d %s in so far).", delivered, ProductionPlanner.plural(itemId, delivered)) : "."));
         phase = Phase.FAILED;
         return TaskState.FAILED;
@@ -194,6 +241,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (itemId == null) {
             itemId = record.item;
             chestPos = record.chest;
+            if (record.onlySeen) without.add(Production.UNSEEN);
             if (record.placeChest && chestPos == null) {
                 // A chest of its own, first: made if it has none, put down where it starts.
                 if (count(sp, net.minecraft.world.item.Items.CHEST) == 0) {
@@ -243,13 +291,13 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         // From here, target counts what goes in all told, this item and any before it.
         target += delivered;
-        var plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos),
+        var plan = ProductionPlanner.plan(GameKnowledge.book(sp), have(sp),
                 itemId, target - delivered, without);
         if (!plan.possible()) {
-            int most = ProductionPlanner.most(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos),
+            int most = ProductionPlanner.most(GameKnowledge.book(sp), have(sp),
                     itemId, Math.min(ROUND, target - delivered), without);
             if (most <= 0) return fail(plan.summary().replaceAll("[.]$", ""));
-            plan = ProductionPlanner.plan(GameKnowledge.book(sp), GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos),
+            plan = ProductionPlanner.plan(GameKnowledge.book(sp), have(sp),
                     itemId, most, without);
             say("On it, as far as I can: " + plan.summary());
         } else {
@@ -287,7 +335,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** Of a kind's items ("any bed"), the one cheapest to make here (a white bed with white sheep about); null if none. */
     private String cheapestOf(ServerPlayer sp, List<String> items) {
         var book = GameKnowledge.book(sp);
-        var have = GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos);
+        var have = have(sp);
         String best = null;
         double bestTicks = Double.POSITIVE_INFINITY;
         int n = Math.max(1, Math.min(16, record.count == 0 ? 16 : record.count));
@@ -307,7 +355,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      */
     private String chooseFood(ServerPlayer sp) {
         var book = GameKnowledge.book(sp);
-        var have = GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos);
+        var have = have(sp);
         String best = null;
         double bestCost = Double.POSITIVE_INFINITY;
         for (var e : GameKnowledge.foods().entrySet()) {
@@ -330,7 +378,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         int carried = count(sp, item(itemId));
         roundCount = Math.min(left, ROUND);
         var book = GameKnowledge.book(sp);
-        var have = GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos);
+        var have = have(sp);
         var plan = ProductionPlanner.plan(book, have, itemId, roundCount, without);
         if (!plan.possible()) {
             if (without.stream().allMatch(NO_HUNTING::equals)) return fail(plan.summary().replaceAll("[.]$", ""));
@@ -342,6 +390,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         todo.clear();
         toolsToMake.clear();
+        // What this round takes from its chests is promised to it (MA7.4).
+        var loop = TaskContext.agentLoop(player);
+        if (loop != null) {
+            loop.itemReservations().release(record.toolCallId());
+            Map<String, Integer> fetch = new LinkedHashMap<>();
+            for (Step s : plan.steps()) if (s.action() == Action.FETCH) fetch.merge(s.item(), s.count(), Integer::sum);
+            loop.itemReservations().reserve(record.toolCallId(), fetch);
+        }
         for (Step s : plan.steps()) {
             boolean tool = s.action() == Action.CRAFT && plan.toolsMade().containsKey(s.item());
             if (tool) toolsToMake.merge(s.item(), s.count(), Integer::sum);
@@ -407,6 +463,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (!killed.isEmpty()) line.append("; hunted ").append(String.join(", ", killed));
         if (!shorn.isEmpty()) line.append("; sheared ").append(String.join(", ", shorn));
         say(line.append('.').toString());
+        release();
         outcome = what;
         phase = Phase.DONE;
         return TaskState.SUCCESS;
@@ -1020,7 +1077,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (!sp.canInteractWithBlock(chestPos, 0.0)) return walkTo(chestPos);
         Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), chestPos);
         if (c == null) return fail("the chest at " + chestPos.toShortString() + " is gone");
-        int want = Math.min(target - delivered, count(sp, it));
+        int want = Math.min(target - delivered, spare(sp, it));
         int before = want;
         var inv = sp.getInventory();
         for (int i = 0; i < inv.getContainerSize() && want > 0; i++) {
@@ -1160,6 +1217,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     protected void onInterrupt() {
         if (sub != null) sub.interrupt();
         if (nav != null) nav.cancel();
+        release();
         TaskContext.inputDriver(player).clear();
     }
 }

@@ -33,6 +33,9 @@ final class SettingChangeTest {
         assertEquals(256, SettingChange.withSetting(c, "behaviour.afkStayWithin", "1000").behaviour().afkStayWithin());
         assertEquals(0, SettingChange.withSetting(c, "behaviour.afkStayWithin", "off").behaviour().afkStayWithin(), "no limit");
         assertEquals(0, SettingChange.withSetting(c, "behaviour.afkStayWithin", "no limit").behaviour().afkStayWithin());
+        assertEquals(4, SettingChange.withSetting(c, "behaviour.readyFood", "4").behaviour().readyFood());
+        assertEquals(64, SettingChange.withSetting(c, "behaviour.readyTorches", "200").behaviour().readyTorches());
+        assertEquals(0, SettingChange.withSetting(c, "behaviour.readyFood", "none").behaviour().readyFood(), "no trip food");
     }
 
     @Test void anythingElseIsRefused() {

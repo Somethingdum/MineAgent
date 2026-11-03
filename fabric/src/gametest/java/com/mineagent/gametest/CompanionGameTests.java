@@ -2090,7 +2090,9 @@ public class CompanionGameTests implements FabricGameTest {
         for (int[] o : new int[][] {{5, 1, 1}, {5, 2, -1}, {7, 1, 1}}) helper.setBlock(o[0], o[1], o[2], Blocks.IRON_ORE);
         var inv = s.body().getInventory();
         inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
-        for (int i = 1; i < 35; i++) inv.setItem(i, new ItemStack(Items.STRING, 64)); // one slot free
+        // 25 stacks of string for the chest (27 slots: room for the iron after), planks it keeps for tools, one slot free.
+        for (int i = 1; i <= 25; i++) inv.setItem(i, new ItemStack(Items.STRING, 64));
+        for (int i = 26; i < 35; i++) inv.setItem(i, new ItemStack(Items.OAK_PLANKS, 64));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
         helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "mine 3 iron here"));
         helper.onEachTick(() -> {
@@ -2100,11 +2102,45 @@ public class CompanionGameTests implements FabricGameTest {
                 int string = inChest(helper, chest, Items.STRING), raw = inChest(helper, chest, Items.RAW_IRON);
                 boolean went = !lastSaid(s, "My pack is full").isEmpty(), back = !lastSaid(s, "Back to the tunnel").isEmpty();
                 tidy(s);
-                if (string == 34 * 64 && raw == 3 && went && back && done.startsWith("Mined 3 raw iron")) helper.succeed();
+                if (string == 25 * 64 && raw == 3 && went && back && done.startsWith("Mined 3 raw iron")) helper.succeed();
                 else fail(helper, "string in the chest " + string + ", raw iron " + raw + ", went home " + went + ", came back " + back + "; done: " + done);
             } else if (helper.getTick() >= 3500) {
                 String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", string in the chest "
                         + inChest(helper, chest, Items.STRING) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA7.4: ready before it goes. Sent mining with no food, it gets food first, from the cows it can see,
+     * cooked in the furnaces it carries, and says what it has before it breaks a block; what it can't make here
+     * (torches, with no wood for sticks) it goes without and says so.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_ready", timeoutTicks = 3200)
+    public void withNoFoodItGetsFoodBeforeGoingDown(GameTestHelper helper) {
+        Scene s = scene(helper, "Prepared");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        field(helper, 6);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(2, new ItemStack(Items.FURNACE, 4));
+        inv.setItem(3, new ItemStack(Items.COAL, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "mine 1 iron here"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "ready");
+            String ready = lastSaid(s, "Ready");
+            if (!ready.isEmpty()) {
+                int food = inv.countItem(Items.COOKED_BEEF);
+                boolean first = !lastSaid(s, "Food for the trip first").isEmpty();
+                boolean mined = !lastSaid(s, "Mined").isEmpty();
+                tidy(s);
+                if (food >= 4 && first && !mined && ready.contains("going without torches")) helper.succeed();
+                else fail(helper, "cooked beef " + food + ", said food first " + first + ", mined already " + mined + "; ready: " + ready);
+            } else if (helper.getTick() >= 3100) {
+                String how = "cooked beef " + inv.countItem(Items.COOKED_BEEF) + ", beef " + inv.countItem(Items.BEEF) + "; said: " + lastSaid(s, "");
                 tidy(s);
                 fail(helper, how);
             }
