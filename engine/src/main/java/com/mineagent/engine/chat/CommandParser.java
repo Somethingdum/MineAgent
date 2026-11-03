@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -65,6 +65,8 @@ public final class CommandParser {
     private static final Pattern PUT_AT = Pattern.compile("^put (\\d{1,4}) (.{2,60}?) in the chest at (-?\\d+), (-?\\d+), (-?\\d+)$");
     /** "Give me 8 food", "hand me 16 torches": handed over (MA8.5). */
     private static final Pattern GIVE = Pattern.compile("^(?:give|hand|bring|pass|toss) me " + HOW_MANY + " (.{2,40}?)(?: please)?$");
+    /** "Build a hut", "build us a shelter here": the hut blueprint (MA9.1). */
+    private static final Pattern BUILD = Pattern.compile("^build (?:me |us )?(?:a |an )?(?:small |little )?(hut|house|shelter|base|home|cabin)(?: here| for us)?$");
     /** "Get food for both of us": food for two, half handed over. */
     private static final Pattern FOOD_BOTH = Pattern.compile("^(?:get|make|find|cook) (?:some )?food for (?:both of us|the two of us|us both|us|me and you|you and me)$");
     /** What next, why, what it needs (MA6.5): answered from its goals and its task, no model. */
@@ -148,6 +150,7 @@ public final class CommandParser {
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
         if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
+        if (BUILD.matcher(t).matches()) return Optional.of(new Command(Kind.BUILD, "hut", null));
         Matcher give = GIVE.matcher(t);
         if (give.matches()) return Optional.of(new Command(Kind.GIVE, give.group(2).strip(), howMany(give.group(1))));
         if (WHATS_NEXT.matcher(t).matches()) return Optional.of(new Command(Kind.WHATS_NEXT, null, null));

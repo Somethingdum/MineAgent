@@ -61,6 +61,12 @@ public final class TaskRegistration {
                 ProductionTask::new
         );
 
+        // Building from a blueprint (SMH plan 70, MA9.1)
+        CompanionTaskFactory.register(
+                BlueprintTask.BlueprintRecord.class,
+                BlueprintTask::new
+        );
+
         // Handing its owner what they asked for (SMH plan 70, MA8.5)
         CompanionTaskFactory.register(
                 GiveTask.GiveRecord.class,

@@ -2645,6 +2645,45 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, MA9.1: "build a hut": on flat ground near it, walls from the inside, the roof from the walls in, the
+     * torch, the door from in front; then every block checked, here as well: all 57 where the blueprint has them.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_build", timeoutTicks = 2400)
+    public void buildAHutAndCheckItBlockByBlock(GameTestHelper helper) {
+        Scene s = scene(helper, "Builder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.TORCH));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a hut"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "build");
+            String built = lastSaid(s, "Built the hut at ");
+            if (!built.isEmpty()) {
+                var m = java.util.regex.Pattern.compile("at (-?\\d+), (-?\\d+), (-?\\d+)").matcher(built);
+                int wrong = -1;
+                if (m.find()) {
+                    BlockPos corner = new BlockPos(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
+                    wrong = 0;
+                    for (var b : com.mineagent.engine.planning.building.Blueprint.hut("minecraft:oak_planks", "minecraft:oak_door").blocks()) {
+                        var want = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(net.minecraft.resources.ResourceLocation.tryParse(b.id()));
+                        if (!helper.getLevel().getBlockState(corner.offset(b.x(), b.y() - 1, b.z())).is(want)) wrong++;
+                    }
+                }
+                tidy(s);
+                if (wrong == 0 && built.contains("every block checked")) helper.succeed();
+                else fail(helper, "blocks not as the blueprint has them: " + wrong + "; said: " + built);
+            } else if (helper.getTick() >= 2300) {
+                String how = "planks left " + inv.countItem(Items.OAK_PLANKS) + ", at " + rel(helper, s.body().blockPosition()).toShortString()
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {

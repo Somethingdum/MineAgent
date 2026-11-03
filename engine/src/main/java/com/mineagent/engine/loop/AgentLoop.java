@@ -938,7 +938,8 @@ public class AgentLoop {
         // A terminal task no longer owns the body. Keep its outcome as compact
         // evidence, but publish a null task id so the next decision sees an
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
-        if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-"))) {
+        if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
+                || taskId.startsWith("build-"))) {
             lastOrderState = state;
             var note = message == null ? null : java.util.regex.Pattern.compile("\"note\":\"([^\"]*)\"").matcher(message);
             lastOrderNote = note != null && note.find() ? note.group(1) : message == null ? "" : message;
@@ -1334,6 +1335,30 @@ public class AgentLoop {
                 // Food for two (MA8.5): enough for its trips and as much again for you, then yours handed over.
                 int each = Math.max(4, com.mineagent.engine.settings.Switches.readyFood());
                 return queueOrders("make me " + (2 * each) + " food, then give me " + each + " food");
+            }
+            case BUILD -> {
+                if (!fromOwner || !(companion instanceof com.mineagent.engine.entity.CompanionEntity ce) || ce.serverPlayer() == null) return false;
+                // The wood it has most planks of (oak if none), and its door.
+                var inv = ce.serverPlayer().getInventory();
+                Map<String, Integer> planks = new java.util.HashMap<>();
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    var st = inv.getItem(i);
+                    if (st.is(net.minecraft.tags.ItemTags.PLANKS)) {
+                        planks.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
+                    }
+                }
+                String wall = planks.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("minecraft:oak_planks");
+                String door = wall.replace("_planks", "_door");
+                if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(net.minecraft.resources.ResourceLocation.tryParse(door))) {
+                    door = "minecraft:oak_door";
+                }
+                haltNow();
+                standDown();
+                journal.record("order", "build a hut", currentGameTickSafe());
+                orderGoal("build a hut");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BlueprintTask.BlueprintRecord(
+                        "build-" + UUID.randomUUID(), "hut", wall, door, null), reply -> { });
+                return true;
             }
             case GIVE -> {
                 if (!fromOwner) return false;
@@ -3159,7 +3184,8 @@ public class AgentLoop {
         if (c.isEmpty()) return c;
         var k = c.get().kind();
         return k == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE || k == com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE
-                || k == com.mineagent.engine.chat.CommandParser.Kind.GIVE ? c : java.util.Optional.empty();
+                || k == com.mineagent.engine.chat.CommandParser.Kind.GIVE || k == com.mineagent.engine.chat.CommandParser.Kind.BUILD
+                ? c : java.util.Optional.empty();
     }
 
     /**

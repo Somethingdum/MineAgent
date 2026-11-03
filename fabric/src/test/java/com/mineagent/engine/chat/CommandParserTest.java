@@ -163,6 +163,8 @@ final class CommandParserTest {
         assertEquals("food", give.value());
         assertEquals(8, give.count().intValue());
         assertEquals(CommandParser.Kind.FOOD_BOTH, CommandParser.parse("get food for both of us", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.BUILD, CommandParser.parse("build us a shelter here", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.BUILD, CommandParser.parse("build a hut", "Pal").orElseThrow().kind());
         assertEquals(-1, CommandParser.parse("hand me a stack of torches", "Pal").orElseThrow().count().intValue());
     }
 
