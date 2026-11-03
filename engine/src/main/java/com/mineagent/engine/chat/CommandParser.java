@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -51,6 +51,15 @@ public final class CommandParser {
      * negative number of stacks, or 0 for as many as fill the chest.
      */
     private static final String HOW_MANY = "(a couple of stacks of|a stack of|\\d{1,2} stacks of|\\d{1,4}|an?|one)";
+    /** The ores it mines on its own, as people name them. */
+    private static final String ORE_WORDS = "(diamonds?|iron|gold|coal|redstone|lapis(?: lazuli)?|emeralds?|copper|quartz|netherite|ancient debris|ores?)";
+    /** "mine diamonds", "go mine some iron", "mine 10 iron ore", "dig for gold", "mine iron here", "mine until I say stop". */
+    private static final Pattern MINE_ORE = Pattern.compile("^(?:go )?(?:mine|dig|strip mine|branch mine)(?: for)?(?: me)?(?: some)? (?:"
+            + "(\\d{1,3}) )?" + ORE_WORDS + "(?: ore)?( here| at this height| on this level)?(?: until i (?:say|tell you to) stop| till i say stop| for me)?$");
+    /** "get me 3 diamonds", "go get me some iron". */
+    private static final Pattern GET_ORE = Pattern.compile("^(?:go )?(?:get|fetch) me (?:(\\d{1,3}) |some )?" + ORE_WORDS + "(?: ore)?$");
+    /** "go mining", "mine until I say stop", "go strip mining". */
+    private static final Pattern MINING = Pattern.compile("^(?:go (?:strip |branch )?mining|mine until i (?:say|tell you to) stop|start mining|keep mining)$");
     private static final Pattern FILL = Pattern.compile("^fill (?:up )?(?:(this|that|the|my|our|a|an|another|one) )?(?:chest|barrel)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern FILL_IT = Pattern.compile("^fill (?:it|this|that)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern CHEST_OF = Pattern.compile("^(?:i (?:want|need)|make me|get me|give me|i'?d like)\\s+(?:an? )?(?:(?:entire|full|whole) )?chest(?:ful)? of (.{2,60})$");
@@ -121,6 +130,14 @@ public final class CommandParser {
         if (g.matches()) return Optional.of(new Command(Kind.GOAL_ADD, g.group(1).strip(), null));
         Matcher afk = AFK_WITH.matcher(t);
         if (afk.matches()) return Optional.of(new Command(Kind.AFK, afk.group(1).strip(), null));
+        Matcher ore = MINE_ORE.matcher(t);
+        if (!ore.matches()) ore = GET_ORE.matcher(t);
+        if (ore.matches()) {
+            boolean here = ore.groupCount() >= 3 && ore.group(3) != null;
+            String what = ore.group(2) + (here ? "|here" : "");
+            return Optional.of(new Command(Kind.MINE_ORE, what, ore.group(1) == null ? 0 : Integer.parseInt(ore.group(1))));
+        }
+        if (MINING.matcher(t).matches()) return Optional.of(new Command(Kind.MINE_ORE, "ore", 0));
         // "This chest": the one they mean. "A chest": that one if there is one by them, else one it puts down.
         Matcher make = FILL.matcher(t);
         if (make.matches()) {

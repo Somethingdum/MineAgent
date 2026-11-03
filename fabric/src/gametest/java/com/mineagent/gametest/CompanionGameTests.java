@@ -1991,6 +1991,126 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /** Solid rock east of the companion (x 4 to 22, y 1 to 4, z -12 to 12), and the companion facing into it at (3, 1, 0). */
+    private static void rock(GameTestHelper helper, Scene s) {
+        for (int x = 4; x <= 22; x++) for (int y = 1; y <= 4; y++) for (int z = -12; z <= 12; z++) helper.setBlock(x, y, z, Blocks.STONE);
+        BlockPos at = helper.absolutePos(new BlockPos(3, 1, 0));
+        s.body().teleportTo(helper.getLevel(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, -90.0f, 0.0f); // east
+        s.body().setYHeadRot(-90.0f);
+    }
+
+    private static boolean is(GameTestHelper helper, int x, int y, int z, net.minecraft.world.level.block.Block b) {
+        return helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, y, z))).is(b);
+    }
+
+    /**
+     * Plan 70, MA7.8: "mine 4 iron here": a branch mine at its own height, two high, branches every third block; it
+     * takes every iron ore its tunnels open, the vein behind one too, and none it never saw (one sealed in the rock
+     * above). Then it comes back and says what it got.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_branch_mine", timeoutTicks = 3000)
+    public void aBranchMineTakesEveryOreItOpens(GameTestHelper helper) {
+        Scene s = scene(helper, "Miner");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        rock(helper, s);
+        int[][] seen = {{5, 1, 1}, {5, 1, 2}, {7, 2, -4}, {6, 3, -7}};
+        for (int[] o : seen) helper.setBlock(o[0], o[1], o[2], Blocks.IRON_ORE);
+        helper.setBlock(8, 4, 5, Blocks.IRON_ORE); // never opened by a tunnel
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "mine 4 iron here"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "branch mine");
+            String done = lastSaid(s, "Mined");
+            if (!done.isEmpty()) {
+                int raw = s.body().getInventory().countItem(Items.RAW_IRON);
+                boolean allTaken = true;
+                for (int[] o : seen) allTaken &= !is(helper, o[0], o[1], o[2], Blocks.IRON_ORE);
+                boolean unseenLeft = is(helper, 8, 4, 5, Blocks.IRON_ORE);
+                String plan = lastSaid(s, "On it");
+                tidy(s);
+                if (raw == 4 && allTaken && unseenLeft && done.startsWith("Mined 4 raw iron") && plan.contains("branch")) helper.succeed();
+                else fail(helper, "raw iron " + raw + ", all opened taken " + allTaken + ", unseen left " + unseenLeft + "; plan: " + plan + "; done: " + done);
+            } else if (helper.getTick() >= 2900) {
+                String how = "raw iron " + s.body().getInventory().countItem(Items.RAW_IRON) + " at " + rel(helper, s.body().blockPosition()).toShortString()
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA7.8 (and MA8.4): lava behind the next block of its tunnel: the block is left standing, the lava never
+     * reaches the tunnel, and the tunnel turns; it finds its iron the other way, unhurt.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_mine_lava", timeoutTicks = 2400)
+    public void lavaBehindABlockIsLeftSealed(GameTestHelper helper) {
+        Scene s = scene(helper, "Careful");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        rock(helper, s);
+        helper.setBlock(7, 1, 0, Blocks.LAVA);
+        helper.setBlock(4, 1, -2, Blocks.IRON_ORE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "mine 1 iron here"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "mine lava");
+            boolean lavaIn = !helper.getLevel().getFluidState(helper.absolutePos(new BlockPos(6, 1, 0))).isEmpty()
+                    || !helper.getLevel().getFluidState(helper.absolutePos(new BlockPos(5, 1, 0))).isEmpty();
+            String done = lastSaid(s, "Mined");
+            if (lavaIn || s.body().isOnFire() || s.body().getHealth() < s.body().getMaxHealth()) {
+                String how = "lava in the tunnel " + lavaIn + ", on fire " + s.body().isOnFire() + ", health " + s.body().getHealth();
+                tidy(s);
+                fail(helper, how);
+            } else if (!done.isEmpty()) {
+                boolean wall = is(helper, 6, 1, 0, Blocks.STONE);
+                boolean lava = is(helper, 7, 1, 0, Blocks.LAVA);
+                int raw = s.body().getInventory().countItem(Items.RAW_IRON);
+                tidy(s);
+                if (wall && lava && raw == 1) helper.succeed();
+                else fail(helper, "wall left " + wall + ", lava where it was " + lava + ", raw iron " + raw + "; done: " + done);
+            } else if (helper.getTick() >= 2300) {
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA7.8: its pack full part way, it goes home by its tunnel, puts the haul in the chest there and comes
+     * back to the face; then it finishes the order and puts that away too.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_mine_full", timeoutTicks = 3600)
+    public void aFullPackGoesHomeAndComesBack(GameTestHelper helper) {
+        Scene s = scene(helper, "Hauler");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        rock(helper, s);
+        helper.setBlock(2, 1, 3, Blocks.CHEST);
+        BlockPos chest = helper.absolutePos(new BlockPos(2, 1, 3));
+        for (int[] o : new int[][] {{5, 1, 1}, {5, 2, -1}, {7, 1, 1}}) helper.setBlock(o[0], o[1], o[2], Blocks.IRON_ORE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        for (int i = 1; i < 35; i++) inv.setItem(i, new ItemStack(Items.STRING, 64)); // one slot free
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "mine 3 iron here"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "mine full");
+            String done = lastSaid(s, "Mined");
+            if (!done.isEmpty()) {
+                int string = inChest(helper, chest, Items.STRING), raw = inChest(helper, chest, Items.RAW_IRON);
+                boolean went = !lastSaid(s, "My pack is full").isEmpty(), back = !lastSaid(s, "Back to the tunnel").isEmpty();
+                tidy(s);
+                if (string == 34 * 64 && raw == 3 && went && back && done.startsWith("Mined 3 raw iron")) helper.succeed();
+                else fail(helper, "string in the chest " + string + ", raw iron " + raw + ", went home " + went + ", came back " + back + "; done: " + done);
+            } else if (helper.getTick() >= 3500) {
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", string in the chest "
+                        + inChest(helper, chest, Items.STRING) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_smelt_iron", timeoutTicks = 2400)
     public void eightRawIronInEightIngotsOut(GameTestHelper helper) {

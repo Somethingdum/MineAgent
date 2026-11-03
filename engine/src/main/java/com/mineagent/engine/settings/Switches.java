@@ -41,6 +41,7 @@ public final class Switches {
     /** While its owner is AFK and it has nothing to do, it finds its own work (on). */
     public static boolean afkKeepBusy() { return b().afkKeepBusy(); }
     public static boolean huntForOrders() { return b().huntForOrders(); }
+    public static boolean oreSightOnly() { return b().oreSightOnly(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

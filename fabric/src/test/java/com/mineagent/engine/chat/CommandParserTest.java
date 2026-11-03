@@ -105,7 +105,7 @@ final class CommandParserTest {
         assertEquals("RESUME", parsed("get back to work"));
         assertEquals("BACK", parsed("back"));
         assertEquals("RESUME", parsed("go on"));
-        assertEquals("-", parsed("go mine some iron"));
+        assertEquals("MINE_ORE:iron", parsed("go mine some iron"), "an order to mine (MA7.8), not a place called the mine");
     }
 
     @Test void questionsForItsMemoryAreUnderstood() {
@@ -144,6 +144,24 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.AFK, plain.kind());
         assertNull(plain.value());
         assertTrue(CommandParser.parse("afk farm is broken", "Pal").isEmpty(), "talk about an AFK farm is not going AFK");
+    }
+
+    @Test void ordersToMineOnItsOwn() {
+        var d = CommandParser.parse("mine diamonds", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.MINE_ORE, d.kind());
+        assertEquals("diamonds", d.value());
+        assertEquals(0, d.count().intValue(), "until told to stop, or its pack fills");
+        var three = CommandParser.parse("go get me 3 diamonds", "Pal").orElseThrow();
+        assertEquals("diamonds", three.value());
+        assertEquals(3, three.count().intValue());
+        assertEquals("iron|here", CommandParser.parse("mine 5 iron here", "Pal").orElseThrow().value());
+        assertEquals(5, CommandParser.parse("mine 5 iron here", "Pal").orElseThrow().count().intValue());
+        assertEquals("lapis lazuli", CommandParser.parse("dig for lapis lazuli", "Pal").orElseThrow().value());
+        assertEquals("ore", CommandParser.parse("go mining", "Pal").orElseThrow().value());
+        assertEquals("ore", CommandParser.parse("mine until I say stop", "Pal").orElseThrow().value());
+        assertEquals("iron", CommandParser.parse("mine some iron until I say stop", "Pal").orElseThrow().value());
+        assertTrue(CommandParser.parse("mine 10 stone", "Pal").map(c -> c.kind() != CommandParser.Kind.MINE_ORE).orElse(true),
+                "stone is not an ore order");
     }
 
     @Test void ordersToMakeThings() {

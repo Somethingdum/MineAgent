@@ -34,7 +34,7 @@ public class AgentSettingsScreen extends Screen {
             {"sprint", "Sprint"}, {"saveWithWorld", "Save with world"}, {"swim", "Swim"}, {"waterDrops", "Water drops"},
             {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"},
             {"afkFarmLeftAlone", "Leave my AFK farm"}, {"afkKeepBusy", "Keep busy when I'm AFK"},
-            {"huntForOrders", "Hunt for orders"}};
+            {"huntForOrders", "Hunt for orders"}, {"oreSightOnly", "Only ore it has seen"}};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};
     /** While I'm AFK, keep within: 0 is no limit, the default. */
     private static final int[] AFK_WITHIN = {0, 16, 32, 64, 128};

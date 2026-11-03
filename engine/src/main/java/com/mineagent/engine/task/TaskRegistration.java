@@ -61,6 +61,12 @@ public final class TaskRegistration {
                 ProductionTask::new
         );
 
+        // Mining on its own: branch tunnels at the ore's height (SMH plan 70, MA7.8)
+        CompanionTaskFactory.register(
+                MiningTask.MineRecord.class,
+                MiningTask::new
+        );
+
         // Mining
         CompanionTaskFactory.register(
                 AutoMineTool.MineBlockTaskRecord.class,

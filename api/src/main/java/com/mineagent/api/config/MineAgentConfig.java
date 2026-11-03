@@ -126,6 +126,8 @@ public record MineAgentConfig(
      * @param afkKeepBusy      while its owner is AFK and it has nothing to do, it finds its own work, as in auto mode
      * @param huntForOrders    hunt animals for what an order needs ("fill a chest with food"): grown farm animals only,
      *                         never pets, horses, ones with a name or the last two of a kind near it
+     * @param oreSightOnly     mining on its own, it takes only ore it has seen (opened by its tunnels), as a player
+     *                         does; off, also ore within 2 blocks of them
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -145,10 +147,11 @@ public record MineAgentConfig(
         int afkStayWithin,
         boolean afkFarmLeftAlone,
         boolean afkKeepBusy,
-        boolean huntForOrders
+        boolean huntForOrders,
+        boolean oreSightOnly
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true
+            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true
         );
     }
 
@@ -250,7 +253,7 @@ public record MineAgentConfig(
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
                 rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
-                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders);
+                rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

@@ -1242,6 +1242,20 @@ public class AgentLoop {
                 ownerActivity.saidBack();
                 endAfkOrder();
             }
+            case MINE_ORE -> {
+                if (!fromOwner) return false;
+                // Mining on its own (SMH plan 70, MA7.8): the mining task does it, with no model.
+                String v = c.value();
+                boolean here = v.endsWith("|here");
+                String ore = here ? v.substring(0, v.length() - "|here".length()) : v;
+                int count = c.count() == null ? 0 : c.count();
+                haltNow();
+                standDown();
+                journal.record("order", "mine " + (count > 0 ? count + " " : "") + ore + (here ? " here" : ""), currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.MiningTask.MineRecord(
+                        "mine-" + UUID.randomUUID(), ore, count, here), reply -> { });
+                return true;
+            }
             case PRODUCE -> {
                 if (!fromOwner) return false;
                 return produceCommand(c, self, false);
