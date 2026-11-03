@@ -14,9 +14,12 @@ import java.util.regex.Pattern;
  * "don't", "wait no" or "actually" is a stop, never the verb after it.
  */
 public final class CommandParser {
-    public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP }
+    public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF }
 
-    /** {@code value}: the mode for MODE, the item id for DROP. {@code count}: for DROP, null for all. */
+    /**
+     * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER. {@code count}: for DROP;
+     * for GUARD_HERE, the radius asked for (null: the default).
+     */
     public record Command(Kind kind, String value, Integer count) {}
 
     private static final Pattern NAME_PREFIX = Pattern.compile("^\\[[^\\]]{1,40}\\]:\\s*");
@@ -28,10 +31,16 @@ public final class CommandParser {
     private static final Pattern MODE = Pattern.compile(
             "^(?:(?:go|switch to|switch|use|be|enter|mode)\\s+)?(servant|auto|escort|park|parked)(?:\\s+mode)?$");
     private static final Pattern OWN = Pattern.compile("^(on your own|do your own thing|go do your thing|be free)$");
-    private static final Pattern ESCORT = Pattern.compile("^(protect me|guard me|keep me safe|escort me|cover me)$");
+    private static final Pattern ESCORT = Pattern.compile("^(protect me|guard me|defend me|keep me safe|escort me|cover me|watch over me)$");
     private static final Pattern STATUS = Pattern.compile("^(status|sitrep|report|what are you doing|what r u doing|what're you doing|how'?s it going)$");
     private static final Pattern CANCEL = Pattern.compile("^(cancel|abort|nevermind|never mind|forget it|cancel that|cancel the goal|drop it)$");
     private static final Pattern EAT = Pattern.compile("^(eat|eat something|eat food|have a snack|have something to eat)$");
+    private static final Pattern GUARD_HERE = Pattern.compile("^(?:guard|protect|defend|watch over)\\s+(?:here|this|it|"
+            + "this (?:spot|place|area|chest|door|base|house|farm|room|gate|stuff|pen|field)|"
+            + "the (?:base|house|farm|chest|door|gate|area|village|pen|field))"
+            + "(?:\\s+(?:radius|within|for|in a radius of)\\s+(\\d{1,2})(?:\\s+blocks?)?)?$");
+    private static final Pattern GUARD_OFF = Pattern.compile("^(stop guarding|unguard|stand down|off duty|stop protecting(?: [a-z0-9_]+)?|you can stop guarding)$");
+    private static final Pattern GUARD_PLAYER = Pattern.compile("^(?:guard|protect|defend|watch over)\\s+([a-z0-9_]{3,16})$");
     private static final Pattern DROP = Pattern.compile("^(?:drop|throw|toss|chuck)\\s+(?:(\\d{1,4}|a stack of|half a stack of|all(?: your| the)?|all of your)\\s+)?([a-z][a-z _]{1,40})$");
 
     private static final Map<String, String> ALIASES = Map.ofEntries(
@@ -57,6 +66,11 @@ public final class CommandParser {
         if (m.matches()) return Optional.of(new Command(Kind.MODE, m.group(1).startsWith("park") ? "parked" : m.group(1), null));
         if (OWN.matcher(t).matches()) return Optional.of(new Command(Kind.MODE, "auto", null));
         if (ESCORT.matcher(t).matches()) return Optional.of(new Command(Kind.MODE, "escort", null));
+        if (GUARD_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.GUARD_OFF, null, null));
+        m = GUARD_HERE.matcher(t);
+        if (m.matches()) return Optional.of(new Command(Kind.GUARD_HERE, null, m.group(1) == null ? null : Integer.valueOf(m.group(1))));
+        m = GUARD_PLAYER.matcher(t);
+        if (m.matches() && !m.group(1).equals("me") && !m.group(1).equals("us")) return Optional.of(new Command(Kind.GUARD_PLAYER, m.group(1), null));
         if (STATUS.matcher(t).matches()) return Optional.of(new Command(Kind.STATUS, null, null));
         if (CANCEL.matcher(t).matches()) return Optional.of(new Command(Kind.CANCEL, null, null));
         if (EAT.matcher(t).matches()) return Optional.of(new Command(Kind.EAT, null, null));

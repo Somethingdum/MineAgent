@@ -201,6 +201,25 @@ public class AgentLoop {
     private final com.mineagent.engine.learning.Curriculum curriculum = new com.mineagent.engine.learning.Curriculum();
     private volatile String curriculumGoalAtBegin = "";
     private final long createdAtMs = System.currentTimeMillis();
+
+    // ── Combat (SMH plan 69, block 3): what it guards, how it fights, every fight rated by the game ──
+    /** A guarded spot, or a guarded player or creature (its UUID); null: not guarding. */
+    private volatile net.minecraft.world.phys.Vec3 guardPost;
+    private volatile UUID guardWard;
+    private volatile double guardRadius = 12.0;
+    /** The model's latest tactics (smh/fight) and when they came; used for 10 s, then learning's stance again. */
+    private volatile com.mineagent.engine.combat.Tactics advisedTactics;
+    private volatile long advisedAtMs;
+    private volatile long lastAdviceMs;
+    private final java.util.concurrent.atomic.AtomicBoolean adviceInFlight = new java.util.concurrent.atomic.AtomicBoolean();
+    private final com.mineagent.engine.learning.EpisodeTracker fightEpisode = new com.mineagent.engine.learning.EpisodeTracker();
+    private volatile String fightMob = "";
+    /** Fight advice runs on its own thread, so it never waits behind talk, lessons or practice. */
+    private final ExecutorService fightExecutor = Executors.newSingleThreadExecutor(r -> {
+        var t = new Thread(r, "MineAgent-Fight");
+        t.setDaemon(true);
+        return t;
+    });
     /** This companion's own settings: trusted players and persona (SMH plan 69, MA1.7). */
     private volatile com.mineagent.engine.settings.AgentSettings agentSettings = com.mineagent.engine.settings.AgentSettings.DEFAULTS;
     /** Talk with players who are neither the owner nor trusted: no tools, no task, no inbox (MA1.7). */
@@ -976,6 +995,8 @@ public class AgentLoop {
         boolean dead = player.isDeadOrDying();
         goalEpisode.observe(health, dead);
         skillEpisode.observe(health, dead);
+        fightEpisode.observe(health, dead);
+        if (dead && fightEpisode.active()) fightEnded(com.mineagent.engine.learning.Scorecard.Outcome.FAILED);
         String goal = planner.exportState().goal();
         String goalKey = goal == null || goal.isBlank() ? null : "goal:" + goal;
         if (goalEpisode.active() && (goalKey == null || !goalKey.equals(goalEpisode.key()))) goalEpisode.drop();
@@ -1024,8 +1045,9 @@ public class AgentLoop {
         boolean hostileNear = !player.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
                 player.getBoundingBox().inflate(16.0)).isEmpty();
         double flee = MineAgentEngine.getConfig().survival().healthFlee();
-        // Practice is AUTO's (Andy Omega §59): in servant, escort and parked mode it never starts work of its own.
-        boolean auto = agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO;
+        // Practice is AUTO's (Andy Omega §59): in servant, escort and parked mode it never starts work of its own,
+        // and on guard it stays on guard.
+        boolean auto = agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO && !guarding();
         if (!curriculum.due(auto && agentSettings.curriculum(), inProgress || skillRuntime.active(), sinceOrder,
                 hostileNear, player.getHealth(), flee, now)) return;
         curriculum.asking(now);
@@ -1151,16 +1173,19 @@ public class AgentLoop {
         var self = (com.mineagent.engine.entity.CompanionEntity) companion;
         UUID id = companion.companionId();
         switch (c.kind()) {
+            // Stop, stay and follow end guard duty too: otherwise a guard told to stop walks back to its post.
             case STOP -> {
                 haltNow();
-                speakToOwner("Stopped.");
+                speakToOwner(standDown() ? "Stopped, and off guard." : "Stopped.");
             }
             case STAY -> {
                 haltNow();
+                standDown();
                 MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
                 speakToOwner("Staying here.");
             }
             case FOLLOW -> {
+                standDown();
                 MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FOLLOW);
                 speakToOwner("Following you.");
             }
@@ -1180,6 +1205,7 @@ public class AgentLoop {
                     speakToOwner("Only my owner changes my mode.");
                     return true;
                 }
+                standDown();
                 changeWorkMode(c.value());
             }
             case STATUS -> speakToOwner(statusLine());
@@ -1192,6 +1218,13 @@ public class AgentLoop {
                 runDirect("eat_item", new com.google.gson.JsonObject());
                 speakToOwner("Eating.");
             }
+            case GUARD_HERE, GUARD_PLAYER, GUARD_OFF -> {
+                if (!fromOwner) {
+                    speakToOwner("Only my owner puts me on guard.");
+                    return true;
+                }
+                return guardCommand(c, self, id);
+            }
             case DROP -> {
                 if (c.count() == null || !net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(
                         net.minecraft.resources.ResourceLocation.withDefaultNamespace(c.value()))) return false;
@@ -1203,6 +1236,48 @@ public class AgentLoop {
             }
         }
         return true;
+    }
+
+    /** "Guard here", "guard Alex", "stand down" (the owner's only): set or clear guard duty. */
+    private boolean guardCommand(com.mineagent.engine.chat.CommandParser.Command c,
+                                 com.mineagent.engine.entity.CompanionEntity self, UUID id) {
+        switch (c.kind()) {
+            case GUARD_HERE -> {
+                // "This" is where the owner stands (they are at the thing they mean); else where the companion is.
+                var me = self.serverPlayer();
+                var owner = self.serverPlayerOwner();
+                if (me == null) return false;
+                var post = owner != null && owner.distanceTo(me) < 24.0 ? owner.position() : me.position();
+                double radius = c.count() == null ? 12.0 : c.count();
+                haltNow();
+                setGuard(post, null, radius);
+                MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
+                speakToOwner("Guarding this spot, " + Math.round(Math.max(4, Math.min(32, radius)))
+                        + " blocks around. Say \"stand down\" when you're done.");
+            }
+            case GUARD_PLAYER -> {
+                var me = self.serverPlayer();
+                if (me == null) return false;
+                var who = me.serverLevel().getServer().getPlayerList().getPlayerByName(c.value());
+                if (who == null || who == me) return false;
+                haltNow();
+                setGuard(null, who.getUUID(), 8.0);
+                MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
+                speakToOwner("Guarding " + who.getName().getString() + ".");
+            }
+            case GUARD_OFF -> speakToOwner(standDown() ? "Standing down." : "I wasn't guarding anything.");
+            default -> {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Off guard duty; whether it was on it. */
+    private boolean standDown() {
+        boolean was = guarding();
+        if (was) setGuard(null, null, 12.0);
+        return was;
     }
 
     /** Stop now: the turn, the inbox, the task on the body and any practice. Reflexes stay. */
@@ -1273,6 +1348,9 @@ public class AgentLoop {
     private com.mineagent.api.llm.LLMResponse sideCall(com.mineagent.api.llm.LLMRequest request) {
         LLMProvider p = resolveProvider();
         if (p == null) return null;
+        // Through SMH (smh/auto: stateless chat completions, queued by role there) no session needs guarding, so a
+        // side call never waits for the loop's own turn to finish on this side.
+        if (com.mineagent.engine.llm.RoleRouting.AUTO.equals(model)) return p.complete(request);
         synchronized (p) {
             var before = p.sessionState(model);
             try {
@@ -1558,6 +1636,117 @@ public class AgentLoop {
     public double getTemperature() { return temperature; }
     public com.mineagent.engine.settings.AgentSettings getAgentSettings() { return agentSettings; }
     public com.mineagent.engine.learning.Scorecard scorecard() { return scorecard; }
+
+    /** The duty combat works within (combat/CombatBrain.Duty): guard, escort, working; null anchor: where it stands. */
+    public record CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty duty, net.minecraft.world.phys.Vec3 anchor,
+                              UUID ward, double perimeter) {}
+
+    public CombatSetup combatSetup(net.minecraft.server.level.ServerPlayer self, net.minecraft.server.level.ServerPlayer owner) {
+        // Sent far from its post on an errand, it fights as it would at work; it walks back when the errand is done.
+        double errand = guardRadius + 32.0;
+        UUID ward = guardWard;
+        if (ward != null) {
+            var entity = self.serverLevel().getEntity(ward);
+            if (entity != null && entity.isAlive() && entity.distanceTo(self) <= errand) {
+                return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, entity.position(), ward, guardRadius);
+            }
+        }
+        var post = guardPost;
+        if (post != null && post.distanceTo(self.position()) <= errand) {
+            return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, post, null, guardRadius);
+        }
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.ESCORT && owner != null) {
+            return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.ESCORT, owner.position(), owner.getUUID(), 12.0);
+        }
+        LiveBodyState body = liveBodyState.get();
+        boolean working = (body != null && body.taskId() != null) || skillRuntime.active();
+        return new CombatSetup(working ? com.mineagent.engine.combat.CombatBrain.Duty.WORKING : com.mineagent.engine.combat.CombatBrain.Duty.IDLE,
+                null, owner != null ? owner.getUUID() : null, working ? 6.0 : 10.0);
+    }
+
+    public boolean guarding() {
+        return guardPost != null || guardWard != null;
+    }
+
+    /** "guard here" (a spot) or "guard Alex" (a player), {@code radius} blocks around; null for both stands down. */
+    public void setGuard(net.minecraft.world.phys.Vec3 post, UUID ward, double radius) {
+        guardPost = post;
+        guardWard = ward;
+        guardRadius = Math.max(4.0, Math.min(32.0, radius));
+        if (post != null || ward != null) curriculum.abandon();
+    }
+
+    /**
+     * The stance for a fight against {@code mobType}: the model's, if it advised in the last 10 s, else the one the
+     * game has rated best against this mob (a stance never tried gets its trial first: learning by results).
+     */
+    public com.mineagent.engine.combat.Tactics tacticsFor(String mobType) {
+        double flee = MineAgentEngine.getConfig().survival().healthFlee();
+        var advised = advisedTactics;
+        if (advised != null && System.currentTimeMillis() - advisedAtMs < 10_000L) return advised;
+        List<String> keys = new ArrayList<>();
+        for (String stance : com.mineagent.engine.combat.CombatBrain.stances()) keys.add("fight:" + mobType + ":" + stance);
+        String best = scorecard.rank(keys).get(0);
+        return com.mineagent.engine.combat.Tactics.of(best.substring(best.lastIndexOf(':') + 1), flee);
+    }
+
+    /** A fight began against {@code mobType}, fought in {@code stance}: measured from here (health, time, a death). */
+    public void fightBegan(String mobType, String stance, net.minecraft.server.level.ServerPlayer self) {
+        if (fightEpisode.active()) return;
+        fightMob = mobType;
+        fightEpisode.begin("fight:" + mobType + ":" + stance, currentGameTickSafe(), self.getHealth(), self.getMaxHealth(), conditionsOf(self));
+    }
+
+    /** The fight ended: won, broken off, or lost; rated and kept, with a lesson when it went badly. */
+    public void fightEnded(com.mineagent.engine.learning.Scorecard.Outcome outcome) {
+        if (!fightEpisode.active()) return;
+        var episode = fightEpisode.end(outcome, currentGameTickSafe());
+        double score = scorecard.record(episode, currentGameTickSafe());
+        advisedTactics = null;
+        if (episode != null && (episode.died() || outcome != com.mineagent.engine.learning.Scorecard.Outcome.DONE || score < 60)) {
+            writeLesson("fighting " + fightMob, episode, score);
+        }
+    }
+
+    /**
+     * The model's advice for the fight under way (smh/fight, queued first by SMH), every 2 s at most and one at a
+     * time, on its own thread. The fight never waits: the rules and learning's stance fight it until advice comes,
+     * and the advice is checked (Tactics.parse) and stays under the mob table's "never" rules.
+     */
+    public void adviseFight(String situation) {
+        // The calm call rate keeps the model for the owner's words; the fight runs on the rules and learning alone.
+        if ("calm".equals(agentSettings.callRate())) return;
+        long now = System.currentTimeMillis();
+        if (now - lastAdviceMs < 2_000L || !adviceInFlight.compareAndSet(false, true)) return;
+        lastAdviceMs = now;
+        double flee = MineAgentEngine.getConfig().survival().healthFlee();
+        var request = new LLMRequest(baseUrl, apiKey, com.mineagent.engine.llm.RoleRouting.modelFor(model, "fight"),
+                List.of(ChatMessage.system(FIGHT_PROMPT), ChatMessage.user(situation)),
+                List.of(), List.of(), temperature, 160, null, null, null, null, Duration.ofSeconds(8), false);
+        try {
+            fightExecutor.submit(() -> {
+                try {
+                    com.mineagent.engine.combat.Tactics.parse(replyContent(sideCall(request)), flee).ifPresent(t -> {
+                        advisedTactics = t;
+                        advisedAtMs = System.currentTimeMillis();
+                    });
+                } catch (Exception e) {
+                    System.err.println("[MineAgent] Fight advice failed: " + e.getMessage());
+                } finally {
+                    adviceInFlight.set(false);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            adviceInFlight.set(false);
+        }
+    }
+
+    private static final String FIGHT_PROMPT = "You advise an AI companion in a Minecraft fight, every two seconds. "
+            + "Read the fight (JSON: the hostiles, the companion, its duty, and how each stance has done against this mob, "
+            + "as the game measured it) and answer with JSON only: {\"stance\":\"aggressive|balanced|defensive|kite|retreat\","
+            + "\"target_order\":[\"mob type\"],\"retreat_health\":8,\"shield\":true,\"crits\":true}. Prefer the stance with the "
+            + "best record unless this fight is clearly different. Kite skeletons and witches only with good reason; never "
+            + "press a creeper without a shield. Retreat when outnumbered and hurt.";
 
     /** Save this companion's memory and library now, off the server thread (the settings panel's changes). */
     public void saveMemoryNow() {
@@ -4479,6 +4668,7 @@ public class AgentLoop {
             persistence.saveAll();
         }
         talkExecutor.shutdownNow();
+        fightExecutor.shutdownNow();
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {

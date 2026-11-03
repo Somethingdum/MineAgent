@@ -29,6 +29,25 @@ final class CommandParserTest {
         assertEquals("DROP:diamond:2", parsed("toss two diamonds"));
     }
 
+    @Test void guardingASpotOrAPlayerAndStandingDown() {
+        assertEquals("GUARD_HERE:null", parsedGuard("guard here"));
+        assertEquals("GUARD_HERE:8", parsedGuard("Steve, guard this chest radius 8"));
+        assertEquals("GUARD_HERE:20", parsedGuard("protect the base within 20 blocks"));
+        assertEquals("GUARD_PLAYER:alex_99", parsedGuard("guard alex_99"));
+        assertEquals("MODE:escort", parsedGuard("guard me"));
+        assertEquals("MODE:escort", parsedGuard("defend me"));
+        assertEquals("GUARD_OFF", parsedGuard("stand down"));
+        assertEquals("GUARD_OFF", parsedGuard("stop guarding"));
+        // A warning is not an order to guard; an unknown place goes to the model.
+        assertEquals("-", parsedGuard("watch it"));
+        assertEquals("-", parsedGuard("guard the castle by the river"));
+    }
+
+    private static String parsedGuard(String line) {
+        return CommandParser.parse(line, "Steve").map(c -> c.kind() + (c.kind() == CommandParser.Kind.GUARD_HERE
+                ? ":" + c.count() : c.value() != null ? ":" + c.value() : "")).orElse("-");
+    }
+
     @Test void aNegationIsAStopNeverTheVerbAfterIt() {
         assertEquals("STOP", parsed("don't go there"));
         assertEquals("STOP", parsed("wait no, follow me"));
