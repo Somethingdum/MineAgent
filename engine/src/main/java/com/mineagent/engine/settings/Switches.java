@@ -24,4 +24,9 @@ public final class Switches {
     public static boolean routeMemory() { return b().routeMemory(); }
     public static boolean sprint() { return b().sprint(); }
     public static boolean saveWithWorld() { return b().saveWithWorld(); }
+    public static boolean swim() { return b().swim(); }
+    public static boolean waterDrops() { return b().waterDrops(); }
+    public static boolean bucketDescents() { return b().bucketDescents(); }
+    public static boolean avoidMobs() { return b().avoidMobs(); }
+    public static boolean longTrips() { return b().longTrips(); }
 }

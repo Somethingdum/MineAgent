@@ -138,6 +138,22 @@ public class PathingCore {
         this.excludedEdges.clear();
     }
 
+    /** Hostile mobs within 32 blocks, to keep paths clear of (MA5.10); none when the switch is off. */
+    static java.util.List<com.mineagent.engine.pathing.util.MobAvoidance.Danger> dangersAround(
+            net.minecraft.server.level.ServerPlayer body) {
+        if (!com.mineagent.engine.settings.Switches.avoidMobs()) return java.util.List.of();
+        var out = new java.util.ArrayList<com.mineagent.engine.pathing.util.MobAvoidance.Danger>();
+        for (var mob : body.level().getEntitiesOfClass(net.minecraft.world.entity.Mob.class,
+                body.getBoundingBox().inflate(32.0), m -> m.isAlive()
+                        && m instanceof net.minecraft.world.entity.monster.Enemy
+                        && !(m instanceof net.minecraft.world.entity.NeutralMob neutral && !neutral.isAngry()))) {
+            out.add(com.mineagent.engine.pathing.util.MobAvoidance.mob(mob.getBlockX(), mob.getBlockY(), mob.getBlockZ(),
+                    mob instanceof net.minecraft.world.entity.monster.Creeper));
+            if (out.size() >= 64) break;
+        }
+        return out;
+    }
+
     /**
      * Cancel the current pathing task.
      */
@@ -198,6 +214,14 @@ public class PathingCore {
             // Break costs from the tools it carries (SMH plan 70, MA5.1).
             ctx.withBreakTimer(com.mineagent.engine.pathing.moves.ToolTimer.of(
                     TaskContext.serverPlayer(player)));
+            // Its health and fall attributes, its water bucket, and the mobs about (SMH plan 70, MA5.10).
+            var body = TaskContext.serverPlayer(player);
+            ctx.withBody(body.getHealth(),
+                    body.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.SAFE_FALL_DISTANCE),
+                    body.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.FALL_DAMAGE_MULTIPLIER),
+                    body.getInventory().contains(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WATER_BUCKET)),
+                    !body.level().dimensionType().ultraWarm());
+            ctx.withDangers(dangersAround(body));
 
             boolean needsContinue = finder.initializeSearch(
                     pos.getX(), pos.getY(), pos.getZ(),

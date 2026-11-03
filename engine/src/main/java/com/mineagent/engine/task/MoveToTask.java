@@ -49,6 +49,15 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
     /** The waypoint being walked to (SMH plan 70, MA5.6); -1 once on the way to the goal itself. */
     private int leg = -1;
     private int skipped;
+    /** The waypoints: the record's, or for a long trip the coarse plan's (MA5.10). */
+    private java.util.List<int[]> legs = java.util.List.of();
+    /** Coarse legs are reached anywhere within {@link #COARSE_RADIUS} across, at any height. */
+    private boolean coarseLegs;
+    /** Set on the first start: a resume after a survival chain carries on from the leg it was on. */
+    private boolean begun;
+    /** A trip this long, with no waypoints given, is planned over chunks first. */
+    static final int LONG_TRIP = 192;
+    static final int COARSE_RADIUS = 8;
 
     public MoveToTask(AgentPlayer player, MoveToTool.MoveToTaskRecord record) {
         super(player, record);
@@ -75,8 +84,14 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
             }
         });
 
-        leg = record.waypoints.isEmpty() ? -1 : 0;
-        skipped = 0;
+        if (!begun) {
+            begun = true;
+            legs = record.waypoints;
+            coarseLegs = false;
+            if (legs.isEmpty()) planLongTrip();
+            leg = legs.isEmpty() ? -1 : 0;
+            skipped = 0;
+        }
         startLegOrGoal();
 
         // Start the progress lease
@@ -86,13 +101,40 @@ public class MoveToTask extends CompanionTask<MoveToTool.MoveToTaskRecord>
         lastProgressPos = sp.position();
     }
 
+    /**
+     * A long trip with no waypoints given: legs from the chunks it has seen (MA5.10), so the pathfinder plans each
+     * leg on its own and the trip goes round the lakes and lava it knows of.
+     */
+    private void planLongTrip() {
+        if (!com.mineagent.engine.settings.Switches.longTrips()) return;
+        if (!"xz".equals(record.goalMode) && !"xzy".equals(record.goalMode) && !"block".equals(record.goalMode)) return;
+        ServerPlayer sp = TaskContext.serverPlayer(player);
+        int tz = record.z != null ? record.z : sp.blockPosition().getZ();
+        double dx = record.x - sp.getX(), dz = tz - sp.getZ();
+        if (dx * dx + dz * dz < (double) LONG_TRIP * LONG_TRIP) return;
+        var loop = TaskContext.agentLoop(player);
+        var chunks = loop == null ? new com.mineagent.engine.world.ChunkSummaries() : loop.placeKeeper().chunks();
+        var way = new java.util.ArrayList<>(com.mineagent.engine.pathing.util.CoarsePlanner.plan(chunks,
+                sp.serverLevel().dimension().location().toString(), sp.getBlockX(), sp.getBlockY(), sp.getBlockZ(),
+                record.x, tz));
+        // The last one is the goal's own chunk: the goal itself is walked to after.
+        if (!way.isEmpty()) way.remove(way.size() - 1);
+        legs = way;
+        coarseLegs = !way.isEmpty();
+    }
+
     /** The next waypoint not already passed, or the goal itself once they're all passed. */
     private void startLegOrGoal() {
         ServerPlayer sp0 = TaskContext.serverPlayer(player);
-        while (leg >= 0 && leg < record.waypoints.size()) {
-            int[] p = record.waypoints.get(leg);
+        while (leg >= 0 && leg < legs.size()) {
+            int[] p = legs.get(leg);
             double dx = sp0.getX() - (p[0] + 0.5), dy = sp0.getY() - p[1], dz = sp0.getZ() - (p[2] + 0.5);
-            if (dx * dx + dy * dy + dz * dz > (LEG_RADIUS + 1) * (LEG_RADIUS + 1)) {
+            if (coarseLegs) {
+                if (dx * dx + dz * dz > (COARSE_RADIUS + 1) * (COARSE_RADIUS + 1)) {
+                    nav.navigateToGoal(new com.mineagent.engine.pathing.goals.GoalNearXZ(p[0], p[2], COARSE_RADIUS));
+                    return;
+                }
+            } else if (dx * dx + dy * dy + dz * dz > (LEG_RADIUS + 1) * (LEG_RADIUS + 1)) {
                 nav.navigateNear(p[0], p[1], p[2], LEG_RADIUS);
                 return;
             }

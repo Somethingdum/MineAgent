@@ -28,10 +28,20 @@ public final class PlaceKeeper {
     static final int COVER = 2;
 
     private final RouteMemory memory = new RouteMemory();
+    private final ChunkSummaries chunks = new ChunkSummaries();
     private long lastLook = Long.MIN_VALUE;
+    private long lastSurvey = Long.MIN_VALUE;
+    /** How often it notes the chunks around it, in ticks, and how far (in chunks). */
+    static final int SURVEY_EVERY = 200;
+    static final int SURVEY_RADIUS = 3;
 
     public RouteMemory memory() {
         return memory;
+    }
+
+    /** What it has seen of the chunks it has been near (SMH plan 70, MA5.10): long trips are planned over it. */
+    public ChunkSummaries chunks() {
+        return chunks;
     }
 
     /** Where a player stands, as route memory keeps it. */
@@ -54,6 +64,14 @@ public final class PlaceKeeper {
         if (sp == null || !sp.isAlive() || sp.isSpectator()) return Optional.empty();
         if (gameTick % RECORD_EVERY == 0) {
             memory.walked(point(sp), underground(sp.serverLevel(), sp.blockPosition()), gameTick);
+        }
+        if (gameTick - lastSurvey >= SURVEY_EVERY) {
+            lastSurvey = gameTick;
+            try {
+                survey(sp);
+            } catch (RuntimeException error) {
+                System.err.println("[MineAgent] Chunk survey failed: " + error.getMessage());
+            }
         }
         if (gameTick - lastLook < LOOK_EVERY) return Optional.empty();
         lastLook = gameTick;
@@ -91,6 +109,42 @@ public final class PlaceKeeper {
             return memory.places().size() > before ? Optional.of(place) : Optional.empty();
         }
         return Optional.empty();
+    }
+
+    /**
+     * Note the loaded chunks around it, as a player sees the land about them: from the top of each of 16 columns,
+     * land, water or lava, how high, and how uneven. Only where the sky is above (a Nether roof hides the land).
+     */
+    private void survey(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        if (level.dimensionType().hasCeiling()) return;
+        String dim = level.dimension().location().toString();
+        int ccx = sp.getBlockX() >> 4, ccz = sp.getBlockZ() >> 4;
+        for (int cx = ccx - SURVEY_RADIUS; cx <= ccx + SURVEY_RADIUS; cx++) {
+            for (int cz = ccz - SURVEY_RADIUS; cz <= ccz + SURVEY_RADIUS; cz++) {
+                if (!level.hasChunk(cx, cz)) continue;
+                int land = 0, water = 0, hazard = 0, low = Integer.MAX_VALUE, high = Integer.MIN_VALUE;
+                java.util.List<Integer> heights = new java.util.ArrayList<>();
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        int x = (cx << 4) + 2 + i * 4, z = (cz << 4) + 2 + j * 4;
+                        int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                        var state = level.getBlockState(new BlockPos(x, top, z));
+                        if (state.getFluidState().is(net.minecraft.tags.FluidTags.WATER)) water++;
+                        else if (state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)
+                                || state.is(net.minecraft.world.level.block.Blocks.MAGMA_BLOCK)) hazard++;
+                        else land++;
+                        heights.add(top + 1);
+                        low = Math.min(low, top + 1);
+                        high = Math.max(high, top + 1);
+                    }
+                }
+                java.util.Collections.sort(heights);
+                ChunkSummaries.Kind kind = hazard >= 4 ? ChunkSummaries.Kind.HAZARD
+                        : water >= 12 ? ChunkSummaries.Kind.WATER : ChunkSummaries.Kind.LAND;
+                chunks.put(dim, cx, cz, new ChunkSummaries.Summary(kind, heights.get(heights.size() / 2), high - low > 6));
+            }
+        }
     }
 
     /**

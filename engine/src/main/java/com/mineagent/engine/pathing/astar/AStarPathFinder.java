@@ -32,7 +32,6 @@ public class AStarPathFinder {
     private static final int DEFAULT_NODE_LIMIT = 50_000;
 
     /** Maximum fall distance the pathfinder will consider. */
-    private static final int MAX_FALL_DISTANCE = 20;
 
     private final int nodeLimit;
     private final boolean allowParkour;
@@ -347,19 +346,14 @@ public class AStarPathFinder {
             considerNode(current, nx, current.y - 1, nz, cost, goal, favoring);
         }
 
-        // Try falling (2+ blocks)
-        for (int fallDist = 2; fallDist <= MAX_FALL_DISTANCE; fallDist++) {
-            int targetY = current.y - fallDist;
+        // Try falling (2+ blocks): the one landing in this column, found once (SMH plan 70, MA5.10): into water from
+        // any height, onto ground as far as it falls unhurt or, with a water bucket, as far as it would survive.
+        var landing = MovementFall.landingFor(ctx, current.y, nx, nz);
+        if (landing != null && current.y - landing.y() >= 2) {
             cost = calculateFallCost(current.x, current.y, current.z,
-                    nx, targetY, nz, ctx, fallDist);
+                    nx, landing.y(), nz, ctx, current.y - landing.y());
             if (cost < Double.POSITIVE_INFINITY) {
-                considerNode(current, nx, targetY, nz, cost, goal, favoring);
-            }
-            // If there's a block in the way, stop falling further
-            if (ctx.getBlockState(nx, targetY, nz) != null
-                    && !com.mineagent.engine.pathing.util.BlockHelper.isPassable(
-                            ctx.getBlockState(nx, targetY, nz))) {
-                break;
+                considerNode(current, nx, landing.y(), nz, cost, goal, favoring);
             }
         }
     }
@@ -497,6 +491,8 @@ public class AStarPathFinder {
                                double moveCost, Goal goal, Favoring favoring) {
         if (moveCost >= Double.POSITIVE_INFINITY) return;
         if (moveCost <= 0) return;
+        // Cells near a hostile mob cost more (SMH plan 70, MA5.10).
+        if (currentCtx != null) moveCost += currentCtx.dangerCost(x, y, z);
         if (currentCtx != null && !currentCtx.isWithinVerticalPolicy(y)) return;
         // Re-running an unchanged A* search after an execution timeout used to
         // return the identical path up to five times. Exclude only the exact

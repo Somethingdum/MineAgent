@@ -69,6 +69,17 @@ public final class BlockHelper {
     }
 
     /**
+     * Swimming at the surface (SMH plan 70, MA5.10): feet in still water over more water, head in the air. Its head
+     * stays out, so it never runs out of air; a waterfall or a bubble column is no place to swim.
+     */
+    public static boolean isSwimNode(BlockState below, BlockState feet, BlockState head) {
+        if (below == null || feet == null || head == null) return false;
+        if (!isWater(feet) || !isWater(below) || isWater(head) || !isPassable(head) || isHazardous(head)) return false;
+        if (feet.is(Blocks.BUBBLE_COLUMN) || below.is(Blocks.BUBBLE_COLUMN)) return false;
+        return feet.getFluidState().isSource();
+    }
+
+    /**
      * Check if a block is lava.
      */
     public static boolean isLava(BlockState state) {

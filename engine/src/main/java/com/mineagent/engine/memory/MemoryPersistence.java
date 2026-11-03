@@ -77,6 +77,8 @@ public class MemoryPersistence {
     private static final String GOAL_BOOK_FILE = "goal_book.json";
     /** Places, routes and the trail under way (SMH plan 70, MA5.6). */
     private static final String ROUTE_FILE = "routes.json";
+    /** What it has seen of each chunk (SMH plan 70, MA5.10). */
+    private static final String CHUNK_FILE = "chunk_map.json";
     private static final String SEMANTIC_WORLD_FILE = "semantic_world.json";
     private static final String ROLLING_PLAN_FILE = "rolling_plan.json";
     private static final String MECHANISM_FILE = "mechanism_experiments.json";
@@ -113,6 +115,7 @@ public class MemoryPersistence {
     private volatile com.mineagent.engine.learning.Curriculum curriculum;
     private volatile com.mineagent.engine.planning.GoalBook goalBook;
     private volatile com.mineagent.engine.world.RouteMemory routeMemory;
+    private volatile com.mineagent.engine.world.ChunkSummaries chunkMap;
     private volatile com.mineagent.engine.combat.TacticBook tacticBook;
     private final CognitiveMap cognitiveMap;
     private final PlaceEventMemory placeEventMemory;
@@ -197,6 +200,34 @@ public class MemoryPersistence {
     /** Keep this world's places and routes with its memory (MA5.6). */
     public synchronized void setRouteMemory(com.mineagent.engine.world.RouteMemory memory) {
         this.routeMemory = memory;
+    }
+
+    /** Keep this world's chunk map with its memory (MA5.10). */
+    public synchronized void setChunkMap(com.mineagent.engine.world.ChunkSummaries map) {
+        this.chunkMap = map;
+    }
+
+    private void saveChunkMap() throws IOException {
+        var map = chunkMap;
+        if (map == null) return;
+        JsonObject data = new JsonObject();
+        data.addProperty("version", FORMAT_VERSION);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        data.add("state", GSON.toJsonTree(map.exportState()));
+        writeAtomic(memoryDir.resolve(CHUNK_FILE), GSON.toJson(data));
+    }
+
+    private void loadChunkMap() throws IOException {
+        var map = chunkMap;
+        Path file = memoryDir.resolve(CHUNK_FILE);
+        if (map == null || !Files.exists(file)) return;
+        JsonObject data = readRoot(file);
+        if (!data.has("state") || !data.get("state").isJsonObject()) throw new IOException("chunk map state is missing");
+        try {
+            map.importState(GSON.fromJson(data.get("state"), com.mineagent.engine.world.ChunkSummaries.State.class));
+        } catch (RuntimeException malformed) {
+            throw new IOException("invalid chunk map state", malformed);
+        }
     }
 
     private void saveRoutes() throws IOException {
@@ -394,6 +425,9 @@ public class MemoryPersistence {
         try { saveRoutes(); } catch (Exception e) {
             System.err.println("[MineAgent] Save routes failed: " + e.getMessage());
         }
+        try { saveChunkMap(); } catch (Exception e) {
+            System.err.println("[MineAgent] Save chunk map failed: " + e.getMessage());
+        }
         try { saveTactics(); } catch (Exception e) {
             System.err.println("[MineAgent] Save tactics failed: " + e.getMessage());
         }
@@ -452,6 +486,7 @@ public class MemoryPersistence {
         loadWithQuarantine(CURRICULUM_FILE, "curriculum", this::loadCurriculum);
         loadWithQuarantine(GOAL_BOOK_FILE, "goal book", this::loadGoalBook);
         loadWithQuarantine(ROUTE_FILE, "routes", this::loadRoutes);
+        loadWithQuarantine(CHUNK_FILE, "chunk map", this::loadChunkMap);
         try {
             loadTactics();
         } catch (Exception failure) {
@@ -1274,6 +1309,7 @@ public class MemoryPersistence {
             Files.deleteIfExists(memoryDir.resolve(CURRICULUM_FILE));
             Files.deleteIfExists(memoryDir.resolve(GOAL_BOOK_FILE));
             Files.deleteIfExists(memoryDir.resolve(ROUTE_FILE));
+            Files.deleteIfExists(memoryDir.resolve(CHUNK_FILE));
             Files.deleteIfExists(memoryDir.resolve(SEMANTIC_WORLD_FILE));
             Files.deleteIfExists(memoryDir.resolve(ROLLING_PLAN_FILE));
             Files.deleteIfExists(memoryDir.resolve(MECHANISM_FILE));
@@ -1307,6 +1343,8 @@ public class MemoryPersistence {
             reservationLedger.importState(null);
             var routes = routeMemory;
             if (routes != null) routes.importState(null);
+            var chunkState = chunkMap;
+            if (chunkState != null) chunkState.importState(null);
             synchronized (conversationHistory) {
                 // Preserve the immutable system prompt at index zero; all
                 // owner dialogue and restored assistant turns are disposable.

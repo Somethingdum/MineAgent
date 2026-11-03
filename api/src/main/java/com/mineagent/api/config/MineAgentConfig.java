@@ -93,6 +93,12 @@ public record MineAgentConfig(
      * @param routeMemory      keep its trail, the places it knows and the routes between them
      * @param sprint           sprint on long straight walks (by the game's sprint rules)
      * @param saveWithWorld    save companions whenever the game saves its players
+     * @param swim             swim across water at the surface instead of only walking round it
+     * @param waterDrops       drop into water from any height (water of any depth breaks a fall)
+     * @param bucketDescents   drop further onto ground with a water bucket, only from heights it would survive if the
+     *                         water failed
+     * @param avoidMobs        paths keep clear of hostile mobs, creepers most of all
+     * @param longTrips        plan long trips over the chunks it has seen first
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -103,10 +109,15 @@ public record MineAgentConfig(
         boolean sleepWithPlayers,
         boolean routeMemory,
         boolean sprint,
-        boolean saveWithWorld
+        boolean saveWithWorld,
+        boolean swim,
+        boolean waterDrops,
+        boolean bucketDescents,
+        boolean avoidMobs,
+        boolean longTrips
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, true, 3, true, true, true, true
+            true, true, true, true, 3, true, true, true, true, true, true, true, true, true
         );
     }
 
@@ -206,7 +217,8 @@ public record MineAgentConfig(
         BehaviourConfig behaviour = new BehaviourConfig(rawBehaviour.neverBreakBuilt, rawBehaviour.rememberPlaced,
                 rawBehaviour.closeDoors, rawBehaviour.afkGuard, clamp(rawBehaviour.afkMinutes, 1, 60),
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
-                rawBehaviour.saveWithWorld);
+                rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
+                rawBehaviour.avoidMobs, rawBehaviour.longTrips);
         return new MineAgentConfig(llm, companion, survival, pathfinding, behaviour);
     }
 

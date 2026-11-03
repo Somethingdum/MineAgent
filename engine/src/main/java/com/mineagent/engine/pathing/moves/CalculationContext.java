@@ -165,6 +165,51 @@ public class CalculationContext {
         return com.mineagent.engine.pathing.util.BreakCost.ticks(hardness, 1.0, !state.requiresCorrectToolForDrops());
     }
 
+    // ── The body, and what's about (SMH plan 70, MA5.10) ───────────
+
+    private double health = 20.0;
+    private double safeFall = com.mineagent.engine.pathing.util.FallRules.SAFE_FALL;
+    private double fallMultiplier = 1.0;
+    private boolean waterBucket;
+    private boolean waterWorks = true;
+    private java.util.List<com.mineagent.engine.pathing.util.MobAvoidance.Danger> dangers = java.util.List.of();
+
+    /**
+     * The companion's health and fall attributes, whether it carries a water bucket, and whether water stays put here
+     * (it boils away in the Nether); returns this context.
+     */
+    public CalculationContext withBody(double health, double safeFall, double fallMultiplier,
+                                       boolean waterBucket, boolean waterWorks) {
+        this.health = health;
+        this.safeFall = safeFall;
+        this.fallMultiplier = fallMultiplier;
+        this.waterBucket = waterBucket;
+        this.waterWorks = waterWorks;
+        return this;
+    }
+
+    /** Hostile mobs to keep clear of; returns this context. */
+    public CalculationContext withDangers(java.util.List<com.mineagent.engine.pathing.util.MobAvoidance.Danger> dangers) {
+        this.dangers = dangers == null ? java.util.List.of() : java.util.List.copyOf(dangers);
+        return this;
+    }
+
+    /** The highest drop onto ground that costs no health. */
+    public int safeDrop() {
+        return com.mineagent.engine.pathing.util.FallRules.safeDrop(safeFall);
+    }
+
+    /** Whether a drop this high onto ground can be planned with its water bucket (the MLG chain places it). */
+    public boolean bucketDescent(int drop) {
+        if (!com.mineagent.engine.settings.Switches.bucketDescents() || !waterBucket || !waterWorks) return false;
+        return drop <= com.mineagent.engine.pathing.util.FallRules.maxBucketDrop(health, safeFall, fallMultiplier);
+    }
+
+    /** The extra cost of standing at x, y, z near a hostile mob. */
+    public double dangerCost(int x, int y, int z) {
+        return com.mineagent.engine.pathing.util.MobAvoidance.cost(dangers, x, y, z);
+    }
+
     /** Return true when execution evidence says this exact edge is unusable. */
     public boolean isEdgeExcluded(int sourceX, int sourceY, int sourceZ,
                                   int destinationX, int destinationY, int destinationZ) {

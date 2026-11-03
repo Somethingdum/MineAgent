@@ -500,6 +500,7 @@ public class AgentLoop {
             p.setCurriculum(curriculum);
             p.setGoalBook(goalBook);
             p.setRouteMemory(placeKeeper.memory());
+            p.setChunkMap(placeKeeper.chunks());
             p.setTacticBook(tacticBook);
             p.loadAll();
             // A restored Responses response id already represents the durable

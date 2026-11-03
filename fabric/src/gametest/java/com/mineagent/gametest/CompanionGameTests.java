@@ -59,6 +59,9 @@ public class CompanionGameTests implements FabricGameTest {
             for (int z = -16; z <= 24; z++) {
                 for (int y = 12; y >= 1; y--) helper.setBlock(x, y, z, Blocks.AIR);
                 helper.setBlock(x, 0, z, Blocks.STONE);
+                // Under the floor too: the swimming scene digs a lake down to the bedrock at -3.
+                helper.setBlock(x, -1, z, Blocks.DIRT);
+                helper.setBlock(x, -2, z, Blocks.DIRT);
                 for (int y = 0; y <= 12; y++) placed.clear(helper.absolutePos(new BlockPos(x, y, z)));
             }
         }
@@ -1025,5 +1028,180 @@ public class CompanionGameTests implements FabricGameTest {
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hungry_walk", timeoutTicks = 600)
     public void hungryItWalks(GameTestHelper helper) {
         longWalk(helper, "Hungry", 6, false);
+    }
+
+    /**
+     * A tower of planks from (4, 1, 4) to (6, 9, 6), the companion on top at (5, 10, 5), the owner out of the way. Planks
+     * are someone's building, so it never digs down through them. Returns the goal on the ground east of it.
+     */
+    private static BlockPos tower(GameTestHelper helper, Scene s) {
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos aside = helper.absolutePos(new BlockPos(-12, 1, -12));
+        s.owner().teleportTo(level, aside.getX() + 0.5, aside.getY(), aside.getZ() + 0.5, 0.0f, 0.0f);
+        for (int x = 4; x <= 6; x++) {
+            for (int z = 4; z <= 6; z++) {
+                for (int y = 1; y <= 9; y++) helper.setBlock(x, y, z, Blocks.OAK_PLANKS);
+            }
+        }
+        BlockPos top = helper.absolutePos(new BlockPos(5, 10, 5));
+        s.body().teleportTo(level, top.getX() + 0.5, top.getY(), top.getZ() + 0.5, 0.0f, 0.0f);
+        return helper.absolutePos(new BlockPos(12, 1, 5));
+    }
+
+    private static int towerBroken(GameTestHelper helper) {
+        int broken = 0;
+        for (int x = 4; x <= 6; x++) {
+            for (int z = 4; z <= 6; z++) {
+                for (int y = 1; y <= 9; y++) if (!helper.getBlockState(new BlockPos(x, y, z)).is(Blocks.OAK_PLANKS)) broken++;
+            }
+        }
+        return broken;
+    }
+
+    /**
+     * Plan 70, MA5.10: on a tower of planks with no way down but a drop of 10 blocks into one block of water, it takes
+     * the drop (water of any depth breaks a fall) and lands unhurt.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_water_drop", timeoutTicks = 700)
+    public void itDropsIntoWaterFromHigh(GameTestHelper helper) {
+        Scene s = scene(helper, "Diver");
+        BlockPos goal = tower(helper, s);
+        helper.setBlock(7, -1, 5, Blocks.STONE);
+        helper.setBlock(7, 0, 5, Blocks.WATER);
+        sendTo(helper, s, goal, "dive-1");
+        helper.onEachTick(() -> {
+            trace(helper, s, "water drop");
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (towerBroken(helper) > 0) {
+                tidy(s);
+                fail(helper, "it broke the tower");
+            } else if (off <= 1.5) {
+                float health = s.body().getHealth();
+                tidy(s);
+                if (health >= 20.0f) helper.succeed();
+                else fail(helper, "it got down hurt: health " + health);
+            } else if (helper.getTick() >= 600) {
+                String how = String.format("after 600 ticks: %.1f blocks off, at %s, health %.0f", off,
+                        rel(helper, s.body().blockPosition()).toShortString(), s.body().getHealth());
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.10: with a water bucket, from the same tower onto plain ground: it steps off, the water goes down
+     * under it before it lands, and comes back up into the bucket.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bucket_descent", timeoutTicks = 700)
+    public void itComesDownWithAWaterBucket(GameTestHelper helper) {
+        Scene s = scene(helper, "Clutch");
+        BlockPos goal = tower(helper, s);
+        s.body().getInventory().setItem(1, new ItemStack(Items.WATER_BUCKET));
+        sendTo(helper, s, goal, "bucket-1");
+        helper.onEachTick(() -> {
+            trace(helper, s, "bucket");
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (towerBroken(helper) > 0) {
+                tidy(s);
+                fail(helper, "it broke the tower");
+            } else if (off <= 1.5) {
+                float health = s.body().getHealth();
+                boolean bucket = s.body().getInventory().contains(new ItemStack(Items.WATER_BUCKET));
+                int water = 0;
+                for (int x = 3; x <= 8; x++) {
+                    for (int z = 3; z <= 7; z++) {
+                        if (helper.getBlockState(new BlockPos(x, 1, z)).getFluidState().is(net.minecraft.tags.FluidTags.WATER)) water++;
+                    }
+                }
+                tidy(s);
+                if (health >= 20.0f && bucket && water == 0) helper.succeed();
+                else fail(helper, "down, but health " + health + ", water bucket back " + bucket + ", water left " + water);
+            } else if (helper.getTick() >= 600) {
+                String how = String.format("after 600 ticks: %.1f blocks off, at %s, health %.0f", off,
+                        rel(helper, s.body().blockPosition()).toShortString(), s.body().getHealth());
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.10: a lake three deep with an island in it, and nothing to build a bridge with: it swims there, its
+     * head above the water.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_swim", timeoutTicks = 900)
+    public void itSwimsToAnIsland(GameTestHelper helper) {
+        Scene s = scene(helper, "Swimmer");
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos aside = helper.absolutePos(new BlockPos(-14, 1, -14));
+        s.owner().teleportTo(level, aside.getX() + 0.5, aside.getY(), aside.getZ() + 0.5, 0.0f, 0.0f);
+        for (int x = -6; x <= 8; x++) {
+            for (int z = -6; z <= 8; z++) {
+                boolean island = x >= 0 && x <= 2 && z >= 0 && z <= 2;
+                for (int y = -2; y <= 0; y++) helper.setBlock(x, y, z, island ? Blocks.STONE : Blocks.WATER);
+            }
+        }
+        BlockPos start = helper.absolutePos(new BlockPos(-10, 1, 1));
+        s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos goal = helper.absolutePos(new BlockPos(1, 1, 1));
+        sendTo(helper, s, goal, "swim-1");
+        int[] lowestAir = {Integer.MAX_VALUE};
+        helper.onEachTick(() -> {
+            trace(helper, s, "swim");
+            lowestAir[0] = Math.min(lowestAir[0], s.body().getAirSupply());
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (off <= 1.0 && s.body().onGround()) {
+                float health = s.body().getHealth();
+                tidy(s);
+                if (health >= 20.0f) helper.succeed();
+                else fail(helper, "it got there hurt: health " + health + ", lowest air " + lowestAir[0]);
+            } else if (helper.getTick() >= 800) {
+                String how = String.format("after 800 ticks: %.1f blocks off, at %s, in water %b, lowest air %d", off,
+                        rel(helper, s.body().blockPosition()).toShortString(), s.body().isInWater(), lowestAir[0]);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.10: a husk (standing still, its AI off) on the straight line to the goal: the path goes round it,
+     * out of its reach, and it is left alone.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_mob_round", timeoutTicks = 700)
+    public void itGoesRoundAMobInItsWay(GameTestHelper helper) {
+        Scene s = scene(helper, "Wary");
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos aside = helper.absolutePos(new BlockPos(3, 1, -14));
+        s.owner().teleportTo(level, aside.getX() + 0.5, aside.getY(), aside.getZ() + 0.5, 0.0f, 0.0f);
+        Husk husk = helper.spawn(EntityType.HUSK, new BlockPos(4, 1, 4));
+        husk.setNoAi(true);
+        BlockPos start = helper.absolutePos(new BlockPos(-12, 1, 4));
+        s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos goal = helper.absolutePos(new BlockPos(20, 1, 4));
+        sendTo(helper, s, goal, "round-1");
+        double[] closest = {Double.MAX_VALUE};
+        helper.onEachTick(() -> {
+            trace(helper, s, "mob round");
+            if (helper.getTick() > 5) closest[0] = Math.min(closest[0], flat(s.body().position(), husk.position()));
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (off <= 1.5) {
+                boolean alive = husk.isAlive();
+                tidy(s);
+                husk.discard();
+                if (closest[0] >= 4.0 && alive) helper.succeed();
+                else fail(helper, String.format("it came within %.1f blocks of the husk (alive %b)", closest[0], alive));
+            } else if (helper.getTick() >= 600) {
+                String how = String.format("after 600 ticks: %.1f blocks off, at %s, closest %.1f", off,
+                        rel(helper, s.body().blockPosition()).toShortString(), closest[0]);
+                tidy(s);
+                husk.discard();
+                fail(helper, how);
+            }
+        });
     }
 }

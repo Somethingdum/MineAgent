@@ -182,6 +182,11 @@ public abstract class Movement {
         }
         BlockPos support = new BlockPos(x, y - 1, z);
         if (BlockHelper.canStandOn(sp.level().getBlockState(support))) return true;
+        // Swimming needs nothing under it (SMH plan 70, MA5.10).
+        if (com.mineagent.engine.settings.Switches.swim() && BlockHelper.isSwimNode(sp.level().getBlockState(support),
+                sp.level().getBlockState(new BlockPos(x, y, z)), sp.level().getBlockState(new BlockPos(x, y + 1, z)))) {
+            return true;
+        }
         boolean placed = com.mineagent.engine.act.Placement.placeAnySupportBlock(sp, support);
         if (placed) {
             // Only a verified post-placement world state enters the ledger.

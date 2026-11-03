@@ -148,7 +148,19 @@ public class PathExecutor {
         }
         // A movement steers one block at a time and can't see a straight run; the path can (SMH plan 70, MA5.10).
         if (com.mineagent.engine.settings.Switches.sprint() && !input.sneaking() && sprintRunAhead()) input.sprinting(true);
+        // In deep water it holds jump, as a player swims: it stays at the surface, head out (MA5.10).
+        if (com.mineagent.engine.settings.Switches.swim() && inDeepWater()) input.jumping(true);
         harness.applyInput(input);
+    }
+
+    /** In water with more water under its feet, or with its head under: swimming, not wading. */
+    private boolean inDeepWater() {
+        var sp = TaskContext.serverPlayer(harness.player());
+        if (!sp.isInWater()) return false;
+        if (sp.isUnderWater()) return true;
+        BlockPos feet = sp.blockPosition();
+        return sp.level().getFluidState(feet).is(net.minecraft.tags.FluidTags.WATER)
+                && sp.level().getFluidState(feet.below()).is(net.minecraft.tags.FluidTags.WATER);
     }
 
     /** Level, plain steps in one direction, this many ahead, are worth a sprint (the game's rules allowing). */

@@ -2,9 +2,13 @@ package com.mineagent.engine.pathing.moves.movements;
 
 import com.mineagent.api.entity.AgentPlayer;
 import com.mineagent.engine.pathing.moves.*;
+import com.mineagent.engine.pathing.util.FallRules;
 import com.mineagent.engine.task.TaskContext;
 
-/** A deliberate non-damaging fall to an exact, validated landing cell. */
+/**
+ * A deliberate fall to an exact, validated landing cell: unhurt onto ground, into water from high up, or onto ground
+ * from higher with a water bucket the MLG chain puts down before it lands (SMH plan 70, MA5.10).
+ */
 public class MovementFall extends Movement {
     private final Input tickInput = new Input();
     private int fallDistance;
@@ -14,26 +18,48 @@ public class MovementFall extends Movement {
         fallDistance = srcY - dstY;
     }
 
+    /**
+     * The landing for a drop from {@code srcY} into column x, z, by the game's fall rules (SMH plan 70, MA5.10): into
+     * water from any height up to {@link FallRules#MAX_WATER_DROP}; onto ground no further than it can fall unhurt, or,
+     * carrying a water bucket where water stays put, as far as it would survive if the water failed. Null for none.
+     */
+    public static MovementHelper.Landing landingFor(CalculationContext ctx, int srcY, int x, int z) {
+        int minY = Math.max(ctx.level().getMinBuildHeight(), srcY - FallRules.MAX_WATER_DROP);
+        MovementHelper.Landing land = MovementHelper.landing(ctx, x, srcY - 1, z, minY);
+        if (land == null) return null;
+        int drop = srcY - land.y();
+        if (land.water()) {
+            if (drop <= ctx.safeDrop()) return land;
+            // Flowing water breaks a fall too, but a thin layer of it is a closer thing: big drops go into still water.
+            var water = ctx.getBlockState(x, land.y(), z);
+            return com.mineagent.engine.settings.Switches.waterDrops() && water != null
+                    && water.getFluidState().isSource() ? land : null;
+        }
+        return drop <= ctx.safeDrop() || ctx.bucketDescent(drop) ? land : null;
+    }
+
     @Override
     public double calculateCost(CalculationContext ctx) {
-        int groundY = MovementHelper.findGroundBelow(
-                ctx, dstX, srcY - 1, dstZ, ctx.level().getMinBuildHeight());
-        if (groundY == Integer.MIN_VALUE || groundY != dstY) {
-            return cost = Double.POSITIVE_INFINITY;
+        MovementHelper.Landing land = landingFor(ctx, srcY, dstX, dstZ);
+        if (land == null || land.y() != dstY) return cost = Double.POSITIVE_INFINITY;
+        fallDistance = srcY - land.y();
+        // The column it falls through, from where it steps in at head height down to its landing, must be open.
+        for (int y = land.y(); y <= srcY + 1; y++) {
+            var state = ctx.getBlockState(dstX, y, dstZ);
+            if (state == null || !com.mineagent.engine.pathing.util.BlockHelper.isPassable(state)) {
+                return cost = Double.POSITIVE_INFINITY;
+            }
         }
-        fallDistance = srcY - groundY;
-        // MLG is an emergency survival chain with inventory/aim validation.
-        // A generic path edge cannot promise it, so never plan damaging falls.
-        if (fallDistance > 3
-                || !MovementHelper.canFallThrough(ctx, dstX, srcY, dstZ, groundY)) {
-            return cost = Double.POSITIVE_INFINITY;
-        }
-        double breakCost = MovementHelper.costOfBreaking(ctx, dstX, groundY, dstZ)
-                + MovementHelper.costOfBreaking(ctx, dstX, groundY + 1, dstZ);
-        if (!Double.isFinite(breakCost)) return cost = Double.POSITIVE_INFINITY;
-        return cost = ActionCosts.fallCost(fallDistance)
-                + breakCost + MovementHelper.getWalkCostModifier(ctx, dstX, groundY, dstZ);
+        // A drop onto ground past what it falls unhurt is planned only with its water bucket: the MLG chain places
+        // the water before it lands and picks it up after. It costs more than walking down, so it is the way only
+        // when it saves a long way round.
+        double bucket = !land.water() && fallDistance > ctx.safeDrop() ? BUCKET_DESCENT_COST : 0.0;
+        return cost = ActionCosts.fallCost(fallDistance) + bucket
+                + MovementHelper.getWalkCostModifier(ctx, dstX, land.y(), dstZ);
     }
+
+    /** The extra cost of a planned bucket descent, in blocks of walking. */
+    public static final double BUCKET_DESCENT_COST = 12.0;
 
     @Override
     public Input getTickInput(AgentPlayer player) {

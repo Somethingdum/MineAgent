@@ -54,6 +54,7 @@ public final class MovementHelper {
                 // requiring a solid floor makes every elevated segment
                 // unreachable from horizontal movement at the top/bottom.
                 || BlockHelper.isClimbable(feet)
+                || isSwimNode(ctx, x, y, z)
                 || (ctx.allowBridge() && below.canBeReplaced());
         if (!hasSupport) return false;
         return canClear(ctx, feet) && canClear(ctx, head);
@@ -75,6 +76,7 @@ public final class MovementHelper {
         BlockState below = ctx.getBlockState(x, y - 1, z);
         if (below == null) return Double.POSITIVE_INFINITY;
         if (BlockHelper.canStandOn(below)) return 0;
+        if (isSwimNode(ctx, x, y, z)) return 0; // it swims; no bridge over water
         if (!ctx.allowBridge() || !below.canBeReplaced()) return Double.POSITIVE_INFINITY;
 
         int supportY = y - 1;
@@ -217,6 +219,36 @@ public final class MovementHelper {
             }
         }
         return Integer.MIN_VALUE;
+    }
+
+    /** Whether it can swim at x, y, z (feet in water at the surface), with swimming switched on (MA5.10). */
+    public static boolean isSwimNode(CalculationContext ctx, int x, int y, int z) {
+        if (!com.mineagent.engine.settings.Switches.swim()) return false;
+        return BlockHelper.isSwimNode(ctx.getBlockState(x, y - 1, z), ctx.getBlockState(x, y, z),
+                ctx.getBlockState(x, y + 1, z));
+    }
+
+    /** Where a drop lands: its feet's y, and whether in water. */
+    public record Landing(int y, boolean water) {}
+
+    /**
+     * Where something stepping off at {@code fromY + 1} into column x, z lands (SMH plan 70, MA5.10): on the first
+     * solid block below, or in the first water (a fall ends in water, whatever is under it). Null when the column is
+     * not loaded, the drop goes below {@code minY}, or what stops it is nothing to stand on (lava, a cactus).
+     */
+    public static Landing landing(CalculationContext ctx, int x, int fromY, int z, int minY) {
+        for (int y = fromY; y >= minY; y--) {
+            BlockState state = ctx.getBlockState(x, y, z);
+            if (state == null) return null;
+            if (BlockHelper.isWater(state)) {
+                BlockState head = ctx.getBlockState(x, y + 1, z);
+                if (head == null || BlockHelper.isWater(head)) return null;
+                return new Landing(y, true);
+            }
+            if (BlockHelper.isPassable(state)) continue;
+            return BlockHelper.canStandOn(state) ? new Landing(y + 1, false) : null;
+        }
+        return null;
     }
 
     /**
