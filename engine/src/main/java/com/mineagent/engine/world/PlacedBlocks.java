@@ -47,6 +47,7 @@ public final class PlacedBlocks extends SavedData {
     /** A real player placed this block (both halves of a door or bed count). */
     public static void placedBy(Player player, Level level, BlockPos pos, BlockState state) {
         if (player == null || pos == null || MineAgentEngine.isCompanionPlayer(player.getUUID())) return;
+        if (!com.mineagent.engine.settings.Switches.rememberPlaced()) return;
         PlacedBlocks record = of(level);
         if (record == null) return;
         record.mark(pos);

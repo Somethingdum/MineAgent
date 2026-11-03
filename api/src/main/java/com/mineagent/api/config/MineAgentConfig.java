@@ -10,8 +10,15 @@ public record MineAgentConfig(
     LLMConfig llm,
     CompanionConfig companion,
     SurvivalConfig survival,
-    PathfindingConfig pathfinding
+    PathfindingConfig pathfinding,
+    BehaviourConfig behaviour
 ) {
+    /** The four sections a file from before the behaviour switches has; the switches take their defaults. */
+    public MineAgentConfig(LLMConfig llm, CompanionConfig companion, SurvivalConfig survival,
+                           PathfindingConfig pathfinding) {
+        this(llm, companion, survival, pathfinding, BehaviourConfig.DEFAULTS);
+    }
+
     public record LLMConfig(
         String provider,
         String apiKey,
@@ -73,9 +80,39 @@ public record MineAgentConfig(
         );
     }
 
+    /**
+     * A switch for each of SMH plan 70's block 1 behaviours (its "Switches" table), on by default: checks that only
+     * stop mistakes, and what the owner asked for.
+     *
+     * @param neverBreakBuilt  never break blocks someone built (or placed) to get somewhere; doors are used instead
+     * @param rememberPlaced   remember the blocks real players place
+     * @param closeDoors       close the doors and gates it opened behind it
+     * @param afkGuard         guard its owner while they're AFK in the open
+     * @param afkMinutes       no input for this long counts as AFK (1 to 60)
+     * @param sleepWithPlayers go to bed when a player in its world does, so the night can pass
+     * @param routeMemory      keep its trail, the places it knows and the routes between them
+     * @param sprint           sprint on long straight walks (by the game's sprint rules)
+     * @param saveWithWorld    save companions whenever the game saves its players
+     */
+    public record BehaviourConfig(
+        boolean neverBreakBuilt,
+        boolean rememberPlaced,
+        boolean closeDoors,
+        boolean afkGuard,
+        int afkMinutes,
+        boolean sleepWithPlayers,
+        boolean routeMemory,
+        boolean sprint,
+        boolean saveWithWorld
+    ) {
+        public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
+            true, true, true, true, 3, true, true, true, true
+        );
+    }
+
     public static final MineAgentConfig DEFAULTS = new MineAgentConfig(
         LLMConfig.DEFAULTS, CompanionConfig.DEFAULTS,
-        SurvivalConfig.DEFAULTS, PathfindingConfig.DEFAULTS
+        SurvivalConfig.DEFAULTS, PathfindingConfig.DEFAULTS, BehaviourConfig.DEFAULTS
     );
 
     private static final Gson GSON = new GsonBuilder()
@@ -165,7 +202,12 @@ public record MineAgentConfig(
                 clamp(rawPathfinding.maxSearchNodes, 128, 1_000_000),
                 rawPathfinding.allowDigThrough, rawPathfinding.allowBridge,
                 rawPathfinding.allowParkour);
-        return new MineAgentConfig(llm, companion, survival, pathfinding);
+        BehaviourConfig rawBehaviour = loaded.behaviour != null ? loaded.behaviour : BehaviourConfig.DEFAULTS;
+        BehaviourConfig behaviour = new BehaviourConfig(rawBehaviour.neverBreakBuilt, rawBehaviour.rememberPlaced,
+                rawBehaviour.closeDoors, rawBehaviour.afkGuard, clamp(rawBehaviour.afkMinutes, 1, 60),
+                rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
+                rawBehaviour.saveWithWorld);
+        return new MineAgentConfig(llm, companion, survival, pathfinding, behaviour);
     }
 
     private static String nonNull(String value) {

@@ -70,7 +70,7 @@ public final class SleepChain implements TaskChain {
             ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
             if (sp == null || !sp.isAlive()) return Float.NEGATIVE_INFINITY;
             if (sp.isSleeping()) return PRIORITY;
-            if (wanted(sp)) return PRIORITY;
+            if (com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp)) return PRIORITY;
             if (placedBed != null && sp.serverLevel().isDay() && placedBed.closerThan(sp.blockPosition(), 16)) {
                 return PICK_UP_PRIORITY;
             }
@@ -98,11 +98,12 @@ public final class SleepChain implements TaskChain {
     public void tick(AgentPlayer companion) {
         ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
         try {
+            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp);
             if (sp.isSleeping()) {
-                if (!wanted(sp)) sp.stopSleepInBed(true, true); // everyone else is up: it gets up too
+                if (!want) sp.stopSleepInBed(true, true); // everyone else is up (or the switch is off): it gets up too
                 return;
             }
-            if (!wanted(sp)) {
+            if (!want) {
                 pickUpPlacedBed(sp);
                 return;
             }

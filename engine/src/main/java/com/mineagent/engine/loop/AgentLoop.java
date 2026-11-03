@@ -1323,7 +1323,7 @@ public class AgentLoop {
     private boolean placeCommand(com.mineagent.engine.chat.CommandParser.Command c,
                                  com.mineagent.engine.entity.CompanionEntity self, boolean fromOwner) {
         var me = self.serverPlayer();
-        if (me == null) return false;
+        if (me == null || !com.mineagent.engine.settings.Switches.routeMemory()) return false;
         var memory = placeKeeper.memory();
         var here = com.mineagent.engine.world.PlaceKeeper.point(me);
         var owner = self.serverPlayerOwner();
@@ -2190,7 +2190,7 @@ public class AgentLoop {
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
             doorKeeper.tick(player, gameTick);
-            placeKeeper.tick(player, gameTick).ifPresent(place -> {
+            if (com.mineagent.engine.settings.Switches.routeMemory()) placeKeeper.tick(player, gameTick).ifPresent(place -> {
                 speakToOwner("Found " + aOrAn(place.kind()) + ". I'll remember it as " + place.name() + ".");
                 saveMemoryNow();
             });
@@ -2475,7 +2475,7 @@ public class AgentLoop {
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, post, null, guardRadius);
         }
         // An AFK owner who is exposed is guarded, as on "guard me" (SMH plan 70, MA5.4); fishing, close by.
-        if (owner != null && ownerActivity.afk() && owner.isAlive() && owner.serverLevel() == self.serverLevel()
+        if (owner != null && com.mineagent.engine.settings.Switches.afkGuard() && ownerActivity.afk() && owner.isAlive() && owner.serverLevel() == self.serverLevel()
                 && exposed(owner)) {
             return new CombatSetup(com.mineagent.engine.combat.CombatBrain.Duty.GUARD, owner.position(), owner.getUUID(),
                     owner.fishing != null ? 6.0 : 12.0);
@@ -2705,7 +2705,7 @@ public class AgentLoop {
     private void watchOwnerActivity(net.minecraft.server.level.ServerPlayer owner) {
         if (owner == null) return;
         long now = net.minecraft.Util.getMillis();
-        var change = ownerActivity.update(now, owner.getLastActionTime());
+        var change = ownerActivity.update(now, owner.getLastActionTime(), com.mineagent.engine.settings.Switches.afkAfterMillis());
         if (change == OwnerActivity.Change.CAME_BACK) {
             speakToOwner(ownerActivity.welcomeBack(now));
         } else if (change == OwnerActivity.Change.WENT_AFK) {

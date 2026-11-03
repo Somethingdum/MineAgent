@@ -147,7 +147,7 @@ public class PathExecutor {
             return;
         }
         // A movement steers one block at a time and can't see a straight run; the path can (SMH plan 70, MA5.10).
-        if (!input.sneaking() && sprintRunAhead()) input.sprinting(true);
+        if (com.mineagent.engine.settings.Switches.sprint() && !input.sneaking() && sprintRunAhead()) input.sprinting(true);
         harness.applyInput(input);
     }
 

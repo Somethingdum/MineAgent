@@ -37,8 +37,13 @@ public final class OwnerActivity {
 
     /** Look again; what changed. A new input clears what they said. */
     public synchronized Change update(long now, long lastInput) {
+        return update(now, lastInput, AFK_AFTER_MS);
+    }
+
+    /** As {@link #update(long, long)}, with no input for {@code afkAfter} milliseconds counting as AFK (a setting). */
+    public synchronized Change update(long now, long lastInput, long afkAfter) {
         if (saidAfkAt > 0L && lastInput > saidAfkAt + OWN_WORDS_MS) saidAfkAt = 0L;
-        boolean now_ = idle(now, lastInput, saidAfkAt, AFK_AFTER_MS);
+        boolean now_ = idle(now, lastInput, saidAfkAt, afkAfter);
         if (now_ == afk) return Change.NONE;
         afk = now_;
         if (afk) {

@@ -134,7 +134,7 @@ public final class MovementHelper {
         // SMH plan 70, MA5.1: what it really costs. Nothing someone built is broken to get somewhere; no break lets
         // lava or water in, or drops a tall stack of sand or gravel; a natural block costs its mining time with the
         // best tool carried, plus the hole it leaves. Each falling block stacked above will drop in and be broken too.
-        BreakCost.Kind kind = BlockHelper.kindOf(state);
+        BreakCost.Kind kind = costKind(BlockHelper.kindOf(state));
         if (kind != BreakCost.Kind.NATURAL) return Double.POSITIVE_INFINITY;
         if (ctx.placedByPlayer(x, y, z)) return Double.POSITIVE_INFINITY; // someone built it, whatever it's made of
         if (!BreakSafety.safeToBreak(ctx::getBlockState, x, y, z)) return Double.POSITIVE_INFINITY;
@@ -143,9 +143,14 @@ public final class MovementHelper {
         for (int i = 1; i <= falling; i++) {
             BlockState above = ctx.getBlockState(x, y + i, z);
             if (above == null) return Double.POSITIVE_INFINITY;
-            one += BreakCost.cost(ctx.breakTicks(above, x, y + i, z), BlockHelper.kindOf(above));
+            one += BreakCost.cost(ctx.breakTicks(above, x, y + i, z), costKind(BlockHelper.kindOf(above)));
         }
         return one;
+    }
+
+    /** With "never break built blocks" switched off, a built block costs what a natural one does; infested stays out. */
+    static BreakCost.Kind costKind(BreakCost.Kind kind) {
+        return kind == BreakCost.Kind.BUILT && !com.mineagent.engine.settings.Switches.neverBreakBuilt() ? BreakCost.Kind.NATURAL : kind;
     }
 
     /**

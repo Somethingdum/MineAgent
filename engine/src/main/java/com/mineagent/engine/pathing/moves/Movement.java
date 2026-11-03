@@ -150,7 +150,10 @@ public abstract class Movement {
             boolean own = TaskContext.temporaryBlocks(player).owns(cell);
             var placedRecord = com.mineagent.engine.world.PlacedBlocks.of(level);
             boolean someones = placedRecord != null && placedRecord.isPlaced(cell.getX(), cell.getY(), cell.getZ());
-            if ((!own && (someones || BlockHelper.kindOf(state) != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL))
+            var kind = BlockHelper.kindOf(state);
+            boolean keepBuilt = com.mineagent.engine.settings.Switches.neverBreakBuilt();
+            if ((!own && (kind == com.mineagent.engine.pathing.util.BreakCost.Kind.AVOID
+                    || (keepBuilt && (someones || kind != com.mineagent.engine.pathing.util.BreakCost.Kind.NATURAL))))
                     || !com.mineagent.engine.pathing.util.BreakSafety.safeToBreak((bx, by, bz) -> {
                         BlockPos at = new BlockPos(bx, by, bz);
                         return level.isLoaded(at) ? level.getBlockState(at) : null;
@@ -166,6 +169,7 @@ public abstract class Movement {
     }
 
     private static com.mineagent.engine.pathing.execute.DoorKeeper doorKeeper(AgentPlayer player) {
+        if (!com.mineagent.engine.settings.Switches.closeDoors()) return null; // doors left as they are
         var loop = TaskContext.agentLoop(player);
         return loop == null ? null : loop.doorKeeper();
     }

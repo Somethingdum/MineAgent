@@ -147,6 +147,7 @@ public class CalculationContext {
 
     /** Whether a real player placed the block at x, y, z (SMH plan 70, MA5.2). */
     public boolean placedByPlayer(int x, int y, int z) {
+        if (!com.mineagent.engine.settings.Switches.neverBreakBuilt()) return false;
         if (!placedLooked) {
             placedLooked = true;
             placed = level == null ? null : com.mineagent.engine.world.PlacedBlocks.of(level);

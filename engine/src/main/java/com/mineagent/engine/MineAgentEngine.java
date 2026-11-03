@@ -316,6 +316,7 @@ public final class MineAgentEngine {
      * world come back from the same moment: nothing it put in a chest is in two places, or in none.
      */
     public static void persistAllCompanions() {
+        if (!com.mineagent.engine.settings.Switches.saveWithWorld()) return;
         for (CompanionState state : List.copyOf(COMPANIONS.values())) {
             try {
                 persistCompanion(state);
@@ -888,7 +889,7 @@ public final class MineAgentEngine {
                 resolvedProvider, resolvedKey, resolvedModel, resolvedBaseUrl,
                 temperature, previous.maxTokens());
         config = new MineAgentConfig(llm, config.companion(),
-                config.survival(), config.pathfinding());
+                config.survival(), config.pathfinding(), config.behaviour());
         if (configDirPath != null && !config.save(configDirPath)) {
             owner.sendSystemMessage(Component.literal(
                     "[MineAgent] Companion created, but the connection settings "
@@ -2778,7 +2779,7 @@ public final class MineAgentEngine {
                                     return 0;
                                 }
 
-                                config = new MineAgentConfig(llm, comp, config.survival(), config.pathfinding());
+                                config = new MineAgentConfig(llm, comp, config.survival(), config.pathfinding(), config.behaviour());
                                 if (configDirPath != null) config.save(configDirPath);
 
                                 // API keys arrive through a command packet, but must
