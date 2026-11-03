@@ -220,7 +220,11 @@ public final class MobDefenseChain implements TaskChain {
                         + ", sight " + sp.hasLineOfSight(targetMob) + ", using " + sp.isUsingItem()
                         + ", on ground " + onGround + ", stance " + tactics.stance()
                         + "; server tick " + sp.server.getTickCount() + ", game time " + sp.level().getGameTime()
-                        + ", day time " + sp.level().getDayTime());
+                        + ", day time " + sp.level().getDayTime() + "; its ticks " + sp.tickCount + ", the mob's "
+                        + targetMob.tickCount + ", mob's spot entity-ticking "
+                        + sp.serverLevel().isPositionEntityTicking(targetMob.blockPosition()) + ", runs normally "
+                        + sp.level().tickRateManager().runsNormally() + ", sprinting "
+                        + sp.server.tickRateManager().isSprinting());
             }
         } catch (Exception e) {
             System.err.println("[MineAgent] MobDefense tick error: " + e.getMessage());
