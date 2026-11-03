@@ -13,10 +13,10 @@ final class AfkRulesTest {
         assertFalse(AfkRules.atFarm(false, 0));
     }
 
-    @Test void itWorksWithin32BlocksAndWithin8AtAFarm() {
-        assertEquals(32.0, AfkRules.leash(false));
-        assertEquals(8.0, AfkRules.leash(true));
-        assertTrue(AfkRules.FARM_QUIET > AfkRules.FARM_LEASH, "no block changes farther out than it stays");
+    @Test void awayMeansNoLimitUnlessADistanceIsSet() {
+        assertEquals(Double.POSITIVE_INFINITY, AfkRules.leash(0), "AFK only means they're away: no limit");
+        assertEquals(32.0, AfkRules.leash(32));
+        assertEquals(Double.POSITIVE_INFINITY, AfkRules.leash(-5));
     }
 
     @Test void aQuestionEndsWithAQuestionMark() {

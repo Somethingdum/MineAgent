@@ -30,11 +30,13 @@ public class AgentSettingsScreen extends Screen {
     /** The behaviour switches as the panel names them (SMH plan 70, Switches). */
     private static final String[][] SWITCHES = {
             {"neverBreakBuilt", "Keep built blocks"}, {"rememberPlaced", "Remember placed"}, {"closeDoors", "Close doors"},
-            {"afkGuard", "Guard me AFK"}, {"sleepWithPlayers", "Sleep with players"}, {"routeMemory", "Route memory"},
+            {"afkGuardMe", "Guard me AFK"}, {"sleepWithPlayers", "Sleep with players"}, {"routeMemory", "Route memory"},
             {"sprint", "Sprint"}, {"saveWithWorld", "Save with world"}, {"swim", "Swim"}, {"waterDrops", "Water drops"},
             {"bucketDescents", "Bucket descents"}, {"avoidMobs", "Avoid mobs"}, {"longTrips", "Plan long trips"},
-            {"afkKeepWorking", "Work while I'm AFK"}};
+            {"afkFarmLeftAlone", "Leave my AFK farm"}};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};
+    /** While I'm AFK, keep within: 0 is no limit, the default. */
+    private static final int[] AFK_WITHIN = {0, 16, 32, 64, 128};
     private static final int[] THINGS_SEEN = {10_000, 50_000, 100_000, 200_000};
     private static final int[] JOURNAL_DAYS = {30, 90, 365, 3_650};
     private static final int[] CHESTS = {1_024, 4_096, 8_192, 16_384};
@@ -280,6 +282,7 @@ public class AgentSettingsScreen extends Screen {
             i++;
         }
         i = cycle(b, "afkMinutes", "behaviour.afkMinutes", "AFK after", " min", AFK_MINUTES, i, cols, w, gap, y);
+        i = cycle(b, "afkStayWithin", "behaviour.afkStayWithin", "AFK: stay within", " blocks", AFK_WITHIN, i, cols, w, gap, y);
         i = cycle(m, "thingsSeen", "memory.thingsSeen", "Things seen", "", THINGS_SEEN, i, cols, w, gap, y);
         i = cycle(m, "journalDays", "memory.journalDays", "Journal", " days", JOURNAL_DAYS, i, cols, w, gap, y);
         cycle(m, "chests", "memory.chests", "Chests", "", CHESTS, i, cols, w, gap, y);
@@ -293,7 +296,8 @@ public class AgentSettingsScreen extends Screen {
         for (int v : values) if (v > now) { next = v; break; }
         final int send = next;
         int x = left + (i % cols) * (w + gap);
-        this.addRenderableWidget(Button.builder(Component.literal(label + ": " + String.format("%,d", now) + unit), ignored -> {
+        String shown = now == 0 && values[0] == 0 ? "no limit" : String.format("%,d", now) + unit;
+        this.addRenderableWidget(Button.builder(Component.literal(label + ": " + shown), ignored -> {
             command("mineagent setconfig " + key + " " + send);
             command("mineagent settings");
         }).bounds(x, y + (i / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());

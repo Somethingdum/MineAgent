@@ -16,7 +16,8 @@ final class SettingChangeTest {
         assertEquals(c.llm(), off.llm());
         assertEquals(c.memory(), off.memory());
         assertTrue(SettingChange.withSetting(off, "behaviour.SPRINT", "on").behaviour().sprint(), "any case");
-        assertFalse(SettingChange.withSetting(c, "behaviour.afkKeepWorking", "false").behaviour().afkKeepWorking());
+        assertTrue(SettingChange.withSetting(c, "behaviour.afkGuardMe", "on").behaviour().afkGuardMe());
+        assertFalse(SettingChange.withSetting(c, "behaviour.afkFarmLeftAlone", "off").behaviour().afkFarmLeftAlone());
     }
 
     @Test void numbersAreKeptInRange() {
@@ -28,6 +29,10 @@ final class SettingChangeTest {
         assertEquals(500_000, SettingChange.withSetting(c, "memory.thingsSeen", "9999999").memory().thingsSeen());
         assertEquals(3_650, SettingChange.withSetting(c, "memory.journalDays", "100000").memory().journalDays());
         assertEquals(64, SettingChange.withSetting(c, "memory.chests", "1").memory().chests());
+        assertEquals(32, SettingChange.withSetting(c, "behaviour.afkStayWithin", "32").behaviour().afkStayWithin());
+        assertEquals(256, SettingChange.withSetting(c, "behaviour.afkStayWithin", "1000").behaviour().afkStayWithin());
+        assertEquals(0, SettingChange.withSetting(c, "behaviour.afkStayWithin", "off").behaviour().afkStayWithin(), "no limit");
+        assertEquals(0, SettingChange.withSetting(c, "behaviour.afkStayWithin", "no limit").behaviour().afkStayWithin());
     }
 
     @Test void anythingElseIsRefused() {

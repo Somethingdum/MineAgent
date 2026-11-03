@@ -23,7 +23,8 @@ public final class Switches {
     public static boolean neverBreakBuilt() { return b().neverBreakBuilt(); }
     public static boolean rememberPlaced() { return b().rememberPlaced(); }
     public static boolean closeDoors() { return b().closeDoors(); }
-    public static boolean afkGuard() { return b().afkGuard(); }
+    /** Guard its owner while they're AFK out in the open (off unless they turn it on). */
+    public static boolean afkGuard() { return b().afkGuardMe(); }
     public static long afkAfterMillis() { return Math.max(1, b().afkMinutes()) * 60_000L; }
     public static boolean sleepWithPlayers() { return b().sleepWithPlayers(); }
     public static boolean routeMemory() { return b().routeMemory(); }
@@ -34,7 +35,9 @@ public final class Switches {
     public static boolean bucketDescents() { return b().bucketDescents(); }
     public static boolean avoidMobs() { return b().avoidMobs(); }
     public static boolean longTrips() { return b().longTrips(); }
-    public static boolean afkKeepWorking() { return b().afkKeepWorking(); }
+    /** While its owner is AFK, keep within this many blocks of them; 0: no limit (the default). */
+    public static int afkStayWithin() { return b().afkStayWithin(); }
+    public static boolean afkFarmLeftAlone() { return b().afkFarmLeftAlone(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

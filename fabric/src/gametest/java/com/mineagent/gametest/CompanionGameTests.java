@@ -97,6 +97,12 @@ public class CompanionGameTests implements FabricGameTest {
         body.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.IRON_LEGGINGS));
     }
 
+    /** A setting changed as the owner would change it, by /mineagent setconfig; the scene puts it back after. */
+    private static void setting(GameTestHelper helper, String key, String value) {
+        var server = helper.getLevel().getServer();
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "mineagent setconfig " + key + " " + value);
+    }
+
     private static void tidy(Scene s) {
         MineAgentEngine.despawnCompanion(s.companion().companionId(), true);
         s.owner().getServer().getPlayerList().remove(s.owner());
@@ -502,6 +508,17 @@ public class CompanionGameTests implements FabricGameTest {
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk", timeoutTicks = 200)
     public void anAfkOwnerInTheOpenIsGuarded(GameTestHelper helper) {
         Scene s = scene(helper, "Watcher");
+        // Guarding an AFK owner is optional (off by default): the owner turns it on.
+        setting(helper, "behaviour.afkGuardMe", "on");
+        if (!com.mineagent.engine.settings.Switches.afkGuard()) {
+            tidy(s);
+            fail(helper, "/mineagent setconfig behaviour.afkGuardMe on did not take");
+            return;
+        }
+        Runnable done = () -> {
+            setting(helper, "behaviour.afkGuardMe", "off");
+            tidy(s);
+        };
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
         boolean[] guarded = {false};
         helper.onEachTick(() -> {
@@ -514,12 +531,12 @@ public class CompanionGameTests implements FabricGameTest {
             } else if (guarded[0] && !s.loop().ownerAfk()) {
                 boolean stoodDown = s.loop().combatSetup(s.body(), s.owner()).duty()
                         != com.mineagent.engine.combat.CombatBrain.Duty.GUARD;
-                tidy(s);
+                done.run();
                 if (stoodDown) helper.succeed();
                 else fail(helper, "the owner is back, but it still guards them");
             } else if (helper.getTick() >= 150) {
                 String how = "after 150 ticks: afk " + s.loop().ownerAfk() + ", duty " + setup.duty();
-                tidy(s);
+                done.run();
                 fail(helper, guarded[0] ? "it never saw the owner come back: " + how : "it never guarded the AFK owner: " + how);
             }
         });
@@ -1673,15 +1690,19 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
     /**
-     * Plan 70, MA5.4: while its owner is AFK it works within 32 blocks of them. Sent 60 blocks off, it turns back at
-     * the edge and keeps within reach of them.
+     * Plan 70, MA5.4: a distance to keep within while they're AFK is optional; set to 32, sent 60 blocks off, it turns
+     * back at the edge and keeps within reach of them.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_leash", timeoutTicks = 700)
-    public void whileTheOwnerIsAfkItWorksWithin32Blocks(GameTestHelper helper) {
+    public void withADistanceSetItKeepsWithinItWhileTheyAreAfk(GameTestHelper helper) {
         Scene s = scene(helper, "Tethered");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
-        // A roof over them by day: safe, not out in the open, so it works rather than guards.
-        for (int x = 1; x <= 5; x++) for (int z = 1; z <= 5; z++) helper.setBlock(x, 3, z, Blocks.STONE);
+        setting(helper, "behaviour.afkStayWithin", "32");
+        if (com.mineagent.engine.settings.Switches.afkStayWithin() != 32) {
+            tidy(s);
+            fail(helper, "/mineagent setconfig behaviour.afkStayWithin 32 did not take");
+            return;
+        }
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
         boolean[] sent = {false};
         double[] furthest = {0};
@@ -1699,12 +1720,55 @@ public class CompanionGameTests implements FabricGameTest {
                 new com.mineagent.tools.movement.MoveToTool().onServerCall("afk-far", args, s.companion(), r -> {});
             }
             if (furthest[0] > 38.0) {
+                setting(helper, "behaviour.afkStayWithin", "0");
                 tidy(s);
                 fail(helper, String.format("it went %.0f blocks from its AFK owner", furthest[0]));
             } else if (sent[0] && helper.getTick() >= 600) {
+                setting(helper, "behaviour.afkStayWithin", "0");
                 tidy(s);
                 if (furthest[0] >= 24.0 && away <= 32.0) helper.succeed();
                 else fail(helper, String.format("furthest %.0f, now %.0f blocks from them", furthest[0], away));
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA5.4, by default: AFK only means they're away ("AFK just means I'm away, likely stay busy"). Its owner
+     * AFK out in the open, it is sent 60 blocks off on a job and goes all the way, and it does not turn to guarding.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_busy", timeoutTicks = 700)
+    public void afkOnlyMeansAwayItStaysBusy(GameTestHelper helper) {
+        Scene s = scene(helper, "Busy");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
+        boolean[] sent = {false};
+        BlockPos[] goal = {null};
+        helper.onEachTick(() -> {
+            trace(helper, s, "afk busy");
+            if (s.loop().ownerAfk() && s.loop().combatSetup(s.body(), s.owner()).duty()
+                    == com.mineagent.engine.combat.CombatBrain.Duty.GUARD) {
+                tidy(s);
+                fail(helper, "the owner went AFK and it took up guarding them instead of its job");
+                return;
+            }
+            if (!sent[0] && s.loop().ownerAfk()) {
+                sent[0] = true;
+                goal[0] = s.owner().blockPosition().offset(60, 0, 0);
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("goal_mode", "xz");
+                args.addProperty("x", goal[0].getX());
+                args.addProperty("z", goal[0].getZ());
+                new com.mineagent.tools.movement.MoveToTool().onServerCall("afk-busy", args, s.companion(), r -> {});
+            }
+            if (goal[0] != null && flat(s.body().position(), Vec3.atBottomCenterOf(goal[0])) <= 2.0) {
+                boolean stillAfk = s.loop().ownerAfk();
+                tidy(s);
+                if (stillAfk) helper.succeed();
+                else fail(helper, "there, but the owner no longer counted as AFK");
+            } else if (helper.getTick() >= 650) {
+                String how = String.format("%.0f blocks from them after 650 ticks", s.body().distanceTo(s.owner()));
+                tidy(s);
+                fail(helper, how);
             }
         });
     }

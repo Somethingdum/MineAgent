@@ -98,13 +98,16 @@ public record MineAgentConfig(
     }
 
     /**
-     * A switch for each of SMH plan 70's block 1 behaviours (its "Switches" table), on by default: checks that only
-     * stop mistakes, and what the owner asked for.
+     * A switch for each of SMH plan 70's block 1 behaviours (its "Switches" table): checks that only stop mistakes, and
+     * what the owner asked for, on; what the owner left optional, off. AFK only means its owner is away: what it
+     * does and how far it goes stay its own (the owner, Nov 3: "AFK should be optional in terms of jobs and distance.
+     * AFK just means I'm away, likely stay busy"), unless they turn on guarding or a distance.
      *
      * @param neverBreakBuilt  never break blocks someone built (or placed) to get somewhere; doors are used instead
      * @param rememberPlaced   remember the blocks real players place
      * @param closeDoors       close the doors and gates it opened behind it
-     * @param afkGuard         guard its owner while they're AFK in the open
+     * @param afkGuardMe       guard its owner while they're AFK out in the open, instead of its work (off; named
+     *                         afkGuard before, on: a file saved then keeps no say over it)
      * @param afkMinutes       no input for this long counts as AFK (1 to 60)
      * @param sleepWithPlayers go to bed when a player in its world does, so the night can pass
      * @param routeMemory      keep its trail, the places it knows and the routes between them
@@ -116,14 +119,16 @@ public record MineAgentConfig(
      *                         water failed
      * @param avoidMobs        paths keep clear of hostile mobs, creepers most of all
      * @param longTrips        plan long trips over the chunks it has seen first
-     * @param afkKeepWorking   while its owner is AFK and safe, keep working within 32 blocks of them (off: it stays
-     *                         by them)
+     * @param afkStayWithin    while its owner is AFK, keep within this many blocks of them (0, the default: no limit;
+     *                         up to 256)
+     * @param afkFarmLeftAlone at a farm its owner is AFK at, place and break nothing within 16 blocks of them and
+     *                         leave the farm's mobs be
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
         boolean rememberPlaced,
         boolean closeDoors,
-        boolean afkGuard,
+        boolean afkGuardMe,
         int afkMinutes,
         boolean sleepWithPlayers,
         boolean routeMemory,
@@ -134,10 +139,11 @@ public record MineAgentConfig(
         boolean bucketDescents,
         boolean avoidMobs,
         boolean longTrips,
-        boolean afkKeepWorking
+        int afkStayWithin,
+        boolean afkFarmLeftAlone
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
-            true, true, true, true, 3, true, true, true, true, true, true, true, true, true, true
+            true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true
         );
     }
 
@@ -235,10 +241,11 @@ public record MineAgentConfig(
                 rawPathfinding.allowParkour);
         BehaviourConfig rawBehaviour = loaded.behaviour != null ? loaded.behaviour : BehaviourConfig.DEFAULTS;
         BehaviourConfig behaviour = new BehaviourConfig(rawBehaviour.neverBreakBuilt, rawBehaviour.rememberPlaced,
-                rawBehaviour.closeDoors, rawBehaviour.afkGuard, clamp(rawBehaviour.afkMinutes, 1, 60),
+                rawBehaviour.closeDoors, rawBehaviour.afkGuardMe, clamp(rawBehaviour.afkMinutes, 1, 60),
                 rawBehaviour.sleepWithPlayers, rawBehaviour.routeMemory, rawBehaviour.sprint,
                 rawBehaviour.saveWithWorld, rawBehaviour.swim, rawBehaviour.waterDrops, rawBehaviour.bucketDescents,
-                rawBehaviour.avoidMobs, rawBehaviour.longTrips, rawBehaviour.afkKeepWorking);
+                rawBehaviour.avoidMobs, rawBehaviour.longTrips, clamp(rawBehaviour.afkStayWithin, 0, 256),
+                rawBehaviour.afkFarmLeftAlone);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

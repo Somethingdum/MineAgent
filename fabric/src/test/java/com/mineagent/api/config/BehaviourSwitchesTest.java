@@ -43,4 +43,18 @@ final class BehaviourSwitchesTest {
         assertEquals(4_096, config.memory().chests());
         assertEquals(50_000, MineAgentConfig.DEFAULTS.memory().thingsSeen());
     }
+
+    @Test void afkChangesNothingOfItsJobsOrDistanceUnlessAsked() throws Exception {
+        var d = MineAgentConfig.BehaviourConfig.DEFAULTS;
+        assertFalse(d.afkGuardMe(), "guarding an AFK owner is optional, off");
+        assertEquals(0, d.afkStayWithin(), "no distance to keep within");
+        assertTrue(d.afkFarmLeftAlone(), "a farm they're AFK at is still left alone");
+        // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
+        Path dir = Files.createTempDirectory("mineagent-config");
+        Files.writeString(dir.resolve("mineagent.json"),
+                "{\"behaviour\":{\"afkGuard\":true,\"afkKeepWorking\":false,\"afkStayWithin\":9999}}");
+        MineAgentConfig config = MineAgentConfig.load(dir);
+        assertFalse(config.behaviour().afkGuardMe());
+        assertEquals(256, config.behaviour().afkStayWithin(), "kept in range");
+    }
 }

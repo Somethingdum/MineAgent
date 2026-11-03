@@ -30,6 +30,10 @@ public final class SettingChange {
                         default -> throw new NumberFormatException(v);
                     };
                     tree.addProperty(name, on);
+                } else if (name.equals("afkStayWithin")) {
+                    // A distance to keep within while they're AFK; "off" or 0 for none.
+                    int n = java.util.Set.of("off", "none", "no", "nolimit").contains(v.replace(" ", "")) ? 0 : Integer.parseInt(v);
+                    tree.addProperty(name, Math.max(0, Math.min(256, n)));
                 } else {
                     tree.addProperty(name, Math.max(1, Math.min(60, Integer.parseInt(v))));
                 }

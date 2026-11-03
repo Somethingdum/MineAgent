@@ -2750,8 +2750,11 @@ public class AgentLoop {
         }
         LiveBodyState body = liveBodyState.get();
         boolean working = (body != null && body.taskId() != null) || skillRuntime.active();
+        // In a farm its owner is AFK at, the farm's mobs are theirs: only what comes right at it (MA5.4).
+        boolean inAfkFarm = com.mineagent.engine.world.AfkFarms.protects(self.serverLevel().dimension().location().toString(),
+                self.getBlockX(), self.getBlockY(), self.getBlockZ());
         return new CombatSetup(working ? com.mineagent.engine.combat.CombatBrain.Duty.WORKING : com.mineagent.engine.combat.CombatBrain.Duty.IDLE,
-                null, owner != null ? owner.getUUID() : null, working ? 6.0 : 10.0);
+                null, owner != null ? owner.getUUID() : null, inAfkFarm ? 3.0 : working ? 6.0 : 10.0);
     }
 
     public boolean guarding() {
@@ -3073,10 +3076,14 @@ public class AgentLoop {
         } else if (change == OwnerActivity.Change.WENT_AFK) {
             afkSinceTick = currentGameTickSafe();
             journal.record("afk", "you went AFK", currentGameTickSafe());
-            onBodyLog("[AFK] The owner is away from the keys. Guard them while they're exposed; otherwise keep working, "
-                    + "within " + (int) com.mineagent.engine.loop.AfkRules.WORK_LEASH + " blocks of them (8 at a farm, "
-                    + "where nothing is placed or broken). Don't ask them anything: questions wait until they're back. "
-                    + "If you're stuck, put this goal aside and do the next one. Nothing is dropped for them: it goes in a chest.");
+            int within = com.mineagent.engine.settings.Switches.afkStayWithin();
+            onBodyLog("[AFK] The owner is away from the keys. Carry on with your jobs as usual"
+                    + (within > 0 ? ", within " + within + " blocks of them" : ", as far as they take you")
+                    + (com.mineagent.engine.settings.Switches.afkGuard() ? "; guard them while they're out in the open" : "")
+                    + (com.mineagent.engine.settings.Switches.afkFarmLeftAlone()
+                            ? "; at a farm they're AFK at, place and break nothing near them and leave its mobs be" : "")
+                    + ". Don't ask them anything: questions wait until they're back. If you're stuck, put this goal "
+                    + "aside and do the next one. Nothing is dropped for them: it goes in a chest.");
         }
     }
 
@@ -3101,20 +3108,22 @@ public class AgentLoop {
     }
 
     /**
-     * While the owner is AFK (SMH plan 70, MA5.4): it works within 32 blocks of them, or 8 at a farm, and turns back
-     * when it is further; at a farm, no companion places or breaks a block within 16 of them.
+     * While the owner is AFK (SMH plan 70, MA5.4). AFK only means they're away: it keeps on with its jobs, as far as
+     * they take it ("AFK should be optional in terms of jobs and distance. AFK just means I'm away, likely stay busy",
+     * Nov 3). At a farm they're AFK at, no companion places or breaks a block within 16 of them (a switch, on); and
+     * only if they set a distance to keep within, it turns back when further.
      */
     private void keepNearAfkOwner(net.minecraft.server.level.ServerPlayer me, net.minecraft.server.level.ServerPlayer owner,
                                   long tick) {
-        boolean on = me != null && owner != null && com.mineagent.engine.settings.Switches.afkGuard() && ownerActivity.afk()
+        boolean afkHere = me != null && owner != null && ownerActivity.afk()
                 && owner.isAlive() && owner.serverLevel() == me.serverLevel();
-        if (!on) {
-            clearAfkFarm();
+        if (!afkHere || !com.mineagent.engine.settings.Switches.afkFarmLeftAlone()) clearAfkFarm();
+        if (!afkHere) {
             leashTurned = false;
             return;
         }
         String dim = owner.serverLevel().dimension().location().toString();
-        if (tick % 100L == 0L) {
+        if (com.mineagent.engine.settings.Switches.afkFarmLeftAlone() && tick % 100L == 0L) {
             ownerAtFarm = com.mineagent.engine.loop.AfkRules.atFarm(owner.fishing != null, hoppersNear(owner));
             if (ownerAtFarm) {
                 farmOwner = owner.getUUID();
@@ -3124,8 +3133,8 @@ public class AgentLoop {
                 clearAfkFarm();
             }
         }
-        // With "keep working when I'm safe" off it stays by them, as at a farm.
-        double leash = com.mineagent.engine.loop.AfkRules.leash(ownerAtFarm || !com.mineagent.engine.settings.Switches.afkKeepWorking());
+        // A distance only if they set one: none by default.
+        double leash = com.mineagent.engine.loop.AfkRules.leash(com.mineagent.engine.settings.Switches.afkStayWithin());
         double away = me.distanceTo(owner);
         if (away <= leash) {
             leashTurned = false;
