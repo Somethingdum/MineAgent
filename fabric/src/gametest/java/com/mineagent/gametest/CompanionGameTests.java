@@ -1887,4 +1887,129 @@ public class CompanionGameTests implements FabricGameTest {
             else fail(helper, how);
         });
     }
+
+    /** A chest at (7, 1, 3) with every slot but the last full of dirt (and that one holding {@code bricks} stone bricks). */
+    private static BlockPos almostFullChest(GameTestHelper helper, int bricks) {
+        helper.setBlock(7, 1, 3, Blocks.CHEST);
+        BlockPos chest = helper.absolutePos(new BlockPos(7, 1, 3));
+        var c = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(chest);
+        for (int i = 0; i < c.getContainerSize() - 1; i++) c.setItem(i, new ItemStack(Items.DIRT, 64));
+        if (bricks > 0) c.setItem(c.getContainerSize() - 1, new ItemStack(Items.STONE_BRICKS, bricks));
+        c.setChanged();
+        return chest;
+    }
+
+    private static int furnacesAround(GameTestHelper helper) {
+        int n = 0;
+        for (int x = -16; x <= 24; x++) for (int z = -16; z <= 24; z++) for (int y = 0; y <= 3; y++) {
+            if (helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, y, z))).is(Blocks.FURNACE)) n++;
+        }
+        return n;
+    }
+
+    /**
+     * Plan 70, crafting knowledge: what the game says, read from the game: the stone bricks recipe, cobblestone from
+     * stone with a pickaxe, stone with Silk Touch, coal's burn time, a stone pickaxe's uses; and a whole chest of stone
+     * bricks planned from it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_knowledge", timeoutTicks = 100)
+    public void itKnowsTheGamesRecipesAndDropsFromTheGame(GameTestHelper helper) {
+        Scene s = scene(helper, "Scholar");
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(s.body());
+        var bricks = book.recipes("minecraft:stone_bricks").stream()
+                .filter(r -> r.kind() == com.mineagent.engine.planning.production.Production.Kind.CRAFT).findFirst();
+        boolean recipe = bricks.isPresent() && bricks.get().outputCount() == 4 && !bricks.get().needsTable()
+                && bricks.get().needs().get(0).anyOf().contains("minecraft:stone") && bricks.get().needs().get(0).count() == 4;
+        boolean cobble = book.sources("minecraft:cobblestone").stream().anyMatch(x -> x.block().equals("minecraft:stone")
+                && x.tool().equals("pickaxe") && x.tier() == 1 && !x.silkTouch());
+        boolean silk = book.sources("minecraft:stone").stream().anyMatch(x -> x.block().equals("minecraft:stone") && x.silkTouch());
+        boolean noHand = book.sources("minecraft:cobblestone").stream().noneMatch(x -> x.block().equals("minecraft:stone") && x.tier() == 0);
+        boolean smelt = book.recipes("minecraft:stone").stream().anyMatch(r -> r.kind() == com.mineagent.engine.planning.production.Production.Kind.SMELT
+                && r.cookTicks() == 200 && r.needs().get(0).anyOf().contains("minecraft:cobblestone"));
+        boolean coal = book.fuelTicks().getOrDefault("minecraft:coal", 0) == 1600;
+        boolean uses = book.durability().getOrDefault("minecraft:stone_pickaxe", 0) == 131;
+        var have = new com.mineagent.engine.planning.production.Production.Have(java.util.Map.of("minecraft:coal", 216, "minecraft:oak_log", 16),
+                java.util.Map.of(), java.util.List.of(new com.mineagent.engine.planning.production.Production.Tool("pickaxe", 2, false, 131)),
+                0, true, java.util.Map.of("minecraft:stone", com.mineagent.engine.planning.production.Production.Where.COMMON,
+                        "minecraft:oak_log", com.mineagent.engine.planning.production.Production.Where.COMMON), java.util.Map.of());
+        var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, "minecraft:stone_bricks", 1_728);
+        System.out.println("[SCENE knowledge] " + book.recipesByOutput().size() + " items with recipes, " + book.sourcesByItem().size()
+                + " with blocks that drop them; a chest of stone bricks: " + plan.summary());
+        String how = String.format("recipe %b, cobblestone from stone %b, silk %b, not by hand %b, smelt %b, coal %b, uses %b, plan %s",
+                recipe, cobble, silk, noHand, smelt, coal, uses, plan.summary());
+        tidy(s);
+        if (recipe && cobble && silk && noHand && smelt && coal && uses && plan.possible()
+                && plan.steps().stream().anyMatch(x -> x.action() == com.mineagent.engine.planning.production.ProductionPlanner.Action.SMELT)) helper.succeed();
+        else fail(helper, how);
+    }
+
+    /**
+     * Plan 70, the owner's words: "If I ask for an entire chest of stone bricks, it should find the most efficient
+     * way to do that. And be able to do that." With a Silk Touch pickaxe the most efficient way mines stone itself, no
+     * furnace: "fill this chest with stone bricks", the chest with room for one more stack.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fill_chest_silk", timeoutTicks = 3000)
+    public void fillThisChestWithStoneBricksWithSilkTouch(GameTestHelper helper) {
+        Scene s = scene(helper, "Mason");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = almostFullChest(helper, 0);
+        var silk = helper.getLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .getHolderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SILK_TOUCH);
+        ItemStack pick = new ItemStack(Items.DIAMOND_PICKAXE);
+        pick.enchant(silk, 1);
+        s.body().getInventory().setItem(0, pick);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "fill this chest with stone bricks"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "fill chest silk");
+            int bricks = inChest(helper, chest, Items.STONE_BRICKS);
+            String done = lastSaid(s, "Your chest is full");
+            if (bricks == 64 && !done.isEmpty()) {
+                int furnaces = furnacesAround(helper);
+                String plan = lastSaid(s, "On it");
+                tidy(s);
+                if (furnaces == 0 && plan.contains("mine 64 stone")) helper.succeed();
+                else fail(helper, "filled, but furnaces " + furnaces + ", plan: " + plan);
+            } else if (helper.getTick() >= 2900) {
+                String how = "the chest holds " + bricks + " stone bricks; it carries " + s.body().getInventory().countItem(Items.STONE)
+                        + " stone; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, the smelting way: room for 16 stone bricks, and it carries 16 cobblestone, 2 coal and 4 furnaces: it
+     * sets two furnaces round it (two coal light two), smelts the cobblestone, crafts the bricks and fills the chest.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fill_chest_smelt", timeoutTicks = 2400)
+    public void fillThisChestWithStoneBricksBySmelting(GameTestHelper helper) {
+        Scene s = scene(helper, "Smelter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = almostFullChest(helper, 48);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.COBBLESTONE, 16));
+        inv.setItem(2, new ItemStack(Items.COAL, 2));
+        inv.setItem(3, new ItemStack(Items.FURNACE, 4));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "fill this chest with stone bricks"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "fill chest smelt");
+            int bricks = inChest(helper, chest, Items.STONE_BRICKS);
+            String done = lastSaid(s, "Your chest is full");
+            if (bricks == 64 && !done.isEmpty()) {
+                int furnaces = furnacesAround(helper);
+                String plan = lastSaid(s, "On it");
+                tidy(s);
+                // Two coal light two furnaces (a coal burns in one furnace, 8 items): it sets two of its four.
+                if (furnaces == 2 && plan.contains("smelt 16 cobblestone into stone in 2 furnaces with 2 coal")) helper.succeed();
+                else fail(helper, "filled, but furnaces " + furnaces + ", plan: " + plan);
+            } else if (helper.getTick() >= 2300) {
+                String how = "the chest holds " + bricks + " stone bricks; carries cobblestone " + inv.countItem(Items.COBBLESTONE)
+                        + ", stone " + inv.countItem(Items.STONE) + ", coal " + inv.countItem(Items.COAL) + ", furnaces placed "
+                        + furnacesAround(helper) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
 }

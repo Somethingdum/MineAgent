@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  */
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
-        GOAL_ADD, RESUME, AFK, BACK, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
+        GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
         WHAT_HAPPENED, FIND_PLACE }
 
     /**
@@ -44,6 +44,19 @@ public final class CommandParser {
      */
     private static final Pattern AFK_WITH = Pattern.compile("^(?:(?:i'?m |i am )?(?:going |gonna go |gonna be |going to be |about to go )?afk"
             + "|brb|be right back|(?:i'?m )?stepping (?:away|out))(?:\\s*[,:;\u2013\u2014-]+\\s*|\\s+(?:and|so)\\s+)(.{2,300})$");
+    /**
+     * An order to make something (SMH plan 70, production): "fill this chest with stone bricks", "I want an entire
+     * chest of stone bricks", "put 2 stacks of torches in this chest", "make me 64 torches", "I need 3 furnaces". The
+     * value is the item in their words, "chest|" first when it goes in the chest they mean; the count is how many, a
+     * negative number of stacks, or 0 for as many as fill the chest.
+     */
+    private static final String HOW_MANY = "(a couple of stacks of|a stack of|\\d{1,2} stacks of|\\d{1,4}|an?|one)";
+    private static final Pattern FILL = Pattern.compile("^fill (?:up )?(?:(?:this|that|the|my|our) )?(?:chest|barrel)(?: up)? (?:with|full of) (.{2,60})$");
+    private static final Pattern FILL_IT = Pattern.compile("^fill (?:it|this|that)(?: up)? (?:with|full of) (.{2,60})$");
+    private static final Pattern CHEST_OF = Pattern.compile("^(?:i (?:want|need)|make me|get me|give me|i'?d like)\\s+(?:an? )?(?:(?:entire|full|whole) )?chest(?:ful)? of (.{2,60})$");
+    private static final Pattern PUT_IN = Pattern.compile("^(?:put|make|craft|get)(?: me)? " + HOW_MANY + " (.{2,60}?) (?:in|into) (?:this|that|the|my|our) chest$");
+    private static final Pattern MAKE = Pattern.compile("^(?:make|craft)(?: me| us)? " + HOW_MANY + " (.{2,60})$");
+    private static final Pattern NEED = Pattern.compile("^i (?:need|want) " + HOW_MANY + " (.{2,60})$");
     private static final Pattern BACK = Pattern.compile("^(back|i'?m back|back now|i'?m here now|here now)$");
     // Places and the way back (SMH plan 70, MA5.6).
     /** A place's name, with the article it was said with ("the mine"): route memory matches with or without it. */
@@ -108,6 +121,15 @@ public final class CommandParser {
         if (g.matches()) return Optional.of(new Command(Kind.GOAL_ADD, g.group(1).strip(), null));
         Matcher afk = AFK_WITH.matcher(t);
         if (afk.matches()) return Optional.of(new Command(Kind.AFK, afk.group(1).strip(), null));
+        Matcher make = FILL.matcher(t);
+        if (!make.matches()) make = FILL_IT.matcher(t);
+        if (!make.matches()) make = CHEST_OF.matcher(t);
+        if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, "chest|" + make.group(1).strip(), 0));
+        make = PUT_IN.matcher(t);
+        if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, "chest|" + make.group(2).strip(), howMany(make.group(1))));
+        make = MAKE.matcher(t);
+        if (!make.matches()) make = NEED.matcher(t);
+        if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, make.group(2).strip(), howMany(make.group(1))));
         if (t.isEmpty() || t.split(" ").length > 8) return Optional.empty();
         if (NEGATION.matcher(t).matches()) return Optional.of(new Command(Kind.STOP, null, null));
         if (STOP.matcher(t).matches()) return Optional.of(new Command(Kind.STOP, null, null));
@@ -181,6 +203,15 @@ public final class CommandParser {
         if (id.endsWith("es") && (id.endsWith("ches") || id.endsWith("shes"))) id = id.substring(0, id.length() - 2);
         else if (id.endsWith("s") && !id.endsWith("ss") && !id.endsWith("_planks") && !id.endsWith("_leaves")) id = id.substring(0, id.length() - 1);
         return id;
+    }
+
+    /** "64" is 64, "a" one, "a stack of" one stack (as -1: a stack's size is the item's), "3 stacks of" -3. */
+    static int howMany(String w) {
+        if (w.matches("\\d+")) return Integer.parseInt(w);
+        if (w.equals("a") || w.equals("an") || w.equals("one")) return 1;
+        if (w.equals("a stack of")) return -1;
+        if (w.equals("a couple of stacks of")) return -2;
+        return -Integer.parseInt(w.substring(0, w.indexOf(' ')));
     }
 
     static String normalise(String line, String companionName) {

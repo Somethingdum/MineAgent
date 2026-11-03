@@ -1240,6 +1240,10 @@ public class AgentLoop {
                 ownerActivity.saidBack();
                 endAfkOrder();
             }
+            case PRODUCE -> {
+                if (!fromOwner) return false;
+                return produceCommand(c, self);
+            }
             case HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, FIND_PLACE -> {
                 return placeCommand(c, self, fromOwner);
             }
@@ -2979,6 +2983,67 @@ public class AgentLoop {
             boolean in = before.values().stream().anyMatch(v -> v > 0);
             journal.record(in ? "stored" : "took", "the chest at " + x + ", " + y + ", " + z + ": " + change, tick, dim, x, y, z);
         }
+    }
+
+    /**
+     * "Fill this chest with stone bricks", "make me 64 torches" (SMH plan 70, production): the item from their words,
+     * the chest they look at (or the nearest within 6 blocks of them), and the production task does the rest. Words it
+     * can't match to an item go to the model.
+     */
+    private boolean produceCommand(com.mineagent.engine.chat.CommandParser.Command c, com.mineagent.engine.entity.CompanionEntity self) {
+        var me = self.serverPlayer();
+        var owner = self.serverPlayerOwner();
+        if (me == null) return false;
+        String words = c.value();
+        boolean toChest = words.startsWith("chest|");
+        if (toChest) words = words.substring("chest|".length());
+        String item = com.mineagent.engine.planning.production.GameKnowledge.itemFor(words);
+        if (item == null) return false;
+        int count = c.count() == null ? 1 : c.count();
+        if (count < 0) {
+            var it = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.tryParse(item));
+            count = -count * new net.minecraft.world.item.ItemStack(it).getMaxStackSize();
+        }
+        net.minecraft.core.BlockPos chest = null;
+        if (toChest) {
+            chest = owner != null && owner.serverLevel() == me.serverLevel() ? chestMeant(owner) : null;
+            if (chest == null) {
+                speakToOwner("Which chest? Stand by it, or look at it, and say it again.");
+                return true;
+            }
+        }
+        haltNow();
+        standDown();
+        journal.record("order", "make " + (count == 0 ? "a chest full of" : count) + " " + words, currentGameTickSafe());
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                "produce-" + UUID.randomUUID(), item, count, chest), reply -> { });
+        return true;
+    }
+
+    /** The chest they are looking at, within 6 blocks; else the nearest chest or barrel within 6 of them. */
+    private static net.minecraft.core.BlockPos chestMeant(net.minecraft.server.level.ServerPlayer owner) {
+        var level = owner.serverLevel();
+        var hit = owner.pick(6.0, 1.0f, false);
+        if (hit instanceof net.minecraft.world.phys.BlockHitResult b
+                && net.minecraft.world.level.block.entity.HopperBlockEntity.getContainerAt(level, b.getBlockPos()) != null
+                && isChestLike(level.getBlockState(b.getBlockPos()))) return b.getBlockPos().immutable();
+        net.minecraft.core.BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        var at = owner.blockPosition();
+        for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-6, -3, -6), at.offset(6, 3, 6))) {
+            if (!isChestLike(level.getBlockState(p))) continue;
+            double d = p.distSqr(at);
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
+    private static boolean isChestLike(net.minecraft.world.level.block.state.BlockState s) {
+        return s.is(net.minecraft.world.level.block.Blocks.CHEST) || s.is(net.minecraft.world.level.block.Blocks.TRAPPED_CHEST)
+                || s.is(net.minecraft.world.level.block.Blocks.BARREL);
     }
 
     /** The journal (the game tests). */

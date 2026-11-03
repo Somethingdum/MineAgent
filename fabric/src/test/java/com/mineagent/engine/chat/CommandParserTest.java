@@ -145,4 +145,24 @@ final class CommandParserTest {
         assertNull(plain.value());
         assertTrue(CommandParser.parse("afk farm is broken", "Pal").isEmpty(), "talk about an AFK farm is not going AFK");
     }
+
+    @Test void ordersToMakeThings() {
+        var fill = CommandParser.parse("Fill this chest with stone bricks", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.PRODUCE, fill.kind());
+        assertEquals("chest|stone bricks", fill.value());
+        assertEquals(0, fill.count().intValue(), "as many as fill it");
+        assertEquals("chest|stone bricks", CommandParser.parse("I want an entire chest of stone bricks", "Pal").orElseThrow().value());
+        assertEquals("chest|cobblestone", CommandParser.parse("fill it with cobblestone", "Pal").orElseThrow().value());
+        var put = CommandParser.parse("put 2 stacks of torches in this chest", "Pal").orElseThrow();
+        assertEquals("chest|torches", put.value());
+        assertEquals(-2, put.count().intValue(), "two stacks");
+        var make = CommandParser.parse("make me 64 torches", "Pal").orElseThrow();
+        assertEquals("torches", make.value());
+        assertEquals(64, make.count().intValue());
+        assertEquals(1, CommandParser.parse("craft an iron pickaxe", "Pal").orElseThrow().count().intValue());
+        assertEquals(3, CommandParser.parse("I need 3 furnaces", "Pal").orElseThrow().count().intValue());
+        assertEquals(-1, CommandParser.parse("make a stack of glass", "Pal").orElseThrow().count().intValue());
+        assertTrue(CommandParser.parse("make it rain", "Pal").map(c -> c.kind() != CommandParser.Kind.PRODUCE).orElse(true),
+                "no count: not an order to make something");
+    }
 }

@@ -76,6 +76,7 @@ public final class ToolRegistration {
 
         // Crafting
         ToolRegistry.register(new CraftTool());
+        ToolRegistry.register(new com.mineagent.tools.crafting.ProduceTool());
         ToolRegistry.register(new LookupRecipeTool());
 
         // Interaction

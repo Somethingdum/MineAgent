@@ -55,6 +55,12 @@ public final class TaskRegistration {
                 ShelterTask::new
         );
 
+        // Any amount of an item, the most efficient way, start to finish (SMH plan 70, production)
+        CompanionTaskFactory.register(
+                ProductionTask.ProduceRecord.class,
+                ProductionTask::new
+        );
+
         // Mining
         CompanionTaskFactory.register(
                 AutoMineTool.MineBlockTaskRecord.class,
