@@ -973,4 +973,47 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** A straight walk of 36 blocks across the arena, the owner out of the way; whether it sprinted on the way. */
+    private static void longWalk(GameTestHelper helper, String name, int food, boolean wantSprint) {
+        Scene s = scene(helper, name);
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos aside = helper.absolutePos(new BlockPos(3, 1, -12));
+        s.owner().teleportTo(level, aside.getX() + 0.5, aside.getY(), aside.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos start = helper.absolutePos(new BlockPos(-14, 1, 4));
+        s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getFoodData().setFoodLevel(food);
+        BlockPos goal = helper.absolutePos(new BlockPos(22, 1, 4));
+        sendTo(helper, s, goal, "walk-" + name);
+        int[] sprintTicks = {0};
+        helper.onEachTick(() -> {
+            if (s.body().isSprinting()) sprintTicks[0]++;
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (off <= 1.5) {
+                tidy(s);
+                boolean sprinted = sprintTicks[0] > 0;
+                if (sprinted == wantSprint) helper.succeed();
+                else fail(helper, (wantSprint ? "it walked the whole way" : "it sprinted with " + food + " food")
+                        + " (" + sprintTicks[0] + " ticks sprinting, " + helper.getTick() + " ticks in all)");
+            } else if (helper.getTick() >= 500) {
+                String how = String.format("after 500 ticks it is %.1f blocks short, at %s", off,
+                        rel(helper, s.body().blockPosition()).toShortString());
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA5.10: on a long straight walk it sprints, as a player would. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_sprint", timeoutTicks = 600)
+    public void itSprintsOnALongStraightWalk(GameTestHelper helper) {
+        longWalk(helper, "Runner", 20, true);
+    }
+
+    /** Plan 70, MA5.10: with 6 food a player can't sprint, and neither does it. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hungry_walk", timeoutTicks = 600)
+    public void hungryItWalks(GameTestHelper helper) {
+        longWalk(helper, "Hungry", 6, false);
+    }
 }

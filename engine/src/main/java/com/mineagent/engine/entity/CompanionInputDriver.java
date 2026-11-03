@@ -50,7 +50,11 @@ public class CompanionInputDriver implements InputDriver {
 
     @Override
     public void setSprinting(boolean sprinting) {
-        player.setSprinting(sprinting);
+        // Only when the game would let a player sprint (SMH plan 70, MA5.10): the server takes our word for it.
+        player.setSprinting(sprinting && com.mineagent.engine.act.SprintRule.allowed(
+                player.getFoodData().getFoodLevel(), player.getAbilities().mayfly,
+                player.hasEffect(net.minecraft.world.effect.MobEffects.BLINDNESS), player.isShiftKeyDown(),
+                player.isUsingItem()));
     }
 
     @Override

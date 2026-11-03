@@ -146,7 +146,39 @@ public class PathExecutor {
             fail(current, FailureReason.NULL_INPUT);
             return;
         }
+        // A movement steers one block at a time and can't see a straight run; the path can (SMH plan 70, MA5.10).
+        if (!input.sneaking() && sprintRunAhead()) input.sprinting(true);
         harness.applyInput(input);
+    }
+
+    /** Level, plain steps in one direction, this many ahead, are worth a sprint (the game's rules allowing). */
+    static final int SPRINT_RUN = 4;
+
+    /** Whether the next {@link #SPRINT_RUN} steps from here are level, plain and in a straight line. */
+    private boolean sprintRunAhead() {
+        Movement first = path.get(currentMovementIndex);
+        if (!plainStep(first)) return false;
+        int dx = Integer.signum(first.dstX() - first.srcX()), dz = Integer.signum(first.dstZ() - first.srcZ());
+        int run = 0;
+        for (int i = currentMovementIndex; i < path.length() && run < SPRINT_RUN; i++) {
+            Movement m = path.get(i);
+            if (!plainStep(m) || m.srcY() != first.srcY()
+                    || Integer.signum(m.dstX() - m.srcX()) != dx || Integer.signum(m.dstZ() - m.srcZ()) != dz) break;
+            run++;
+        }
+        return run >= SPRINT_RUN;
+    }
+
+    /** A level walk or diagonal with nothing to break or place on the way (its cost is a walk's). */
+    static boolean plainStep(Movement m) {
+        if (m.srcY() != m.dstY()) return false;
+        if (m instanceof com.mineagent.engine.pathing.moves.movements.MovementTraverse) {
+            return m.cost() <= com.mineagent.engine.pathing.moves.ActionCosts.WALK * 1.6;
+        }
+        if (m instanceof com.mineagent.engine.pathing.moves.movements.MovementDiagonal) {
+            return m.cost() <= com.mineagent.engine.pathing.moves.ActionCosts.WALK_DIAGONAL * 1.6;
+        }
+        return false;
     }
 
     private void updatePhysicalProgress(Movement movement) {
