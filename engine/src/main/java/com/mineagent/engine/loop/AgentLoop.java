@@ -1520,10 +1520,10 @@ public class AgentLoop {
                     speakToOwner("Beating the game means the dragon: I can get ready for it now; fighting it myself isn't something I do yet.");
                 }
                 String boss = com.mineagent.engine.gear.BossKit.boss(c.value());
-                var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
-                if (boss == null || self == null) return false;
+                var bossSp = self.serverPlayer();
+                if (boss == null || bossSp == null) return false;
                 java.util.Map<String, Integer> has = new java.util.HashMap<>();
-                var inv = self.getInventory();
+                var inv = bossSp.getInventory();
                 for (int i = 0; i < inv.getContainerSize(); i++) {
                     var st = inv.getItem(i);
                     if (!st.isEmpty()) has.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
