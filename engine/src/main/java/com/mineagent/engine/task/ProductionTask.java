@@ -904,6 +904,21 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
+    /**
+     * Nothing it can't walk through between two cells at one height (a fence, a wall, a block): a furnace put down over
+     * a fence is one it can reach from here and never walk back to.
+     */
+    static boolean sameSide(ServerLevel level, BlockPos from, BlockPos to) {
+        double dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
+        int steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) * 2);
+        for (int i = 1; i < steps; i++) {
+            BlockPos c = BlockPos.containing(from.getX() + 0.5 + dx * i / steps, from.getY(), from.getZ() + 0.5 + dz * i / steps);
+            if (c.equals(to) || c.equals(from)) continue;
+            if (!BlockHelper.isPassable(level.getBlockState(c))) return false;
+        }
+        return true;
+    }
+
     /** The pillar it put up by a golem: blocks placed, the cell the next goes in, its ticks up there. */
     private int pillared, pillarTicks;
     private BlockPos pillarBase;
@@ -1695,7 +1710,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     if (furnaces.contains(p)) continue;
                     var st = level.getBlockState(p);
                     if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))
-                            || byTall(level, p)) continue;
+                            || byTall(level, p) || !sameSide(level, workSpot, p)) continue;
                     if (Placement.placeBlock(sp, p.immutable(), station.defaultBlockState())) {
                         furnaces.add(p.immutable());
                         var loop = TaskContext.agentLoop(player);

@@ -183,7 +183,6 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     TaskContext.inputDriver(player).clear();
                     triedAt = c;
                     boolean open = com.mineagent.engine.act.Interaction.openContainer(sp, c);
-                    System.out.println("[MineAgent] loot: opening " + c.toShortString() + ": " + open + ", screen " + sp.containerMenu.getClass().getSimpleName());
                     if (sp.containerMenu != sp.inventoryMenu) { // open: all of it into the pack, as it stands open
                         takeAll(sp, sp.containerMenu);
                         sp.closeContainer();
