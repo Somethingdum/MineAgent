@@ -121,6 +121,12 @@ public final class TaskRegistration {
                 DumpJunkTask::new
         );
 
+        // A trip to the Nether for a smithing template and ancient debris (SMH plan 70: "It should eventually get to netherite.")
+        CompanionTaskFactory.register(
+                NetheriteTask.NetheriteRecord.class,
+                NetheriteTask::new
+        );
+
         // A villager shut in a cell it walked into, built round its job site (SMH plan 70)
         CompanionTaskFactory.register(
                 TrapVillagerTask.TrapRecord.class,

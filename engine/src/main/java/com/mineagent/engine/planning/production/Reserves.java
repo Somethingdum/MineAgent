@@ -37,6 +37,22 @@ public final class Reserves {
         return out;
     }
 
+    /** The coal and charcoal it keeps back on its own (SMH plan 70: "some fuel" kept, whatever the jobs burn). */
+    public static final int FUEL_FLOOR = 8;
+
+    /** What it carries less {@code floor} of its coal and charcoal (coal kept first). */
+    public static Map<String, Integer> afterFuelFloor(Map<String, Integer> carried, int floor) {
+        Map<String, Integer> out = new HashMap<>(carried);
+        int keep = Math.max(0, floor);
+        for (String fuel : List.of("minecraft:coal", "minecraft:charcoal")) {
+            int n = out.getOrDefault(fuel, 0), k = Math.min(n, keep);
+            if (n > 0) out.put(fuel, n - k);
+            keep -= k;
+        }
+        out.values().removeIf(v -> v <= 0);
+        return out;
+    }
+
     /** Items promised to jobs, by job: so a job's plan doesn't count on what another's has. */
     public static final class Ledger {
         private final Map<String, Map<String, Integer>> byJob = new HashMap<>();

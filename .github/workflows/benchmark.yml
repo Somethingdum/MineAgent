@@ -1,0 +1,60 @@
+# The benchmark (SMH plan 70): a fresh companion living on its own on a real world, sprinted through three in-game days,
+# checked against the minimum (a hut, a furnace, a crafting table, some food, some fuel, stone tools or better).
+# By hand only: Actions > Benchmark > Run workflow.
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: In-game days to run
+        default: "3"
+      seed:
+        description: The world's seed
+        default: "smh-benchmark-1"
+
+jobs:
+  benchmark:
+    name: Three days on its own (Fabric, dedicated server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: The world
+        run: |
+          mkdir -p fabric/build/benchmark
+          echo "eula=true" > fabric/build/benchmark/eula.txt
+          cat > fabric/build/benchmark/server.properties <<PROPS
+          level-seed=${{ github.event.inputs.seed }}
+          gamemode=survival
+          difficulty=normal
+          spawn-protection=0
+          online-mode=false
+          view-distance=10
+          simulation-distance=10
+          max-tick-time=-1
+          spawn-monsters=true
+          spawn-animals=true
+          generate-structures=true
+          PROPS
+      - name: Run it
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :fabric:runBenchmark -PbenchmarkTicks=$(( ${{ github.event.inputs.days }} * 24000 )) | tee benchmark.log | grep --line-buffered "\[BENCH\]"
+      - name: Keep the report and the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: |
+            fabric/build/benchmark/report.json
+            benchmark.log
+            fabric/build/benchmark/logs/latest.log

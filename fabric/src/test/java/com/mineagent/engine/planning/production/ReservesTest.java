@@ -29,4 +29,13 @@ final class ReservesTest {
         ledger.release("shield");
         assertEquals(5, ledger.free(chests, "bucket").get("minecraft:iron_ingot").intValue());
     }
+
+    @Test
+    void someFuelIsAlwaysKeptBack() {
+        var left = Reserves.afterFuelFloor(Map.of("minecraft:coal", 5, "minecraft:charcoal", 10, "minecraft:oak_log", 4), Reserves.FUEL_FLOOR);
+        assertEquals(0, left.getOrDefault("minecraft:coal", 0).intValue(), "coal kept first");
+        assertEquals(7, left.get("minecraft:charcoal").intValue(), "then charcoal, eight in all");
+        assertEquals(4, left.get("minecraft:oak_log").intValue(), "nothing else held back");
+        assertTrue(Reserves.afterFuelFloor(Map.of("minecraft:coal", 3), 8).isEmpty(), "less than the floor: none to spend");
+    }
 }

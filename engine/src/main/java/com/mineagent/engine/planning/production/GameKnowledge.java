@@ -524,6 +524,9 @@ public final class GameKnowledge {
         Have h = haveAll(sp, loop, except, ground);
         Map<String, Integer> carried = keepFood > 0 || keepTorches > 0
                 ? Reserves.afterFloors(h.carried(), foods().keySet(), keepFood, keepTorches) : h.carried();
+        // On its own, a little fuel is always kept back: a job makes more rather than burn the last of it.
+        int keepFuel = loop != null && loop.onItsOwn() ? Reserves.FUEL_FLOOR : 0;
+        if (keepFuel > 0) carried = Reserves.afterFuelFloor(carried, keepFuel);
         Map<String, Integer> stored = loop != null && job != null ? loop.itemReservations().free(h.stored(), job) : h.stored();
         return new Have(carried, stored, h.tools(), h.furnaces(), h.table(), h.blocks(), h.knownDistance(), h.smokers(), h.blastFurnaces(),
                 h.limited());

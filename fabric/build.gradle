@@ -87,6 +87,18 @@ loom {
             vmArg "-Dfabric-api.gametest.report-file=${project.buildDir}/gametest/junit.xml"
             runDir "build/gametest"
         }
+        // ./gradlew :fabric:runBenchmark (SMH plan 70): a real world, a fresh companion on its own, sprinted through
+        // -PbenchmarkTicks (72,000: three days); the report in build/benchmark/report.json. Only by hand
+        // (.github/workflows/benchmark.yml); the world's seed and rules are in build/benchmark/server.properties.
+        benchmark {
+            server()
+            name "Benchmark"
+            source sourceSets.gametest
+            vmArg "-Dmineagent.benchmark=${project.findProperty('benchmarkTicks') ?: '72000'}"
+            vmArg "-Dmineagent.benchmark.report=${project.buildDir}/benchmark/report.json"
+            programArgs "nogui"
+            runDir "build/benchmark"
+        }
         client {
             client()
             setConfigName("Fabric Client")

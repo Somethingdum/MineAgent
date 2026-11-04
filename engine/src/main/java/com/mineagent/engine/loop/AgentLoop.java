@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-") || taskId.startsWith("netherite-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -4197,7 +4197,10 @@ public class AgentLoop {
         boolean ingot = inv.countItem(net.minecraft.world.item.Items.NETHERITE_INGOT) > 0 || template && canMake.test("minecraft:netherite_ingot");
         java.util.function.Predicate<String> canSmith = k -> template && ingot;
         var next = com.mineagent.engine.gear.GodGear.next(pieces, books, sold, canMake, canSmith, godGearFailed.keySet());
-        if (next == null) return;
+        if (next == null) {
+            netheriteGoal(self, pieces); // all it can do at diamond done: on toward netherite
+            return;
+        }
         final String job = "god-" + UUID.randomUUID();
         switch (next.move()) {
             case MAKE -> {
@@ -4940,12 +4943,21 @@ public class AgentLoop {
         String dim = level.dimension().location().toString();
         if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD) return;
         if (idleHome != null && idleHome.dim().equals(dim)) return; // its base is made
+        // From nothing: a starter kit first (stone tools, a little fuel, food for the road), only what it lacks. It
+        // survives the walk, and has what a base needs from the start.
+        String kit = starterKit(self);
+        if (!kit.isEmpty()) {
+            journal.record("survive", "a starter kit first: " + kit.replace(", then ", ", "), currentGameTickSafe());
+            queueOrders(kit);
+            return;
+        }
         if (surviveAt == null && !surviveFailed) {
+            // The nearest swamp within 600 blocks: a walk it makes; further, the base is made where it is.
             var found = level.findClosestBiome3d(b -> b.is(net.minecraft.world.level.biome.Biomes.SWAMP) || b.is(net.minecraft.world.level.biome.Biomes.MANGROVE_SWAMP),
-                    self.blockPosition(), 3200, 32, 64);
+                    self.blockPosition(), SWAMP_REACH, 32, 64);
             if (found == null) {
                 surviveFailed = true;
-                speakToOwner("I found no swamp within 3200 blocks: I'll make my base here instead.");
+                speakToOwner("I found no swamp within " + SWAMP_REACH + " blocks: I'll make my base here instead.");
                 surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
             } else {
                 var p = found.getFirst();
@@ -4969,7 +4981,39 @@ public class AgentLoop {
         journal.record("survive", "made my base here", currentGameTickSafe(), dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
         speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then a farm and a slime farm, then the stockpile.");
         saveMemoryNow();
-        queueOrders("prime the world, then make a farm, then make a slime farm");
+        // Its own prime: nothing handed over (its owner isn't here; what's yours is had on asking).
+        queueOrders(primeOrders(false) + ", then make a farm, then make a slime farm");
+    }
+
+    /** How far it goes for a swamp to make its base in. */
+    static final int SWAMP_REACH = 600;
+
+    /**
+     * The starter kit, as orders for what it lacks of it: stone tools or better (pickaxe, axe, sword, shovel), 8 coal or
+     * charcoal, 16 food. Empty when it has it all.
+     */
+    private String starterKit(net.minecraft.server.level.ServerPlayer self) {
+        List<String> o = new ArrayList<>();
+        for (String kind : List.of("pickaxe", "axe", "sword", "shovel")) {
+            if (!hasTool(self, kind, 2)) o.add("make me a stone " + kind);
+        }
+        var inv = self.getInventory();
+        if (inv.countItem(net.minecraft.world.item.Items.COAL) + inv.countItem(net.minecraft.world.item.Items.CHARCOAL) < 8) o.add("make me 8 charcoal");
+        if (foodOn(self) < 16) o.add("make me 16 food");
+        return String.join(", then ", o);
+    }
+
+    /** A tool of the kind ("axe") at {@code tier} or better (GodGear tiers: 2 stone) in its pack or hands. */
+    private static boolean hasTool(net.minecraft.server.level.ServerPlayer self, String kind, int tier) {
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.isEmpty()) continue;
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            if (!kind.equals(com.mineagent.engine.gear.GodGear.kindOf(id))) continue;
+            if (com.mineagent.engine.gear.GodGear.tier(id) >= tier) return true;
+        }
+        return false;
     }
 
     /** What its body's task last said it is doing (its snapshot's stage), or "" when idle: for the game tests' traces. */
@@ -5032,6 +5076,76 @@ public class AgentLoop {
 
     /** A farm order whose hoe and bucket were queued to be made first: the next farm order goes ahead. */
     private volatile boolean farmReady;
+
+    /**
+     * On toward netherite (SMH plan 70, its owner: "It should eventually get to netherite."), once everything it can do at
+     * diamond is done: for each diamond piece left to upgrade it needs a smithing template and an ingot. An ingot is made
+     * when it has the debris or scrap for one (four scrap and four gold); a template taken from its chests when one is
+     * there, else copied (seven diamonds, a netherrack and the template) when it has one; with no template, or no debris
+     * nor scrap, a trip to the Nether for them (task/NetheriteTask), ready or not said once. The upgrade itself is the
+     * ladder's next step (SMITH) once both are in its pack. Each tried later, longer each time, when it fails.
+     */
+    private void netheriteGoal(net.minecraft.server.level.ServerPlayer self,
+                               java.util.Map<String, com.mineagent.engine.gear.GodGear.Piece> pieces) {
+        int toUpgrade = 0;
+        for (var p : pieces.values()) if (p.tier() == 4 && !com.mineagent.engine.gear.GodGear.UNTIERED.contains(p.kind())) toUpgrade++;
+        if (toUpgrade == 0) return;
+        var level = self.serverLevel();
+        String dim = level.dimension().location().toString();
+        var stock = ownStock(self, dim, home(dim));
+        var inv = self.getInventory();
+        int packTemplates = inv.countItem(net.minecraft.world.item.Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE);
+        int templates = stock.getOrDefault("minecraft:netherite_upgrade_smithing_template", 0);
+        int ingots = stock.getOrDefault("minecraft:netherite_ingot", 0);
+        int scrap = stock.getOrDefault("minecraft:netherite_scrap", 0), debris = stock.getOrDefault("minecraft:ancient_debris", 0);
+        long now = currentGameTickSafe();
+        // A template in its chests: into its pack (the ladder smiths from what it carries).
+        if (templates > packTemplates && packTemplates == 0 && mayTry("netherite:fetch")) {
+            dispatchFree("netherite-", "netherite:fetch", new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                    freeJob("netherite-", "netherite:fetch"), "minecraft:netherite_upgrade_smithing_template", 1, null, false, true));
+            return;
+        }
+        // An ingot, when there is the scrap or debris for one.
+        if (ingots == 0 && scrap + debris >= 4 && mayTry("netherite:ingot")) {
+            journal.record("gear", "toward netherite: an ingot from my ancient debris", now);
+            dispatchFree("netherite-", "netherite:ingot", new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                    freeJob("netherite-", "netherite:ingot"), "minecraft:netherite_ingot", 1, null, false, true));
+            return;
+        }
+        // A copy of the template, for the next piece, when it has one and the diamonds.
+        if (templates >= 1 && templates < toUpgrade && stock.getOrDefault("minecraft:diamond", 0) >= 7 + 8 && mayTry("netherite:copy")) {
+            journal.record("gear", "toward netherite: copying the smithing template", now);
+            dispatchFree("netherite-", "netherite:copy", new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                    freeJob("netherite-", "netherite:copy"), "minecraft:netherite_upgrade_smithing_template", 1, null, false, true));
+            return;
+        }
+        boolean wantTemplate = templates == 0;
+        boolean wantDebris = ingots == 0 && scrap + debris < 4;
+        if (!wantTemplate && !wantDebris) return;
+        if (!mayTry("netherite:trip")) return;
+        String why = com.mineagent.engine.task.NetheriteTask.notReady(self);
+        if (why != null) {
+            if (!"netherite".equals(lastNetheriteNote)) {
+                lastNetheriteNote = "netherite";
+                journal.record("gear", "netherite next, but " + why, now);
+            }
+            return;
+        }
+        int want = Math.min(32, 4 * toUpgrade - 4 * ingots - scrap - debris);
+        journal.record("gear", "toward netherite: to the Nether for " + (wantTemplate ? "a smithing template" + (want > 0 ? " and " : "") : "")
+                + (want > 0 ? want + " ancient debris" : ""), now);
+        speakToOwner("Off to the Nether for netherite: " + (wantTemplate ? "a smithing template from a bastion" + (want > 0 ? ", then " : "") : "")
+                + (want > 0 ? want + " ancient debris" : "") + ".");
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.NetheriteTask.NetheriteRecord(
+                freeJob("netherite-", "netherite:trip"), wantTemplate, Math.max(0, want)), reply -> { });
+    }
+
+    private volatile String lastNetheriteNote;
+
+    /** A free-time job already named with {@link #freeJob}: dispatched. */
+    private void dispatchFree(String prefix, String key, com.mineagent.api.task.TaskRecord record) {
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, record, reply -> { });
+    }
 
     /** Straight on to the next step toward god-tier gear, while its time is still its own. */
     private void nextGodStep(net.minecraft.server.level.ServerPlayer self) {
@@ -6603,6 +6717,11 @@ public class AgentLoop {
      * The amounts are settings (behaviour.primeMeat, primeTorches, primeFullIron).
      */
     String primeOrders() {
+        return primeOrders(true);
+    }
+
+    /** As {@link #primeOrders()}; {@code giveShare} false: nothing handed over (on its own, with its owner elsewhere). */
+    String primeOrders(boolean giveShare) {
         boolean full = com.mineagent.engine.settings.Switches.primeFullIron();
         int meat = com.mineagent.engine.settings.Switches.primeMeat(), torches = com.mineagent.engine.settings.Switches.primeTorches();
         // Iron each: a helmet 5; a full set 24, a sword 2, a pickaxe 3; and the shears for wool, 2.
@@ -6627,6 +6746,7 @@ public class AgentLoop {
         if (meat > 0) o.add("make me " + (2 * meat) + " food");
         if (torches > 0) o.add("make me " + (2 * torches) + " torches");
         o.add("light up the area");
+        if (!giveShare) return String.join(", then ", o);
         // Yours: into your hands (or kept for you while you're away).
         o.add("give me 1 iron helmet");
         if (full) for (String piece : List.of("iron chestplate", "iron leggings", "iron boots", "iron sword", "iron pickaxe")) o.add("give me 1 " + piece);

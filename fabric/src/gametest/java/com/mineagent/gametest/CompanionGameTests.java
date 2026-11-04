@@ -4219,6 +4219,63 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, on to netherite: four ancient debris and four gold ingots in its pack, with a furnace, fuel and a
+     * crafting table: "make me a netherite ingot" smelts the debris to scrap and makes the ingot.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_netherite_ingot", timeoutTicks = 2400)
+    public void debrisIsMadeIntoANetheriteIngot(GameTestHelper helper) {
+        Scene s = scene(helper, "Forger");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.ANCIENT_DEBRIS, 4));
+        inv.setItem(2, new ItemStack(Items.GOLD_INGOT, 4));
+        inv.setItem(3, new ItemStack(Items.FURNACE, 1));
+        inv.setItem(4, new ItemStack(Items.COAL, 8));
+        inv.setItem(5, new ItemStack(Items.CRAFTING_TABLE, 1));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a netherite ingot"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "ingot");
+            int ingots = inv.countItem(Items.NETHERITE_INGOT);
+            String failed = lastSaid(s, "I couldn't");
+            if (ingots >= 1 || !failed.isEmpty() || helper.getTick() >= 2300) {
+                String how = ingots + " ingots, " + inv.countItem(Items.NETHERITE_SCRAP) + " scrap, " + inv.countItem(Items.ANCIENT_DEBRIS)
+                        + " debris left; plan: " + lastSaid(s, "On it") + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                tidy(s);
+                if (ingots >= 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, on to netherite: one smithing template is enough, as a player copies it: with seven diamonds, a
+     * netherrack and a crafting table, "make me a netherite upgrade smithing template" makes the copy (two from one).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_netherite_template", timeoutTicks = 1200)
+    public void aSmithingTemplateIsCopied(GameTestHelper helper) {
+        Scene s = scene(helper, "Copier");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE, 1));
+        inv.setItem(2, new ItemStack(Items.DIAMOND, 7));
+        inv.setItem(3, new ItemStack(Items.NETHERRACK, 1));
+        inv.setItem(4, new ItemStack(Items.CRAFTING_TABLE, 1));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a netherite upgrade smithing template"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "template");
+            int templates = inv.countItem(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE);
+            String failed = lastSaid(s, "I couldn't");
+            if (templates >= 2 || !failed.isEmpty() || helper.getTick() >= 1100) {
+                String how = templates + " templates, " + inv.countItem(Items.DIAMOND) + " diamonds left; plan: " + lastSaid(s, "On it")
+                        + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                tidy(s);
+                if (templates >= 2) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** A chest of the companion's own by it, holding {@code n} diamonds, as it would know it. */
     private static net.minecraft.world.level.block.entity.ChestBlockEntity ownChest(GameTestHelper helper, Scene s, BlockPos at, int n) {
         helper.setBlock(at, Blocks.CHEST);

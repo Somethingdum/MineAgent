@@ -44,10 +44,17 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
     public static final class LootRecord extends TaskRecord {
         /** Go to the nearest structure worth looting first (else: round where it stands). */
         public final boolean go;
+        /** The structures to go to (null: {@link #SITES}); a bastion for a smithing template, say. */
+        public final List<String> sites;
 
         public LootRecord(String toolCallId, boolean go) {
+            this(toolCallId, go, null);
+        }
+
+        public LootRecord(String toolCallId, boolean go, List<String> sites) {
             super(toolCallId);
             this.go = go;
+            this.sites = sites == null ? null : List.copyOf(sites);
         }
     }
 
@@ -285,6 +292,32 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         ticks = 0;
                         return TaskState.RUNNING;
                     }
+                    // A bastion's chest with piglins near: every one that sees it open turns on it, so they are dealt with
+                    // first, when its armour is up to it; else the chest is left.
+                    if (com.mineagent.engine.survival.Bastions.angers(level, c, sp)) {
+                        var piglin = nearestPiglin(level, c);
+                        if (piglin != null) {
+                            if (sp.getArmorValue() < 15 || ++clearTicks > 2_400) {
+                                if (sp.getArmorValue() < 15) say("Piglins guard the chest at " + c.toShortString() + " and my armour isn't up to them: I'm leaving it.");
+                                skipped++;
+                                index++;
+                                ticks = 0;
+                                clearTicks = 0;
+                                return TaskState.RUNNING;
+                            }
+                            if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, piglin)) {
+                                if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(piglin.getBlockX(), piglin.getBlockY(), piglin.getBlockZ(), 1);
+                                nav.tick();
+                                return TaskState.RUNNING;
+                            }
+                            nav.cancel();
+                            com.mineagent.engine.survival.MobDefenseChain.equipWeapon(sp);
+                            sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, piglin.getEyePosition());
+                            if (sp.getAttackStrengthScale(0.5f) >= 0.9f) com.mineagent.engine.act.Interaction.attackEntity(sp, piglin);
+                            return TaskState.RUNNING;
+                        }
+                    }
+                    clearTicks = 0;
                     // Near enough by the chest's middle (as the opening measures it), with a step to spare.
                     // A few tries that didn't open it (something between): right up to it.
                     double reach = openTries > 8 ? 1.8 : 3.5;
@@ -415,12 +448,23 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
     }
 
     private net.minecraft.world.entity.vehicle.MinecartChest triedCart;
+    private int clearTicks;
+
+    /** The nearest piglin within 16 of a block. */
+    private static net.minecraft.world.entity.monster.piglin.AbstractPiglin nearestPiglin(ServerLevel level, BlockPos at) {
+        net.minecraft.world.entity.monster.piglin.AbstractPiglin best = null;
+        for (var p : level.getEntitiesOfClass(net.minecraft.world.entity.monster.piglin.AbstractPiglin.class,
+                new net.minecraft.world.phys.AABB(at).inflate(16.0), net.minecraft.world.entity.LivingEntity::isAlive)) {
+            if (best == null || p.distanceToSqr(at.getCenter()) < best.distanceToSqr(at.getCenter())) best = p;
+        }
+        return best;
+    }
 
     /** The nearest structure of {@link #SITES} within 100 chunks it hasn't looted, or null. */
     private BlockPos nearestSite(ServerPlayer sp, ServerLevel level) {
         var registry = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
         List<net.minecraft.core.Holder<Structure>> holders = new ArrayList<>();
-        for (String id : SITES) {
+        for (String id : record.sites != null ? record.sites : SITES) {
             registry.getHolder(ResourceKey.create(Registries.STRUCTURE, ResourceLocation.parse(id))).ifPresent(holders::add);
         }
         if (holders.isEmpty()) return null;
@@ -434,7 +478,13 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
             if (match == null) return null;
             BlockPos at = match.getFirst();
             if (loop == null || !loop.looted(dim, at)) {
-                underground = match.getSecond().unwrapKey().map(k -> UNDERGROUND.contains(k.location().toString())).orElse(false);
+                // Under the ground, or in the Nether (its surface is the roof): to the middle of the structure itself.
+                underground = level.dimension() == net.minecraft.world.level.Level.NETHER
+                        || match.getSecond().unwrapKey().map(k -> UNDERGROUND.contains(k.location().toString())).orElse(false);
+                if (underground) {
+                    BlockPos middle = middleOf(level, at, match.getSecond().value());
+                    if (middle != null) at = middle;
+                }
                 return at;
             }
             double dx = at.getX() - sp.getX(), dz = at.getZ() - sp.getZ();
@@ -442,6 +492,19 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
             from = new BlockPos((int) (at.getX() + dx / len * 96), at.getY(), (int) (at.getZ() + dz / len * 96));
         }
         return null;
+    }
+
+    /** The middle of the structure that starts in {@code at}'s chunk (its start read as the game made it); null if none. */
+    private static BlockPos middleOf(ServerLevel level, BlockPos at, Structure structure) {
+        try {
+            var chunk = level.getChunk(at.getX() >> 4, at.getZ() >> 4, net.minecraft.world.level.chunk.status.ChunkStatus.STRUCTURE_STARTS, true);
+            var start = chunk == null ? null : chunk.getAllStarts().get(structure);
+            if (start == null || !start.isValid()) return null;
+            var box = start.getBoundingBox();
+            return new BlockPos(box.getCenter());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private void say(String s) {
