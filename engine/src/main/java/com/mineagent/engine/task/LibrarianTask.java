@@ -114,7 +114,12 @@ public class LibrarianTask extends CompanionTask<LibrarianTask.RollRecord> {
                 }
                 case PLACE -> {
                     if (lectern == null) lectern = spotBeside(level, villager);
-                    if (lectern == null) return end(false, "there's nowhere by the villager to put a lectern");
+                    if (lectern == null) {
+                        // It may be standing where the lectern would go (in a cell, the open side): a few seconds for
+                        // it to step back.
+                        if (ticks < 200) return TaskState.RUNNING;
+                        return end(false, "there's nowhere by the villager to put a lectern");
+                    }
                     if (lectern.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
                         if (ticks % 20 == 1) nav.navigateNear(lectern.getX(), lectern.getY(), lectern.getZ(), 2);
                         nav.tick();

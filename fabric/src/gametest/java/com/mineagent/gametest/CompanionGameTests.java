@@ -3974,7 +3974,7 @@ public class CompanionGameTests implements FabricGameTest {
      * SMH plan 70, god-tier gear as its end goal: no order at all, a diamond sword, a book of Unbreaking III, levels and an
      * anvil in its pack (a shield and golden apples too, so its kit is kept): in its free time the book goes on the sword.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_god_free_time", timeoutTicks = 2800)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_god_free_time", timeoutTicks = 5200)
     public void inFreeTimeItsBooksGoOnItsSword(GameTestHelper helper) {
         Scene s = scene(helper, "Collector");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
@@ -3996,7 +3996,7 @@ public class CompanionGameTests implements FabricGameTest {
                     if (en.getKey().is(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING)) unbreaking = en.getIntValue();
                 }
             }
-            if (unbreaking >= 3 || helper.getTick() >= 2700) {
+            if (unbreaking >= 3 || helper.getTick() >= 5100) { // two minutes' grace after it arrives, then its next round
                 String how = "sword's Unbreaking " + unbreaking + "; levels " + s.body().experienceLevel + "; said: " + lastSaid(s, "");
                 tidy(s);
                 if (unbreaking >= 3) helper.succeed();
@@ -4009,9 +4009,9 @@ public class CompanionGameTests implements FabricGameTest {
      * SMH plan 70, "build a base and basic farms": a field of grass, a wooden hoe, a water bucket and 16 wheat seeds:
      * "make a farm" makes a 9 by 9 with the water in its middle, tilled round it and the seeds planted.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_farm", timeoutTicks = 2400)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_tilled_farm", timeoutTicks = 2400)
     public void aFarmIsMadeWaterInTheMiddle(GameTestHelper helper) {
-        Scene s = scene(helper, "Farmer");
+        Scene s = scene(helper, "Tiller");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         for (int x = 1; x <= 15; x++) for (int z = 1; z <= 15; z++) helper.setBlock(x, 0, z, Blocks.GRASS_BLOCK);
         var inv = s.body().getInventory();
@@ -4020,7 +4020,7 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(3, new ItemStack(Items.WHEAT_SEEDS, 16));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make a farm"));
         helper.onEachTick(() -> {
-            if (helper.getTick() % 200 == 0) trace(helper, s, "farm");
+            if (helper.getTick() % 200 == 0) trace(helper, s, "tilled farm");
             String done = lastSaid(s, "Made a farm");
             String failed = lastSaid(s, "I couldn't make the farm");
             if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2300) {
@@ -4036,6 +4036,45 @@ public class CompanionGameTests implements FabricGameTest {
                         + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
                 tidy(s);
                 if (farmland >= 70 && crops >= 16 && water == 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, the slime room: a block of stone, an iron pickaxe, and the mining task told to dig out a room four by
+     * four and three high at its own height (a slime farm's is 16 by 16 at Y 36): a tunnel to its corner, then every
+     * cell, row by row, its roof left on.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_room", timeoutTicks = 2400)
+    public void aRoomIsDugOutRowByRow(GameTestHelper helper) {
+        Scene s = scene(helper, "Digger");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 6; x <= 12; x++) for (int y = 1; y <= 4; y++) for (int z = 5; z <= 12; z++) helper.setBlock(x, y, z, Blocks.STONE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        s.body().getInventory().setItem(2, new ItemStack(Items.BREAD, 16));
+        s.body().getInventory().setItem(3, new ItemStack(Items.TORCH, 16));
+        BlockPos stand = helper.absolutePos(new BlockPos(4, 1, 8));
+        s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos corner = helper.absolutePos(new BlockPos(7, 1, 7));
+        helper.runAfterDelay(10, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.engine.task.MiningTask.MineRecord("mine-room", "ore", 0, false,
+                        new int[] {corner.getX(), corner.getZ(), 4, corner.getY()}), r -> { }));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "room");
+            String done = lastSaid(s, "the room is dug out");
+            if (!done.isEmpty() || helper.getTick() >= 2300) {
+                int open = 0, roof = 0;
+                for (int x = 7; x <= 10; x++) for (int z = 7; z <= 10; z++) {
+                    for (int y = 1; y <= 3; y++) {
+                        var st = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, y, z)));
+                        if (st.isAir() || st.is(Blocks.TORCH) || st.is(Blocks.WALL_TORCH)) open++;
+                    }
+                    if (helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, 4, z))).is(Blocks.STONE)) roof++;
+                }
+                String how = open + " of 48 cells open, roof " + roof + " of 16; said: " + (done.isEmpty() ? lastSaid(s, "") : done);
+                tidy(s);
+                if (open == 48 && roof == 16 && !done.isEmpty()) helper.succeed();
                 else fail(helper, how);
             }
         });

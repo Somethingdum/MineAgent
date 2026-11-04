@@ -742,6 +742,7 @@ public class AgentLoop {
      * the Andy Omega plan's Lexer); parked, anything else is only talked about; the rest goes to the model.
      */
     public void onOwnerMessage(String message, boolean fromOwner) {
+        if (fromOwner) ownerWordsAt = currentGameTickSafe();
         int close0 = message.indexOf("]: ");
         journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
                 + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
@@ -1542,6 +1543,44 @@ public class AgentLoop {
                 orderGoal("make a farm");
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.FarmTask.FarmRecord(
                         "farm-" + UUID.randomUUID(), at), reply -> { });
+                return true;
+            }
+            case SLIME -> {
+                var slimer = self.serverPlayer();
+                if (slimer == null) return false;
+                var slevel = slimer.serverLevel();
+                if (slevel.dimension() != net.minecraft.world.level.Level.OVERWORLD) {
+                    speakToOwner("Slime chunks are only in the overworld.");
+                    return true;
+                }
+                String sdim = slevel.dimension().location().toString();
+                var shome = home(sdim);
+                var from = shome != null ? shome : slimer.blockPosition();
+                long seed = slevel.getSeed();
+                // A slime chunk as the game decides it, from the world's seed: one chunk in ten.
+                int[] ch = com.mineagent.engine.planning.mining.Tunnel.nearestChunk(from.getX() >> 4, from.getZ() >> 4, 8,
+                        (x, z) -> net.minecraft.world.level.levelgen.WorldgenRandom.seedSlimeChunk(x, z, seed, 987234911L).nextInt(10) == 0);
+                if (ch == null) {
+                    speakToOwner("There's no slime chunk within 128 blocks of " + (shome != null ? "home" : "here") + ".");
+                    return true;
+                }
+                int x0 = ch[0] << 4, z0 = ch[1] << 4;
+                journal.record("slime", "a slime chunk from " + x0 + ", " + z0 + " to " + (x0 + 15) + ", " + (z0 + 15), currentGameTickSafe(),
+                        sdim, x0 + 8, com.mineagent.engine.planning.mining.Tunnel.SLIME_ROOM_Y, z0 + 8);
+                placeKeeper.memory().name("slime chunk", "slime chunk",
+                        new com.mineagent.engine.world.RouteMemory.Point(sdim, x0 + 8, com.mineagent.engine.planning.mining.Tunnel.SLIME_ROOM_Y, z0 + 8),
+                        currentGameTickSafe());
+                if ("find".equals(c.value())) {
+                    speakToOwner("The nearest slime chunk runs from " + x0 + ", " + z0 + " to " + (x0 + 15) + ", " + (z0 + 15)
+                            + ": slimes spawn in it below Y 40, in any light.");
+                    return true;
+                }
+                int y = Math.max(slevel.getMinBuildHeight() + 6, Math.min(com.mineagent.engine.planning.mining.Tunnel.SLIME_ROOM_Y, slimer.getBlockY()));
+                speakToOwner("A slime farm in the slime chunk at " + x0 + ", " + z0 + ": I'll dig it all out, 16 by 16 and three high at Y " + y
+                        + ". Slimes spawn in it when no one is within 24 blocks of it.");
+                orderGoal("dig a slime room");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.MiningTask.MineRecord(
+                        "mine-" + UUID.randomUUID(), "ore", 0, false, new int[] {x0, z0, 16, y}), reply -> { });
                 return true;
             }
             case TRAIN_VILLAGERS -> {
@@ -3008,11 +3047,14 @@ public class AgentLoop {
             if (gameTick % 100L == 0L) schedule(player);
             if (gameTick % 100L == 0L) stayNearHome(player);
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
-            if (gameTick % 1200L == 600L) gearGoal(player);
-            if (gameTick % 1200L == 900L) kitGoal(player);
-            if (gameTick % 1200L == 1100L) godGearGoal(player);
-            if (gameTick % 2400L == 1500L) masterTrading(player);
-            if (gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
+            // Its own pursuits in free time: not straight after it arrives, nor while its owner may be about to say
+            // what they want (what it would make might be what they need).
+            boolean ownTime = freeTime(gameTick);
+            if (ownTime && gameTick % 1200L == 600L) gearGoal(player);
+            if (ownTime && gameTick % 1200L == 900L) kitGoal(player);
+            if (ownTime && gameTick % 1200L == 1100L) godGearGoal(player);
+            if (ownTime && gameTick % 2400L == 1500L) masterTrading(player);
+            if (ownTime && gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
             for (Runnable afterRun; (afterRun = afterReady.poll()) != null; ) afterRun.run();
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
@@ -3826,6 +3868,15 @@ public class AgentLoop {
                     "gear-" + UUID.randomUUID(), id, 1, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
             return;
         }
+    }
+
+    /** When it first ticked in this world, and when its owner last said anything to it (game ticks). */
+    private volatile long firstTickAt = -1L, ownerWordsAt = -1_000_000L;
+
+    /** Two minutes after it arrives, and a minute since its owner last spoke to it: its own pursuits may start. */
+    private boolean freeTime(long gameTick) {
+        if (firstTickAt < 0 || gameTick < firstTickAt) firstTickAt = gameTick;
+        return gameTick - firstTickAt >= 2_400L && gameTick - ownerWordsAt >= 1_200L;
     }
 
     // ── God-tier gear, its end goal (SMH plan 70: "gear that makes a Minecraft sweat blush ... Unless told to speed run") ──

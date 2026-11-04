@@ -52,11 +52,19 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         /** Mine at the height it stands at ("mine iron here"), not the ore's best. */
         public final boolean here;
 
+        /** A room to dig out instead of a branch mine ({@code {x0, z0, size, y}}: its corner, side and floor height), or null. */
+        public final int[] room;
+
         public MineRecord(String toolCallId, String ore, int count, boolean here) {
+            this(toolCallId, ore, count, here, null);
+        }
+
+        public MineRecord(String toolCallId, String ore, int count, boolean here, int[] room) {
             super(toolCallId);
             this.ore = ore;
             this.count = Math.max(0, count);
             this.here = here;
+            this.room = room == null || room.length != 4 ? null : room.clone();
         }
     }
 
@@ -203,6 +211,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             }
         }
         if (any) neededTier = 2;
+        if (record.room != null) neededTier = 1; // a room is rock: stone does
         // Iron and coal, for the iron pickaxe a deeper ore may need first.
         for (var key : BuiltInRegistries.BLOCK.keySet()) {
             String path = key.getPath();
@@ -213,6 +222,17 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         start = sp.blockPosition().immutable();
         String first = ores.stream().filter(o -> !o.contains("deepslate")).findFirst().orElse(ores.iterator().next());
         targetY = record.here ? start.getY() : any ? Math.max(level.getMinBuildHeight() + 5, Math.min(16, start.getY())) : OreHeights.bestY(level, first);
+        if (record.room != null) {
+            // A slime room (SMH plan 70): stairs down, a tunnel to its corner, then dug out row by row.
+            int[] r = record.room;
+            targetY = r[3];
+            steps = Tunnel.room(start.getX(), start.getY(), start.getZ(), targetY, r[0], r[1], r[2]);
+            index = 0;
+            say("Digging out a room " + r[2] + " by " + r[2] + " and three high at Y " + targetY + ", corner " + r[0] + ", " + r[1]
+                    + (start.getY() > targetY ? ", down a staircase" : "") + ".");
+            phase = Phase.READY;
+            return TaskState.RUNNING;
+        }
         Direction facing = sp.getDirection();
         steps = Tunnel.plan(start.getX(), start.getY(), start.getZ(), facing.getStepX(), facing.getStepZ(), targetY);
         index = 0;
@@ -415,6 +435,10 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             }
         }
         if (index >= steps.size()) {
+            if (record.room != null) {
+                stopWhy = "the room is dug out";
+                return goHome(true);
+            }
             // The end of the tunnel: another one from here, turned left.
             if (!turn(sp)) {
                 stopWhy = "I've dug out all round here";
@@ -481,6 +505,10 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
         if (back >= 0) {
             index = back;
             return TaskState.RUNNING;
+        }
+        if (record.room != null) { // on the way to the room: it can't get there this way
+            stopWhy = "lava or water on the way to the room";
+            return goHome(true);
         }
         if (!turn(sp)) {
             stopWhy = "lava or water on every side here";

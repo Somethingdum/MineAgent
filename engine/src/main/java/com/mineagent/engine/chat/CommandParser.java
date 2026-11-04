@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -181,6 +181,11 @@ public final class CommandParser {
     /** "Make a farm", "build a wheat farm", "plant a farm here", "start a crop farm": a 9 by 9 tilled, watered and sown. */
     private static final Pattern FARM = Pattern.compile("^(?:make|build|plant|start|set up|put in)(?: me| us)? (?:a |an |some )?(?:basic |small |little )?"
             + "(?:wheat |crop |carrot |potato |food )?farms?(?: here| for us| for me| by the base| by home)?$");
+    /** "Find a slime chunk", "where's the nearest slime chunk" (find); "make a slime farm", "dig a slime room" (farm). */
+    private static final Pattern SLIME_FIND = Pattern.compile("^(?:find|locate|show me)(?: me| us)? (?:a |the )?(?:nearest |closest )?slime chunks?"
+            + "|where(?:'s| is) (?:a |the )?(?:nearest |closest )?slime chunk$");
+    private static final Pattern SLIME_FARM = Pattern.compile("^(?:make|build|dig|set up|start)(?: me| us)? (?:a |an |the )?slime (?:farm|room|chunk farm)"
+            + "|dig out (?:a |the )?slime chunk$");
     private static final Pattern ROLL = Pattern.compile("^(?:(?:get|find|make) (?:me |us )?an? ([a-z ]{3,24}?) (?:villager|librarian)"
             + "|(?:re)?roll (?:a |the |me a |us a )?librarian(?: for ([a-z ]{3,24}?))?"
             + "|(?:get|find|make) (?:me |us )?an? librarian (?:selling|with|for) ([a-z ]{3,24}?)(?: books?)?)$");
@@ -252,6 +257,8 @@ public final class CommandParser {
         at = PUT_AT.matcher(t);
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
+        if (SLIME_FIND.matcher(t).matches()) return Optional.of(new Command(Kind.SLIME, "find", null));
+        if (SLIME_FARM.matcher(t).matches()) return Optional.of(new Command(Kind.SLIME, "farm", null));
         if (FARM.matcher(t).matches()) return Optional.of(new Command(Kind.FARM, t.endsWith(" here") ? "here" : null, null));
         var roll = ROLL.matcher(t);
         if (roll.matches()) {

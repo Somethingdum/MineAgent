@@ -65,6 +65,81 @@ public final class Tunnel {
         return out;
     }
 
+    /** A slime room's floor height: slimes spawn in a slime chunk only below Y 40, and a big one is two blocks tall. */
+    public static final int SLIME_ROOM_Y = 36;
+
+    /**
+     * A room dug out, as for a slime farm (SMH plan 70: "highly favoring of slime"): from feet at {@code (x, y, z)}, a
+     * staircase down to {@code targetY} heading toward the room, a tunnel two high at that height to its corner {@code
+     * (x0, z0)}, then the room, {@code size} by {@code size} and three high (room for the biggest slime), row by row:
+     * each row dug from its first cell out, then walked back to it (a row given up for lava or water goes back the same
+     * way); the next row starts beside the last one's first cell.
+     */
+    public static List<Step> room(int x, int y, int z, int targetY, int x0, int z0, int size) {
+        List<Step> out = new ArrayList<>();
+        int mid = size / 2;
+        int ddx = x0 + mid - x, ddz = z0 + mid - z;
+        int dx = Math.abs(ddx) >= Math.abs(ddz) ? Integer.signum(ddx) : 0;
+        int dz = dx == 0 ? (ddz >= 0 ? 1 : -1) : 0;
+        if (dx == 0 && dz == 0) dx = 1;
+        int cx = x, cy = y, cz = z;
+        while (cy > targetY) {
+            int nx = cx + dx, ny = cy - 1, nz = cz + dz;
+            out.add(new Step(Kind.STAIR, nx, ny, nz, List.of(new int[] {nx, ny, nz}, new int[] {nx, ny + 1, nz}, new int[] {nx, ny + 2, nz}), -1));
+            cx = nx;
+            cy = ny;
+            cz = nz;
+        }
+        while (cy < targetY) {
+            int nx = cx + dx, ny = cy + 1, nz = cz + dz;
+            out.add(new Step(Kind.STAIR, nx, ny, nz, List.of(new int[] {cx, cy + 2, cz}, new int[] {nx, ny, nz}, new int[] {nx, ny + 1, nz}), -1));
+            cx = nx;
+            cy = ny;
+            cz = nz;
+        }
+        // Along x, then along z, to the corner.
+        while (cx != x0) {
+            cx += Integer.signum(x0 - cx);
+            out.add(new Step(Kind.MAIN, cx, cy, cz, two(cx, cy, cz), -1));
+        }
+        while (cz != z0) {
+            cz += Integer.signum(z0 - cz);
+            out.add(new Step(Kind.MAIN, cx, cy, cz, two(cx, cy, cz), -1));
+        }
+        for (int r = 0; r < size; r++) {
+            int rz = z0 + r;
+            for (int i = 0; i < size; i++) {
+                int rx = x0 + i;
+                out.add(new Step(Kind.BRANCH, rx, cy, rz, List.of(new int[] {rx, cy, rz}, new int[] {rx, cy + 1, rz}, new int[] {rx, cy + 2, rz}), r));
+            }
+            out.add(new Step(Kind.RETURN, x0, cy, rz, List.of(), r));
+        }
+        return out;
+    }
+
+    /**
+     * Chunks out from {@code (cx, cz)}, ring by ring to {@code radius}, nearest first within a ring: the first {@code test}
+     * passes ({@code {x, z}}), or null.
+     */
+    public static int[] nearestChunk(int cx, int cz, int radius, java.util.function.BiPredicate<Integer, Integer> test) {
+        for (int r = 0; r <= radius; r++) {
+            int[] best = null;
+            int bestD = Integer.MAX_VALUE;
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
+                    int d = dx * dx + dz * dz;
+                    if (d < bestD && test.test(cx + dx, cz + dz)) {
+                        bestD = d;
+                        best = new int[] {cx + dx, cz + dz};
+                    }
+                }
+            }
+            if (best != null) return best;
+        }
+        return null;
+    }
+
     private static List<int[]> two(int x, int y, int z) {
         return List.of(new int[] {x, y, z}, new int[] {x, y + 1, z});
     }
