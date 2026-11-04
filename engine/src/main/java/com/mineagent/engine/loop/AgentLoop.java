@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-") || taskId.startsWith("netherite-") || taskId.startsWith("recover-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-") || taskId.startsWith("netherite-") || taskId.startsWith("recover-") || taskId.startsWith("explore-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -5228,6 +5228,43 @@ public class AgentLoop {
     private volatile int swampTries;
     private volatile double swampBest = Double.MAX_VALUE;
 
+    /** When its starter kit last jumped the queue. */
+    private volatile long kitJumpedAt = Long.MIN_VALUE / 2;
+
+    /**
+     * Its starter kit before the rest of its queue (order of operations): with its first base made and a long queue of
+     * its prime (iron, armour, beds, food), the kit was only looked at again with nothing queued, and the eighth
+     * benchmark run went its last two days without the stone sword, shovel and food the iron orders' failures left
+     * behind. Between jobs, half a game day apart at most, what the kit lacks goes first (new ground explored first
+     * when it was short of the same last time), and the queue after it. True when it did.
+     */
+    private boolean kitJumpsQueue(net.minecraft.server.level.ServerPlayer self, LiveBodyState body, long now) {
+        if (now - kitJumpedAt < 12_000 || body != null && body.taskId() != null || skillRuntime.active()) return false;
+        var active = goalBook.active();
+        if (active.isEmpty()) return false; // nothing queued: keepBaseUp's
+        String kit = starterKit(self);
+        if (kit.isEmpty()) return false;
+        String on = com.mineagent.engine.goal.Orders.withoutMark(active.get().text());
+        for (String part : kit.split(", then ")) if (on.equals(part)) return false; // at it already
+        if (on.equals("explore") || com.mineagent.engine.learning.DeathNote.recoveryAt(on) != null) return false;
+        kitJumpedAt = now;
+        boolean again = kit.equals(lastKit);
+        lastKit = kit;
+        keptUpTries++;
+        String line = again ? "explore, then " + kit : kit;
+        journal.record("survive", "my starter kit first: " + line.replace(", then ", ", "), now);
+        try {
+            goalBook.chain(List.of(line.split(", then ")), "owner", now);
+        } catch (RuntimeException full) {
+            return false;
+        }
+        orderGoalId = null;
+        orderSince = 0;
+        saveMemoryNow();
+        speakToOwner("My starter kit first: " + line + ".");
+        return true;
+    }
+
     /** Its starter kit's tries, and when the last was (game ticks); when it last kept its base up. */
     private volatile int kitTries, keptUpTries;
     /** What its starter kit lacked when it last kept its base up. */
@@ -6534,6 +6571,8 @@ public class AgentLoop {
                 || k == com.mineagent.engine.chat.CommandParser.Kind.BARTER || k == com.mineagent.engine.chat.CommandParser.Kind.PUT_AWAY
                 || k == com.mineagent.engine.chat.CommandParser.Kind.TIDY || k == com.mineagent.engine.chat.CommandParser.Kind.FIND_STRONGHOLD
                 || k == com.mineagent.engine.chat.CommandParser.Kind.APPLY_BOOK
+                // Plain "explore" (new ground, its task's own): its base's upkeep queues it, with no model to run it.
+                || k == com.mineagent.engine.chat.CommandParser.Kind.FIND_PLACE && c.get().value().isEmpty()
                 ? c : java.util.Optional.empty();
     }
 
@@ -6589,6 +6628,8 @@ public class AgentLoop {
         if (busy || skillRuntime.active()) return;
         if (now - orderSince < 40L) return;
         if (recoverOwnThings(g, now)) return;
+        // Between jobs on its own: its starter kit before the rest of the queue.
+        if (onItsOwn && idleHome != null && kitJumpsQueue(player, body, now)) return;
         var order = orderIn(g.text(), companion.companionName());
         if (order.isEmpty() || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self)) return;
         dispatchingGoal = g.id();

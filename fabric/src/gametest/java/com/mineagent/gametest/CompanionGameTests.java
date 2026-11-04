@@ -4237,6 +4237,42 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * SMH plan 70, order of operations, and what the eighth benchmark run found (two days without its stone sword and
+     * shovel behind a queue of iron orders): its first base made and its prime queued, its stone sword lost: between
+     * jobs, its starter kit goes before the rest of the queue.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_kit_first", timeoutTicks = 4000)
+    public void onItsOwnItsKitGoesBeforeItsQueue(GameTestHelper helper) {
+        Scene s = scene(helper, "Orderly");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var kit = s.body().getInventory();
+        kit.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        kit.setItem(2, new ItemStack(Items.STONE_AXE));
+        kit.setItem(3, new ItemStack(Items.STONE_SWORD));
+        kit.setItem(4, new ItemStack(Items.STONE_SHOVEL));
+        kit.setItem(5, new ItemStack(Items.CHARCOAL, 8));
+        kit.setItem(6, new ItemStack(Items.COOKED_BEEF, 16));
+        kit.setItem(7, new ItemStack(Items.COBBLESTONE, 64));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
+        boolean[] lost = {false};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "kit first");
+            if (!lost[0] && !lastSaid(s, "Made my first base here").isEmpty()) {
+                lost[0] = true;
+                for (int i = 0; i < kit.getContainerSize(); i++) if (kit.getItem(i).is(Items.STONE_SWORD)) kit.setItem(i, ItemStack.EMPTY);
+            }
+            String first = lastSaid(s, "My starter kit first");
+            if (!first.isEmpty() || helper.getTick() >= 3900) {
+                String how = "base made " + lost[0] + ", goal " + s.loop().goalBook().active().map(g -> g.text()).orElse("none") + "; said: " + lastSaid(s, "");
+                s.loop().onItsOwn(false);
+                tidy(s);
+                if (first.contains("make me a stone sword")) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * SMH plan 70, the dragon's crystals (on its owner's word only): two end crystals on obsidian pillars 16 and 20 blocks
      * off (a crystal blows up as it breaks: shot from well away), a bow and arrows: "shoot the end crystals" breaks both.
      */
