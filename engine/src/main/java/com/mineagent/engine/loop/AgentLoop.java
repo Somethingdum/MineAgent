@@ -2814,17 +2814,39 @@ public class AgentLoop {
      * A failed call, told to the owner: in plain words when it is SMH that failed (not running, no model, a key it
      * refused, its game endpoint off; llm/SmhHint), at most once a minute; else the provider's own message.
      */
+    /**
+     * A call to the model that failed, said to its owner (SMH plan 70, its owner: "I will run this near constantly",
+     * "SMH slopping out for some reason"): the first time, then at most every half hour while it goes on failing, with how
+     * many failed since; everything that needs no model (fighting, work, its free-time jobs) goes on meanwhile. When a call
+     * works again it says so once.
+     */
     private void sayCallFailure(String fallback, RuntimeException e, String msg) {
         Integer status = e instanceof com.mineagent.api.llm.provider.LLMProviderException p ? p.statusCode() : null;
         String hint = com.mineagent.engine.llm.SmhHint.forFailure(baseUrl, status, msg, e.getCause() != null ? e.getCause() : e);
-        if (hint == null) {
-            speakToOwner(fallback);
+        long now = System.currentTimeMillis();
+        callsDown = true;
+        if (lastSmhHintMs != 0L && now - lastSmhHintMs < 30 * 60_000L) {
+            failedSinceSaid++;
             return;
         }
-        long now = System.currentTimeMillis();
-        if (now - lastSmhHintMs < 60_000L) return;
+        boolean first = lastSmhHintMs == 0L;
         lastSmhHintMs = now;
-        speakToOwner(hint);
+        int since = failedSinceSaid;
+        failedSinceSaid = 0;
+        speakToOwner((hint != null ? hint : fallback) + (first ? " I'll keep working on my own meanwhile, and say when it's back."
+                : " (" + since + " more failed since I last said; still working on my own.)"));
+    }
+
+    /** Calls to the model failing since the last it said, and whether they are failing now. */
+    private volatile int failedSinceSaid;
+    private volatile boolean callsDown;
+
+    private void callsWorkAgain() {
+        if (!callsDown) return;
+        callsDown = false;
+        lastSmhHintMs = 0L;
+        failedSinceSaid = 0;
+        speakToOwner("I can reach the model again.");
     }
 
     /** Hostiles within 16 blocks, nearest first, read on the server thread (the brief is built on the model's). */
@@ -3209,6 +3231,13 @@ public class AgentLoop {
             // Its own pursuits in free time: not straight after it arrives, nor while its owner may be about to say
             // what they want (what it would make might be what they need).
             if (gameTick % 200L == 150L) turnWatchdog();
+            // Follow-ups waiting on tasks that never reported back (refused before they started): cleared once a game day
+            // when they pile up, so weeks of it leave nothing behind.
+            if (gameTick % 24_000L == 12_345L) {
+                if (afterTask.size() > 64) afterTask.clear();
+                if (afterTaskAlways.size() > 64) afterTaskAlways.clear();
+                if (godGearJobs.size() > 64) godGearJobs.clear();
+            }
             boolean ownTime = freeTime(gameTick);
             if (ownTime && gameTick % 1200L == 600L) gearGoal(player);
             if (ownTime && gameTick % 1200L == 900L) kitGoal(player);
@@ -4144,6 +4173,7 @@ public class AgentLoop {
             case MAKE -> {
                 journal.record("gear", "toward god-tier gear: making " + com.mineagent.engine.planning.production.ProductionPlanner.name(next.what()), now);
                 afterTaskAlways.put(job, () -> com.mineagent.engine.survival.GearUp.run(self));
+                afterTask.put(job, () -> nextGodStep(self)); // the next piece straight after (back fast after a death)
                 godGearJobs.put(job, next.key());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
                         job, next.what(), 1, null, false, !onItsOwn), reply -> { });
@@ -4153,6 +4183,7 @@ public class AgentLoop {
                 if (!intoPackForAnvil(self, next.kind())) return;
                 journal.record("gear", "toward god-tier gear: my books on my " + next.kind() + " in the best order", now);
                 afterTaskAlways.put(job, () -> com.mineagent.engine.survival.GearUp.run(self));
+                afterTask.put(job, () -> nextGodStep(self));
                 godGearJobs.put(job, next.key());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.AnvilTask.AnvilRecord(
                         job, "best", next.kind()), reply -> { });
@@ -4971,6 +5002,11 @@ public class AgentLoop {
 
     /** A farm order whose hoe and bucket were queued to be made first: the next farm order goes ahead. */
     private volatile boolean farmReady;
+
+    /** Straight on to the next step toward god-tier gear, while its time is still its own. */
+    private void nextGodStep(net.minecraft.server.level.ServerPlayer self) {
+        if (freeTime(currentGameTickSafe())) godGearGoal(self);
+    }
 
     /** What its stockpile keeps: never junk, whatever the rules say. */
     private static java.util.Set<String> hoardKeeps() {
@@ -8094,6 +8130,7 @@ public class AgentLoop {
                     // of gameplay-memory search and prompts.
                     persistence.saveProviderSession(providerTransportState.get());
                 }
+                callsWorkAgain();
                 return new VersionedResponse(response, callGeneration);
             } catch (RuntimeException e) {
                 // A provider is a registry singleton. If an implementation
