@@ -722,6 +722,33 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, running for weeks: it dies with its bed set across the field, and five seconds on it is back on its feet
+     * by the bed, as a player comes back, with nobody typing /mineagent respawn.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_respawn", timeoutTicks = 400)
+    public void itComesBackAtItsBedAfterDying(GameTestHelper helper) {
+        Scene s = scene(helper, "Phoenix");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos bed = new BlockPos(14, 1, 12);
+        helper.setBlock(bed, Blocks.RED_BED);
+        BlockPos abs = helper.absolutePos(bed);
+        s.body().setRespawnPosition(helper.getLevel().dimension(), abs, 0f, true, false);
+        helper.runAfterDelay(10, () -> s.body().kill());
+        boolean[] died = {false};
+        helper.onEachTick(() -> {
+            if (s.body().getHealth() <= 0) died[0] = true;
+            double fromBed = Math.sqrt(s.body().blockPosition().distSqr(abs));
+            boolean back = died[0] && s.body().getHealth() >= s.body().getMaxHealth() && fromBed <= 3.0;
+            if (back || helper.getTick() >= 350) {
+                String how = "died " + died[0] + ", health " + s.body().getHealth() + ", " + String.format("%.1f", fromBed) + " blocks from its bed";
+                tidy(s);
+                if (back) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     private static int dirt(ServerPlayer body) {
         int n = 0;
         var inv = body.getInventory();

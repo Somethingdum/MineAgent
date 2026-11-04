@@ -580,7 +580,25 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             fillTicks = 0;
             stepStarted = sp().level().getGameTime();
             itemBefore = count(sp(), item(step.item()));
-            if (step.action() == Action.SMELT) smeltStage = 0;
+            if (step.action() == Action.SMELT) {
+                smeltStage = 0;
+                softMissed.clear();
+            }
+            progressSig = null;
+        }
+        // Getting nowhere (SMH plan 70, its owner: "I will run this near constantly ... it getting stuck in some dumb
+        // loop"): what it holds of the step's item and input, and the chunk it is in; three minutes with none of them
+        // changing and the step fails, and the order is planned again or given up as its recovery says.
+        long now = sp().level().getGameTime();
+        String sig = System.identityHashCode(step) + ":" + count(sp(), item(step.item())) + ":"
+                + (step.input() == null ? 0 : count(sp(), item(step.input()))) + ":" + sp().chunkPosition().toLong();
+        if (!sig.equals(progressSig)) {
+            progressSig = sig;
+            progressAt = now;
+        } else if (now - progressAt > GETTING_NOWHERE) {
+            progressSig = null;
+            String doing = snapshot().stage();
+            return fail("I was getting nowhere " + (doing == null ? "at it" : doing) + " for three minutes");
         }
         TaskState s = switch (step.action()) {
             case FETCH -> fetch();
@@ -1591,6 +1609,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Ticks on the current soft walk. */
     private int softTicks;
+    /** Furnaces of this smelting it walked to and couldn't get within reach of. */
+    private final java.util.Set<BlockPos> softMissed = new java.util.HashSet<>();
+    /** What it last had to show for the step, and since when (a step that gets nowhere for three minutes fails). */
+    private String progressSig;
+    private long progressAt;
+    /** Three minutes in one place with nothing gained or spent: getting nowhere. */
+    static final long GETTING_NOWHERE = 3_600;
+    private long lastWorkTrace;
     /** Times a craft found an input short and it planned again. */
     private int craftReplans;
 
@@ -1691,6 +1717,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         ServerPlayer sp = sp();
         ServerLevel level = sp.serverLevel();
         Item out = item(step.item()), in = item(step.input()), fuel = item(step.fuel());
+        if (Boolean.getBoolean("mineagent.traceWork") && level.getGameTime() - lastWorkTrace >= 400) {
+            lastWorkTrace = level.getGameTime();
+            StringBuilder fs = new StringBuilder();
+            for (BlockPos f : furnaces) fs.append(' ').append(f.toShortString()).append(sp.canInteractWithBlock(f, 0.0) ? " in reach" : sp.canInteractWithBlock(f, 1.0) ? " just out" : " out").append(';');
+            System.out.println("[MineAgent] smelting " + step.input() + ": stage " + smeltStage + ", at " + standing(sp).toShortString() + ", work spot "
+                    + (workSpot == null ? "none" : workSpot.toShortString()) + ", walking to " + (walkingTo == null ? "nothing" : walkingTo.toShortString())
+                    + " (" + softTicks + " ticks, navigating " + nav.isNavigating() + ", failed " + navFailed + "), carrying " + count(sp, in) + " in, "
+                    + count(sp, out) + " out, " + count(sp, fuel) + " fuel; furnaces:" + fs);
+        }
         boolean lavaFuel = fuel == net.minecraft.world.item.Items.LAVA_BUCKET;
         if (refilling) {
             // Its bucket came back from a furnace: filled again for the next one.
@@ -1797,7 +1832,12 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             BlockPos f = furnaces.get(i);
             if (!(level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace)) continue;
             if (!sp.canInteractWithBlock(f, 0.0)) {
-                if (!walkSoftly(f, 3)) return TaskState.RUNNING; // near enough to reach it, over a fence if need be
+                // Near enough to reach it, over a fence if need be. One it walked to once and couldn't get nearer to (in a
+                // hut, behind its wall) but can reach from here is used from here, not walked to again every pass (that
+                // took twenty seconds a furnace, each second's look round them).
+                boolean fromHere = softMissed.contains(f) && sp.canInteractWithBlock(f, 1.0);
+                if (!fromHere && !walkSoftly(f, 3)) return TaskState.RUNNING;
+                if (!sp.canInteractWithBlock(f, 0.0)) softMissed.add(f.immutable());
                 if (!sp.canInteractWithBlock(f, 1.0)) {
                     if (loaded[i] > 0 || fuelled[i] > 0) return fail("I can't get to the furnace at " + f.toShortString());
                     if (furnaces.size() == 1) {

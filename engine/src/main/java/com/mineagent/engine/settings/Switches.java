@@ -86,6 +86,7 @@ public final class Switches {
     public static boolean grindXp() { return b().grindXp(); }
     public static boolean watchChests() { return b().watchChests(); }
     public static boolean revengeThieves() { return b().revengeThieves(); }
+    public static boolean autoRespawn() { return b().autoRespawn(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

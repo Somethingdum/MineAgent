@@ -112,6 +112,13 @@ public class CompanionLifecycleHandler implements CompanionLifecycle {
 
         dead = true;
         paused = true;
+        // When it died, and whether soon after coming back (a death it keeps coming back into: no more coming back
+        // by itself, SMH plan 70's auto-respawn).
+        if (companion instanceof CompanionEntity ce && ce.serverPlayer() != null) {
+            long now = ce.serverPlayer().level().getGameTime();
+            quickDeaths = lastRespawnAt >= 0 && now - lastRespawnAt < QUICK_DEATH ? quickDeaths + 1 : 0;
+            diedAt = now;
+        }
 
         // Idle cleanup is not represented by the normal body task slot. Stop
         // its progressive break state explicitly when the body dies.
@@ -172,6 +179,7 @@ public class CompanionLifecycleHandler implements CompanionLifecycle {
         paused = false;
         // Reset the death guard so the companion can die again in the future.
         deathProcessed = false;
+        if (companion instanceof CompanionEntity ce0 && ce0.serverPlayer() != null) lastRespawnAt = ce0.serverPlayer().level().getGameTime();
 
         var sp = ((CompanionEntity) companion).serverPlayer();
 
@@ -254,6 +262,37 @@ public class CompanionLifecycleHandler implements CompanionLifecycle {
 
         System.out.println("[MineAgent] Companion '" + companion.companionName()
                 + "' despawned and cleaned up");
+    }
+
+    /** Two minutes: a death this soon after coming back is a quick one. */
+    public static final long QUICK_DEATH = 2_400;
+    private long diedAt = -1, lastRespawnAt = -1;
+    private int quickDeaths;
+    private boolean autoHeld;
+
+    /** When it last died (game ticks), or -1. */
+    public long diedAt() {
+        return diedAt;
+    }
+
+    /** Deaths in a row each within two minutes of coming back. */
+    public int quickDeaths() {
+        return quickDeaths;
+    }
+
+    /** Coming back by itself is held (three quick deaths) until /mineagent respawn. */
+    public boolean autoRespawnHeld() {
+        return autoHeld;
+    }
+
+    public void holdAutoRespawn() {
+        autoHeld = true;
+    }
+
+    /** Brought back by its owner: it may come back by itself again. */
+    public void clearAutoRespawnHold() {
+        autoHeld = false;
+        quickDeaths = 0;
     }
 
     /**

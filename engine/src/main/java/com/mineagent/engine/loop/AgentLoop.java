@@ -327,7 +327,11 @@ public class AgentLoop {
     private volatile String lastActionType = "";
     private volatile int sameActionCount = 0;
 
-    private final ExecutorService executor;
+    private volatile ExecutorService executor;
+    /** When the turn under way began (System.nanoTime), for the watchdog: a turn stuck for ten minutes is cut off. */
+    private volatile long turnStartedNanos;
+    /** Which brain thread's turns count: one the watchdog gave up on doesn't come back to say it finished. */
+    private volatile long turnGeneration;
     /** Local-only counters; never contain prompts, keys, or world dumps. */
     private final CognitionMetrics metrics;
     private final CognitiveState cognitiveState;
@@ -405,11 +409,7 @@ public class AgentLoop {
                       String model, String baseUrl, double temperature, int maxTokens,
                       String reasoningEffort) {
         this.companion = companion;
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            var t = new Thread(r, "MineAgent-Loop-" + companion.companionId().toString().substring(0, 8));
-            t.setDaemon(true);
-            return t;
-        });
+        this.executor = newExecutor(companion);
         this.providerId = providerId;
         this.apiKey = apiKey;
         this.model = model;
@@ -990,6 +990,12 @@ public class AgentLoop {
             if (after != null && state == TaskState.SUCCESS) afterReady.add(after); // on the next tick, the body free
             Runnable always = afterTaskAlways.remove(taskId);
             if (always != null) afterReady.add(always);
+            // Its own free-time jobs: one that failed waits longer before each try (goal/Backoff).
+            String freeKey = freeJobs.remove(taskId);
+            if (freeKey != null) {
+                if (state == TaskState.SUCCESS) backoff.succeeded(freeKey);
+                else backoff.failed(freeKey, gameTick);
+            }
             String godKey = godGearJobs.remove(taskId);
             // A run of anvil steps short of levels isn't a failed try: it waits for the levels (it goes after them: xpGoal).
             boolean shortOfLevels = levelsShort > 0 && message != null && message.contains(" levels");
@@ -3202,6 +3208,7 @@ public class AgentLoop {
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
             // Its own pursuits in free time: not straight after it arrives, nor while its owner may be about to say
             // what they want (what it would make might be what they need).
+            if (gameTick % 200L == 150L) turnWatchdog();
             boolean ownTime = freeTime(gameTick);
             if (ownTime && gameTick % 1200L == 600L) gearGoal(player);
             if (ownTime && gameTick % 1200L == 900L) kitGoal(player);
@@ -4016,13 +4023,14 @@ public class AgentLoop {
             if (wornValue >= ((net.minecraft.world.item.ArmorItem) want[i]).getDefense()) continue;
             if (self.getInventory().countItem(want[i]) > 0) continue; // GearUp puts it on
             String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(want[i]).toString();
+            if (!mayTry("gear:" + id)) continue;
             if (have == null) have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
             var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, 1,
                     java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN));
             if (!plan.possible()) continue;
             journal.record("gear", "the danger here has grown: making " + com.mineagent.engine.planning.production.ProductionPlanner.name(id), currentGameTickSafe());
             com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                    "gear-" + UUID.randomUUID(), id, 1, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
+                    freeJob("gear-", "gear:" + id), id, 1, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
             return;
         }
     }
@@ -4040,6 +4048,22 @@ public class AgentLoop {
 
     /** God-tier tries that failed, by {@link com.mineagent.engine.gear.GodGear.Next#key}, with when; its jobs by task id. */
     private final java.util.Map<String, Long> godGearFailed = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Its own free-time jobs that failed, tried again later each time (goal/Backoff); and which job each task is. */
+    private final com.mineagent.engine.goal.Backoff backoff = new com.mineagent.engine.goal.Backoff();
+    private final java.util.Map<String, String> freeJobs = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A task of its own free time, as the job {@code key}: how it ends is remembered against the job. */
+    private String freeJob(String prefix, String key) {
+        String id = prefix + UUID.randomUUID();
+        if (freeJobs.size() > 64) freeJobs.clear(); // a task that never reported back
+        freeJobs.put(id, key);
+        return id;
+    }
+
+    /** Whether a free-time job may be tried now (it hasn't failed lately). */
+    private boolean mayTry(String key) {
+        return backoff.ready(key, currentGameTickSafe());
+    }
     private final java.util.Map<String, String> godGearJobs = new java.util.concurrent.ConcurrentHashMap<>();
     /** What to run once a task it started for itself ends, however it ended. */
     private final java.util.Map<String, Runnable> afterTaskAlways = new java.util.concurrent.ConcurrentHashMap<>();
@@ -4228,11 +4252,11 @@ public class AgentLoop {
             want = 1;
             plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, want, unseen);
         }
-        if (!plan.possible()) return;
+        if (!plan.possible() || !mayTry("kit:" + id)) return;
         journal.record("kit", "free time: making " + (want > 1 ? want + " " : "") + com.mineagent.engine.planning.production.ProductionPlanner.name(id)
                 + (want > 1 ? "s" : "") + " to keep on me", currentGameTickSafe());
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                "kit-" + UUID.randomUUID(), id, want, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
+                freeJob("kit-", "kit:" + id), id, want, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
     }
 
     // ── Leaving no trace: holes near home filled (SMH plan 70, MA9.4) ──
@@ -4916,7 +4940,10 @@ public class AgentLoop {
     }
 
     public void noteLooted(String dim, net.minecraft.core.BlockPos at) {
-        if (looted.size() < 4096) looted.add(lootKey(dim, at));
+        synchronized (looted) {
+            while (looted.size() >= 4096) looted.remove(looted.iterator().next()); // the oldest out
+            looted.add(lootKey(dim, at));
+        }
         saveMemoryNow();
     }
 
@@ -4973,9 +5000,10 @@ public class AgentLoop {
         String dim = level.dimension().location().toString();
         if (!com.mineagent.engine.gear.XpSeeking.short_(ownStock(self, dim, home(dim))).isEmpty()) return;
         if (!com.mineagent.engine.gear.XpSeeking.fit(self.getHealth(), self.getMaxHealth(), self.getFoodData().getFoodLevel(), foodOn(self))) return;
+        if (!mayTry("xp")) return;
         journal.record("xp", "out after levels for the night: " + self.experienceLevel + " of " + target, currentGameTickSafe());
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.XpHuntTask.XpRecord(
-                "xp-" + UUID.randomUUID(), target, true), reply -> { });
+                freeJob("xp-", "xp"), target, true), reply -> { });
     }
 
     /** Doing well for armour and weapons (gear/XpSeeking.geared): iron or better worn all over, an iron weapon, a shield. */
@@ -5040,9 +5068,9 @@ public class AgentLoop {
         var junk = com.mineagent.engine.gear.Junk.excess(com.mineagent.engine.task.DumpJunkTask.throwable(self), hoardKeeps());
         int total = com.mineagent.engine.gear.Junk.total(junk);
         boolean full = self.getInventory().getFreeSlot() < 0 || freeSlots(self) < 4;
-        if (total < com.mineagent.engine.gear.Junk.WORTH_A_TRIP && !(full && total > 0)) return;
+        if (total < com.mineagent.engine.gear.Junk.WORTH_A_TRIP && !(full && total > 0) || !mayTry("junk")) return;
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DumpJunkTask.DumpRecord(
-                "junk-" + UUID.randomUUID(), hoardKeeps()), reply -> { });
+                freeJob("junk-", "junk"), hoardKeeps()), reply -> { });
     }
 
     private static int freeSlots(net.minecraft.server.level.ServerPlayer sp) {
@@ -5132,8 +5160,9 @@ public class AgentLoop {
                 }
                 // Its chest is down: on to filling it.
             } else {
+                if (!mayTry("hoard:chest")) return;
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                        "hoard-chest-" + UUID.randomUUID(), "minecraft:chest", 1, null, false, true), reply -> { });
+                        freeJob("hoard-chest-", "hoard:chest"), "minecraft:chest", 1, null, false, true), reply -> { });
                 return;
             }
         }
@@ -5145,19 +5174,19 @@ public class AgentLoop {
         // Slimeballs from its slime farm, when it has one (living on its own: "highly favoring of slime").
         var slimeFarm = placeKeeper.memory().find("slime chunk", com.mineagent.engine.world.PlaceKeeper.point(self));
         boolean fromFarm = slimeFarm.isPresent() && slimeFarm.get().at().dim().equals(dim);
-        var next = com.mineagent.engine.gear.Hoard.next(has, t -> "minecraft:slime_ball".equals(t.item()) && fromFarm
-                || com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, t.item(), t.count(), without).possible());
+        var next = com.mineagent.engine.gear.Hoard.next(has, t -> mayTry("hoard:" + t.item()) && ("minecraft:slime_ball".equals(t.item()) && fromFarm
+                || com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, t.item(), t.count(), without).possible()));
         if (next == null) return;
         journal.record("hoard", "for my stockpile: " + next.count() + " " + com.mineagent.engine.planning.production.ProductionPlanner.plural(next.item(), next.count()),
                 currentGameTickSafe());
         if ("minecraft:slime_ball".equals(next.item()) && fromFarm) {
             var at = slimeFarm.get().at();
             com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.SlimeFarmTask.SlimeRecord(
-                    "hoard-slime-" + UUID.randomUUID(), at.x() - 8, at.z() - 8, at.y(), 16, next.count()), reply -> { });
+                    freeJob("hoard-slime-", "hoard:" + next.item()), at.x() - 8, at.z() - 8, at.y(), 16, next.count()), reply -> { });
             return;
         }
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                "hoard-" + UUID.randomUUID(), next.item(), next.count(), stash, false, !onItsOwn), reply -> { });
+                freeJob("hoard-", "hoard:" + next.item()), next.item(), next.count(), stash, false, !onItsOwn), reply -> { });
     }
 
     // ── Trading mastery: the villagers it keeps (SMH plan 70) ──
@@ -5166,7 +5195,11 @@ public class AgentLoop {
     private final java.util.Set<String> keepers = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
 
     public void keepVillager(UUID id) {
-        if (id != null && keepers.size() < 256) keepers.add(id.toString());
+        if (id == null) return;
+        synchronized (keepers) {
+            while (keepers.size() >= 256) keepers.remove(keepers.iterator().next()); // the oldest (likely long dead) out
+            keepers.add(id.toString());
+        }
         saveMemoryNow();
     }
 
@@ -5208,10 +5241,10 @@ public class AgentLoop {
                         + " Mending, one bought, and the villager walled in with it to trade from. Shall I?", true);
                 return;
             }
-            if (answer.get()) {
+            if (answer.get() && mayTry("roll")) {
                 journal.record("mastery", "rolling a librarian for Mending", currentGameTickSafe());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LibrarianTask.RollRecord(
-                        "mastery-" + UUID.randomUUID(), "minecraft:mending"), reply -> { });
+                        freeJob("mastery-", "roll"), "minecraft:mending"), reply -> { });
                 return;
             }
         }
@@ -7180,9 +7213,46 @@ public class AgentLoop {
 
     // ── Turn execution ─────────────────────────────────────────────
 
+    private static ExecutorService newExecutor(AgentPlayer companion) {
+        return Executors.newSingleThreadExecutor(r -> {
+            var t = new Thread(r, "MineAgent-Loop-" + companion.companionId().toString().substring(0, 8));
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * A turn that never ends (SMH plan 70, its owner: "I will run this near constantly"): a call to the model that hangs
+     * past every timeout, or a wait that never comes back, would leave it thinking for ever and deaf to everything. Ten
+     * minutes into a turn its call is interrupted; fifteen, and the thread is replaced and the turn given up, so the next
+     * word or event starts a fresh one.
+     */
+    private void turnWatchdog() {
+        if (!inProgress || turnStartedNanos == 0L) return;
+        long minutes = (System.nanoTime() - turnStartedNanos) / 60_000_000_000L;
+        if (minutes >= 15) {
+            System.err.println("[MineAgent] A turn for " + companion.companionName() + " ran " + minutes + " minutes: starting over");
+            journal.record("watchdog", "a turn ran " + minutes + " minutes: given up, the brain started over", currentGameTickSafe());
+            var old = executor;
+            turnGeneration++;
+            executor = newExecutor(companion);
+            old.shutdownNow();
+            activeLLMCallThread.set(null);
+            turnStartedNanos = 0L;
+            synchronized (this) {
+                inProgress = false;
+            }
+        } else if (minutes >= 10) {
+            Thread call = activeLLMCallThread.get();
+            if (call != null) call.interrupt();
+        }
+    }
+
     private void startTurn(String trigger) {
         inProgress = true;
+        turnStartedNanos = System.nanoTime();
         currentRole = com.mineagent.engine.llm.RoleRouting.roleForTrigger(trigger);
+        final long gen = turnGeneration;
         try {
             executor.submit(() -> {
                 try {
@@ -7198,8 +7268,11 @@ public class AgentLoop {
                     System.err.println("[MineAgent] Turn error: " + e.getMessage());
                     e.printStackTrace();
                 } finally {
+                    // A turn the watchdog gave up on, ending late: the brain has started over without it.
+                    if (gen != turnGeneration) return;
                     synchronized (this) {
                         inProgress = false;
+                        turnStartedNanos = 0L;
                         // Check if inbox accumulated during this turn. While
                         // suspended it must remain queued until resume();
                         // draining here would either lose death events or start

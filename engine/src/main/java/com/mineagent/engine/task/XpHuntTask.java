@@ -296,6 +296,8 @@ public class XpHuntTask extends CompanionTask<XpHuntTask.XpRecord> {
             loop.say(outcome + ".");
             loop.journal().record("xp", outcome, sp.level().getGameTime());
         }
+        // On its own time, a night out with nothing gained counts as a miss, so the next goes out a while later.
+        if (record.tonight && got == 0 && kills == 0) return TaskState.FAILED;
         return ok ? TaskState.SUCCESS : TaskState.FAILED;
     }
 

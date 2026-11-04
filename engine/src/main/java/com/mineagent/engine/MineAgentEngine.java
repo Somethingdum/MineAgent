@@ -1474,10 +1474,54 @@ public final class MineAgentEngine {
                 state.auction.cancelTask();
                 state.lifecycle.onDeath(state.companion);
             }
+            if (state.lifecycle.isDead() && com.mineagent.engine.settings.Switches.autoRespawn()) {
+                try {
+                    autoRespawn(state, sp);
+                } catch (RuntimeException e) {
+                    System.err.println("[MineAgent] Auto-respawn failed: " + e.getMessage());
+                }
+            }
         }
 
         // No night skip of the mod's own (SMH plan 70, MA5.5): the companion sleeps like a player (SleepChain), and
         // the game passes the night by its own rule (playersSleepingPercentage).
+    }
+
+    /**
+     * Back on its feet as a player comes back (SMH plan 70, its owner: "I will run this near constantly"): five seconds
+     * after it died, at its bed or charged anchor if it still has one, else the world spawn (never where it died, which may
+     * be lava); following its owner, by them. Never in Hardcore. Three deaths in a row, each within two minutes of coming
+     * back, and it waits for /mineagent respawn, its owner told.
+     */
+    private static void autoRespawn(CompanionState state, ServerPlayer sp) {
+        var lc = state.lifecycle;
+        if (state.companion.hardcoreDeathLocked() || state.companion.gameMode().isHardcore() || lc.autoRespawnHeld()) return;
+        long now = sp.level().getGameTime();
+        if (lc.diedAt() < 0 || now - lc.diedAt() < 100) return;
+        if (lc.quickDeaths() >= 3) {
+            lc.holdAutoRespawn();
+            var owner = state.companion.serverPlayerOwner();
+            if (owner != null) owner.sendSystemMessage(Component.literal("§c[MineAgent] " + state.companion.companionName()
+                    + " keeps dying right after coming back, so it waits for /mineagent respawn."));
+            return;
+        }
+        var server = sp.getServer();
+        if (server == null) return;
+        net.minecraft.server.level.ServerLevel level = server.getLevel(sp.getRespawnDimension());
+        net.minecraft.core.BlockPos at = sp.getRespawnPosition();
+        boolean bed = level != null && at != null && (level.getBlockState(at).getBlock() instanceof net.minecraft.world.level.block.BedBlock
+                || level.getBlockState(at).is(net.minecraft.world.level.block.Blocks.RESPAWN_ANCHOR)
+                && level.getBlockState(at).getValue(net.minecraft.world.level.block.RespawnAnchorBlock.CHARGE) > 0);
+        if (!bed) {
+            level = server.overworld();
+            at = level.getSharedSpawnPos();
+        }
+        lc.onRespawn(state.companion);
+        if (getCompanionMode(state.companion.companionId()) != CompanionMode.FOLLOW) {
+            com.mineagent.engine.entity.SafeTeleport.near(sp, level, at, sp.getYRot(), 0f);
+        }
+        state.loop.journal().record("death", "came back " + (bed ? "at my bed" : "at the world spawn") + " at " + at.getX() + ", " + at.getY() + ", " + at.getZ(),
+                now);
     }
 
     private static void discardIncrementalWork() {
@@ -2423,6 +2467,7 @@ public final class MineAgentEngine {
                                             + "cannot respawn. Create a new companion instead."));
                             return 0;
                         }
+                        state.lifecycle.clearAutoRespawnHold();
                         state.lifecycle.onRespawn(state.companion);
                         source.sendSuccess(() -> Component.literal(
                                 "§a[MineAgent] Companion respawned!"), false);
