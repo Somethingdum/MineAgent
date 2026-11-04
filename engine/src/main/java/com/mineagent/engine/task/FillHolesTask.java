@@ -85,9 +85,29 @@ public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
             }
             nav.cancel();
             TaskContext.inputDriver(player).clear();
-            // Not where it stands: a step aside first.
+            // Where it stands: the hole its feet are in (the last of a crater, filled round it) is filled as a player
+            // gets out of a pit, a jump and the block put under its feet; else a step aside first.
             if (sp.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(p))) {
-                if (++ticks > 200) next();
+                BlockPos feet = sp.blockPosition();
+                if (feet.getX() == p.getX() && feet.getZ() == p.getZ() && feet.getY() <= p.getY() + 1 && ticks < 120) {
+                    ticks++;
+                    sp.setXRot(90.0f);
+                    var input = TaskContext.inputDriver(player);
+                    input.setForward(0.0f);
+                    input.setStrafe(0.0f);
+                    input.setJumping(true);
+                    if (!sp.onGround() && sp.getY() >= p.getY() + 1.0 && level.getBlockState(p).canBeReplaced()) {
+                        var state = ((BlockItem) with).getBlock().defaultBlockState();
+                        if (Placement.placeBlock(sp, p, state)) {
+                            input.setJumping(false);
+                            filled++;
+                            if (loop != null) loop.holes().filled(dim, p.getX(), p.getY(), p.getZ());
+                            next();
+                        }
+                    }
+                    return TaskState.RUNNING;
+                }
+                if (++ticks > 320) next();
                 else if (ticks % 20 == 1) nav.navigateNear(p.getX() + 2, p.getY(), p.getZ(), 1);
                 nav.tick();
                 return TaskState.RUNNING;

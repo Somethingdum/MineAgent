@@ -1765,8 +1765,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      */
     private static boolean placeNear(ServerPlayer sp, net.minecraft.world.level.block.state.BlockState state, int r) {
         ServerLevel level = sp.serverLevel();
-        for (int ring = Math.max(1, r); ring <= 3; ring++) {
-            for (BlockPos p : ring(standing(sp), ring)) {
+        // Its own level first, then a step down and a step up (on a slope, on a ledge).
+        for (int dy : new int[] {0, -1, 1}) for (int ring = Math.max(1, r); ring <= 3; ring++) {
+            for (BlockPos p : ring(standing(sp).above(dy), ring)) {
                 var st = level.getBlockState(p);
                 if ((st.isAir() || st.canBeReplaced()) && !(st.getBlock() instanceof net.minecraft.world.level.block.CropBlock)
                         && st.getFluidState().isEmpty() && BlockHelper.canStandOn(level.getBlockState(p.below())) && !byTall(level, p)
