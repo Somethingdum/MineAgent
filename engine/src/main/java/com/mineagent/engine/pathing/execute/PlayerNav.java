@@ -135,6 +135,7 @@ public class PlayerNav {
      */
     public void tick() {
         if (!ensureCurrentLevel(true)) return;
+        openDoorwayItStandsIn();
         PathingCore.State prevState = core.state();
         core.tick();
         PathingCore.State newState = core.state();
@@ -196,6 +197,30 @@ public class PlayerNav {
     }
 
     /** Get the companion player. */
+    /**
+     * Standing in a doorway with its door shut (it stepped into the door's block from the side the door isn't on): the
+     * door opened, as a player would, before it walks; else every way out runs into the door and nowhere can be got to.
+     * A door or a gate only: a trapdoor it stands on is a floor. Shut again behind it (MA5.3).
+     */
+    private void openDoorwayItStandsIn() {
+        var sp = com.mineagent.engine.task.TaskContext.serverPlayer(player);
+        if (sp == null) return;
+        var level = sp.level();
+        for (net.minecraft.core.BlockPos at : new net.minecraft.core.BlockPos[] {sp.blockPosition(), sp.blockPosition().above()}) {
+            var st = level.getBlockState(at);
+            if (!(st.getBlock() instanceof net.minecraft.world.level.block.DoorBlock)
+                    && !(st.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock)) continue;
+            if (!com.mineagent.engine.pathing.util.BlockHelper.canOpenByHand(st)) continue;
+            sp.setShiftKeyDown(false);
+            com.mineagent.engine.act.Interaction.interactBlock(sp, at, net.minecraft.world.InteractionHand.MAIN_HAND);
+            if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(at))) {
+                var loop = com.mineagent.engine.task.TaskContext.agentLoop(player);
+                if (loop != null) loop.doorKeeper().opened(level, at, level.getGameTime());
+            }
+            return;
+        }
+    }
+
     public AgentPlayer player() {
         return player;
     }

@@ -167,7 +167,8 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
                 round.append(' ').append(d.getName()).append(": ").append(sp.serverLevel().getBlockState(at.relative(d)).getBlock())
                         .append('/').append(sp.serverLevel().getBlockState(at.relative(d).above()).getBlock());
             }
-            System.out.println("[MineAgent] light: can get nowhere from " + at.toShortString() + ";" + round);
+            System.out.println("[MineAgent] light: can get nowhere from " + at.toShortString() + " (in " + sp.serverLevel().getBlockState(at)
+                    + ");" + round);
         }
         nav.cancel();
         TaskContext.inputDriver(player).clear();

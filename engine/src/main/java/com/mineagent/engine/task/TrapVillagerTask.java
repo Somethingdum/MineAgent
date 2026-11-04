@@ -150,6 +150,21 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         }
                         refused = true; // no face to put it against in sight from here
                     }
+                    if (Boolean.getBoolean("mineagent.traceWork") && ticks >= traceAt) {
+                        traceAt = ticks + 200;
+                        int left = 0;
+                        StringBuilder which = new StringBuilder();
+                        for (var w : layout.walls()) {
+                            if (level.getBlockState(at(w)).canBeReplaced()) {
+                                left++;
+                                if (which.length() < 160) which.append(' ').append(w.x()).append(',').append(w.y()).append(',').append(w.z());
+                            }
+                        }
+                        System.out.println("[MineAgent] cell: job site " + at(layout.jobSite()).toShortString() + ", cell " + at(layout.cell()).toShortString()
+                                + ", " + placed + " put in, " + left + " left:" + which + "; it at " + sp.blockPosition().toShortString() + ", the villager at "
+                                + v.blockPosition().toShortString() + "; far " + far + ", under it " + underMe + ", refused " + refused + ", waiting " + waiting
+                                + ", going to " + (goingTo == null ? "none" : goingTo.toShortString()));
+                    }
                     if (far || underMe || refused) {
                         // Somewhere else to build from: the way in first (every wall in reach, none underfoot), then the
                         // other spots round the cell in turn, till each block has a face in sight from one.
@@ -238,7 +253,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
-    private int offCell;
+    private int offCell, traceAt;
     private boolean onlyItsSpotLeft;
     /** The spot it is going to build from, how long it has been on its way, and the spots it builds from in turn. */
     private BlockPos goingTo;
