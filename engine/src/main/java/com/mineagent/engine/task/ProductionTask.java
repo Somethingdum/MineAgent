@@ -2305,10 +2305,17 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /**
      * Next to a fence or a wall: a block put there is a step up onto it (a block's top to a fence's is half a block, which
-     * a player walks up), and over the fence out of the pen. Its workshop goes elsewhere.
+     * a player walks up), and over the fence out of the pen; next to a door or a gate, it shuts the way in. Its workshop
+     * goes elsewhere.
      */
     static boolean byTall(ServerLevel level, BlockPos p) {
-        for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) if (BlockHelper.tall(level.getBlockState(p.relative(d)))) return true;
+        for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+            var st = level.getBlockState(p.relative(d));
+            if (BlockHelper.tall(st)) return true;
+            // Nor by a door or a gate: a furnace put down just inside a hut's door (and a table on it) shut the hut.
+            if (st.getBlock() instanceof net.minecraft.world.level.block.DoorBlock
+                    || st.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock) return true;
+        }
         return false;
     }
 

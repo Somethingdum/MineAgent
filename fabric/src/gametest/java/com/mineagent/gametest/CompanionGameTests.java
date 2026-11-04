@@ -1885,7 +1885,10 @@ public class CompanionGameTests implements FabricGameTest {
                 boolean shovel = inv.countItem(Items.STONE_SHOVEL) > 0;
                 if (shovel && freed[0]) {
                     back[0] = true;
-                    s.owner().resetLastActionTime(); // they're back at the keys
+                    // They're back at the keys. Said as well: the test server runs faster than the clock, and an input
+                    // within a second and a half of saying "afk" counts as the same moment.
+                    s.owner().resetLastActionTime();
+                    MineAgentEngine.onPlayerChat(s.owner(), "back");
                     return;
                 }
                 if (helper.getTick() >= 2600) {

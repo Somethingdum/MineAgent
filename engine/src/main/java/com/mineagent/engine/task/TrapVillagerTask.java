@@ -103,6 +103,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                             if (turned != null) {
                                 layout = turned;
                                 waitAt = null;
+                                stands = null;
+                                standIndex = 0;
                             }
                             offCell = 0;
                         }
@@ -110,7 +112,19 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         offCell--;
                     }
                     onlyItsSpotLeft = false;
-                    boolean waiting = false, underMe = false;
+                    // On its way to a spot to build from: there first.
+                    if (goingTo != null) {
+                        if (sp.blockPosition().equals(goingTo) || ++goTicks > 300) {
+                            goingTo = null;
+                            nav.cancel();
+                            TaskContext.inputDriver(player).clear();
+                        } else {
+                            if (goTicks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(goingTo.getX(), goingTo.getY(), goingTo.getZ(), 0);
+                            nav.tick();
+                            return TaskState.RUNNING;
+                        }
+                    }
+                    boolean waiting = false, underMe = false, far = false, refused = false;
                     for (var w : layout.walls()) {
                         BlockPos p = at(w);
                         if (!level.getBlockState(p).canBeReplaced()) continue;
@@ -126,34 +140,27 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                             waiting = true;
                             continue;
                         }
-                        if (p.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
-                            // From the way in, every wall is in reach and none is underfoot; beside the wall if it can't
-                            // get there.
-                            BlockPos from = at(layout.way());
-                            boolean toWay = ++walkTicks < 400;
-                            BlockPos to = toWay ? from : p;
-                            if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(to.getX(), to.getY(), to.getZ(), toWay ? 0 : 2);
-                            nav.tick();
-                            return TaskState.RUNNING;
+                        if (p.distToCenterSqr(sp.getEyePosition()) > 4.4 * 4.4) {
+                            far = true;
+                            continue;
                         }
-                        nav.cancel();
-                        TaskContext.inputDriver(player).clear();
                         if (Placement.placeAnySupportBlock(sp, p)) {
                             placed++;
                             return TaskState.RUNNING; // one a tick, as a player puts them down
                         }
-                        waiting = true; // it won't go in yet: the next, and this one again after
+                        refused = true; // no face to put it against in sight from here
                     }
-                    if (underMe) {
-                        // Only spots it stands on (and any the villager does) left: off them, to the way in (no wall).
-                        BlockPos off = at(layout.way());
-                        if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(off.getX(), off.getY(), off.getZ(), 0);
-                        nav.tick();
+                    if (far || underMe || refused) {
+                        // Somewhere else to build from: the way in first (every wall in reach, none underfoot), then the
+                        // other spots round the cell in turn, till each block has a face in sight from one.
+                        goingTo = nextStand(level, sp);
+                        goTicks = 0;
+                        if (goingTo == null) return end(false, "there's nowhere to stand to build the cell");
                         return TaskState.RUNNING;
                     }
                     if (waiting) {
                         onlyItsSpotLeft = true; // looked at next tick: turned to where it stands, if that is beside its job site
-                        return TaskState.RUNNING; // only spots the villager stands on, or that won't take yet, are left
+                        return TaskState.RUNNING; // only spots the villager stands on are left
                     }
                     phase = Phase.WAIT;
                     ticks = 0;
@@ -233,6 +240,41 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     private BlockPos waitAt;
     private int offCell;
     private boolean onlyItsSpotLeft;
+    /** The spot it is going to build from, how long it has been on its way, and the spots it builds from in turn. */
+    private BlockPos goingTo;
+    private int goTicks, standIndex;
+    private java.util.List<BlockPos> stands;
+
+    /**
+     * The next spot to build from, in turn: the way in, the place to trade from, either side of the way in, then the
+     * others two or three out round the job site; each open two high on firm ground and none a wall, the cell or the
+     * job site. The one it stands on is passed over.
+     */
+    private BlockPos nextStand(ServerLevel level, ServerPlayer sp) {
+        if (stands == null) {
+            stands = new java.util.ArrayList<>();
+            var l = layout;
+            int dx = l.cell().x() - l.jobSite().x(), dz = l.cell().z() - l.jobSite().z(), sx = dz, sz = dx;
+            BlockPos e = at(l.way()), j = at(l.jobSite());
+            java.util.List<BlockPos> ordered = new java.util.ArrayList<>(java.util.List.of(e, at(l.tradeFrom()), e.offset(sx, 0, sz), e.offset(-sx, 0, -sz)));
+            for (int r = 2; r <= 3; r++) {
+                for (int x = -r; x <= r; x++) for (int z = -r; z <= r; z++) {
+                    if (Math.max(Math.abs(x), Math.abs(z)) == r) ordered.add(j.offset(x, 0, z));
+                }
+            }
+            for (BlockPos p : ordered) {
+                var pos = new VillagerCell.Pos(p.getX(), p.getY(), p.getZ());
+                if (l.walls().contains(pos) || pos.equals(l.cell()) || pos.equals(l.jobSite()) || stands.contains(p)) continue;
+                if (open(level, p)) stands.add(p);
+            }
+        }
+        if (stands.isEmpty()) return null;
+        for (int i = 0; i < stands.size(); i++) {
+            BlockPos p = stands.get(standIndex++ % stands.size());
+            if (!p.equals(sp.blockPosition())) return p;
+        }
+        return stands.get(0);
+    }
 
     /**
      * The cell where the villager stands, when that is beside its job site at its height (the way in and the place to
