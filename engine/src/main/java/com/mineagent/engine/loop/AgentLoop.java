@@ -3795,6 +3795,18 @@ public class AgentLoop {
             holes.dug(dim, p.getX(), p.getY(), p.getZ(), surface != null ? surface : id, tick);
             n++;
         }
+        // Sand and gravel over what it blew falls into the crater, and leaves its own place empty: kept too (one still
+        // there when it comes to fill is struck off as filled).
+        java.util.Set<net.minecraft.core.BlockPos> gone = new java.util.HashSet<>(blown);
+        for (var p : blown) {
+            var up = p.above();
+            for (int k = 0; k < 4 && !gone.contains(up); k++, up = up.above()) {
+                var st = level.getBlockState(up);
+                String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+                if (!(st.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) || !com.mineagent.engine.world.Craters.ground(id)) break;
+                holes.dug(dim, up.getX(), up.getY(), up.getZ(), surface != null ? surface : id, tick);
+            }
+        }
         if (n > 0) journal.record("crater", "a creeper blew a hole of " + n + " blocks near home, at " + centre.getX() + ", " + centre.getY()
                 + ", " + centre.getZ(), tick, dim, centre.getX(), centre.getY(), centre.getZ());
     }

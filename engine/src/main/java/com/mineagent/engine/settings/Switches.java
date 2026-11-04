@@ -75,6 +75,7 @@ public final class Switches {
     public static boolean readChestLabels() { return b().readChestLabels(); }
     public static boolean fillCraters() { return b().fillCraters(); }
     public static boolean tradesInPlans() { return b().tradesInPlans(); }
+    public static boolean branchForOre() { return b().branchForOre(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

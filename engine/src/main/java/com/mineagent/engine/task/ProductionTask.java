@@ -535,6 +535,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
             step = todo.poll();
             stalls = 0;
+            branchMining = false;
             stepStarted = sp().level().getGameTime();
             itemBefore = count(sp(), item(step.item()));
             if (step.action() == Action.SMELT) smeltStage = 0;
@@ -604,15 +605,17 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         int got = count(sp, item(step.item())) - itemBefore;
         if (sub != null) {
             // A minute with nothing mined (a block it can't get to, far off): that try is over; three, and the source.
+            // An ore none of which is near: a branch mine at its best height instead (down there takes a while).
             long now = sp.level().getGameTime();
             if (got > lastGot) {
                 lastGot = got;
                 mineProgressAt = now;
             }
-            if (now - mineProgressAt > 1_200) {
+            if (now - mineProgressAt > (branchMining ? 6_000 : 1_200)) {
                 sub.interrupt();
                 sub = null;
                 mineProgressAt = now;
+                if (!branchMining && branchMine(sp, got)) return TaskState.RUNNING;
                 if (++stalls >= 3) return outOf(step.block());
                 return TaskState.RUNNING;
             }
@@ -621,6 +624,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             sub = null;
             int after = count(sp, item(step.item())) - itemBefore;
             if (st != TaskState.SUCCESS && after <= lastGot) {
+                if (!branchMining && branchMine(sp, after)) return TaskState.RUNNING;
                 if (++stalls >= 3) return outOf(step.block());
             } else {
                 stalls = 0;
@@ -648,6 +652,27 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     private int lastGot;
     private long mineProgressAt;
+    /** The ore is being got by a branch mine at its best height (none of it was near). */
+    private boolean branchMining;
+
+    /**
+     * An ore it found none of near (SMH plan 70: "it can find caves, it can find iron, it can even strip mine"): down a
+     * staircase to the ore's best height in this world and a branch mine there ({@link MiningTask}), for what is left of
+     * the step. False for what isn't an ore.
+     */
+    private boolean branchMine(ServerPlayer sp, int got) {
+        String b = step.block() == null ? "" : step.block().substring(step.block().indexOf(':') + 1);
+        if (!b.endsWith("_ore") || b.startsWith("nether_") || !com.mineagent.engine.settings.Switches.branchForOre()) return false;
+        String ore = b.replaceFirst("^deepslate_", "").replaceFirst("_ore$", "");
+        int left = Math.max(1, step.count() - got);
+        branchMining = true;
+        say("None of the " + ore + " is near: I'm going down to mine for it.");
+        sub = new MiningTask(player, new MiningTask.MineRecord(record.toolCallId() + ":branch", ore, left, false));
+        sub.start();
+        lastGot = got;
+        mineProgressAt = sp.level().getGameTime();
+        return true;
+    }
 
     // ── Closest source first (MA7.6) ────────────────────────────────
 
