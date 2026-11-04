@@ -4249,6 +4249,7 @@ public class CompanionGameTests implements FabricGameTest {
         kit.setItem(4, new ItemStack(Items.STONE_SHOVEL));
         kit.setItem(5, new ItemStack(Items.CHARCOAL, 8));
         kit.setItem(6, new ItemStack(Items.COOKED_BEEF, 16));
+        kit.setItem(7, new ItemStack(Items.CRAFTING_TABLE)); // its kit carries one
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
         helper.onEachTick(() -> {
             if (helper.getTick() % 100 == 0) trace(helper, s, "on its own");
@@ -4284,6 +4285,7 @@ public class CompanionGameTests implements FabricGameTest {
         kit.setItem(5, new ItemStack(Items.CHARCOAL, 8));
         kit.setItem(6, new ItemStack(Items.COOKED_BEEF, 16));
         kit.setItem(7, new ItemStack(Items.COBBLESTONE, 64));
+        kit.setItem(8, new ItemStack(Items.CRAFTING_TABLE)); // its kit carries one
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
         boolean[] lost = {false};
         helper.onEachTick(() -> {

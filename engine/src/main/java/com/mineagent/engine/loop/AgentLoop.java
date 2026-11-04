@@ -5379,10 +5379,13 @@ public class AgentLoop {
      */
     private String starterKit(net.minecraft.server.level.ServerPlayer self) {
         List<String> o = new ArrayList<>();
+        var inv = self.getInventory();
         for (String kind : List.of("pickaxe", "axe", "sword", "shovel")) {
             if (!hasTool(self, kind, 2)) o.add("make me a stone " + kind);
+            // A crafting table on it, made while the trees are near (the benchmark: the one it put down left up the hill
+            // from its mine, and the craft given up "can't get to the crafting table and can't make one").
+            if ("pickaxe".equals(kind) && inv.countItem(net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) o.add("make me 1 crafting table");
         }
-        var inv = self.getInventory();
         // Coal mined (it is in the stone it digs anyway; charcoal wants wood, which near a base runs out), else charcoal.
         if (inv.countItem(net.minecraft.world.item.Items.COAL) + inv.countItem(net.minecraft.world.item.Items.CHARCOAL) < 8) {
             o.add(kitTries + keptUpTries > 1 && (kitTries + keptUpTries) % 2 == 0 ? "make me 8 charcoal" : "make me 8 coal");
