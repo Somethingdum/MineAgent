@@ -211,9 +211,14 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         boolean there = sp.blockPosition().equals(door);
                         if (there && nudging > 15) nudging = 15; // there: a moment's push, then back
                         if (nudging > 0) {
-                            BlockPos to = nudging > 15 ? door : cell;
-                            if (nudging % 10 == 0 || !nav.isNavigating()) nav.navigateNear(to.getX(), to.getY(), to.getZ(), 0);
-                            nav.tick();
+                            if (nudging > 15) {
+                                if (nudging % 10 == 0 || !nav.isNavigating()) nav.navigateNear(door.getX(), door.getY(), door.getZ(), 0);
+                                nav.tick();
+                            } else {
+                                // In the way in, still: two bodies in one another are pushed apart, it into the cell.
+                                nav.cancel();
+                                TaskContext.inputDriver(player).clear();
+                            }
                             return TaskState.RUNNING;
                         }
                         nav.cancel();
@@ -268,15 +273,18 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     if (doorSpots == null) doorSpots = doorSpots(level);
                     if (waitAt == null) waitAt = doorSpots.isEmpty() ? waitSpot(level, layout) : doorSpots.get(0);
                     // Not got to in ten seconds: the next spot by the door.
-                    if (sp.blockPosition().distSqr(waitAt) > 2 && ++blockingTicks > 200 && !doorSpots.isEmpty()) {
+                    boolean away = sp.blockPosition().distSqr(waitAt) > 2 || sp.blockPosition().equals(door) || sp.blockPosition().equals(cell);
+                    if (away && ++blockingTicks > 200 && !doorSpots.isEmpty()) {
                         waitAt = doorSpots.get(++waitIndex % doorSpots.size());
                         blockingTicks = 0;
-                    } else if (sp.blockPosition().distSqr(waitAt) <= 2) {
+                    } else if (!away) {
                         blockingTicks = 0;
                     }
                     BlockPos waitAt = this.waitAt;
-                    if (sp.blockPosition().distSqr(waitAt) > 2) {
-                        if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(waitAt.getX(), waitAt.getY(), waitAt.getZ(), 1);
+                    // On its spot, or by it; never in the way in or the cell, whatever is near.
+                    boolean onSpot = sp.blockPosition().distSqr(waitAt) <= 2 && !sp.blockPosition().equals(door) && !sp.blockPosition().equals(cell);
+                    if (!onSpot) {
+                        if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(waitAt.getX(), waitAt.getY(), waitAt.getZ(), 0);
                         nav.tick();
                     } else {
                         nav.cancel();
