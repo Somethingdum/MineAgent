@@ -3975,6 +3975,11 @@ public class CompanionGameTests implements FabricGameTest {
         villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
         villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FARMER).setLevel(1));
         villager.setNoAi(true);
+        // A novice farmer buys two of the four crops at random: this one buys wheat, so the scene is the same each run.
+        var offers = new net.minecraft.world.item.trading.MerchantOffers();
+        offers.add(new net.minecraft.world.item.trading.MerchantOffer(new net.minecraft.world.item.trading.ItemCost(Items.WHEAT, 20),
+                new ItemStack(Items.EMERALD), 16, 2, 0.05f));
+        villager.setOffers(offers);
         helper.getLevel().addFreshEntity(villager);
         return villager;
     }
@@ -4088,5 +4093,141 @@ public class CompanionGameTests implements FabricGameTest {
         if (c == null) return 0;
         for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(item)) n += c.getItem(i).getCount();
         return n;
+    }
+
+    /**
+     * Plan 70, MA10.5, asking before your chests: "make me 2 iron ingots" with ingots in a chest it knows: it says it will
+     * take them, and does; then "leave my chests", and "make me 4 iron ingots": the rest smelted from its raw iron, the
+     * chest left as it is.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_chests_asked", timeoutTicks = 2400)
+    public void itSaysBeforeTakingFromYourChestsAndStopsWhenTold(GameTestHelper helper) {
+        Scene s = scene(helper, "Borrower");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chestAt = new BlockPos(6, 1, 3);
+        helper.setBlock(chestAt, Blocks.CHEST);
+        var chest = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(helper.absolutePos(chestAt));
+        chest.setItem(0, new ItemStack(Items.IRON_INGOT, 4));
+        BlockPos abs = helper.absolutePos(chestAt);
+        s.loop().noteChest(helper.getLevel().dimension().location().toString(), abs.getX(), abs.getY(), abs.getZ(),
+                java.util.Map.of("minecraft:iron_ingot", 4), helper.getLevel().getGameTime());
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.RAW_IRON, 4));
+        inv.setItem(2, new ItemStack(Items.COAL, 2));
+        inv.setItem(3, new ItemStack(Items.FURNACE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 2 iron ingots"));
+        boolean[] second = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "chests asked");
+            if (!second[0] && !lastSaid(s, "Done: 2 iron").isEmpty()) {
+                second[0] = true;
+                MineAgentEngine.onPlayerChat(s.owner(), "leave my chests");
+                MineAgentEngine.onPlayerChat(s.owner(), "make me 4 iron ingots");
+                return;
+            }
+            String done = second[0] ? lastSaid(s, "Done: 4 iron") : "";
+            String failed = lastSaid(s, "I can't");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2350) {
+                boolean told = !lastSaid(s, "I'll take").isEmpty();
+                int left = count(chest, Items.IRON_INGOT), ingots = inv.countItem(Items.IRON_INGOT);
+                String how = "told first " + told + ", " + left + " ingots left in the chest, " + ingots + " carried; said: "
+                        + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (told && left == 2 && ingots >= 4) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA10.8, mining beside you: its owner digs along a stone wall with iron behind it; the companion, with a
+     * pickaxe and no torches, digs out the iron their digging laid open and carries it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_partner_ore", timeoutTicks = 900)
+    public void theOreBesideAMinerIsDugOut(GameTestHelper helper) {
+        ServerPlayer miner = player(helper, "Digger", new BlockPos(3, 1, 5));
+        Scene s = scene(helper, "Helper", false, miner);
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        miner.getInventory().setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        for (int x = 2; x <= 12; x++) for (int y = 1; y <= 3; y++) {
+            helper.setBlock(x, y, 6, Blocks.STONE);
+            helper.setBlock(x, y, 7, Blocks.STONE);
+        }
+        helper.setBlock(6, 1, 7, Blocks.IRON_ORE);
+        helper.setBlock(7, 2, 7, Blocks.IRON_ORE);
+        for (int i = 0; i < 8; i++) {
+            final int x = 3 + i;
+            helper.runAfterDelay(20 + i * 20L, () -> {
+                BlockPos at = helper.absolutePos(new BlockPos(x, 1, 5));
+                miner.teleportTo(helper.getLevel(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 0.0f, 0.0f);
+                miner.gameMode.destroyBlock(helper.absolutePos(new BlockPos(x, 1, 6)));
+                miner.gameMode.destroyBlock(helper.absolutePos(new BlockPos(x, 2, 6)));
+            });
+        }
+        helper.onEachTick(() -> {
+            trace(helper, s, "partner-ore");
+            int raw = s.body().getInventory().countItem(Items.RAW_IRON);
+            if (raw >= 1 && helper.getTick() > 60) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 880) {
+                String how = raw + " raw iron; said: " + lastSaid(s, "") + "; doing " + s.loop().ownerWork().doing(helper.getLevel().getGameTime());
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA6.3, a schedule: "light up the area by day, guard here by night": each taken up as the day turns. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_schedule", timeoutTicks = 900)
+    public void aScheduleByDayAndByNight(GameTestHelper helper) {
+        Scene s = scene(helper, "Shifter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.TORCH, 16));
+        var level = helper.getLevel();
+        long was = level.getDayTime();
+        level.setDayTime(was - was % 24_000L + 1_000L);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "light up the area by day, guard here by night"));
+        helper.runAfterDelay(300, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L));
+        helper.onEachTick(() -> {
+            trace(helper, s, "schedule");
+            boolean morning = !lastSaid(s, "Morning: light up the area").isEmpty();
+            boolean evening = !lastSaid(s, "Evening: guard here").isEmpty();
+            boolean guarding = s.loop().guardRadiusBlocks() > 0 && !lastSaid(s, "Guarding").isEmpty();
+            if (morning && evening && guarding || helper.getTick() >= 880) {
+                String how = "morning " + morning + ", evening " + evening + ", guarding " + guarding + "; said: " + lastSaid(s, "");
+                MineAgentEngine.onPlayerChat(s.owner(), "no schedule");
+                level.setDayTime(was);
+                tidy(s);
+                if (morning && evening && guarding) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA6.3, a home radius: "stay within 8 blocks of here when idle", then found 18 blocks off: back home. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_home_radius", timeoutTicks = 800)
+    public void itComesBackWithinItsHomeRadiusWhenIdle(GameTestHelper helper) {
+        Scene s = scene(helper, "Homebody");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "stay within 8 blocks of here when you're idle"));
+        helper.runAfterDelay(20, () -> {
+            BlockPos far = helper.absolutePos(new BlockPos(21, 1, 3));
+            s.body().teleportTo(helper.getLevel(), far.getX() + 0.5, far.getY(), far.getZ() + 0.5, 0.0f, 0.0f);
+        });
+        BlockPos home = helper.absolutePos(new BlockPos(3, 1, 3));
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 40) return;
+            trace(helper, s, "home radius");
+            double d = Math.sqrt(s.body().blockPosition().distSqr(home));
+            if (d <= 9 || helper.getTick() >= 780) {
+                String how = String.format(java.util.Locale.ROOT, "%.1f blocks from home; said: %s", d, lastSaid(s, ""));
+                MineAgentEngine.onPlayerChat(s.owner(), "you can wander");
+                tidy(s);
+                if (d <= 9) helper.succeed();
+                else fail(helper, how);
+            }
+        });
     }
 }

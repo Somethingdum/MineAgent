@@ -509,6 +509,7 @@ public class AgentLoop {
             p.setRouteMemory(placeKeeper.memory()); // reads an older routes.json once; the store keeps them now
             p.setTalks(phraseBook, talkSummary);
             p.setChestPurposes(chestPurposes);
+            p.setChestPermission(this);
             p.setTacticBook(tacticBook);
             p.loadAll();
             openStore(memDir.resolve("store"));
@@ -744,6 +745,7 @@ public class AgentLoop {
         int close0 = message.indexOf("]: ");
         journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
                 + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
+        if (fromOwner && scheduleCommand(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName()))) return;
         if (fromOwner) {
             // Phrasing it has learned, for its owner's own words only (MA10.2); and "that", "it", "there" pinned down.
             String said = com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName());
@@ -1446,6 +1448,15 @@ public class AgentLoop {
                 orderGoal("trade for " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
+                return true;
+            }
+            case CHESTS_OK, CHESTS_NO -> {
+                if (!fromOwner) return false;
+                chestsAllowed = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.CHESTS_OK;
+                chestsTold = true;
+                journal.record("order", chestsAllowed ? "use my chests" : "leave my chests", currentGameTickSafe());
+                saveMemoryNow();
+                speakToOwner(chestsAllowed ? "I'll use what's in your chests when a job needs it." : "I'll leave your chests alone.");
                 return true;
             }
             case CHEST_PURPOSE -> {
@@ -2790,6 +2801,8 @@ public class AgentLoop {
             if (gameTick % 200L == 0L) watchProgress(player);
             if (gameTick % 200L == 0L) syncProtected();
             if (gameTick % 100L == 0L) goldInTheNether(player);
+            if (gameTick % 100L == 0L) schedule(player);
+            if (gameTick % 100L == 0L) stayNearHome(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3342,6 +3355,207 @@ public class AgentLoop {
         return talkSummary;
     }
 
+    // ── Schedules and a home to stay near (SMH plan 70, MA6.3) ──
+
+    /** "Farm by day, guard by night": what it does by day and by night; null for none. Kept. */
+    private volatile String dayOrder, nightOrder;
+    /** Which half it is in now: 1 day, 2 night, 0 not started. */
+    private int schedulePhase;
+    /** "Stay within 24 blocks of here when you're idle": the home and how far; null for none. Kept. */
+    private volatile com.mineagent.engine.world.RouteMemory.Point idleHome;
+    private volatile int idleRadius;
+
+    private static final java.util.regex.Pattern DAY_NIGHT = java.util.regex.Pattern.compile(
+            "^(.{3,80}?),? (?:by day|in the day(?:time)?|during the day|in the daytime)(?:,| and| then)* (.{3,80}?) (?:by night|at night|in the night|during the night)$");
+    private static final java.util.regex.Pattern NIGHT_DAY = java.util.regex.Pattern.compile(
+            "^(.{3,80}?),? (?:by night|at night|in the night|during the night)(?:,| and| then)* (.{3,80}?) (?:by day|in the day(?:time)?|during the day)$");
+    private static final java.util.regex.Pattern BY_DAY_FIRST = java.util.regex.Pattern.compile(
+            "^(?:by day|in the day(?:time)?|during the day),? (.{3,80}?),? (?:and |then )?(?:by night|at night|during the night),? (.{3,80})$");
+    private static final java.util.regex.Pattern STAY_NEAR = java.util.regex.Pattern.compile(
+            "^(?:stay|keep|remain)(?: within (\\d{1,3}) blocks? of| near| close to| around) (?:here|this spot|this place|home|the base)(?: when you'?re idle| when idle| when you have nothing to do| when you'?re not busy)?$");
+
+    /**
+     * "Farm by day, guard by night", "no schedule", "stay within 24 blocks of here when idle", "you can wander": set,
+     * said and kept. True when the words were one of these.
+     */
+    private boolean scheduleCommand(String t) {
+        if (t.matches("^(?:no|stop the|drop the|cancel the|clear the|forget the) schedule$")) {
+            dayOrder = nightOrder = null;
+            schedulePhase = 0;
+            speakToOwner("No schedule.");
+            saveMemoryNow();
+            return true;
+        }
+        if (t.matches("^(?:you can wander|wander freely|no home radius|go where you like|you can roam)$")) {
+            idleHome = null;
+            speakToOwner("I'll go where the work takes me.");
+            saveMemoryNow();
+            return true;
+        }
+        var near = STAY_NEAR.matcher(t);
+        if (near.matches()) {
+            var me = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+            var owner = me == null ? null : me.serverPlayerOwner();
+            if (owner == null) return false;
+            int r = near.group(1) == null ? 24 : Math.max(4, Math.min(256, Integer.parseInt(near.group(1))));
+            idleHome = new com.mineagent.engine.world.RouteMemory.Point(owner.serverLevel().dimension().location().toString(),
+                    owner.getBlockX(), owner.getBlockY(), owner.getBlockZ());
+            idleRadius = r;
+            speakToOwner("When I've nothing to do, I'll stay within " + r + " blocks of here.");
+            saveMemoryNow();
+            return true;
+        }
+        String day = null, night = null;
+        var m = DAY_NIGHT.matcher(t);
+        if (m.matches()) {
+            day = m.group(1);
+            night = m.group(2);
+        } else if ((m = NIGHT_DAY.matcher(t)).matches()) {
+            night = m.group(1);
+            day = m.group(2);
+        } else if ((m = BY_DAY_FIRST.matcher(t)).matches()) {
+            day = m.group(1);
+            night = m.group(2);
+        }
+        if (day == null) return false;
+        day = scheduleLine(day.strip());
+        night = scheduleLine(night.strip());
+        if (day == null || night == null) return false;
+        dayOrder = day;
+        nightOrder = night;
+        schedulePhase = 0;
+        speakToOwner("By day: " + day + ". By night: " + night + ". Say \"no schedule\" to stop.");
+        journal.record("order", day + " by day, " + night + " by night", currentGameTickSafe());
+        saveMemoryNow();
+        return true;
+    }
+
+    /** Half of a schedule as an order code runs: a guard order, "farm", or an order it knows; null otherwise. */
+    private String scheduleLine(String w) {
+        if (w.matches("^(?:guard|stand guard|keep watch|watch)(?: here| this place| the base| me)?$")) return w.contains("me") ? "guard me" : "guard here";
+        if (w.matches("^(?:farm|tend the farm|tend the fields|work the fields|harvest|do the farming)$")) return "farm";
+        var c = orderIn(w, companion.companionName());
+        return c.isPresent() ? w : null;
+    }
+
+    /** At dawn and at dusk, the other half: what it was doing put down, the half's order taken up. */
+    private void schedule(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || dayOrder == null || nightOrder == null || suspended) return;
+        long time = self.serverLevel().getDayTime() % 24_000L;
+        int phase = time < 12_500L || time >= 23_500L ? 1 : 2;
+        if (phase == schedulePhase) return;
+        schedulePhase = phase;
+        String line = phase == 1 ? dayOrder : nightOrder;
+        haltNow();
+        standDown();
+        goalBook.active().ifPresent(g -> goalBook.drop(g.id()));
+        orderGoalId = null;
+        speakToOwner((phase == 1 ? "Morning: " : "Evening: ") + line + ".");
+        journal.record("schedule", (phase == 1 ? "day: " : "night: ") + line, currentGameTickSafe());
+        if (line.startsWith("guard")) {
+            onOwnerMessage(line, true);
+            return;
+        }
+        if (line.equals("farm")) {
+            String crop = cropToFarm(self);
+            if (crop == null) {
+                speakToOwner("No ripe crops near to farm; I'll wait for them.");
+                schedulePhase = 0; // tried again at the next look
+                return;
+            }
+            line = crop;
+        }
+        onOwnerMessage(line + " until I say stop", true);
+    }
+
+    /** "Farm": the crop whose fields in sight are ripest, as a standing order ("make me 64 wheat"). */
+    private String cropToFarm(net.minecraft.server.level.ServerPlayer self) {
+        var level = self.serverLevel();
+        Map<String, Integer> ripe = new java.util.HashMap<>();
+        var at = self.blockPosition();
+        for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-24, -4, -24), at.offset(24, 4, 24))) {
+            var st = level.getBlockState(p);
+            if (st.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(st)) {
+                ripe.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(crop.asItem() == net.minecraft.world.item.Items.AIR
+                        ? net.minecraft.world.item.Items.WHEAT : cropItem(crop)).toString(), 1, Integer::sum);
+            }
+        }
+        return ripe.entrySet().stream().max(Map.Entry.comparingByValue())
+                .map(e -> "make me 64 " + com.mineagent.engine.planning.production.ProductionPlanner.plural(e.getKey(), 64)).orElse(null);
+    }
+
+    private static net.minecraft.world.item.Item cropItem(net.minecraft.world.level.block.CropBlock crop) {
+        if (crop == net.minecraft.world.level.block.Blocks.WHEAT) return net.minecraft.world.item.Items.WHEAT;
+        if (crop == net.minecraft.world.level.block.Blocks.CARROTS) return net.minecraft.world.item.Items.CARROT;
+        if (crop == net.minecraft.world.level.block.Blocks.POTATOES) return net.minecraft.world.item.Items.POTATO;
+        if (crop == net.minecraft.world.level.block.Blocks.BEETROOTS) return net.minecraft.world.item.Items.BEETROOT;
+        return crop.asItem();
+    }
+
+    /** Idle and further from its home than it was told to stay: back there (MA6.3). */
+    private void stayNearHome(net.minecraft.server.level.ServerPlayer self) {
+        var home = idleHome;
+        if (self == null || home == null || suspended) return;
+        if (!home.dim().equals(self.serverLevel().dimension().location().toString())) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        if (MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return;
+        double dx = self.getX() - home.x(), dz = self.getZ() - home.z();
+        if (dx * dx + dz * dz <= (double) idleRadius * idleRadius) return;
+        journal.record("home", "back within " + idleRadius + " blocks of home", currentGameTickSafe());
+        goTo(home, List.of(), false);
+    }
+
+    /** As kept with the world: the schedule, and the home to stay near. */
+    public String[] scheduleState() {
+        var h = idleHome;
+        return new String[] {dayOrder, nightOrder, h == null ? null : h.dim() + "|" + h.x() + "|" + h.y() + "|" + h.z() + "|" + idleRadius};
+    }
+
+    public void scheduleState(String day, String night, String home) {
+        dayOrder = day;
+        nightOrder = night;
+        if (home != null) {
+            String[] f = home.split("\\|");
+            if (f.length == 5) {
+                try {
+                    idleHome = new com.mineagent.engine.world.RouteMemory.Point(f[0], Integer.parseInt(f[1]), Integer.parseInt(f[2]), Integer.parseInt(f[3]));
+                    idleRadius = Integer.parseInt(f[4]);
+                } catch (NumberFormatException ignored) {
+                    idleHome = null;
+                }
+            }
+        }
+    }
+
+    /** Whether it may take from its owner's chests (MA10.5): "leave my chests" says no, "use my chests" yes. Kept. */
+    private volatile boolean chestsAllowed = true;
+    /** Whether it has said, in this world, that it takes from the chests. Kept. */
+    private volatile boolean chestsTold;
+
+    public boolean mayUseChests() {
+        return chestsAllowed;
+    }
+
+    public boolean chestsTold() {
+        return chestsTold;
+    }
+
+    /** As kept with the world. */
+    public void chestsPermission(boolean allowed, boolean told) {
+        this.chestsAllowed = allowed;
+        this.chestsTold = told;
+    }
+
+    /** Before the first take from the chests in a world: said once, and how to stop it. */
+    public void beforeTakingFromChests(int n, String what, net.minecraft.core.BlockPos chest) {
+        if (chestsTold || !com.mineagent.engine.settings.Switches.manners()) return;
+        chestsTold = true;
+        speakToOwner("I'll take " + n + " " + what + " from your chest at " + chest.getX() + ", " + chest.getY() + ", " + chest.getZ()
+                + ". Say \"leave my chests\" and I won't use them.");
+        saveMemoryNow();
+    }
+
     /** Chests with a purpose in this world (MA9.2): "this chest is for tools". */
     private final com.mineagent.engine.world.ChestPurposes chestPurposes = new com.mineagent.engine.world.ChestPurposes();
 
@@ -3516,7 +3730,10 @@ public class AgentLoop {
         switch (ownerWork.doing(now)) {
             case MINING -> {
                 if (now - partnerLitAt < 400) return;
-                if (self.getInventory().countItem(net.minecraft.world.item.Items.TORCH) == 0) return;
+                if (self.getInventory().countItem(net.minecraft.world.item.Items.TORCH) == 0) {
+                    mineBeside(self, now);
+                    return;
+                }
                 // The trail behind them: a dark spot a mob could stand on near where they have dug.
                 var trail = ownerWork.trail(now);
                 net.minecraft.core.BlockPos dark = null;
@@ -3531,7 +3748,10 @@ public class AgentLoop {
                     }
                     if (dark != null) break;
                 }
-                if (dark == null) return;
+                if (dark == null) {
+                    mineBeside(self, now);
+                    return;
+                }
                 partnerLitAt = now;
                 journal.record("partner", "lighting the tunnel behind you", now);
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LightTask.LightRecord(
@@ -3568,6 +3788,53 @@ public class AgentLoop {
             }
             default -> { }
         }
+    }
+
+    /** When it last went for ore beside its owner (game ticks). */
+    private long partnerMinedAt = Long.MIN_VALUE / 2;
+
+    /**
+     * Mining beside its owner (MA10.8): the ore their digging has laid open near them (a face to the air), the most worth
+     * first, dug out and carried; no more than a few blocks at a time, and only with a pickaxe that takes it.
+     */
+    private void mineBeside(net.minecraft.server.level.ServerPlayer self, long now) {
+        if (now - partnerMinedAt < 300) return;
+        var trail = ownerWork.trail(now);
+        if (trail.isEmpty()) return;
+        var level = self.serverLevel();
+        int[] last = trail.get(trail.size() - 1);
+        var near = new net.minecraft.core.BlockPos(last[0], last[1], last[2]);
+        net.minecraft.world.level.block.Block best = null;
+        float bestWorth = 0;
+        int count = 0;
+        for (var p : net.minecraft.core.BlockPos.betweenClosed(near.offset(-6, -3, -6), near.offset(6, 3, 6))) {
+            var st = level.getBlockState(p);
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+            if (!id.endsWith("_ore") || !open(level, p)) continue;
+            boolean tool = false;
+            var inv = self.getInventory();
+            for (int i = 0; i < inv.getContainerSize() && !tool; i++) tool = inv.getItem(i).isCorrectToolForDrops(st);
+            if (!tool) continue;
+            float worth = com.mineagent.engine.survival.MiningEconomics.blockValue(st);
+            if (best == null || worth > bestWorth) {
+                best = st.getBlock();
+                bestWorth = worth;
+                count = 0;
+            }
+            if (st.getBlock() == best) count++;
+        }
+        if (best == null) return;
+        partnerMinedAt = now;
+        String block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(best).toString();
+        journal.record("partner", "mining the " + best.getName().getString().toLowerCase(java.util.Locale.ROOT) + " beside you", now);
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.tools.block.AutoMineTool.MineBlockTaskRecord(
+                "partner-mine-" + UUID.randomUUID(), block, Math.min(4, Math.max(1, count)), 8), reply -> { });
+    }
+
+    /** A block with a face to the air (dug open, or a cave wall). */
+    private static boolean open(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos p) {
+        for (var d : net.minecraft.core.Direction.values()) if (level.getBlockState(p.relative(d)).isAir()) return true;
+        return false;
     }
 
     // ── A better guard (SMH plan 70, MA10.1) ──

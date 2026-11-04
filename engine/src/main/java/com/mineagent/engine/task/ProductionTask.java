@@ -562,7 +562,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 break;
             }
         }
-        if (chest == null) return TaskState.SUCCESS; // the next round's plan makes what is short
+        if (chest == null || !loop.mayUseChests()) return TaskState.SUCCESS; // the next round's plan makes what is short
+        // The first time in a world, it says before it takes from its owner's chests (MA10.5).
+        loop.beforeTakingFromChests(step.count() - have, ProductionPlanner.plural(step.item(), step.count() - have), chest);
         if (!sp.canInteractWithBlock(chest, 0.0)) return walkTo(chest);
         Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), chest);
         if (c == null) {
@@ -1302,9 +1304,17 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             BlockPos f = furnaces.get(i);
             if (!(level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace)) continue;
             if (!sp.canInteractWithBlock(f, 0.0)) {
-                if (!walkSoftly(f, 1)) return TaskState.RUNNING;
+                if (!walkSoftly(f, 3)) return TaskState.RUNNING; // near enough to reach it, over a fence if need be
                 if (!sp.canInteractWithBlock(f, 1.0)) {
-                    if (loaded[i] > 0 || fuelled[i] > 0 || furnaces.size() == 1) return fail("I can't get to the furnace at " + f.toShortString());
+                    if (loaded[i] > 0 || fuelled[i] > 0) return fail("I can't get to the furnace at " + f.toShortString());
+                    if (furnaces.size() == 1) {
+                        // Its only furnace out of reach, nothing in it yet: set up again (one from its pack, or another near).
+                        furnacesOutOfReach.add(f);
+                        furnaces.clear();
+                        smeltStage = 0;
+                        if (++resetups > 2) return fail("I can't get to the furnace at " + f.toShortString());
+                        return TaskState.RUNNING;
+                    }
                     // Walled in, behind a fence: its share goes to the others, what they hold already left as it is.
                     furnacesOutOfReach.add(f);
                     int moved = share[i];
@@ -1398,6 +1408,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         System.arraycopy(a, i + 1, out, i, a.length - i - 1);
         return out;
     }
+
+    /** Times its only furnace was out of reach and it set up again. */
+    private int resetups;
 
     /** Furnaces it couldn't get to in this job. */
     private final java.util.Set<BlockPos> furnacesOutOfReach = new java.util.HashSet<>();

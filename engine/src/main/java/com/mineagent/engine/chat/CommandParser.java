@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -123,6 +123,10 @@ public final class CommandParser {
             + "|explore for|go and find|hunt for)(?: me| us)? (?:a |an |the |some |another )?([a-z][a-z ]{2,24})$");
     private static final Pattern EXPLORE = Pattern.compile("^(?:explore|go exploring|scout around|explore around|explore a bit)$");
     private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
+    /** "Leave my chests alone", "use my chests" (MA10.5): whether it may take from its owner's chests. */
+    private static final Pattern CHESTS_NO = Pattern.compile("^(?:leave|stay out of|keep out of|keep away from|don't (?:use|touch|take from|open)|do not (?:use|touch|take from|open))"
+            + " (?:my|our|the) (?:chests|storage)(?: alone)?$");
+    private static final Pattern CHESTS_OK = Pattern.compile("^(?:you (?:can|may) )?(?:use|take from|take what you need from|help yourself to) (?:my|our|the) (?:chests|storage)$");
     /** "This chest is for tools", "this is the food chest", "use this chest for spruce logs" (MA9.2). */
     private static final Pattern CHEST_PURPOSE = Pattern.compile("^(?:(?:this|that) (?:chest|barrel) is (?:for |the |my |our )?(.{2,40}?)(?: chest| barrel)?"
             + "|(?:this|that) is (?:the|my|a|our) (.{2,30}?) (?:chest|barrel)|use (?:this|that) (?:chest|barrel) for (.{2,40}))$");
@@ -272,6 +276,8 @@ public final class CommandParser {
         if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, make.group(2).strip(), howMany(make.group(1))));
         if (t.isEmpty() || t.split(" ").length > 8) return Optional.empty();
         // "Don't touch my garden" is a standing order about a place, not "don't" as in stop.
+        if (CHESTS_NO.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_NO, null, null));
+        if (CHESTS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_OK, null, null));
         var keep = PROTECT.matcher(t);
         if (keep.matches()) return Optional.of(new Command(Kind.PROTECT, (keep.group(1) != null ? keep.group(1) : keep.group(2)).strip(), null));
         var free = UNPROTECT.matcher(t);

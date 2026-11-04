@@ -471,7 +471,7 @@ public final class GameKnowledge {
             else if (st.is(Blocks.CRAFTING_TABLE)) table = true;
         }
         Map<String, Integer> stored = new HashMap<>();
-        if (loop != null) {
+        if (loop != null && loop.mayUseChests()) { // told "leave my chests": what is in them is not its to use (MA10.5)
             for (var c : loop.chestMemory().near(dim, at.getX(), at.getY(), at.getZ(), 64.0)) {
                 if (except != null && c.x() == except.getX() && c.y() == except.getY() && c.z() == except.getZ()) continue;
                 c.items().forEach((item, n) -> stored.merge(item.contains(":") ? item : "minecraft:" + item, n, Integer::sum));

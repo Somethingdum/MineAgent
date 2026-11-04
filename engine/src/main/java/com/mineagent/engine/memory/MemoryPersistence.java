@@ -207,6 +207,12 @@ public class MemoryPersistence {
     private volatile com.mineagent.engine.chat.TalkSummary talkSummary;
 
     private volatile com.mineagent.engine.world.ChestPurposes chestPurposes;
+    private volatile com.mineagent.engine.loop.AgentLoop chestsOf;
+
+    /** Keep whether it may use its owner's chests, and whether it has said so, with the world (MA10.5). */
+    public synchronized void setChestPermission(com.mineagent.engine.loop.AgentLoop loop) {
+        this.chestsOf = loop;
+    }
 
     /** Keep this world's chests with a purpose with its memory, in the same file (MA9.2). */
     public synchronized void setChestPurposes(com.mineagent.engine.world.ChestPurposes purposes) {
@@ -230,6 +236,15 @@ public class MemoryPersistence {
         if (phrases != null && com.mineagent.engine.settings.Switches.keepPhrases()) data.add("phrases", GSON.toJsonTree(phrases.exportState()));
         if (talks != null && com.mineagent.engine.settings.Switches.talkSummary()) data.add("talks", GSON.toJsonTree(talks.exportState()));
         if (purposes != null) data.add("chestPurposes", GSON.toJsonTree(purposes.exportState()));
+        var loop = chestsOf;
+        if (loop != null) {
+            data.addProperty("chestsAllowed", loop.mayUseChests());
+            data.addProperty("chestsTold", loop.chestsTold());
+            String[] sched = loop.scheduleState();
+            if (sched[0] != null) data.addProperty("dayOrder", sched[0]);
+            if (sched[1] != null) data.addProperty("nightOrder", sched[1]);
+            if (sched[2] != null) data.addProperty("idleHome", sched[2]);
+        }
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
 
@@ -245,6 +260,15 @@ public class MemoryPersistence {
             var talks = talkSummary;
             if (talks != null && com.mineagent.engine.settings.Switches.talkSummary() && data.has("talks") && data.get("talks").isJsonObject()) {
                 talks.importState(GSON.fromJson(data.get("talks"), com.mineagent.engine.chat.TalkSummary.State.class));
+            }
+            var loop = chestsOf;
+            if (loop != null && data.has("chestsAllowed")) {
+                loop.chestsPermission(data.get("chestsAllowed").getAsBoolean(), data.has("chestsTold") && data.get("chestsTold").getAsBoolean());
+            }
+            if (loop != null) {
+                loop.scheduleState(data.has("dayOrder") ? data.get("dayOrder").getAsString() : null,
+                        data.has("nightOrder") ? data.get("nightOrder").getAsString() : null,
+                        data.has("idleHome") ? data.get("idleHome").getAsString() : null);
             }
             var purposes = chestPurposes;
             if (purposes != null && data.has("chestPurposes") && data.get("chestPurposes").isJsonObject()) {
