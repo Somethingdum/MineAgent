@@ -1669,6 +1669,22 @@ public final class MineAgentEngine {
                 String prefixed = "[" + ownerName + "]: " + rest;
 
                 if ("all".equalsIgnoreCase(target)) {
+                    // A job for them all ("@all make me 64 torches"): shared out, so together they make what was asked
+                    // (SMH plan 70, MA10.5), not each the whole of it.
+                    var cmd = com.mineagent.engine.chat.CommandParser.parse(rest, all.get(0).companion.companionName());
+                    if (all.size() > 1 && cmd.isPresent() && cmd.get().kind() == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE
+                            && cmd.get().count() != null && cmd.get().count() > 1 && cmd.get().value() != null && !cmd.get().value().contains("|")) {
+                        int n = all.size(), total = cmd.get().count();
+                        List<String> said = new ArrayList<>();
+                        for (int i = 0; i < n; i++) {
+                            int share = total / n + (i < total % n ? 1 : 0);
+                            if (share <= 0) continue;
+                            all.get(i).loop.onOwnerMessage("[" + ownerName + "]: make me " + share + " " + cmd.get().value());
+                            said.add(all.get(i).companion.companionName() + " " + share);
+                        }
+                        sender.sendSystemMessage(Component.literal("[MineAgent] Shared out: " + String.join(", ", said) + "."));
+                        return;
+                    }
                     // Broadcast to every companion
                     for (CompanionState s : all) {
                         s.loop.onOwnerMessage(prefixed);

@@ -4566,4 +4566,34 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA10.5, shared goals split: two companions, "@all make me 8 oak planks": four each, not eight each. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_shared_goal", timeoutTicks = 900)
+    public void aJobForAllIsSharedOut(GameTestHelper helper) {
+        Scene s = scene(helper, "Firsthand");
+        CompanionEntity second = MineAgentEngine.spawnCompanion(s.owner(), "Secondhand", "openai-compatible", "test",
+                "gametest-secondhand", NO_MODEL, 0.2, null, false);
+        if (second == null) {
+            tidy(s);
+            fail(helper, "the second companion did not spawn");
+            return;
+        }
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        MineAgentEngine.setCompanionMode(second.companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.OAK_LOG, 2));
+        second.serverPlayer().getInventory().setItem(1, new ItemStack(Items.OAK_LOG, 2));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "@all make me 8 oak planks"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "shared goal");
+            int a = s.body().getInventory().countItem(Items.OAK_PLANKS), b = second.serverPlayer().getInventory().countItem(Items.OAK_PLANKS);
+            if (a >= 4 && b >= 4 || helper.getTick() >= 850) {
+                String how = "planks: " + a + " and " + b + "; said: " + lastSaid(s, "") + " / "
+                        + lastSaid(new Scene(s.owner(), second, second.serverPlayer(), TaskContext.agentLoop(second)), "");
+                MineAgentEngine.despawnCompanion(second.companionId(), true);
+                tidy(s);
+                if (a >= 4 && b >= 4 && a < 8 && b < 8) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

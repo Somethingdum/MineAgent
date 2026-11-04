@@ -457,10 +457,16 @@ public final class ProductionPlanner {
             }
         }
         if (best != null) return best;
+        if (NETHER.contains(item)) return name(item) + " comes from the Nether, and I have none and know of none stored";
         return book.recipes(item).isEmpty() && book.sources(item).isEmpty()
                 ? "I know no way to get " + name(item)
                 : "I know of no " + name(item) + " near here, nor anything to make it from";
     }
+
+    /** What only the Nether gives (MA7.2): said so, when there is none to be had here. */
+    static final java.util.Set<String> NETHER = java.util.Set.of("minecraft:blaze_rod", "minecraft:nether_wart", "minecraft:quartz",
+            "minecraft:glowstone_dust", "minecraft:ghast_tear", "minecraft:magma_cream", "minecraft:netherite_scrap", "minecraft:ancient_debris",
+            "minecraft:soul_sand", "minecraft:crimson_stem", "minecraft:warped_stem", "minecraft:shroomlight", "minecraft:wither_skeleton_skull");
 
     private int available(String item) {
         return Math.max(0, carried.getOrDefault(item, 0)) + Math.max(0, stored.getOrDefault(item, 0));

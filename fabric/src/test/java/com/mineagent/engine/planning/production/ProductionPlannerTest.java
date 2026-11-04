@@ -399,6 +399,12 @@ final class ProductionPlannerTest {
         assertEquals(m("sugar_from_sugar_cane"), only(p, Action.CRAFT, m("sugar")).recipe(), p.summary());
     }
 
+    @Test void whatOnlyTheNetherGivesIsSaidSo() {
+        var p = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, true, Map.of()), m("blaze_rod"), 1);
+        assertFalse(p.possible());
+        assertTrue(p.summary().contains("comes from the Nether"), p.summary());
+    }
+
     @Test void noShearsItMakesThemFirst() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("oak_planks"), 3, m("iron_ingot"), 2), List.of(), 0, 0, 0,
                 Map.of(WHITE_SHEEP, Where.KNOWN), Map.of(WHITE_SHEEP, 12)), m("white_bed"), 1);
