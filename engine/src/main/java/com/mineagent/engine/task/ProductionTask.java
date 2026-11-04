@@ -87,7 +87,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** Up to 16 hours of game time for one order (a chest of stone bricks is about one). */
     static final long LONGEST = 16 * 72_000L;
 
-    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, DONE, FAILED }
+    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, BACK, DONE, FAILED }
 
     private Phase phase = Phase.START;
     private boolean begun;
@@ -202,6 +202,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             var given = TaskContext.agentLoop(player);
             if (given != null) without.addAll(given.givenUpLately());
             record.extendDeadlineTo(Math.max(record.deadline(), startedAt + LONGEST));
+            if (FOOD.equals(record.item)) foodFrom = sp.blockPosition().immutable();
         }
         if (sub != null) sub.resume();
     }
@@ -219,6 +220,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 case ROUND -> round();
                 case STEPS -> steps();
                 case DEPOSIT -> deposit();
+                case BACK -> backForFood();
                 case DONE -> TaskState.SUCCESS;
                 case FAILED -> TaskState.FAILED;
             };
@@ -524,6 +526,17 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         if (FOOD.equals(record.item)) {
             foodsDone.add(itemId);
+            // Far from where it set out (after a herd across the water, its mooshrooms on an island it saw from the
+            // shore): back there first, where the rest it counted on are, and the next food chosen from there.
+            if (foodFrom != null && !walkedBack && sp().blockPosition().distSqr(foodFrom) > FOOD_BACK * FOOD_BACK) {
+                walkedBack = true;
+                backTicks = 0;
+                arrived = false;
+                navFailed = false;
+                nav.navigateTo(foodFrom.getX(), foodFrom.getY(), foodFrom.getZ());
+                phase = Phase.BACK;
+                return TaskState.RUNNING;
+            }
             String next = chooseFood(sp());
             if (next != null) {
                 itemId = next;
@@ -533,6 +546,30 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         if (delivered == 0) return fail("I couldn't make any " + ProductionPlanner.name(itemId) + ": " + why);
         shortBecause = why;
+        return finish();
+    }
+
+    /** Where a food order set out from, and how far from it a failed hunt may leave it before it walks back. */
+    private BlockPos foodFrom;
+    private boolean walkedBack;
+    private int backTicks;
+    static final int FOOD_BACK = 40;
+
+    /** Walking back to where its food order set out, then the next food chosen from there. */
+    private TaskState backForFood() {
+        ServerPlayer sp = sp();
+        nav.tick();
+        boolean there = sp.blockPosition().distSqr(foodFrom) <= 6 * 6;
+        if (!there && !arrived && !navFailed && ++backTicks < 2_400) return TaskState.RUNNING;
+        nav.cancel();
+        String next = chooseFood(sp);
+        if (next != null) {
+            itemId = next;
+            phase = Phase.START;
+            return TaskState.RUNNING;
+        }
+        if (delivered == 0) return fail("I couldn't make any food: " + (lastWhy.isEmpty() ? "none to be had near here" : lastWhy));
+        shortBecause = lastWhy;
         return finish();
     }
 
@@ -1805,6 +1842,13 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** Per furnace: its share of the smelt, what is loaded of it, the fuel given for it. */
     private int[] share = new int[0], loaded = new int[0], fuelled = new int[0];
 
+    /** The furnaces of this kind it keeps on it and never sets down to smelt (on its own: one furnace). */
+    private int keptStation(net.minecraft.world.level.block.Block station) {
+        var loop = TaskContext.agentLoop(player);
+        return loop != null && loop.onItsOwn() && station == net.minecraft.world.level.block.Blocks.FURNACE
+                ? com.mineagent.engine.planning.production.Reserves.FURNACE_FLOOR : 0;
+    }
+
     /** Furnaces set round it, loaded with the input and the fuel, emptied as they finish. */
     private TaskState smelt() {
         ServerPlayer sp = sp();
@@ -1883,7 +1927,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             // nearest ring first.
             for (int r = 2; r <= 3 && furnaces.size() < step.furnaces(); r++) {
                 for (BlockPos p : ring(workSpot, r)) {
-                    if (furnaces.size() >= step.furnaces() || count(sp, station.asItem()) == 0) break;
+                    if (furnaces.size() >= step.furnaces() || count(sp, station.asItem()) <= keptStation(station)) break;
                     if (furnaces.contains(p)) continue;
                     var st = level.getBlockState(p);
                     if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))

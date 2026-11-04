@@ -340,7 +340,8 @@ public class PathingCore {
             }
             executor = new PathExecutor(player, path);
             state = State.EXECUTE;
-        } else if (wayOut == null && wayOutAllowed && !terrainPolicy.allowPillar() && !terrainPolicy.allowBreakingObstacles() && inAHole()) {
+        } else if (wayOut == null && wayOutAllowed && !terrainPolicy.allowPillar() && !terrainPolicy.allowBreakingObstacles()
+                && (inAHole() || upATree())) {
             var sp = TaskContext.serverPlayer(player);
             wayOut = new IntentContract.TerrainPolicy(true, true, true, false, 16, 24,
                     Math.max(4, surfaceAround(sp) - sp.getBlockY() + 4), terrainPolicy.cleanupMode());
@@ -379,6 +380,19 @@ public class PathingCore {
         // its night's shelter in a shaft ten down and sat sealed under that roof half a day; the way out digs round
         // what someone built, never through it).
         return true;
+    }
+
+    /**
+     * Up in the trees: standing on leaves (the three-world run's second world came back from a death on a spruce's top,
+     * ten over the ground, and every log there was "no more spruce logs near here" for two days). The same way out: the
+     * leaves broken through, never what someone built.
+     */
+    private boolean upATree() {
+        var sp = TaskContext.serverPlayer(player);
+        if (sp == null || !com.mineagent.engine.settings.Switches.wayOutOfHoles()) return false;
+        if (sp.serverLevel().dimension() != net.minecraft.world.level.Level.OVERWORLD) return false;
+        var under = sp.serverLevel().getBlockState(sp.blockPosition().below());
+        return under.is(net.minecraft.tags.BlockTags.LEAVES) && sp.getBlockY() - surfaceAround(sp) >= 2;
     }
 
     /** The highest ground (its top's air) at its spot and the blocks two round it; a column topped by something built is no ground. */

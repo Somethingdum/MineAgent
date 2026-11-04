@@ -39,6 +39,8 @@ public final class Reserves {
 
     /** The coal and charcoal it keeps back on its own (SMH plan 70: "some fuel" kept, whatever the jobs burn). */
     public static final int FUEL_FLOOR = 8;
+    /** And the furnace it keeps on it, on its own: never set down to smelt away from home. */
+    public static final int FURNACE_FLOOR = 1;
 
     /** What it carries less {@code floor} of its coal and charcoal (coal kept first). */
     public static Map<String, Integer> afterFuelFloor(Map<String, Integer> carried, int floor) {

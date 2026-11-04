@@ -86,6 +86,22 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     static final long SUN_UP = 600L;
     /** And gone by now, or in the shade where waiting on them does nothing. */
     static final long LATEST = 2_400L;
+    /** How far one leg of a long walk home goes. */
+    static final int LEG = 48;
+    private int legs;
+
+    /** The next leg towards {@code to}: all of it when it is near, else a point on the ground {@link #LEG} blocks along. */
+    private static BlockPos leg(ServerPlayer sp, BlockPos to) {
+        BlockPos at = sp.blockPosition();
+        double dx = to.getX() - at.getX(), dz = to.getZ() - at.getZ(), d = Math.sqrt(dx * dx + dz * dz);
+        if (d <= LEG + 8) return to;
+        int x = at.getX() + (int) Math.round(dx / d * LEG), z = at.getZ() + (int) Math.round(dz / d * LEG);
+        var level = sp.serverLevel();
+        if (!level.hasChunk(x >> 4, z >> 4)) return to;
+        int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        return new BlockPos(x, y, z);
+    }
+
     /** The longest walk home it starts, in ticks; past that it shelters where it is. */
     static final int GO_LIMIT = 2_400;
 
@@ -214,7 +230,18 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
         Enclosure.Room r = Enclosure.around(level, feet);
         int need = open(level, feet).size();
         int depth = digDepth(sp);
-        if (r != null && !r.sealed() && (record.home != null || r.openings().size() <= Math.min(have, need - 1))) {
+        if (record.untilMorning && !relocated && (sp.isInWater() || !level.getFluidState(feet).isEmpty())
+                && (relocateTo = groundToDig(sp)) != null) {
+            // In the water at nightfall (the shore its walk reached): no wall goes up in water and nothing digs there,
+            // so to dry ground first, and in there.
+            relocated = true;
+            if (nav == null) newNav();
+            target = relocateTo;
+            walkTicks = 0;
+            navFailed = false;
+            nav.navigateTo(target.getX(), target.getY(), target.getZ());
+            phase = Phase.GO;
+        } else if (r != null && !r.sealed() && (record.home != null || r.openings().size() <= Math.min(have, need - 1))) {
             room = r;
             roomMode = true;
             phase = Phase.BUILD;
@@ -256,13 +283,23 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             target = relocateTo != null ? relocateTo : r != null ? r.stand() : record.home;
             walkTicks = 0;
             navFailed = false;
-            nav.navigateTo(target.getX(), target.getY(), target.getZ());
+            BlockPos leg = leg(sp, target);
+            nav.navigateTo(leg.getX(), leg.getY(), leg.getZ());
             if (trace()) System.out.println("[MineAgent] shelter: going home to " + target.toShortString() + " from "
                     + sp.blockPosition().toShortString() + (relocateTo != null ? " (ground to dig in)" : r == null ? " (no room there now)" : ", a room of " + r.air().size()
                     + " with " + r.openings().size() + " ways in"));
         }
         nav.tick();
         walkTicks++;
+        // A long way home goes in legs: at the end of one (or its search for it failing), the next from there.
+        if (!sp.blockPosition().equals(target) && sp.blockPosition().distSqr(target) > LEG * LEG && (!nav.isNavigating() || navFailed)
+                && walkTicks > 20 && legs < 12) {
+            legs++;
+            navFailed = false;
+            BlockPos leg = leg(sp, target);
+            nav.navigateTo(leg.getX(), leg.getY(), leg.getZ());
+            return TaskState.RUNNING;
+        }
         boolean there = sp.blockPosition().equals(target);
         if (!there && sp.onGround() && !nav.isNavigating() && sp.blockPosition().distSqr(target) <= 2) {
             // Short of the cell it went for: in the room all the same, or another go at it (in its doorway it would
@@ -350,7 +387,8 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
         BlockPos at = sp.blockPosition(), best = null;
         double bestDistance = Double.MAX_VALUE;
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-8, -3, -8), at.offset(8, 3, 8))) {
-            if (!level.isLoaded(p) || !Enclosure.standable(level, p) || !canDigAt(sp, p, DIG_DEPTH)) continue;
+            if (!level.isLoaded(p) || !Enclosure.standable(level, p) || !canDigAt(sp, p, DIG_DEPTH)
+                    || !level.getFluidState(p).isEmpty() || !level.getFluidState(p.above()).isEmpty()) continue;
             double d = p.distSqr(at);
             if (d < bestDistance) {
                 bestDistance = d;

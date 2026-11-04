@@ -540,6 +540,13 @@ public final class GameKnowledge {
         // On its own, a little fuel is always kept back: a job makes more rather than burn the last of it.
         int keepFuel = loop != null && loop.onItsOwn() ? Reserves.FUEL_FLOOR : 0;
         if (keepFuel > 0) carried = Reserves.afterFuelFloor(carried, keepFuel);
+        // And one furnace kept on it: a smelt away from home crafts the ones it puts down there rather than leave its
+        // last one behind (the three-world run's first world ended its game with none, all left where it smelted).
+        if (keepFuel > 0 && carried.getOrDefault("minecraft:furnace", 0) > 0) {
+            carried = new java.util.HashMap<>(carried);
+            carried.merge("minecraft:furnace", -Reserves.FURNACE_FLOOR, Integer::sum);
+            carried.values().removeIf(v -> v <= 0);
+        }
         Map<String, Integer> stored = loop != null && job != null ? loop.itemReservations().free(h.stored(), job) : h.stored();
         return new Have(carried, stored, h.tools(), h.furnaces(), h.table(), h.blocks(), h.knownDistance(), h.smokers(), h.blastFurnaces(),
                 h.limited());
