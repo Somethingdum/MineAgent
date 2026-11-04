@@ -1529,7 +1529,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Toward something that moves: the way made again when it has moved or every two seconds. */
     private void chase(BlockPos p, int radius) {
-        if (chasing == null || chasing.distManhattan(p) >= 2 || ++chaseTicks >= 40) {
+        // A search under way is left to finish unless the quarry has gone well off from where it was asked for: the
+        // eleventh benchmark run asked again every forty ticks or each time a sheep took two steps, for sheep thirty
+        // and more blocks off, and the search, a few ticks' work over rough ground, began again before it ever ended.
+        boolean searching = nav.core().state() == com.mineagent.engine.pathing.execute.PathingCore.State.SEARCH;
+        int moved = chasing == null ? Integer.MAX_VALUE : chasing.distManhattan(p);
+        double far = sp().blockPosition().distSqr(p);
+        int leeway = far > 16 * 16 ? 8 : 2;
+        ++chaseTicks;
+        if (chasing == null || !searching && (moved >= leeway || chaseTicks >= (far > 16 * 16 ? 120 : 40))
+                || searching && (moved >= 16 || chaseTicks >= 400)) {
             chasing = p.immutable();
             chaseTicks = 0;
             arrived = false;
