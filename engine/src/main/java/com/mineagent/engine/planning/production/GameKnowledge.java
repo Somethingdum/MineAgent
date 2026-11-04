@@ -372,7 +372,8 @@ public final class GameKnowledge {
                     "shears", 0, false, 2.0, 30));
         }
         for (var type : BuiltInRegistries.ENTITY_TYPE) {
-            boolean monster = QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString()) && com.mineagent.engine.settings.Switches.huntMonsters();
+            boolean monster = QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString()) && com.mineagent.engine.settings.Switches.huntMonsters()
+                    || type == net.minecraft.world.entity.EntityType.IRON_GOLEM && com.mineagent.engine.settings.Switches.golemIron();
             if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE && !monster) continue;
             try {
                 var entity = type.create(level);
@@ -397,6 +398,7 @@ public final class GameKnowledge {
                 }
                 living.discard();
                 int ticks = (60 + (int) Math.ceil(living.getMaxHealth() / 4.0) * 12) * (monster ? 2 : 1); // a hit every 12 ticks; one that fights back, twice
+                if (type == net.minecraft.world.entity.EntityType.IRON_GOLEM) ticks += 200; // the pillar up and down
                 String source = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type);
                 for (var e : got.entrySet()) {
                     if (e.getValue() <= 0) continue;
@@ -421,7 +423,32 @@ public final class GameKnowledge {
     /** A hostile mob of the {@link #QUARRY} it may hunt: grown, unnamed. */
     public static boolean monsterQuarry(net.minecraft.world.entity.Entity e) {
         return com.mineagent.engine.settings.Switches.huntMonsters() && e instanceof net.minecraft.world.entity.Mob m && m.isAlive()
-                && !m.isBaby() && !m.hasCustomName() && QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
+                && !m.isBaby() && !m.hasCustomName() && QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString())
+                || wildGolem(e);
+    }
+
+    /**
+     * A village's own iron golem (SMH plan 70: "kill iron golems at villages"), for its 3 to 5 iron ingots: one the
+     * village made, unnamed; never one a player built ({@code behaviour.golemIron}). It is fought from a pillar three
+     * blocks high, out of its reach ({@code task/ProductionTask}).
+     */
+    public static boolean wildGolem(net.minecraft.world.entity.Entity e) {
+        return com.mineagent.engine.settings.Switches.golemIron() && e instanceof net.minecraft.world.entity.animal.IronGolem g
+                && g.isAlive() && !g.isPlayerCreated() && !g.hasCustomName();
+    }
+
+    /** Blocks it carries to put up a pillar with (dirt, cobblestone and the like). */
+    public static int golemPillarBlocks(ServerPlayer sp) {
+        int n = 0;
+        var inv = sp.getInventory();
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
+            var st = inv.getItem(i);
+            if (st.getItem() instanceof net.minecraft.world.item.BlockItem bi && bi.getBlock().defaultBlockState().isSolid()
+                    && !(bi.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) && !bi.getBlock().defaultBlockState().hasBlockEntity()) {
+                n += st.getCount();
+            }
+        }
+        return n;
     }
 
     /** Anything it may hunt: an animal it may take, or a hostile mob of the quarry. */
@@ -623,11 +650,12 @@ public final class GameKnowledge {
                 limited.put(key, n - LEAVE); // how many it may take: the rest of the herd stays to breed
             }
         });
-        // Hostile mobs in sight whose drops an order may need: all of them, none left (MA11.1).
-        if (com.mineagent.engine.settings.Switches.huntMonsters()) {
+        // Hostile mobs in sight whose drops an order may need: all of them, none left (MA11.1); a village's golems too.
+        if (com.mineagent.engine.settings.Switches.huntMonsters() || com.mineagent.engine.settings.Switches.golemIron()) {
             Map<String, Integer> mobs = new HashMap<>();
             Map<String, Integer> mobsAt = new HashMap<>();
-            for (var e : level.getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(at).inflate(32), GameKnowledge::monsterQuarry)) {
+            for (var e : level.getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(at).inflate(32),
+                    x -> monsterQuarry(x) && (!(x instanceof net.minecraft.world.entity.animal.IronGolem) || golemPillarBlocks(sp) >= 3))) {
                 String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
                 mobs.merge(key, 1, Integer::sum);
                 mobsAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);

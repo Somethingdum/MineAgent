@@ -793,6 +793,85 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return TaskState.RUNNING;
     }
 
+    /** The pillar it put up by a golem: blocks placed, the cell the next goes in, its ticks up there. */
+    private int pillared, pillarTicks;
+    private BlockPos pillarBase;
+
+    /**
+     * An iron golem, fought as a player fights one for its iron (SMH plan 70): beside it, a pillar three blocks high put
+     * up under its own feet (a golem's blows reach no higher than its own height, 2.7 blocks; a sword reaches 3 down),
+     * then struck from the top at full charge. Two minutes up there without it dead: it is let be.
+     */
+    private TaskState golem(ServerPlayer sp, net.minecraft.world.entity.animal.IronGolem g) {
+        var input = TaskContext.inputDriver(player);
+        if (pillared < 3) {
+            double flat = Math.hypot(g.getX() - sp.getX(), g.getZ() - sp.getZ());
+            if (pillared == 0 && (flat > 2.2 || !sp.onGround())) {
+                chase(g.blockPosition(), 1);
+                if (navFailed) {
+                    unreachable.add(g.getUUID());
+                    prey = null;
+                    navFailed = false;
+                }
+                return TaskState.RUNNING;
+            }
+            nav.cancel();
+            chasing = null;
+            input.setForward(0.0f);
+            input.setStrafe(0.0f);
+            input.setSprinting(false);
+            sp.setXRot(90.0f);
+            if (sp.onGround()) {
+                pillarBase = sp.blockPosition();
+                input.setJumping(true);
+            } else if (pillarBase != null && sp.getY() >= pillarBase.getY() + 1.0 && sp.level().getBlockState(pillarBase).canBeReplaced()
+                    && com.mineagent.engine.act.Placement.placeAnySupportBlock(sp, pillarBase)) {
+                if (++pillared == 1) say("Up a pillar by the golem, out of its reach.");
+                pillarBase = null;
+            }
+            if (++pillarTicks > 200) { // no way up here (no blocks left, a roof): not this one
+                unreachable.add(g.getUUID());
+                prey = null;
+            }
+            return TaskState.RUNNING;
+        }
+        input.setJumping(false);
+        input.setForward(0.0f);
+        input.setStrafe(0.0f);
+        var to = g.position().add(0, g.getBbHeight() * 0.7, 0).subtract(sp.getEyePosition());
+        sp.setYRot((float) Math.toDegrees(Math.atan2(-to.x, to.z)));
+        sp.setXRot((float) -Math.toDegrees(Math.atan2(to.y, Math.sqrt(to.x * to.x + to.z * to.z))));
+        sp.setYHeadRot(sp.getYRot());
+        com.mineagent.engine.survival.MobDefenseChain.equipWeapon(sp);
+        if (com.mineagent.engine.act.Interaction.inEntityReach(sp, g) && sp.getAttackStrengthScale(0.5f) >= 0.9f) {
+            com.mineagent.engine.act.Interaction.attackEntity(sp, g);
+        }
+        if (++pillarTicks > 2_600) {
+            unreachable.add(g.getUUID());
+            prey = null;
+        }
+        return TaskState.RUNNING;
+    }
+
+    /** Off the golem pillar: the block under its feet dug, one at a time, as a player comes down. True while it does. */
+    private boolean comeDown(ServerPlayer sp) {
+        BlockPos under = sp.blockPosition().below();
+        var st = sp.level().getBlockState(under);
+        if (pillared <= 0 || st.isAir() && !sp.onGround()) return pillared > 0;
+        if (st.isAir() || st.getDestroySpeed(sp.level(), under) < 0) {
+            pillared = 0;
+            pillarTicks = 0;
+            return false;
+        }
+        sp.setXRot(90.0f);
+        TaskContext.inputDriver(player).clear();
+        com.mineagent.engine.task.BlockDigger.startBreaking(sp, under);
+        if (sp.level().getBlockState(under).isAir()) {
+            if (--pillared <= 0) pillarTicks = 0;
+        }
+        return true;
+    }
+
     /** How near it has got to its prey, and the ticks since it last got nearer. */
     private double preyClosest = Double.MAX_VALUE;
     private int preyStill;
@@ -811,6 +890,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         String kind = step.block().substring(Production.ENTITY.length());
         var type = BuiltInRegistries.ENTITY_TYPE.getOptional(ResourceLocation.tryParse(kind)).orElse(null);
         if (type == null) return outOf(step.block());
+        // Down off a golem pillar first, block by block, when the golem is dead or gone.
+        if (pillared > 0 && !(prey instanceof net.minecraft.world.entity.animal.IronGolem g0 && g0.isAlive())) {
+            if (comeDown(sp)) return TaskState.RUNNING;
+        }
         if (prey != null && !prey.isAlive()) {
             hunted.merge(step.block(), 1, Integer::sum);
             lootAt = prey.blockPosition().immutable();
@@ -821,13 +904,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             wait = 12; // its drops can be picked up after 10 ticks
             return TaskState.RUNNING;
         }
-        if (prey != null && (prey.isRemoved() || !GameKnowledge.quarry(prey) || ++preyTicks > 900)) {
+        if (prey != null && (prey.isRemoved() || !GameKnowledge.quarry(prey) || ++preyTicks > (prey instanceof net.minecraft.world.entity.animal.IronGolem ? 3_200 : 900))) {
             unreachable.add(prey.getUUID());
             prey = null;
         }
         if (prey == null) {
             prey = choosePrey(sp, type);
             preyTicks = 0;
+            pillarTicks = 0;
             chasing = null;
             navFailed = false;
             if (prey == null) {
@@ -863,6 +947,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 return TaskState.RUNNING;
             }
         }
+        if (prey instanceof net.minecraft.world.entity.animal.IronGolem golem) return golem(sp, golem);
         if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, prey) || !sp.hasLineOfSight(prey)) {
             chase(prey.blockPosition(), 1);
             // Ten seconds without getting a block nearer (behind a fence, across water, up where it can't go): the next.

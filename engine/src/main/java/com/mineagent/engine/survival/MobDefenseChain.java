@@ -308,6 +308,8 @@ public final class MobDefenseChain implements TaskChain {
                 targetsWard = true;
             }
             if (!enemy && !(mob instanceof NeutralMob && (targetsSelf || targetsOwner || targetsWard))) continue;
+            // A golem it fights from a pillar (task/ProductionTask): out of its reach up there, so not a fight to take over.
+            if (mob instanceof net.minecraft.world.entity.animal.IronGolem && sp.getY() - mob.getY() >= 2.8) continue;
             if (mob instanceof Creeper && !avoidCreepers && !targetsSelf) continue;
             double distance = mob.distanceTo(sp);
             // A phantom circling overhead is out of reach: watched, and fought as it dives in (or shot, with a bow).

@@ -4118,6 +4118,46 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, "kill iron golems at villages": a village's golem near, no iron ore anywhere: "make me 3 iron ingots"
+     * comes from the golem, fought from a pillar three blocks high beside it (out of its reach), without a scratch; the
+     * pillar taken down after.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_golem", timeoutTicks = 2400)
+    public void ironFromAVillageGolemFoughtFromAPillar(GameTestHelper helper) {
+        Scene s = scene(helper, "Smith");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        s.body().getInventory().setItem(2, new ItemStack(Items.COBBLESTONE, 16));
+        BlockPos gAt = new BlockPos(10, 1, 9);
+        var golem = EntityType.IRON_GOLEM.create(helper.getLevel());
+        BlockPos abs = helper.absolutePos(gAt);
+        golem.moveTo(abs.getX() + 0.5, abs.getY(), abs.getZ() + 0.5, 0.0f, 0.0f);
+        golem.setNoAi(true);
+        helper.getLevel().addFreshEntity(golem);
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 3 iron ingots"));
+        float health = s.body().getHealth();
+        helper.onEachTick(() -> {
+            trace(helper, s, "golem");
+            int ingots = s.body().getInventory().countItem(Items.IRON_INGOT) + s.owner().getInventory().countItem(Items.IRON_INGOT);
+            int pillar = 0;
+            for (BlockPos p : BlockPos.betweenClosed(gAt.offset(-3, 0, -3), gAt.offset(3, 3, 3))) {
+                if (helper.getLevel().getBlockState(helper.absolutePos(p)).is(Blocks.COBBLESTONE)) pillar++;
+            }
+            boolean down = s.body().getY() < helper.absolutePos(gAt).getY() + 0.5;
+            String failed = lastSaid(s, "I couldn't");
+            if (ingots >= 3 && pillar == 0 && down || !failed.isEmpty() || helper.getTick() >= 2350) {
+                String how = ingots + " iron ingots; golem " + (golem.isAlive() ? "alive " + golem.getHealth() : "dead") + "; " + pillar
+                        + " pillar blocks left; down " + down + "; health " + s.body().getHealth() + "; plan: " + lastSaid(s, "On it")
+                        + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                tidy(s);
+                if (golem.isAlive()) golem.discard();
+                if (ingots >= 3 && pillar == 0 && down && s.body().getHealth() >= health) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA11.3, villages from memory: no villager within reach, one it remembers 36 blocks off: there, and the trade. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trade_memory", timeoutTicks = 1400)
     public void aRememberedVillagerIsGoneToForTheTrade(GameTestHelper helper) {

@@ -76,6 +76,7 @@ public final class Switches {
     public static boolean fillCraters() { return b().fillCraters(); }
     public static boolean tradesInPlans() { return b().tradesInPlans(); }
     public static boolean branchForOre() { return b().branchForOre(); }
+    public static boolean golemIron() { return b().golemIron(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

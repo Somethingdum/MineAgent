@@ -62,6 +62,8 @@ public record MobPolicy(String id, int danger, boolean preferRanged, double keep
             Map.entry("piglin", p("piglin", 5, false, 0, true, false, false, false, true)),
             Map.entry("zombified_piglin", p("zombified_piglin", 6, false, 0, true, false, false, false, true)),
             Map.entry("wolf", p("wolf", 4, false, 0, true, false, false, false, true)),
+            // A golem angered on the ground hits for up to 21: kept away from without good gear.
+            Map.entry("iron_golem", p("iron_golem", 9, false, 0, true, false, false, true, true)),
             // Dangerous enough to keep away from without good gear (altoclef's "universally dangerous").
             Map.entry("vindicator", p("vindicator", 8, false, 0, true, false, false, true, false)),
             Map.entry("evoker", p("evoker", 8, false, 0, true, false, false, true, false)),

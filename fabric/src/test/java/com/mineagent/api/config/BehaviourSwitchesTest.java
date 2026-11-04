@@ -86,6 +86,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.fillCraters(), "filling creeper holes is on by default");
         assertTrue(d.tradesInPlans(), "trades in plans are on by default");
         assertTrue(d.branchForOre(), "branch mining for ore is on by default");
+        assertTrue(d.golemIron(), "golem iron is on by default");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),
