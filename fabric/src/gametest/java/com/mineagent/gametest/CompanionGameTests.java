@@ -2726,8 +2726,9 @@ public class CompanionGameTests implements FabricGameTest {
         Scene s = scene(helper, "Pioneer");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         field(helper, 6);
-        for (int i = 0; i < 3; i++) {
-            var sh = helper.spawn(EntityType.SHEEP, new BlockPos(2 + i * 2, 1, 12));
+        // Five sheep: shearing gives 1 to 3 wool each, and two beds take six (two of each kind are left alive).
+        for (int i = 0; i < 5; i++) {
+            var sh = helper.spawn(EntityType.SHEEP, new BlockPos(1 + i * 2, 1, 12));
             sh.setColor(net.minecraft.world.item.DyeColor.WHITE);
         }
         var inv = s.body().getInventory();
@@ -3702,6 +3703,7 @@ public class CompanionGameTests implements FabricGameTest {
         for (int y = 1; y <= 3; y++) helper.setBlock(8, y, 6, Blocks.OAK_LOG);
         s.body().getInventory().setItem(1, new ItemStack(Items.IRON_AXE));
         s.body().getInventory().setItem(2, new ItemStack(Items.OAK_SAPLING, 2));
+        s.body().getInventory().setItem(3, new ItemStack(Items.DIRT, 16)); // to stand on, as a player carries
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "get me 3 oak logs"));
         helper.onEachTick(() -> {
             trace(helper, s, "replant");

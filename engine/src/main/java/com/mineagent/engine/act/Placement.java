@@ -151,14 +151,18 @@ public final class Placement {
     public static boolean placeAnySupportBlock(ServerPlayer player, BlockPos pos) {
         if (player == null || pos == null) return false;
         var inv = player.getInventory();
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            if (!isCarriedInventorySlot(i)) continue;
-            ItemStack stack = inv.getItem(i);
-            if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem item)) continue;
-            Block block = item.getBlock();
-            BlockState state = block.defaultBlockState();
-            if (!isSafeSupportMaterial(block, state)) continue;
-            if (placeBlock(player, pos, state)) return true;
+        // Plain filler first (dirt, cobblestone, netherrack...), then other plain blocks; logs, planks and anything
+        // worth something only when nothing else is carried: a scaffold spent the log a job was gathering.
+        for (int pass = 0; pass < 3; pass++) {
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                if (!isCarriedInventorySlot(i)) continue;
+                ItemStack stack = inv.getItem(i);
+                if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem item)) continue;
+                Block block = item.getBlock();
+                BlockState state = block.defaultBlockState();
+                if (!isSafeSupportMaterial(block, state) || scaffoldRank(block) != pass) continue;
+                if (placeBlock(player, pos, state)) return true;
+            }
         }
         // In creative mode the absence of a carried support stack must not
         // make bridging and pillar movement impossible. A stable vanilla
@@ -526,6 +530,17 @@ public final class Placement {
         // tear down equipped gear to obtain a bridge material; offhand 40 is a
         // normal carried slot and is safe to consume.
         return slot >= 0 && (slot < 36 || slot == 40);
+    }
+
+    /** 0 plain filler, 1 other plain blocks, 2 wood and anything worth keeping: the order a scaffold spends them in. */
+    static int scaffoldRank(Block block) {
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).getPath();
+        if (java.util.Set.of("dirt", "coarse_dirt", "cobblestone", "cobbled_deepslate", "netherrack", "andesite", "diorite",
+                "granite", "tuff", "blackstone", "end_stone", "basalt", "stone", "deepslate", "rooted_dirt").contains(id)) return 0;
+        if (id.endsWith("_log") || id.endsWith("_wood") || id.endsWith("_planks") || id.endsWith("_stem") || id.endsWith("_hyphae")
+                || id.endsWith("_ore") || id.endsWith("_block") || id.contains("bookshelf") || id.contains("obsidian")
+                || id.contains("brick") || id.contains("quartz") || id.contains("wool")) return 2;
+        return 1;
     }
 
     private static boolean isSafeSupportMaterial(Block block, BlockState state) {
