@@ -90,12 +90,15 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                 case BUILD -> {
                     if (!Placement.hasSupportBlock(sp)) return end(false, "I have no blocks to build the cell with");
                     if (ticks > 2_400) return end(false, "I couldn't build the cell");
+                    boolean waiting = false;
                     for (var w : layout.walls()) {
                         BlockPos p = at(w);
                         if (!level.getBlockState(p).canBeReplaced()) continue;
-                        // Never on the villager, nor on itself.
+                        // Never on the villager, nor on itself: that one later, the others first (it may stand by its
+                        // job site a long while).
                         if (!level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, new net.minecraft.world.phys.AABB(p)).isEmpty()) {
-                            return TaskState.RUNNING;
+                            waiting = true;
+                            continue;
                         }
                         if (p.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
                             if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(p.getX(), p.getY(), p.getZ(), 2);
@@ -107,6 +110,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         if (Placement.placeAnySupportBlock(sp, p)) placed++;
                         return TaskState.RUNNING; // one a tick, as a player puts them down
                     }
+                    if (waiting) return TaskState.RUNNING; // only spots someone stands on are left
                     phase = Phase.WAIT;
                     ticks = 0;
                     return TaskState.RUNNING;
