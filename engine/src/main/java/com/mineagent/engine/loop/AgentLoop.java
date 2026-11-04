@@ -3758,6 +3758,47 @@ public class AgentLoop {
         return false;
     }
 
+    /**
+     * A creeper blew a hole near home (SMH plan 70): the ground it took is kept as holes to fill, all with what the ground
+     * round it is mostly made of on top (sand where it is sand, dirt where it is grass, rock where it is rock), not
+     * whatever lay underneath. Off with {@code behaviour.fillCraters}.
+     */
+    public void noteBlast(net.minecraft.server.level.ServerLevel level, List<net.minecraft.core.BlockPos> blown,
+                          List<net.minecraft.world.level.block.state.BlockState> was) {
+        if (!com.mineagent.engine.settings.Switches.fillCraters() || blown.isEmpty()) return;
+        String dim = level.dimension().location().toString();
+        long sx = 0, sy = 0, sz = 0;
+        for (var p : blown) {
+            sx += p.getX();
+            sy += p.getY();
+            sz += p.getZ();
+        }
+        var centre = new net.minecraft.core.BlockPos((int) (sx / blown.size()), (int) (sy / blown.size()), (int) (sz / blown.size()));
+        if (!nearHome(dim, centre)) return;
+        java.util.Map<String, Integer> tops = new java.util.HashMap<>();
+        for (int dx = -10; dx <= 10; dx++) {
+            for (int dz = -10; dz <= 10; dz++) {
+                int x = centre.getX() + dx, z = centre.getZ() + dz;
+                if (!level.hasChunkAt(new net.minecraft.core.BlockPos(x, centre.getY(), z))) continue;
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                var top = level.getBlockState(new net.minecraft.core.BlockPos(x, y, z));
+                tops.merge(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(top.getBlock()).toString(), 1, Integer::sum);
+            }
+        }
+        String surface = com.mineagent.engine.world.Craters.surface(tops);
+        long tick = currentGameTickSafe();
+        int n = 0;
+        for (int i = 0; i < blown.size(); i++) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(was.get(i).getBlock()).toString();
+            if (!com.mineagent.engine.world.Craters.ground(id)) continue;
+            var p = blown.get(i);
+            holes.dug(dim, p.getX(), p.getY(), p.getZ(), surface != null ? surface : id, tick);
+            n++;
+        }
+        if (n > 0) journal.record("crater", "a creeper blew a hole of " + n + " blocks near home, at " + centre.getX() + ", " + centre.getY()
+                + ", " + centre.getZ(), tick, dim, centre.getX(), centre.getY(), centre.getZ());
+    }
+
     /** With nothing to do, the holes near it filled (at most 16 at a time). */
     private void fillHolesWhenIdle(net.minecraft.server.level.ServerPlayer self) {
         if (self == null || suspended || holes.size() == 0 || !com.mineagent.engine.settings.Switches.fillHoles()) return;
@@ -3767,16 +3808,17 @@ public class AgentLoop {
         String dim = self.serverLevel().dimension().location().toString();
         var level = self.serverLevel();
         List<int[]> todo = new ArrayList<>();
-        for (var h : holes.near(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ(), 24, 32)) {
+        for (var h : holes.near(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ(), 24, 64)) {
             var p = new net.minecraft.core.BlockPos(h.x(), h.y(), h.z());
             if (!level.isLoaded(p)) continue;
             if (!level.getBlockState(p).canBeReplaced()) {
                 holes.filled(dim, h.x(), h.y(), h.z()); // filled already
                 continue;
             }
-            if (todo.size() < 16) todo.add(new int[] {h.x(), h.y(), h.z()});
+            if (todo.size() < 48) todo.add(new int[] {h.x(), h.y(), h.z()});
         }
         if (todo.isEmpty()) return;
+        todo = com.mineagent.engine.world.Craters.bottomUp(todo, self.getBlockX(), self.getBlockZ()); // a crater from its floor up
         journal.record("tidy", "filling " + todo.size() + " holes near home", currentGameTickSafe());
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.FillHolesTask.FillRecord(
                 "fill-holes-" + UUID.randomUUID(), todo), reply -> { });

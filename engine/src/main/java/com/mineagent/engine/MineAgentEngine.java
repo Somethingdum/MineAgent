@@ -352,6 +352,21 @@ public final class MineAgentEngine {
         }
     }
 
+    /** A creeper's blast is about to take these blocks ({@code was}: what each is): companions there note the crater. */
+    public static void onCreeperBlast(net.minecraft.server.level.ServerLevel level, List<net.minecraft.core.BlockPos> blown,
+                                      List<net.minecraft.world.level.block.state.BlockState> was) {
+        if (level == null || blown == null || was == null || blown.size() != was.size()) return;
+        for (CompanionState state : List.copyOf(COMPANIONS.values())) {
+            try {
+                var sp = state.companion.serverPlayer();
+                if (sp == null || sp.serverLevel() != level) continue;
+                state.loop.noteBlast(level, blown, was);
+            } catch (RuntimeException ignored) {
+                // a courtesy
+            }
+        }
+    }
+
     public static void onBlockGone(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos,
                                    net.minecraft.world.level.block.state.BlockState old) {
         if (level == null || pos == null || old == null) return;

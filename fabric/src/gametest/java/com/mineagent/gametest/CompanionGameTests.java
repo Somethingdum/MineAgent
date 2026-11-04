@@ -4492,6 +4492,47 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70: a creeper goes off on sandy ground near home; with nothing else to do the companion picks up what the
+     * blast dropped and fills the crater from its floor up, all with sand (what the ground is mostly made of on top), not
+     * the dirt that lay under it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_crater", timeoutTicks = 3000)
+    public void aCreeperHoleNearHomeIsFilledWithTheGroundsTopBlock(GameTestHelper helper) {
+        Scene s = scene(helper, "Mender");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = -10; x <= 20; x++) for (int z = -10; z <= 20; z++) helper.setBlock(x, 0, z, Blocks.SAND);
+        s.body().getInventory().setItem(1, new ItemStack(Items.SAND, 40));
+        BlockPos at = new BlockPos(11, 1, 11);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "stay within 16 blocks of here when you're idle"));
+        helper.runAfterDelay(20, () -> {
+            var c = helper.spawn(EntityType.CREEPER, at);
+            c.setNoAi(true);
+            c.ignite();
+        });
+        boolean[] blown = {false};
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 30) return;
+            trace(helper, s, "crater");
+            int open = 0, sandBelow = 0;
+            for (BlockPos p : BlockPos.betweenClosed(at.offset(-4, -3, -4), at.offset(4, -1, 4))) { // the layers the scene lays
+                if (p.distSqr(at) > 16) continue;
+                var st = helper.getLevel().getBlockState(helper.absolutePos(p));
+                if (st.isAir()) open++;
+                if (p.getY() < 0 && st.is(Blocks.SAND)) sandBelow++;
+            }
+            if (open > 0 && !blown[0]) blown[0] = true;
+            if (blown[0] && open == 0 || helper.getTick() >= 2950) {
+                String how = (blown[0] ? "blown; " : "never blown; ") + open + " blocks of the crater still open; " + sandBelow
+                        + " sand below the old top; " + s.loop().holes().size() + " holes in its ledger; said: " + lastSaid(s, "");
+                MineAgentEngine.onPlayerChat(s.owner(), "you can wander");
+                tidy(s);
+                if (blown[0] && open == 0 && sandBelow > 0) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.1: Mindcraft's dirt shelter built from its blueprint, every block checked. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_dirt_shelter", timeoutTicks = 3000)
     public void mindcraftsDirtShelterBuilt(GameTestHelper helper) {

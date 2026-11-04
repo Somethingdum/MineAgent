@@ -19,9 +19,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Leaving no trace (SMH plan 70, MA9.4): the holes it dug near home filled, each with the block that was there when it
- * carries one, else plain earth or rock (dirt, cobblestone), as a player puts a block back. A hole someone filled, or
- * one it can't get to, is let be.
+ * Leaving no trace (SMH plan 70, MA9.4): the holes it dug near home, and the craters creepers blew there, filled, each
+ * with the block kept for it when it carries one (for a crater, what the ground round it is mostly made of on top), else
+ * plain earth or rock (dirt, cobblestone), as a player puts a block back; what a blast dropped is picked up first. A
+ * hole someone filled, or one it can't get to, is let be.
  */
 public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
     public static final class FillRecord extends TaskRecord {
@@ -58,6 +59,7 @@ public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
         String dim = level.dimension().location().toString();
         try {
             if (index >= record.holes.size()) return end(true);
+            if (gathering(sp, level)) return TaskState.RUNNING;
             int[] h = record.holes.get(index);
             BlockPos p = new BlockPos(h[0], h[1], h[2]);
             if (!level.getBlockState(p).canBeReplaced()) {
@@ -105,6 +107,35 @@ public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
         }
     }
 
+    /** Ticks spent picking up what lies round the holes (a blast drops some of what it blew), and the drops left. */
+    private int gatherTicks;
+    private boolean gathered;
+
+    /**
+     * First, the blocks lying round the holes that would fill them (a creeper's blast drops a share of what it took),
+     * picked up as a player would, by walking over them; ten seconds at most. True while it does.
+     */
+    private boolean gathering(ServerPlayer sp, ServerLevel level) {
+        if (gathered) return false;
+        int[] first = record.holes.get(0);
+        var around = new net.minecraft.world.phys.AABB(first[0], first[1], first[2], first[0] + 1, first[1] + 1, first[2] + 1).inflate(8, 4, 8);
+        net.minecraft.world.entity.item.ItemEntity near = null;
+        for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, around,
+                e -> e.isAlive() && e.getItem().getItem() instanceof BlockItem bi
+                        && com.mineagent.engine.world.Craters.ground(BuiltInRegistries.BLOCK.getKey(bi.getBlock()).toString())
+                        && com.mineagent.engine.survival.Manners.mayTake(e, sp))) {
+            if (near == null || e.distanceToSqr(sp) < near.distanceToSqr(sp)) near = e;
+        }
+        if (near == null || ++gatherTicks > 200) {
+            gathered = true;
+            nav.cancel();
+            return false;
+        }
+        if (gatherTicks % 10 == 1) nav.navigateTo(near.getBlockX(), near.getBlockY(), near.getBlockZ());
+        nav.tick();
+        return true;
+    }
+
     private void next() {
         index++;
         ticks = 0;
@@ -114,8 +145,8 @@ public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
     private static Item filler(ServerPlayer sp, String was) {
         List<String> order = new ArrayList<>();
         if (was != null) {
+            order.add(was); // the block itself when it carries it (stone for stone), else what a player puts back
             order.add(com.mineagent.engine.world.Holes.filler(was));
-            order.add(was);
         }
         order.addAll(PLAIN);
         var inv = sp.getInventory();
@@ -135,7 +166,7 @@ public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
         TaskContext.inputDriver(player).clear();
         if (filled > 0) outcome = "filled " + filled + (filled == 1 ? " hole" : " holes") + " near home" + (outcome.isEmpty() ? "" : "; " + outcome);
         var loop = TaskContext.agentLoop(player);
-        if (loop != null && filled > 0) loop.say("Filled " + filled + (filled == 1 ? " hole" : " holes") + " I dug near home.");
+        if (loop != null && filled > 0) loop.say("Filled " + filled + (filled == 1 ? " hole" : " holes") + " near home.");
         return ok ? TaskState.SUCCESS : TaskState.FAILED;
     }
 
