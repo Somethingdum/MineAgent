@@ -1048,6 +1048,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         ServerLevel level = sp.serverLevel();
         Item it = item(step.item());
         int got = count(sp, it) - itemBefore;
+        // Down off a golem pillar first, block by block, when the golem is dead or gone: the job isn't done with it
+        // standing (its iron may already be in the pack).
+        if (pillared > 0 && !(prey instanceof net.minecraft.world.entity.animal.IronGolem g0 && g0.isAlive())) {
+            if (comeDown(sp)) return TaskState.RUNNING;
+        }
         if (pickingUp(sp)) return TaskState.RUNNING;
         if (got >= step.count()) {
             nav.cancel();
@@ -1059,10 +1064,6 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (type == null) return outOf(step.block());
         var hunter = TaskContext.agentLoop(player);
         if (hunter != null) hunter.noteHunting(kind.substring(kind.indexOf(':') + 1)); // a reason to fight one (combat/FightWeighing)
-        // Down off a golem pillar first, block by block, when the golem is dead or gone.
-        if (pillared > 0 && !(prey instanceof net.minecraft.world.entity.animal.IronGolem g0 && g0.isAlive())) {
-            if (comeDown(sp)) return TaskState.RUNNING;
-        }
         if (prey != null && !prey.isAlive()) {
             hunted.merge(step.block(), 1, Integer::sum);
             lootAt = prey.blockPosition().immutable();
