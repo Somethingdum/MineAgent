@@ -215,12 +215,16 @@ public final class ProductionPlanner {
         double best = Double.POSITIVE_INFINITY;
         for (Source s : book.sources(item)) best = Math.min(best, mineUnit(s, path));
         for (Recipe r : book.recipes(item)) best = Math.min(best, recipeUnit(r, path));
-        // No more to be had, but some in hand (the beef it carries once the cows are gone): those are used.
-        if (Double.isInfinite(best) && available(item) > 0) best = 0;
+        // No more to be had, but some in hand (the beef it carries once the cows are gone): those are used. Not when
+        // pricing more of it than it has (more fuel): there, none to be had is none.
+        if (Double.isInfinite(best) && available(item) > 0 && !pricingMore) best = 0;
         path.remove(item);
         memo.put(item, best);
         return best;
     }
+
+    /** Pricing more of an item than it holds (more fuel): what it holds is not "free" more. */
+    private boolean pricingMore;
 
     /** Items whose Silk Touch tool is worn out for this job. */
     private final Set<String> noSilk = new HashSet<>();
@@ -570,7 +574,10 @@ public final class ProductionPlanner {
             if (e.getValue() < SMELT_TICKS / 2) continue;
             int burn = furnace ? e.getValue() : e.getValue() / 2;
             memo.clear();
+            pricingMore = true; // what more of this fuel than it has would cost (infinite: none to be had)
             double fuelUnit = unit(e.getKey(), new HashSet<>(path));
+            pricingMore = false;
+            memo.clear();
             int haveFuel = available(e.getKey());
             for (int f = 1; f <= Math.max(mostStations, haveStations); f++) {
                 var sp = FurnaceSplit.split(items, f, r.cookTicks(), burn);
@@ -578,7 +585,7 @@ public final class ProductionPlanner {
                 double build = extra == 0 ? 0 : !furnace ? Double.POSITIVE_INFINITY
                         : buildCost.computeIfAbsent(extra, n -> furnacesCost(n, path));
                 int buy = Math.max(0, sp.fuelTotal() - haveFuel);
-                double fuelCost = buy == 0 ? 0 : buy * fuelUnit + ERRAND_TICKS;
+                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) ? Double.POSITIVE_INFINITY : buy * fuelUnit + ERRAND_TICKS;
                 double total = sp.ticks() + build + fuelCost + sp.furnaces() * TEND_TICKS;
                 if (best == null || total < best.total() - 1e-9
                         || (Math.abs(total - best.total()) < 1e-9 && sp.furnaces() < best.split().furnaces())) {

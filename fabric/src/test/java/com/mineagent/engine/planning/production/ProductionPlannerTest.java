@@ -177,6 +177,15 @@ final class ProductionPlannerTest {
         assertTrue(p.mined().isEmpty(), "nothing to mine: " + p.mined());
     }
 
+    @Test void withNoTreesItCooksWithTheCoalItCarries() {
+        // Two planks in hand price no more planks: with the trees ruled out (none near), the coal does it.
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, m("oak_log"), Where.COMMON));
+        var have = new Have(Map.of(m("coal"), 8, m("oak_planks"), 2, m("beef"), 8), Map.of(), List.of(), 3, true, w, Map.of(), 0, 0);
+        var p = ProductionPlanner.plan(vanilla(), have, m("cooked_beef"), 8, java.util.Set.of(m("oak_log"), Production.UNSEEN));
+        assertTrue(p.possible(), p.summary());
+        assertEquals(m("coal"), only(p, Action.SMELT, m("cooked_beef")).fuel(), p.summary());
+    }
+
     @Test void somethingItCannotGetSaysWhy() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, false, Map.of()), m("netherite_ingot"), 3);
         assertFalse(p.possible());
