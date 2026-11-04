@@ -302,6 +302,8 @@ final class CommandParserTest {
         assertEquals("go", CommandParser.parse("take me to the end", "Pal").orElseThrow().value());
         assertTrue(CommandParser.parse("light the portal", "Pal").map(c -> c.kind() != CommandParser.Kind.END_PORTAL).orElse(true),
                 "lighting a portal is the Nether's");
+        assertEquals(CommandParser.Kind.DUMP_JUNK, CommandParser.parse("dump your junk", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.PUT_AWAY, CommandParser.parse("put your things away", "Pal").orElseThrow().kind(), "putting away isn't throwing away");
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }

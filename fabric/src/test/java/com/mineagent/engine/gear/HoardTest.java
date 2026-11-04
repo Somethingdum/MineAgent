@@ -32,12 +32,12 @@ class HoardTest {
 
     @Test void fuelIsCoalOrCharcoalAndCharcoalWhenThereIsNoCoal() {
         java.util.Map<String, Integer> basics = new java.util.HashMap<>(Map.of("minecraft:bread", 64, "minecraft:cooked_beef", 64,
-                "minecraft:torch", 128, "minecraft:iron_ingot", 128));
+                "minecraft:torch", 256, "minecraft:iron_ingot", 128));
         var t = Hoard.next(basics, x -> !x.item().equals("minecraft:coal"));
         assertEquals("minecraft:charcoal", t.item(), "no coal to be had: charcoal, from logs");
         assertEquals(64, t.count());
-        basics.put("minecraft:charcoal", 128);
-        assertEquals("minecraft:arrow", Hoard.next(basics, x -> true).item(), "128 charcoal is the fuel kept: on to arrows");
+        basics.put("minecraft:charcoal", 256);
+        assertEquals("minecraft:arrow", Hoard.next(basics, x -> true).item(), "256 charcoal is the fuel kept: on to arrows");
     }
 }
 

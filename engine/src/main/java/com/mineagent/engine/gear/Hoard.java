@@ -18,8 +18,9 @@ public final class Hoard {
 
     /** The stockpile, in order. */
     public static final List<Target> TARGETS = List.of(
-            new Target("minecraft:bread", 64), new Target("minecraft:cooked_beef", 64), new Target("minecraft:torch", 128),
-            new Target("minecraft:iron_ingot", 128), new Target("minecraft:coal", 128), new Target("minecraft:arrow", 256),
+            // A cave run lights every few blocks: torches by the stack, and the coal to make more (a coal is four torches).
+            new Target("minecraft:bread", 64), new Target("minecraft:cooked_beef", 64), new Target("minecraft:torch", 256),
+            new Target("minecraft:iron_ingot", 128), new Target("minecraft:coal", 256), new Target("minecraft:arrow", 256),
             new Target("minecraft:shield", 2), new Target("minecraft:golden_apple", 16), new Target("minecraft:golden_carrot", 128),
             new Target("minecraft:diamond", 32), new Target("minecraft:obsidian", 32), new Target("minecraft:emerald", 64),
             new Target("minecraft:diamond_sword", 2), new Target("minecraft:bow", 2), new Target("minecraft:slime_ball", 64),
@@ -27,7 +28,7 @@ public final class Hoard {
             new Target("minecraft:golden_carrot", 512), new Target("minecraft:golden_apple", 64), new Target("minecraft:iron_ingot", 512),
             new Target("minecraft:gold_ingot", 256), new Target("minecraft:diamond", 128), new Target("minecraft:emerald", 256),
             new Target("minecraft:cooked_beef", 256), new Target("minecraft:arrow", 1024), new Target("minecraft:slime_ball", 576),
-            new Target("minecraft:coal", 512));
+            new Target("minecraft:coal", 1024));
 
     /**
      * What stands for the same in its stockpile: coal and charcoal burn alike (eight smelts each), so either counts toward

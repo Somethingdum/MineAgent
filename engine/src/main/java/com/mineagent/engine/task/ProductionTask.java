@@ -1225,7 +1225,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         net.minecraft.world.entity.item.ItemEntity near = drops.get(0);
         for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
-        chase(near.blockPosition(), 0);
+        // Within a block of it picks it up: a drop that landed on a fence or against a wall is got from beside it.
+        chase(near.blockPosition(), 1);
         return true;
     }
 

@@ -82,6 +82,7 @@ public final class Switches {
     public static boolean wholeTrees() { return b().wholeTrees(); }
     public static boolean hoard() { return b().hoard(); }
     public static boolean godGear() { return b().godGear(); }
+    public static boolean dumpJunk() { return b().dumpJunk(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

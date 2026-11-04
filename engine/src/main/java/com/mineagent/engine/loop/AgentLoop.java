@@ -1607,6 +1607,12 @@ public class AgentLoop {
                         "mine-" + UUID.randomUUID(), "ore", 0, false, new int[] {x0, z0, 16, y}), reply -> { });
                 return true;
             }
+            case DUMP_JUNK -> {
+                journal.record("order", "dump the junk", currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DumpJunkTask.DumpRecord(
+                        "junk-" + UUID.randomUUID(), hoardKeeps()), reply -> { });
+                return true;
+            }
             case END_PORTAL -> {
                 if (!fromOwner) return false;
                 boolean go = "go".equals(c.value());
@@ -3151,6 +3157,7 @@ public class AgentLoop {
             if (ownTime && gameTick % 1200L == 1100L) godGearGoal(player);
             if (ownTime && gameTick % 2400L == 1500L) masterTrading(player);
             if (ownTime && gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
+            if (ownTime && gameTick % 600L == 450L) dumpJunk(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
             for (Runnable afterRun; (afterRun = afterReady.poll()) != null; ) afterRun.run();
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
@@ -4619,6 +4626,37 @@ public class AgentLoop {
 
     /** A farm order whose hoe and bucket were queued to be made first: the next farm order goes ahead. */
     private volatile boolean farmReady;
+
+    /** What its stockpile keeps: never junk, whatever the rules say. */
+    private static java.util.Set<String> hoardKeeps() {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (var t : com.mineagent.engine.gear.Hoard.TARGETS) out.add(t.item());
+        return out;
+    }
+
+    /**
+     * In free time (SMH plan 70: "manage its inventory intelligently"): with a stack or more of junk in its pack (or a pack
+     * nearly full and some junk in it), thrown into lava or deep water near ({@code behaviour.dumpJunk}).
+     */
+    private void dumpJunk(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !com.mineagent.engine.settings.Switches.dumpJunk()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var junk = com.mineagent.engine.gear.Junk.excess(com.mineagent.engine.task.DumpJunkTask.throwable(self), hoardKeeps());
+        int total = com.mineagent.engine.gear.Junk.total(junk);
+        boolean full = self.getInventory().getFreeSlot() < 0 || freeSlots(self) < 4;
+        if (total < com.mineagent.engine.gear.Junk.WORTH_A_TRIP && !(full && total > 0)) return;
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DumpJunkTask.DumpRecord(
+                "junk-" + UUID.randomUUID(), hoardKeeps()), reply -> { });
+    }
+
+    private static int freeSlots(net.minecraft.server.level.ServerPlayer sp) {
+        int n = 0;
+        var inv = sp.getInventory();
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) if (inv.getItem(i).isEmpty()) n++;
+        return n;
+    }
 
     /** Its home in a dimension, as {@link #home}: for its tasks. */
     public net.minecraft.core.BlockPos homeIn(String dim) {

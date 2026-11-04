@@ -4057,6 +4057,43 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, its inventory kept: a lava pool in the floor, and three stacks of cobblestone, 40 diorite and 5 diamonds
+     * in its pack: "dump your junk" throws the cobblestone past the 128 it keeps and all the diorite into the lava from a
+     * step back, and keeps the diamonds.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_junk", timeoutTicks = 1200)
+    public void junkIsThrownIntoTheLava(GameTestHelper helper) {
+        Scene s = scene(helper, "Tidy");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 12; x <= 14; x++) for (int z = 8; z <= 10; z++) helper.setBlock(x, 0, z, Blocks.LAVA);
+        var inv = s.body().getInventory();
+        for (int i = 1; i <= 3; i++) inv.setItem(i, new ItemStack(Items.COBBLESTONE, 64));
+        inv.setItem(4, new ItemStack(Items.DIORITE, 40));
+        inv.setItem(5, new ItemStack(Items.DIAMOND, 5));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "dump your junk"));
+        int[] doneAt = {-1};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "junk");
+            String done = lastSaid(s, "Threw");
+            if (!done.isEmpty() && doneAt[0] < 0) doneAt[0] = helper.getTick();
+            if (doneAt[0] >= 0 && helper.getTick() >= doneAt[0] + 60 || helper.getTick() >= 1100) {
+                int lying = 0;
+                for (var drop : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(-4, -2, -4))).expandTowards(28, 10, 28))) {
+                    if (drop.getItem().is(Items.COBBLESTONE) || drop.getItem().is(Items.DIORITE)) lying += drop.getItem().getCount();
+                }
+                int cobble = inv.countItem(Items.COBBLESTONE), diorite = inv.countItem(Items.DIORITE), diamonds = inv.countItem(Items.DIAMOND);
+                String how = "kept " + cobble + " cobblestone, " + diorite + " diorite, " + diamonds + " diamonds; " + lying + " thrown but lying about; said: "
+                        + (done.isEmpty() ? lastSaid(s, "") : done);
+                boolean ok = cobble == 128 && diorite == 0 && diamonds == 5 && lying == 0 && s.body().isAlive();
+                tidy(s);
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {

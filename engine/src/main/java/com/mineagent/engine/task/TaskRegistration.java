@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // Junk thrown into lava or water (SMH plan 70: "manage its inventory intelligently")
+        CompanionTaskFactory.register(
+                DumpJunkTask.DumpRecord.class,
+                DumpJunkTask::new
+        );
+
         // The End portal opened, and gone through when asked (SMH plan 70)
         CompanionTaskFactory.register(
                 EndPortalTask.PortalRecord.class,
