@@ -1,6 +1,8 @@
 # The benchmark (SMH plan 70): a fresh companion living on its own on a real world, sprinted through three in-game days,
 # checked against the minimum (a hut, a furnace, a crafting table, some food, some fuel, stone tools or better).
-# By hand only: Actions > Benchmark > Run workflow.
+# By hand only: Actions > Benchmark > Run workflow (once this file is on the default branch), or a push to smh-companion
+# whose commit message says [benchmark]. Its progress is posted each minute to a check run on the commit, "Benchmark
+# progress" (a job's own log can be read only once it has ended).
 name: Benchmark
 
 on:
@@ -12,12 +14,21 @@ on:
       seed:
         description: The world's seed
         default: "smh-benchmark-1"
+  push:
+    branches: [smh-companion]
 
 jobs:
   benchmark:
     name: Three days on its own (Fabric, dedicated server)
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[benchmark]')
     runs-on: ubuntu-latest
     timeout-minutes: 340
+    permissions:
+      contents: read
+      checks: write
+    env:
+      DAYS: ${{ github.event.inputs.days || '3' }}
+      SEED: ${{ github.event.inputs.seed || 'smh-benchmark-1' }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -33,7 +44,7 @@ jobs:
           mkdir -p fabric/build/benchmark
           echo "eula=true" > fabric/build/benchmark/eula.txt
           cat > fabric/build/benchmark/server.properties <<PROPS
-          level-seed=${{ github.event.inputs.seed }}
+          level-seed=${SEED}
           gamemode=survival
           difficulty=normal
           spawn-protection=0
@@ -46,9 +57,17 @@ jobs:
           generate-structures=true
           PROPS
       - name: Run it
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon :fabric:runBenchmark -PbenchmarkTicks=$(( ${{ github.event.inputs.days }} * 24000 )) | tee benchmark.log | grep --line-buffered "\[BENCH\]"
+          touch benchmark.log
+          python3 .github/benchmark_progress.py benchmark.log &
+          status=0
+          ./gradlew --no-daemon :fabric:runBenchmark -PbenchmarkTicks=$(( DAYS * 24000 )) > benchmark.log 2>&1 || status=$?
+          sleep 70 # the last progress posted, and the check run closed
+          grep "\[BENCH\]" benchmark.log | cut -c 1-600 | tail -400 || true
+          exit $status
       - name: Keep the report and the log
         if: always()
         uses: actions/upload-artifact@v4
