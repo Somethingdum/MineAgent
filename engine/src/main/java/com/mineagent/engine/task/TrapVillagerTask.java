@@ -81,16 +81,10 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     BlockPos job = site.isPresent() && site.get().dimension() == level.dimension() ? site.get().pos()
                             : record.jobSite != null ? BlockPos.of(record.jobSite) : null;
                     if (job == null) return end(false, "it has no job site to build the cell round");
-                    // Working beside it already: where it stands is the cell. A villager on its way to it (one with no
-                    // job yet walks up to take it) is waited for, half a minute at most, so the cell is built where it
-                    // works and not turned to it after.
-                    layout = toward(level, job, v.blockPosition());
-                    if (layout == null && ticks < 600 && v.blockPosition().distSqr(job) <= 16 * 16) {
-                        if (ticks % 40 == 1) nav.navigateNear(job.getX(), job.getY(), job.getZ(), 4);
-                        nav.tick();
-                        return TaskState.RUNNING;
-                    }
-                    if (layout == null) layout = choose(level, job);
+                    // Never with the cell where the villager stands: walls can't go in where its body reaches, and the
+                    // cell's sides would be those. Where it works, if that is a wall's spot, is turned to once the rest
+                    // is up (its sides are walls of this cell then, whichever spot by the job site it is).
+                    layout = choose(level, job, v.blockPosition());
                     if (layout == null) return end(false, "there's no room round its job site for a cell");
                     phase = Phase.BUILD;
                     ticks = 0;
@@ -103,9 +97,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     // librarian stays a long while): that spot is the cell, the cell turned to it, what is up kept.
                     BlockPos vAt = v.blockPosition();
                     if (!vAt.equals(at(layout.cell())) && layout.walls().contains(new VillagerCell.Pos(vAt.getX(), vAt.getY(), vAt.getZ()))) {
-                        // Five seconds on such spots all told (it steps off and back as it works), or at once when its
-                        // spot is all that is left to build.
-                        if (++offCell > 100 || onlyItsSpotLeft) {
+                        // Once its spot is all that is left to build.
+                        if (onlyItsSpotLeft) {
                             var turned = toward(level, at(layout.jobSite()), vAt);
                             if (turned != null) {
                                 layout = turned;
@@ -249,11 +242,12 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
      * no wall to be where a door, a gate or a trapdoor is (a villager opens those). The one with the fewest walls to put
      * down.
      */
-    private static VillagerCell.Layout choose(ServerLevel level, BlockPos job) {
+    private static VillagerCell.Layout choose(ServerLevel level, BlockPos job, BlockPos villager) {
         VillagerCell.Layout best = null;
         int bestCost = Integer.MAX_VALUE;
         for (int[] d : VillagerCell.DIRECTIONS) {
             var l = VillagerCell.plan(job.getX(), job.getY(), job.getZ(), d[0], d[1]);
+            if (at(l.cell()).equals(villager) || at(l.way()).equals(villager)) continue; // not where it stands
             if (!open(level, at(l.cell())) || !open(level, at(l.way())) || !open(level, at(l.tradeFrom()))) continue;
             int cost = 0;
             boolean ok = true;
