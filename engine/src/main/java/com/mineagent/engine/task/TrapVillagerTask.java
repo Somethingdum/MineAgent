@@ -159,11 +159,12 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         // above; from the top of a jump, as a player puts one there. A few jumps, then the next spot.
                         if (sp.onGround()) groundY = sp.getBlockY();
                         if (p.getY() >= groundY + 2) {
-                            if (!p.equals(jumpFor)) {
+                            // Counted for each block from this spot: two blocks over its eyes, neither going in, took
+                            // turns and each turn began the count again, so it jumped on one spot for good (the
+                            // villager scene, now and then).
+                            int tried = jumpTries.merge(p.immutable(), 1, Integer::sum);
+                            if (tried <= 60) {
                                 jumpFor = p.immutable();
-                                jumpTicks = 0;
-                            }
-                            if (++jumpTicks <= 60) {
                                 input.setJumping(true);
                                 return TaskState.RUNNING;
                             }
@@ -192,6 +193,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         goingTo = nextStand(level, sp);
                         goTicks = 0;
                         jumpFor = null;
+                        jumpTries.clear(); // a new spot: its jumps counted afresh
                         TaskContext.inputDriver(player).setJumping(false);
                         if (goingTo == null) return end(false, "there's nowhere to stand to build the cell");
                         return TaskState.RUNNING;
@@ -367,6 +369,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
     /** The block over its eyes it is jumping to put in. */
     private BlockPos jumpFor;
+    /** Ticks of jumping for each block over its eyes, from where it stands now. */
+    private final java.util.Map<BlockPos, Integer> jumpTries = new java.util.HashMap<>();
     private boolean onlyItsSpotLeft;
     /** The spot it is going to build from, how long it has been on its way, and the spots it builds from in turn. */
     private BlockPos goingTo;
