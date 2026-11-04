@@ -136,14 +136,24 @@ public class CompanionGameTests implements FabricGameTest {
         String control = state.map(c -> c.auction.inControl()).orElse("gone");
         var feet = s.body().blockPosition();
         var under = helper.getLevel().getBlockState(s.body().getOnPos());
-        System.out.println("[SCENE " + what + "] tick " + helper.getTick() + ": at "
+        String line = "[SCENE " + what + "] tick " + helper.getTick() + ": at "
                 + rel(helper, feet).toShortString() + String.format(java.util.Locale.ROOT, " (y %.2f on %s)", s.body().getY(),
                         net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(under.getBlock()).getPath()) + ", " + control
-                + (s.loop().doing().isEmpty() ? "" : " (" + s.loop().doing() + ")") + (s.body().isSleeping() ? ", asleep" : ""));
+                + (s.loop().doing().isEmpty() ? "" : " (" + s.loop().doing() + ")") + (s.body().isSleeping() ? ", asleep" : "");
+        System.out.println(line);
+        var kept = TRACES.computeIfAbsent(helper, h -> new java.util.ArrayDeque<>());
+        kept.addLast(line);
+        while (kept.size() > 25) kept.removeFirst();
     }
+
+    /** Each running scene's last trace lines, printed again with its failure (CI's log is read from its end). */
+    private static final java.util.Map<GameTestHelper, java.util.Deque<String>> TRACES =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     /** A scene's failure, also printed, so the reason is in CI's log (the report file is not). */
     private static void fail(GameTestHelper helper, String why) {
+        var kept = TRACES.remove(helper);
+        if (kept != null) for (String line : kept) System.out.println("[GAMETEST FAILED] trace " + line);
         System.out.println("[GAMETEST FAILED] " + why);
         helper.fail(why);
     }

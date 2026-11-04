@@ -282,6 +282,12 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     /** One step up out of its hole: a jump, and a block put where its feet were at the top of it. */
     private TaskState climb(ServerPlayer sp) {
         var input = TaskContext.inputDriver(player);
+        if (Boolean.getBoolean("mineagent.traceWork") && (jumpFrom == null || jumpTicks == 12)) {
+            System.out.println("[MineAgent] shelter: climbing, at " + sp.blockPosition().toShortString() + String.format(" (y %.2f)", sp.getY())
+                    + " from " + start.toShortString() + ", try " + climbTries + " of " + (dug * 4) + ", on the ground " + sp.onGround()
+                    + ", blocks " + Placement.supportBlockCount(sp) + ", jumped from " + (jumpFrom == null ? "none" : jumpFrom.toShortString())
+                    + ", over its head " + sp.serverLevel().getBlockState(sp.blockPosition().above(2)).getBlock());
+        }
         if (jumpFrom == null) {
             if (!sp.onGround()) return TaskState.RUNNING;
             if (Placement.supportBlockCount(sp) == 0) {
@@ -302,6 +308,11 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             return TaskState.RUNNING;
         }
         if (--jumpTicks <= 0) {
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                System.out.println("[MineAgent] shelter: no block put under it from that jump, at " + String.format("y %.2f", sp.getY())
+                        + ", the cell " + sp.serverLevel().getBlockState(jumpFrom).getBlock() + ", under it "
+                        + sp.serverLevel().getBlockState(jumpFrom.below()).getBlock());
+            }
             jumpFrom = null;
             wait = 4;
         }
