@@ -56,23 +56,35 @@ public record Blueprint(String name, int width, int depth, int height, List<Bloc
      */
     public static Blueprint hut(String wall, String door) {
         List<Block> b = new ArrayList<>();
+        // Each layer's corners first: a corner placed after both its neighbours is in a pocket no face of which can be
+        // seen from inside (the ground's top face is hidden behind them).
         for (int y = 1; y <= 2; y++) {
+            List<Block> layer = new ArrayList<>();
             for (int x = 0; x < 5; x++) {
                 for (int z = 0; z < 5; z++) {
                     boolean edge = x == 0 || x == 4 || z == 0 || z == 4;
                     boolean doorway = x == 2 && z == 0;
-                    if (edge && !doorway) b.add(new Block(x, y, z, wall, false));
+                    if (edge && !doorway) layer.add(new Block(x, y, z, wall, false));
                 }
             }
+            layer.sort(Comparator.comparingInt((Block r) -> corner(r) ? 0 : 1).thenComparingInt(r -> r.x() * 5 + r.z()));
+            b.addAll(layer);
         }
-        // The roof: from the walls in, ring by ring, so each block has one beside it to go against.
+        // The roof: from the walls in, ring by ring (corners first), so each block has one beside it, or the wall under
+        // it, to go against, with that face in sight from inside.
         List<Block> roof = new ArrayList<>();
         for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) roof.add(new Block(x, 3, z, wall, false));
-        roof.sort(Comparator.comparingInt((Block r) -> -Math.min(Math.min(r.x(), 4 - r.x()), Math.min(r.z(), 4 - r.z())) * -1)
+        roof.sort(Comparator.comparingInt((Block r) -> Math.min(Math.min(r.x(), 4 - r.x()), Math.min(r.z(), 4 - r.z())))
+                .thenComparingInt(r -> corner(r) ? 0 : 1)
                 .thenComparingInt(r -> r.x() * 5 + r.z()));
         b.addAll(roof);
         b.add(new Block(1, 1, 1, "minecraft:torch", false));
         b.add(new Block(2, 1, 0, door, true));
         return new Blueprint("hut", 5, 5, 3, List.copyOf(b), 2, 2, 2, 0);
+    }
+
+    /** A corner of the 5 by 5 hut. */
+    private static boolean corner(Block r) {
+        return (r.x() == 0 || r.x() == 4) && (r.z() == 0 || r.z() == 4);
     }
 }

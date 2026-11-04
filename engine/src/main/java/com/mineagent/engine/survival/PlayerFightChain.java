@@ -330,24 +330,7 @@ public final class PlayerFightChain implements TaskChain {
         cancelNav();
         shieldDown(sp);
         move(sp, input, 0.0f, 0.0f, false);
-        Vec3 v = p.getDeltaMovement();
-        double d = sp.getEyePosition().distanceTo(p.getEyePosition());
-        double[] at = PlayerFightBrain.lead(p.getX(), p.getY() + p.getBbHeight() * 0.6, p.getZ(), v.x, v.z, d);
-        // A little high for the arrow's drop over the distance.
-        face(sp, new Vec3(at[0], at[1] + d * d * 0.0015, at[2]));
-        if (!(sp.getMainHandItem().getItem() instanceof BowItem)) return;
-        if (!sp.isUsingItem()) {
-            Interaction.useItem(sp, InteractionHand.MAIN_HAND);
-            return;
-        }
-        if (sp.getTicksUsingItem() < 20) return;
-        if (!sp.hasLineOfSight(p) || com.mineagent.engine.survival.Manners.crossesSomeone(sp, sp.getEyePosition(),
-                p.getBoundingBox().getCenter(), p)) {
-            sp.stopUsingItem(); // no shot past someone, nor into a wall
-            return;
-        }
-        sp.releaseUsingItem();
-        TaskContext.syncInventory(sp);
+        com.mineagent.engine.act.BowShot.tick(sp, p);
     }
 
     /** A golden apple first, else the best food it carries; held until eaten. */

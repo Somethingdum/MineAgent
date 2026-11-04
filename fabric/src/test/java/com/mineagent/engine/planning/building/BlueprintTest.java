@@ -28,6 +28,22 @@ final class BlueprintTest {
         assertTrue(firstRoof.x() == 0 || firstRoof.x() == 4 || firstRoof.z() == 0 || firstRoof.z() == 4);
     }
 
+    @Test void cornersBeforeTheBlocksBesideThem() {
+        // A corner placed after both of its neighbours sits in a pocket whose faces can't be seen from inside: the
+        // builder found it so in the game (the hut's 4,1,4, 4,2,4 and 4,3,4).
+        var blocks = Blueprint.hut("minecraft:oak_planks", "minecraft:oak_door").blocks();
+        java.util.List<String> order = new java.util.ArrayList<>();
+        for (var b : blocks) order.add(b.x() + "," + b.y() + "," + b.z());
+        for (int y = 1; y <= 3; y++) {
+            for (int[] c : new int[][] {{0, 0}, {0, 4}, {4, 0}, {4, 4}}) {
+                int at = order.indexOf(c[0] + "," + y + "," + c[1]);
+                int nx = order.indexOf((c[0] == 0 ? 1 : 3) + "," + y + "," + c[1]);
+                int nz = order.indexOf(c[0] + "," + y + "," + (c[1] == 0 ? 1 : 3));
+                assertTrue(at >= 0 && at < Math.max(nx, nz), "corner " + c[0] + "," + y + "," + c[1] + " before both its neighbours");
+            }
+        }
+    }
+
     @Test void aFloatingBlockIsFound() {
         var bad = new Blueprint("bad", 3, 3, 3, java.util.List.of(new Blueprint.Block(0, 1, 0, "minecraft:stone", false),
                 new Blueprint.Block(2, 3, 2, "minecraft:stone", false)), 1, 1, 0, 0);

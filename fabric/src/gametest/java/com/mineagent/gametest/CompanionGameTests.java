@@ -3154,6 +3154,8 @@ public class CompanionGameTests implements FabricGameTest {
         var connection = new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.SERVERBOUND);
         new io.netty.channel.embedded.EmbeddedChannel(connection);
         server.getPlayerList().placeNewPlayer(connection, p, cookie);
+        // The test world's players join in creative, where nothing hurts them: a real player's survival instead.
+        p.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
         BlockPos abs = helper.absolutePos(at);
         p.teleportTo(helper.getLevel(), abs.getX() + 0.5, abs.getY(), abs.getZ() + 0.5, 0.0f, 0.0f);
         return p;
@@ -3252,12 +3254,12 @@ public class CompanionGameTests implements FabricGameTest {
      * Plan 70, MA10.7: a stranger's "hunt Rival" does nothing; its owner's sends it to where it last saw Rival (Rival
      * since gone out of sight, and the server's live position not allowed).
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hunt", timeoutTicks = 700)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hunt_player", timeoutTicks = 700)
     public void aHuntGoesWhereItLastSawThemAndOnlyOnItsOwnersWord(GameTestHelper helper) {
         var server = helper.getLevel().getServer();
         boolean pvp = server.isPvpAllowed();
         server.setPvpAllowed(true);
-        Scene s = scene(helper, "Hunter");
+        Scene s = scene(helper, "Tracker");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         armed(s.body());
         ServerPlayer rival = player(helper, "Rival", new BlockPos(14, 1, 14));
@@ -3273,10 +3275,10 @@ public class CompanionGameTests implements FabricGameTest {
             BlockPos gone = helper.absolutePos(new BlockPos(22, -2, 22));
             rival.teleportTo(helper.getLevel(), gone.getX() + 0.5, gone.getY(), gone.getZ() + 0.5, 0.0f, 0.0f);
         });
-        helper.runAfterDelay(80, () -> MineAgentEngine.onPlayerChat(stranger, "Hunter, hunt Rival"));
+        helper.runAfterDelay(80, () -> MineAgentEngine.onPlayerChat(stranger, "Tracker, hunt Rival"));
         boolean[] ordered = {false};
         helper.onEachTick(() -> {
-            trace(helper, s, "hunt");
+            trace(helper, s, "hunt-player");
             if (helper.getTick() == 160) {
                 if (s.loop().getAgentSettings().isAllowedTarget(rival.getUUID()) || !lastSaid(s, "On it: hunting").isEmpty()) {
                     done.run();
@@ -3297,6 +3299,73 @@ public class CompanionGameTests implements FabricGameTest {
             } else if (helper.getTick() >= 680) {
                 String how = String.format("%.1f from where it last saw Rival; said: %s", d, lastSaid(s, ""));
                 done.run();
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA10.1: "guard here radius 6": it lights the perimeter until no spot inside is dark. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_light", timeoutTicks = 1600)
+    public void onGuardThePerimeterIsLit(GameTestHelper helper) {
+        Scene s = scene(helper, "Sentry");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(2, new ItemStack(Items.TORCH, 32));
+        BlockPos post = s.owner().blockPosition();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "guard here radius 6"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "guard-light");
+            String lit = lastSaid(s, "Lit up");
+            if (!lit.isEmpty()) {
+                int dark = 0;
+                for (BlockPos p : BlockPos.betweenClosed(post.offset(-6, -3, -6), post.offset(6, 3, 6))) {
+                    if (p.distSqr(post) > 36) continue;
+                    if (com.mineagent.engine.task.LightTask.spawnable(helper.getLevel(), p)
+                            && helper.getLevel().getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p) == 0) dark++;
+                }
+                boolean guarding = s.loop().guarding();
+                tidy(s);
+                if (dark == 0 && guarding) helper.succeed();
+                else fail(helper, dark + " dark spots inside the perimeter; guarding " + guarding + "; said: " + lit);
+            } else if (helper.getTick() >= 1500) {
+                String how = "torches left " + s.body().getInventory().countItem(Items.TORCH) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA10.1: on guard with a bow, a creeper 16 blocks out (outside the 8-block perimeter) is shot at range. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_creeper", timeoutTicks = 600)
+    public void onGuardACreeperIsShotAtRange(GameTestHelper helper) {
+        Scene s = scene(helper, "Warden");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.BOW));
+        s.body().getInventory().setItem(2, new ItemStack(Items.ARROW, 32));
+        net.minecraft.world.entity.monster.Creeper[] creeper = {null};
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "guard here radius 8"));
+        helper.runAfterDelay(15, () -> {
+            // Its owner steps well out of the way; the creeper waits out past the perimeter.
+            BlockPos away = helper.absolutePos(new BlockPos(-12, 1, 3));
+            s.owner().teleportTo(helper.getLevel(), away.getX() + 0.5, away.getY(), away.getZ() + 0.5, 0.0f, 0.0f);
+            creeper[0] = helper.spawn(EntityType.CREEPER, new BlockPos(3, 1, 19));
+            creeper[0].setNoAi(true);
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "guard-creeper");
+            var c = creeper[0];
+            if (c == null) return;
+            int arrows = s.body().getInventory().countItem(Items.ARROW);
+            if (!c.isAlive() || c.getHealth() < c.getMaxHealth()) {
+                double far = c.distanceTo(s.body());
+                tidy(s);
+                if (c.isAlive()) c.discard();
+                if (arrows < 32 && far >= 6.0) helper.succeed();
+                else fail(helper, String.format("the creeper was hurt from %.1f blocks, %d arrows left", far, arrows));
+            } else if (helper.getTick() >= 580) {
+                String how = "the creeper was never hit; " + arrows + " arrows left; holding " + s.body().getMainHandItem()
+                        + "; at " + rel(helper, s.body().blockPosition()).toShortString();
+                tidy(s);
+                c.discard();
                 fail(helper, how);
             }
         });

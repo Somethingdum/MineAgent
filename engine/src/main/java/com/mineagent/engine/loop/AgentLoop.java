@@ -1802,11 +1802,24 @@ public class AgentLoop {
                                  com.mineagent.engine.entity.CompanionEntity self, UUID id) {
         switch (c.kind()) {
             case GUARD_HERE -> {
-                // "This" is where the owner stands (they are at the thing they mean); else where the companion is.
+                // "That": what the owner is looking at (a block, or a pet or villager to keep); "this": where the owner
+                // stands (they are at the thing they mean); else where the companion is.
                 var me = self.serverPlayer();
                 var owner = self.serverPlayerOwner();
                 if (me == null) return false;
                 var post = owner != null && owner.distanceTo(me) < 24.0 ? owner.position() : me.position();
+                if ("that".equals(c.value()) && owner != null) {
+                    var looked = lookedAt(owner);
+                    if (looked instanceof net.minecraft.world.entity.Entity e && !(e instanceof net.minecraft.world.entity.player.Player)) {
+                        haltNow();
+                        setGuard(null, e.getUUID(), 8.0);
+                        MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FREE);
+                        speakToOwner("Guarding the " + net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).getPath()
+                                .replace('_', ' ') + ".");
+                        return true;
+                    }
+                    if (looked instanceof net.minecraft.core.BlockPos b) post = net.minecraft.world.phys.Vec3.atBottomCenterOf(b.above());
+                }
                 double radius = c.count() == null ? 12.0 : c.count();
                 haltNow();
                 setGuard(post, null, radius);
@@ -1835,6 +1848,21 @@ public class AgentLoop {
             }
         }
         return true;
+    }
+
+    /** What a player is looking at within 24 blocks: an entity, else a block position, else null. */
+    private static Object lookedAt(net.minecraft.server.level.ServerPlayer p) {
+        var eye = p.getEyePosition();
+        var look = p.getLookAngle();
+        var end = eye.add(look.scale(24.0));
+        var box = p.getBoundingBox().expandTowards(look.scale(24.0)).inflate(1.0);
+        var hitEntity = net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(p, eye, end, box,
+                e -> !e.isSpectator() && e.isPickable(), 24.0 * 24.0);
+        var hitBlock = p.level().clip(new net.minecraft.world.level.ClipContext(eye, end, net.minecraft.world.level.ClipContext.Block.OUTLINE,
+                net.minecraft.world.level.ClipContext.Fluid.NONE, p));
+        double blockD = hitBlock.getType() == net.minecraft.world.phys.HitResult.Type.MISS ? Double.MAX_VALUE : hitBlock.getLocation().distanceToSqr(eye);
+        if (hitEntity != null && hitEntity.getLocation().distanceToSqr(eye) < blockD) return hitEntity.getEntity();
+        return hitBlock.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK ? hitBlock.getBlockPos() : null;
     }
 
     /** Off guard duty; whether it was on it. */
@@ -2574,6 +2602,7 @@ public class AgentLoop {
             if (gameTick % 100L == 0L) nightCare(player);
             if (gameTick % 20L == 0L) lookAfterOwner(player);
             if (gameTick % 20L == 0L) notePlayers(player);
+            if (gameTick % 100L == 0L) guardWatch(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -2922,6 +2951,76 @@ public class AgentLoop {
         guardWard = ward;
         guardRadius = Math.max(4.0, Math.min(32.0, radius));
         if (post != null || ward != null) curriculum.abandon();
+        // A new watch: the perimeter lit again, what's there counted afresh.
+        litNight = -1;
+        guardBlocks = null;
+        visitorsSaid.clear();
+    }
+
+    // ── A better guard (SMH plan 70, MA10.1) ──
+
+    /** The night it last lit the perimeter for (game days), the blocks people built inside it, whom it has reported. */
+    private long litNight = -1;
+    private java.util.Set<Long> guardBlocks;
+    private final Map<UUID, Long> visitorsSaid = new java.util.HashMap<>();
+
+    /**
+     * On guard at a post ({@code behaviour.guardPerimeter}): the perimeter lit (a light job, once each watch and again
+     * each dusk; farmland and crops get no torches), and what happens there reported in a few words: someone coming in
+     * who isn't its owner's, and blocks people built there broken.
+     */
+    private void guardWatch(net.minecraft.server.level.ServerPlayer self) {
+        var post = guardPost;
+        if (self == null || post == null || !com.mineagent.engine.settings.Switches.guardPerimeter()) return;
+        var level = self.serverLevel();
+        long now = currentGameTickSafe();
+        var center = net.minecraft.core.BlockPos.containing(post);
+        if (center.distSqr(self.blockPosition()) > (guardRadius + 32) * (guardRadius + 32)) return;
+        // Lit: once a watch, and each night it is still on watch (dusk).
+        long night = (level.getDayTime() + 1_000L) / 24_000L;
+        boolean dusk = level.getDayTime() % 24_000L >= 11_000L;
+        LiveBodyState body = liveBodyState.get();
+        boolean idle = body == null || body.taskId() == null;
+        if (idle && (litNight < 0 || dusk && litNight != night)) {
+            litNight = night;
+            journal.record("guard", "lighting the perimeter", now);
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LightTask.LightRecord(
+                    "guard-light-" + UUID.randomUUID(), center, (int) Math.round(guardRadius)), reply -> { });
+            return;
+        }
+        // Someone coming in.
+        var owner = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayerOwner() : null;
+        for (var p : level.players()) {
+            if (p == self || p == owner || p.isSpectator() || MineAgentEngine.isCompanionPlayer(p.getUUID())) continue;
+            if (agentSettings.trusted().contains(p.getUUID().toString().toLowerCase(java.util.Locale.ROOT))) continue;
+            if (p.position().distanceTo(post) > guardRadius) continue;
+            if (now - visitorsSaid.getOrDefault(p.getUUID(), Long.MIN_VALUE / 2) < CARE_PAUSE) continue;
+            visitorsSaid.put(p.getUUID(), now);
+            journal.record("guard", p.getName().getString() + " came inside the perimeter", now);
+            speakToOwner("Someone's at the post: " + p.getName().getString() + ".");
+        }
+        // Blocks people built inside, counted; fewer than before is damage.
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
+        int r = (int) Math.ceil(guardRadius);
+        java.util.Set<Long> there = new java.util.HashSet<>();
+        for (var p : net.minecraft.core.BlockPos.betweenClosed(center.offset(-r, -4, -r), center.offset(r, 8, r))) {
+            if (placed.isPlaced(p.getX(), p.getY(), p.getZ()) && !level.getBlockState(p).isAir()) there.add(p.asLong());
+        }
+        var before = guardBlocks;
+        guardBlocks = there;
+        if (before == null) return;
+        int broken = 0;
+        for (long k : before) if (!there.contains(k)) broken++;
+        if (broken > 0) {
+            String who = "";
+            for (var p : level.players()) {
+                if (p != self && p != owner && !MineAgentEngine.isCompanionPlayer(p.getUUID()) && p.position().distanceTo(post) <= guardRadius + 4) {
+                    who = " (" + p.getName().getString() + " is there)";
+                }
+            }
+            journal.record("guard", broken + " built blocks broken at the post", now);
+            speakToOwner("Damage at the post: " + broken + (broken == 1 ? " block" : " blocks") + " broken" + who + ".");
+        }
     }
 
     /**

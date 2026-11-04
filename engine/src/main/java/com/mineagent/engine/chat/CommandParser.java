@@ -126,7 +126,7 @@ public final class CommandParser {
     private static final Pattern STATUS = Pattern.compile("^(status|sitrep|report|what are you doing|what r u doing|what're you doing|how'?s it going)$");
     private static final Pattern CANCEL = Pattern.compile("^(cancel|abort|nevermind|never mind|forget it|cancel that|cancel the goal|drop it)$");
     private static final Pattern EAT = Pattern.compile("^(eat|eat something|eat food|have a snack|have something to eat)$");
-    private static final Pattern GUARD_HERE = Pattern.compile("^(?:guard|protect|defend|watch over)\\s+(?:here|this|it|"
+    private static final Pattern GUARD_HERE = Pattern.compile("^(?:guard|protect|defend|watch over)\\s+(?:here|this|it|(that)|(that) [a-z]{3,16}|"
             + "this (?:spot|place|area|chest|door|base|house|farm|room|gate|stuff|pen|field)|"
             + "the (?:base|house|farm|chest|door|gate|area|village|pen|field))"
             + "(?:\\s+(?:radius|within|for|in a radius of)\\s+(\\d{1,2})(?:\\s+blocks?)?)?$");
@@ -207,7 +207,11 @@ public final class CommandParser {
         if (ESCORT.matcher(t).matches()) return Optional.of(new Command(Kind.MODE, "escort", null));
         if (GUARD_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.GUARD_OFF, null, null));
         m = GUARD_HERE.matcher(t);
-        if (m.matches()) return Optional.of(new Command(Kind.GUARD_HERE, null, m.group(1) == null ? null : Integer.valueOf(m.group(1))));
+        if (m.matches()) {
+            // "That" (or "that horse"): what they look at; else here.
+            String that = m.group(1) != null || m.group(2) != null ? "that" : null;
+            return Optional.of(new Command(Kind.GUARD_HERE, that, m.group(3) == null ? null : Integer.valueOf(m.group(3))));
+        }
         m = GUARD_PLAYER.matcher(t);
         if (m.matches() && !m.group(1).equals("me") && !m.group(1).equals("us")) return Optional.of(new Command(Kind.GUARD_PLAYER, m.group(1), null));
         if (AFK.matcher(t).matches()) return Optional.of(new Command(Kind.AFK, null, null));

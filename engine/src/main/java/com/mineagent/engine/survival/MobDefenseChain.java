@@ -182,6 +182,7 @@ public final class MobDefenseChain implements TaskChain {
 
             if (posture == Posture.SAFE || posture == Posture.ALERT) {
                 if (fighting) endFight(loop, fled ? Scorecard.Outcome.RETREATED : Scorecard.Outcome.DONE);
+                if (shootCreeper(s, sp, input)) return;
                 if (s.setup().duty() == Duty.GUARD && s.anchor() != null) keepPost(s, sp, input);
                 else stop(input, sp);
                 return;
@@ -217,6 +218,7 @@ public final class MobDefenseChain implements TaskChain {
                     && act.move() != Move.RETURN && act.move() != Move.HOLD) {
                 act = new Action(Move.FLEE, 0, !act.shield(), false, act.shield(), false);
             }
+            if (shootCreeper(s, sp, input)) return;
             apply(act, s, target, targetMob, sp, input);
             // For the game tests: what it saw and did, every 2 seconds of a fight (the property is unset in play).
             if (Boolean.getBoolean("mineagent.traceFights") && sp.level().getGameTime() % 40 == 0 && targetMob != null) {
@@ -290,6 +292,12 @@ public final class MobDefenseChain implements TaskChain {
                     || (aim instanceof Player p && ownerUuid != null && MineAgentEngine.isCompanionOwnedBy(p.getUUID(), ownerUuid))))
                     || hurtOneOf(mob, charges);
             boolean targetsWard = aim != null && setup.ward() != null && aim.getUUID().equals(setup.ward());
+            // On guard, its owner's pets and the villagers inside the perimeter are kept as its owner is (MA10.1).
+            if (!targetsWard && aim != null && setup.duty() == Duty.GUARD && com.mineagent.engine.settings.Switches.guardPerimeter()
+                    && (aim instanceof net.minecraft.world.entity.OwnableEntity pet && ownerUuid != null && ownerUuid.equals(pet.getOwnerUUID())
+                    || aim instanceof net.minecraft.world.entity.npc.AbstractVillager && horizontal(aim.position(), anchor) <= setup.perimeter())) {
+                targetsWard = true;
+            }
             if (!enemy && !(mob instanceof NeutralMob && (targetsSelf || targetsOwner || targetsWard))) continue;
             if (mob instanceof Creeper && !avoidCreepers && !targetsSelf) continue;
             double distance = mob.distanceTo(sp);
@@ -516,6 +524,49 @@ public final class MobDefenseChain implements TaskChain {
             }
         }
         if (nearest != null) face(sp, nearest.getEyePosition());
+    }
+
+    /**
+     * On guard, a creeper coming in (MA10.1): an arrow before it gets to the perimeter, from where it stands. Only with a
+     * bow and arrows, a clear line past nobody, and the creeper 6 to 24 blocks off and not already hissing close by.
+     * True while it draws or looses.
+     */
+    private boolean shootCreeper(Snapshot s, ServerPlayer sp, InputDriver input) {
+        if (s.setup().duty() != Duty.GUARD || !com.mineagent.engine.settings.Switches.guardPerimeter()) return false;
+        Creeper best = null;
+        double bestD = Double.MAX_VALUE;
+        for (Mob m : s.mobs()) {
+            if (!(m instanceof Creeper c) || !c.isAlive()) continue;
+            double d = c.distanceTo(sp);
+            if (d < 6.0 || d > 24.0 || c.getSwellDir() > 0 && d < 8.0 || !sp.hasLineOfSight(c)) continue;
+            if (d < bestD) {
+                bestD = d;
+                best = c;
+            }
+        }
+        boolean drawing = sp.isUsingItem() && sp.getUseItem().getItem() instanceof BowItem;
+        if (best == null) {
+            if (drawing) sp.stopUsingItem();
+            return false;
+        }
+        int arrows = 0;
+        boolean bow = false;
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack st = inv.getItem(i);
+            if (st.getItem() instanceof BowItem) bow = true;
+            if (BuiltInRegistries.ITEM.getKey(st.getItem()).getPath().endsWith("arrow")) arrows += st.getCount();
+        }
+        if (!bow || arrows == 0) return false;
+        if (!(sp.getMainHandItem().getItem() instanceof BowItem)
+                && !TaskContext.selectInventoryItemForHand(companion, "minecraft:bow", InteractionHand.MAIN_HAND)) return false;
+        if (nav != null && nav.isNavigating()) nav.cancel();
+        navGoal = null;
+        input.clear();
+        shield(false, sp);
+        var state = com.mineagent.engine.act.BowShot.tick(sp, best);
+        if (state == com.mineagent.engine.act.BowShot.State.LOOSED) bodyLog.report("on guard: an arrow at a creeper " + Math.round(bestD) + " blocks out");
+        return state != com.mineagent.engine.act.BowShot.State.NO_BOW && state != com.mineagent.engine.act.BowShot.State.HELD_BACK;
     }
 
     private void shield(boolean up, ServerPlayer sp) {

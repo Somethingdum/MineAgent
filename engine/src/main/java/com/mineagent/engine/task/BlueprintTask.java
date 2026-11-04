@@ -134,8 +134,10 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             for (int dx = -12; dx <= 12; dx++) {
                 for (int dz = -12; dz <= 12; dz++) {
                     BlockPos c = here.offset(dx, 0, dz);
-                    if (!fits(level, c)) continue;
-                    double d = c.offset(print.width() / 2, 0, print.depth() / 2).distSqr(here);
+                    int done = fits(level, c);
+                    if (done < 0) continue;
+                    // A build of its own half done there (asked again after a failure) is picked up, not built beside.
+                    double d = c.offset(print.width() / 2, 0, print.depth() / 2).distSqr(here) - 1_000.0 * done;
                     if (d < bestD) {
                         bestD = d;
                         best = c;
@@ -150,26 +152,39 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
         return TaskState.RUNNING;
     }
 
-    private boolean fits(ServerLevel level, BlockPos c) {
+    /**
+     * Whether the blueprint fits with its corner at {@code c}: -1 when it doesn't; else how many of its blocks are there
+     * already (its own build, half done), every other cell clear.
+     */
+    private int fits(ServerLevel level, BlockPos c) {
         // Never round someone standing there (its owner, a player passing).
         var box = new net.minecraft.world.phys.AABB(c.getX(), c.getY(), c.getZ(), c.getX() + print.width(), c.getY() + print.height() + 1,
                 c.getZ() + print.depth());
-        if (!level.getEntitiesOfClass(net.minecraft.world.entity.player.Player.class, box, p -> p != sp()).isEmpty()) return false;
+        if (!level.getEntitiesOfClass(net.minecraft.world.entity.player.Player.class, box, p -> p != sp()).isEmpty()) return -1;
         var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
         String dim = level.dimension().location().toString();
+        java.util.Map<Long, String> wants = new java.util.HashMap<>();
+        for (Blueprint.Block b : print.blocks()) wants.put(BlockPos.asLong(b.x(), b.y() - 1, b.z()), b.id());
+        int done = 0;
         for (int x = 0; x < print.width(); x++) {
             for (int z = 0; z < print.depth(); z++) {
                 BlockPos ground = c.offset(x, -1, z);
-                if (!BlockHelper.canStandOn(level.getBlockState(ground))) return false;
+                if (!BlockHelper.canStandOn(level.getBlockState(ground))) return -1;
                 for (int y = 0; y <= print.height(); y++) {
                     BlockPos p = c.offset(x, y, z);
                     var st = level.getBlockState(p);
+                    String want = wants.get(BlockPos.asLong(x, y, z));
+                    if (want != null && st.is(block(want)) || st.getBlock() instanceof net.minecraft.world.level.block.DoorBlock && want == null
+                            && wants.containsKey(BlockPos.asLong(x, y - 1, z))) {
+                        if (want != null) done++;
+                        continue;
+                    }
                     if (!(st.isAir() || st.canBeReplaced()) || !st.getFluidState().isEmpty() || placed.isPlaced(p.getX(), p.getY(), p.getZ())
-                            || com.mineagent.engine.world.AfkFarms.protects(dim, p.getX(), p.getY(), p.getZ())) return false;
+                            || com.mineagent.engine.world.AfkFarms.protects(dim, p.getX(), p.getY(), p.getZ())) return -1;
                 }
             }
         }
-        return true;
+        return done;
     }
 
     /** How many times it has asked for each material: twice and still short, it says so instead of asking again. */
