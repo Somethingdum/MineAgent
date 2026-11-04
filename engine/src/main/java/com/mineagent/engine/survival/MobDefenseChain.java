@@ -356,7 +356,7 @@ public final class MobDefenseChain implements TaskChain {
             var reasons = loop != null ? loop.fightReasons() : com.mineagent.engine.combat.FightWeighing.Reasons.none();
             var charge = charge(sp, owner, hostiles, mobs, loop);
             double weaponLeft = weaponLeft(sp);
-            Self me = self;
+            Self mine = self;
             List<Mob> seenMobs = mobs;
             List<Hostile> seen = hostiles;
             worth = h -> {
@@ -364,7 +364,7 @@ public final class MobDefenseChain implements TaskChain {
                 // One at arm's length that hit it just now is not being got away from: fought.
                 if (i >= 0 && h.distance() <= 3.0 && sp.getLastHurtByMob() == seenMobs.get(i)
                         && sp.tickCount - sp.getLastHurtByMobTimestamp() < 40) return true;
-                return com.mineagent.engine.combat.FightWeighing.weigh(h, me, weaponLeft, doing, reasons, charge)
+                return com.mineagent.engine.combat.FightWeighing.weigh(h, mine, weaponLeft, doing, reasons, charge)
                         == com.mineagent.engine.combat.FightWeighing.Call.FIGHT;
             };
         }
