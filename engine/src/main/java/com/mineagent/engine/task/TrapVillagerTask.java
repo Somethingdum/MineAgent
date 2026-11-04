@@ -144,9 +144,26 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                             far = true;
                             continue;
                         }
+                        var input = TaskContext.inputDriver(player);
                         if (Placement.placeAnySupportBlock(sp, p)) {
                             placed++;
+                            input.setJumping(false);
+                            jumpFor = null;
                             return TaskState.RUNNING; // one a tick, as a player puts them down
+                        }
+                        // Over its eyes (a roof on a wall two high): what it goes against is a top face, seen only from
+                        // above; from the top of a jump, as a player puts one there. A few jumps, then the next spot.
+                        if (sp.onGround()) groundY = sp.getBlockY();
+                        if (p.getY() >= groundY + 2) {
+                            if (!p.equals(jumpFor)) {
+                                jumpFor = p.immutable();
+                                jumpTicks = 0;
+                            }
+                            if (++jumpTicks <= 60) {
+                                input.setJumping(true);
+                                return TaskState.RUNNING;
+                            }
+                            input.setJumping(false);
                         }
                         refused = true; // no face to put it against in sight from here
                     }
@@ -170,6 +187,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         // other spots round the cell in turn, till each block has a face in sight from one.
                         goingTo = nextStand(level, sp);
                         goTicks = 0;
+                        jumpFor = null;
+                        TaskContext.inputDriver(player).setJumping(false);
                         if (goingTo == null) return end(false, "there's nowhere to stand to build the cell");
                         return TaskState.RUNNING;
                     }
@@ -253,7 +272,9 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
-    private int offCell, traceAt;
+    private int offCell, traceAt, jumpTicks, groundY = Integer.MIN_VALUE;
+    /** The block over its eyes it is jumping to put in. */
+    private BlockPos jumpFor;
     private boolean onlyItsSpotLeft;
     /** The spot it is going to build from, how long it has been on its way, and the spots it builds from in turn. */
     private BlockPos goingTo;
