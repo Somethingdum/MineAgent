@@ -2747,6 +2747,8 @@ public class CompanionGameTests implements FabricGameTest {
         };
         helper.onEachTick(() -> {
             if (helper.getTick() % 400 == 0) trace(helper, s, "prime");
+            // Its owner is there throughout (a real one moves now and then): never taken for AFK by the idle timer.
+            if (helper.getTick() % 200 == 0) s.owner().resetLastActionTime();
             var owner = s.owner();
             int helmets = owner.getInventory().countItem(Items.IRON_HELMET), beds = owner.getInventory().countItem(Items.WHITE_BED);
             for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, owner.getBoundingBox().inflate(4))) {

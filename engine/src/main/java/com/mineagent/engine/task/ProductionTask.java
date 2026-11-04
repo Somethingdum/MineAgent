@@ -471,6 +471,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return finish();
     }
 
+    /** Rounds in a row that added nothing to its pack. */
+    private int emptyRounds;
+
     /** The items it has put away what it made of, on running out. */
     private final java.util.Set<String> leftoversPut = new java.util.HashSet<>();
 
@@ -1300,9 +1303,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         ServerPlayer sp = sp();
         Item it = item(itemId);
         if (chestPos == null) {
-            int kept = Math.min(roundCount, count(sp, it));
-            delivered += kept;
-            deliveredBy.merge(itemId, kept, Integer::sum);
+            // Into its pack: what it holds of the order now, counted once (a second round adding all it holds again
+            // said "3 oak logs" with two in hand).
+            int already = deliveredBy.getOrDefault(itemId, 0); // of this item (a food order moves on to the next food)
+            int holds = Math.min(target - (delivered - already), count(sp, it));
+            int added = Math.max(0, holds - already);
+            delivered += added;
+            if (added > 0) deliveredBy.merge(itemId, added, Integer::sum);
+            if (added == 0 && ++emptyRounds >= 3) return ranOut(); // rounds that add nothing: what it has is what there is
             phase = Phase.ROUND;
             return TaskState.RUNNING;
         }
