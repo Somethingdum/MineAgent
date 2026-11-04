@@ -41,11 +41,15 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
     /** The ingredient that turns an awkward potion into each one it brews. */
     public static final Map<String, Item> INGREDIENT = Map.of(
             "fire_resistance", Items.MAGMA_CREAM, "healing", Items.GLISTERING_MELON_SLICE,
-            "strength", Items.BLAZE_POWDER, "swiftness", Items.SUGAR);
+            "strength", Items.BLAZE_POWDER, "swiftness", Items.SUGAR, "slow_falling", Items.PHANTOM_MEMBRANE,
+            "regeneration", Items.GHAST_TEAR, "night_vision", Items.GOLDEN_CARROT, "water_breathing", Items.PUFFERFISH,
+            "leaping", Items.RABBIT_FOOT);
 
     private static final Map<String, Holder<Potion>> RESULT = Map.of(
             "fire_resistance", Potions.FIRE_RESISTANCE, "healing", Potions.HEALING,
-            "strength", Potions.STRENGTH, "swiftness", Potions.SWIFTNESS);
+            "strength", Potions.STRENGTH, "swiftness", Potions.SWIFTNESS, "slow_falling", Potions.SLOW_FALLING,
+            "regeneration", Potions.REGENERATION, "night_vision", Potions.NIGHT_VISION, "water_breathing", Potions.WATER_BREATHING,
+            "leaping", Potions.LEAPING);
 
     private enum Phase { FILL, STAND, LOAD, BREW, TAKE, DONE, FAILED }
 

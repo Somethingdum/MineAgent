@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -164,7 +164,7 @@ public final class CommandParser {
     /** "Breed the cows", "breed some sheep", "breed the animals" (MA8.5): two grown ones fed by hand. */
     private static final Pattern BREED = Pattern.compile("^breed (?:the |some |our |my |two |a pair of |more )?([a-z][a-z ]{2,19}?)$");
     /** "Brew a potion of fire resistance", "brew healing potions" (MA11.4). */
-    private static final Pattern BREW = Pattern.compile("^(?:brew|make)(?: me| us)? (?:a |some |3 |three )?(?:potions? of )?(fire resistance|healing|strength|swiftness|speed)(?: potions?)?$");
+    private static final Pattern BREW = Pattern.compile("^(?:brew|make)(?: me| us)? (?:a |some |3 |three )?(?:potions? of )?(fire resistance|healing|strength|swiftness|speed|slow falling|regeneration|night vision|water breathing|leaping)(?: potions?)?$");
     /** "Build a nether portal", "make a portal" (MA11.1): the frame from the obsidian it carries, lit. */
     private static final Pattern PORTAL = Pattern.compile("^(?:build|make|put up|set up|light)(?: me| us)? (?:a |the )?(?:nether )?portal(?: here| for us)?$");
     /** "Don't touch my garden", "leave the farm alone" (MA10.2): a place no companion breaks or builds in. */
@@ -185,6 +185,8 @@ public final class CommandParser {
     private static final Pattern BEST_ENCHANTS = Pattern.compile("^(?:make (?:your|my|the) ([a-z ]{3,20}?) god[- ]?tier|god[- ]?tier (?:your|my|the) ([a-z ]{3,20}?)"
             + "|(?:put )?(?:the )?best enchant(?:ment)?s on (?:your|my|the) ([a-z ]{3,20}?)|max out (?:your|my|the) ([a-z ]{3,20}?)(?: enchants| enchantments)?"
             + "|optimi[sz]e (?:your|my|the) ([a-z ]{3,20}?)(?:'s)?(?: enchants| enchantments)?)$");
+    /** "Get ready for the dragon", "prepare for the wither", "gear up for the dragon fight": the kit for it made. */
+    private static final Pattern BOSS_PREP = Pattern.compile("^(?:get (?:ready|prepared)|prepare|prep|gear up|stock up) for (?:the )?((?:ender )?dragon|wither|end)(?: fight| boss)?$");
     /** "What do you need for god gear", "how's your gear": what each piece lacks of its best. */
     private static final Pattern GEAR_REPORT = Pattern.compile("^(?:what do you need for god (?:gear|tier)|how'?s your gear|what does your gear need"
             + "|what are you missing for god gear|gear report)$");
@@ -332,6 +334,8 @@ public final class CommandParser {
             if (what != null && !what.matches("(?:max|out|gear|stats?|levels?)")) return Optional.of(new Command(Kind.BEST_ENCHANTS, what.strip(), null));
         }
         if (GEAR_REPORT.matcher(t).matches()) return Optional.of(new Command(Kind.GEAR_REPORT, null, null));
+        var boss = BOSS_PREP.matcher(t);
+        if (boss.matches()) return Optional.of(new Command(Kind.BOSS_PREP, boss.group(1), null));
         if (PROTECTION_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "off", null));
         if (PROTECTION_ON.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "on", null));
         if (GOLEMS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.GOLEMS, "on", null));

@@ -1492,6 +1492,30 @@ public class AgentLoop {
                         "anvil-" + UUID.randomUUID(), "best", c.value().replaceAll("s$", "")), reply -> { });
                 return true;
             }
+            case BOSS_PREP -> {
+                String boss = com.mineagent.engine.gear.BossKit.boss(c.value());
+                var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+                if (boss == null || self == null) return false;
+                java.util.Map<String, Integer> has = new java.util.HashMap<>();
+                var inv = self.getInventory();
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    var st = inv.getItem(i);
+                    if (!st.isEmpty()) has.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
+                }
+                List<String> orders = new ArrayList<>();
+                for (var w : com.mineagent.engine.gear.BossKit.short_(boss, has)) {
+                    orders.add("make me " + w.count() + " " + com.mineagent.engine.planning.production.ProductionPlanner.plural(w.item(), w.count()));
+                }
+                for (var b : com.mineagent.engine.gear.BossKit.brews(boss)) orders.add("brew a potion of " + b.potion());
+                String who = "dragon".equals(boss) ? "the dragon" : "the wither";
+                journal.record("order", "get ready for " + who, currentGameTickSafe());
+                if (orders.isEmpty()) {
+                    speakToOwner("I'm ready for " + who + ". I'll only fight it if you tell me to.");
+                    return true;
+                }
+                speakToOwner("Getting ready for " + who + ": " + String.join(", ", orders).replace("make me ", "") + ". I won't fight it unless you tell me to.");
+                return queueOrders(String.join(", then ", orders));
+            }
             case GEAR_REPORT -> {
                 speakToOwner(gearReport());
                 return true;
