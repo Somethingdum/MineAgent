@@ -4471,9 +4471,9 @@ public class AgentLoop {
         idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
         idleRadius = 48;
         journal.record("survive", "made my base here", currentGameTickSafe(), dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
-        speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then a farm, then the stockpile.");
+        speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then a farm and a slime farm, then the stockpile.");
         saveMemoryNow();
-        queueOrders("prime the world, then make a farm");
+        queueOrders("prime the world, then make a farm, then make a slime farm");
     }
 
     /** Places it has looted (structures, by dimension and chunk), kept with the world, so "go looting" goes on to new ones. */
@@ -4605,11 +4605,20 @@ public class AgentLoop {
         var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
         var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
         java.util.Set<String> without = onItsOwn ? java.util.Set.of() : java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
-        var next = com.mineagent.engine.gear.Hoard.next(has, t -> com.mineagent.engine.planning.production.ProductionPlanner
-                .plan(book, have, t.item(), t.count(), without).possible());
+        // Slimeballs from its slime farm, when it has one (living on its own: "highly favoring of slime").
+        var slimeFarm = placeKeeper.memory().find("slime chunk", com.mineagent.engine.world.PlaceKeeper.point(self));
+        boolean fromFarm = slimeFarm.isPresent() && slimeFarm.get().at().dim().equals(dim);
+        var next = com.mineagent.engine.gear.Hoard.next(has, t -> "minecraft:slime_ball".equals(t.item()) && fromFarm
+                || com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, t.item(), t.count(), without).possible());
         if (next == null) return;
         journal.record("hoard", "for my stockpile: " + next.count() + " " + com.mineagent.engine.planning.production.ProductionPlanner.plural(next.item(), next.count()),
                 currentGameTickSafe());
+        if ("minecraft:slime_ball".equals(next.item()) && fromFarm) {
+            var at = slimeFarm.get().at();
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.SlimeFarmTask.SlimeRecord(
+                    "hoard-slime-" + UUID.randomUUID(), at.x() - 8, at.z() - 8, at.y(), 16, next.count()), reply -> { });
+            return;
+        }
         com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
                 "hoard-" + UUID.randomUUID(), next.item(), next.count(), stash, false, !onItsOwn), reply -> { });
     }
