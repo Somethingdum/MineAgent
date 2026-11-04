@@ -5410,8 +5410,17 @@ public class AgentLoop {
         if (inv.countItem(net.minecraft.world.item.Items.FURNACE) == 0 && !furnaceAtHome(self)) o.add("make me 1 furnace");
         if (foodOn(self) < KIT_FOOD) o.add("make me " + KIT_FOOD + " food");
         // Coal mined (it is in the stone it digs anyway; charcoal wants wood, which near a base runs out), else charcoal.
+        // Coal where it has seen coal ore near; else charcoal, from the trees it fells anyway and its furnace (the
+        // three-world run: a whole game in one world on 3 coal, its coal orders done "as much as I could"). Every
+        // other try, the other.
         if (inv.countItem(net.minecraft.world.item.Items.COAL) + inv.countItem(net.minecraft.world.item.Items.CHARCOAL) < 8) {
-            o.add(kitTries + keptUpTries > 1 && (kitTries + keptUpTries) % 2 == 0 ? "make me 8 charcoal" : "make me 8 coal");
+            String dim = self.serverLevel().dimension().location().toString();
+            boolean coalNear = false;
+            for (String ore : List.of("coal_ore", "deepslate_coal_ore")) {
+                coalNear |= !placeKeeper.sightings().nearest(ore, dim, self.getBlockX(), self.getBlockY(), self.getBlockZ(), 1, 48).isEmpty();
+            }
+            boolean other = kitTries + keptUpTries > 1 && (kitTries + keptUpTries) % 2 == 0;
+            o.add(coalNear != other ? "make me 8 coal" : "make me 8 charcoal");
         }
         String bed = bedToMake(self);
         if (bed != null) o.add("make me 1 " + bed);
