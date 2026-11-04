@@ -81,7 +81,8 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
             return done(sp, false);
         }
         if (++targetTicks > 400) {
-            target = null; // out of its reach: the next darkest
+            couldNot.add(target.asLong()); // out of its reach: the next darkest
+            target = null;
             return TaskState.RUNNING;
         }
         if (target.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
@@ -94,6 +95,10 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
         if (Placement.placeBlock(sp, target, Blocks.TORCH.defaultBlockState())) {
             placed++;
             settle = 4;
+            missed = 0;
+        } else {
+            couldNot.add(target.asLong()); // the same spot is not tried again, round and round
+            if (++missed > 40) return done(sp, true);
         }
         target = null;
         return TaskState.RUNNING;
@@ -110,6 +115,7 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
             if (p.distSqr(c) > (double) r * r) continue;
             if (!spawnable(level, p) || level.getBrightness(LightLayer.BLOCK, p) > 0) continue;
             if (com.mineagent.engine.world.AfkFarms.protects(dim, p.getX(), p.getY(), p.getZ())) continue;
+            if (couldNot.contains(p.asLong())) continue; // tried, and no torch would go there
             // Furthest from the light already there: the spot whose neighbours are darkest too.
             int score = -(int) Math.round(p.distSqr(sp.blockPosition()) / 64.0);
             for (BlockPos q : new BlockPos[] {p.east(4), p.west(4), p.north(4), p.south(4)}) {
@@ -130,14 +136,20 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
                 && BlockHelper.canStandOn(level.getBlockState(p.below()));
     }
 
+    /** Spots it tried and couldn't light, and the misses in a row. */
+    private final java.util.Set<Long> couldNot = new java.util.HashSet<>();
+    private int missed;
+
     private TaskState done(ServerPlayer sp, boolean lit) {
         nav.cancel();
         TaskContext.inputDriver(player).clear();
         var loop = TaskContext.agentLoop(player);
         outcome = lit ? "lit: " + placed + " torches, no dark spot within " + record.radius + " blocks"
+                + (couldNot.isEmpty() ? "" : " but " + couldNot.size() + " it couldn't reach")
                 : "out of torches after " + placed + ", and couldn't make more here";
         if (loop != null) loop.say(lit ? "Lit up: " + placed + (placed == 1 ? " torch" : " torches") + "; no dark spot within "
-                + record.radius + " blocks." : "I'm out of torches (" + placed + " down) and couldn't make more here.");
+                + record.radius + " blocks" + (couldNot.isEmpty() ? "." : " but " + couldNot.size() + " I couldn't reach.")
+                : "I'm out of torches (" + placed + " down) and couldn't make more here.");
         return lit ? TaskState.SUCCESS : TaskState.FAILED;
     }
 

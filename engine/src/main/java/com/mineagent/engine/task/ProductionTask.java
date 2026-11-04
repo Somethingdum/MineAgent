@@ -448,6 +448,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         String why = "no more " + list + (ran.size() > gone.size() ? " (or anything else to make it from)" : "") + " near here"
                 + (ran.stream().anyMatch(Production::animal) ? "; I leave two of each kind to breed" : "");
         lastWhy = why;
+        // What it made of this before running out (seven of eight cooked) goes in first, not left in its pack.
+        if (leftoversPut.add(itemId)) {
+            int spareNow = spare(sp(), item(itemId));
+            if (spareNow > 0 && delivered < target) {
+                roundCount = Math.min(target - delivered, spareNow);
+                phase = Phase.DEPOSIT;
+                return TaskState.RUNNING;
+            }
+        }
         if (FOOD.equals(record.item)) {
             foodsDone.add(itemId);
             String next = chooseFood(sp());
@@ -461,6 +470,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         shortBecause = why;
         return finish();
     }
+
+    /** The items it has put away what it made of, on running out. */
+    private final java.util.Set<String> leftoversPut = new java.util.HashSet<>();
 
     private TaskState finish() {
         ServerPlayer sp = sp();
