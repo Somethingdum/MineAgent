@@ -135,6 +135,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
     protected void onStart() {
         if (nav == null) {
             nav = new PlayerNav(player, TaskContext.navCaches(player));
+            nav.core().allowWayOut(false); // its tunnels are its own digging
             nav.setListener(new PlayerNav.NavListener() {
                 @Override public void onGoalReached() { arrived = true; }
                 @Override public void onNavigationFailed(String reason) { navFailed = true; }

@@ -96,6 +96,13 @@ public class PathingCore {
      * once more as a player would: digging (never what someone built) and pillaring, as far up as the surface is.
      */
     private IntentContract.TerrainPolicy wayOut;
+    /** Off for a task that digs its own way (mining's tunnels) or walks round what it builds (a villager's cell). */
+    private boolean wayOutAllowed = true;
+
+    /** Whether a walk that finds no way out of a hole may look again digging and pillaring (on unless a task says). */
+    public void allowWayOut(boolean allowed) {
+        wayOutAllowed = allowed;
+    }
     private String lastFailureDetail;
     private final Set<CalculationContext.ExcludedEdge> excludedEdges = new HashSet<>();
 
@@ -333,8 +340,7 @@ public class PathingCore {
             }
             executor = new PathExecutor(player, path);
             state = State.EXECUTE;
-        } else if (wayOut == null && (bridgeDisabledForCurrentGoal || digDisabledForCurrentGoal
-                || !terrainPolicy.allowPillar() || !terrainPolicy.allowBreakingObstacles()) && inAHole()) {
+        } else if (wayOut == null && wayOutAllowed && !terrainPolicy.allowPillar() && !terrainPolicy.allowBreakingObstacles() && inAHole()) {
             var sp = TaskContext.serverPlayer(player);
             wayOut = new IntentContract.TerrainPolicy(true, true, true, false, 16, 24,
                     Math.max(4, surfaceAround(sp) - sp.getBlockY() + 4), terrainPolicy.cleanupMode());
@@ -356,13 +362,34 @@ public class PathingCore {
     }
 
     /**
-     * Two blocks or more below the ground round it: a pit or a shaft (open over its head, the ground at its sides
-     * higher) or a cave (the ground over its head).
+     * In a hole in the ground: two blocks or more below the ground round it, and either walled in at head height on
+     * every side by the ground itself (a pit, a shaft) or with the ground over its head (a cave, a tunnel). What
+     * someone built (its own villager cell, a hut, a roof) is no hole: walking in and round those is its task's own
+     * business.
      */
     private boolean inAHole() {
         var sp = TaskContext.serverPlayer(player);
         if (sp == null || !com.mineagent.engine.settings.Switches.wayOutOfHoles()) return false;
-        return surfaceAround(sp) - sp.getBlockY() >= 2;
+        if (surfaceAround(sp) - sp.getBlockY() < 2) return false;
+        var level = sp.serverLevel();
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
+        var head = sp.blockPosition().above();
+        boolean walled = true;
+        for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+            var p = head.relative(d);
+            if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p)) || placed.isPlaced(p.getX(), p.getY(), p.getZ())) {
+                walled = false;
+                break;
+            }
+        }
+        if (walled) return true;
+        for (int dy = 1; dy <= 24; dy++) {
+            var p = head.above(dy);
+            var st = level.getBlockState(p);
+            if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(st)) continue;
+            return !placed.isPlaced(p.getX(), p.getY(), p.getZ()) && !(st.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock);
+        }
+        return false;
     }
 
     /** The highest ground (its top's air) at its spot and the blocks two round it. */

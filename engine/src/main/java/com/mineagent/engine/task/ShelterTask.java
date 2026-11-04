@@ -217,9 +217,9 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             phase = Phase.HOLD;
             outcome = gaps == 0 ? "walled in" : "walled in but for " + gaps + (gaps == 1 ? " gap" : " gaps");
             if (loop != null) {
-                loop.say(gaps == 0 ? "Walled in. I'll wait here until you're back."
-                        : "Walled in as far as my blocks go (" + gaps + (gaps == 1 ? " gap" : " gaps")
-                                + " left). I'll wait here until you're back.");
+                String until = record.untilMorning ? " I'll wait here till morning." : " I'll wait here until you're back.";
+                loop.say(gaps == 0 ? "Walled in." + until
+                        : "Walled in as far as my blocks go (" + gaps + (gaps == 1 ? " gap" : " gaps") + " left)." + until);
             }
             return TaskState.RUNNING;
         }
@@ -264,6 +264,9 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
         if (placed.isEmpty()) {
             // Dug in: back up to where it stood, a block put under it at the top of each jump (the dug blocks), which
             // fills the hole as well. The third benchmark run sat in a hole from its first night on.
+            // A jump under way is finished first: half way up it is level with where it stood, and is not out yet.
+            if (jumpFrom != null) return climb(sp);
+            if (!sp.onGround()) return TaskState.RUNNING;
             if (dug > 0 && start != null && sp.blockPosition().getY() < start.getY() && climbTries <= dug * 4) return climb(sp);
             outcome = sp.blockPosition().getY() < (start == null ? Integer.MIN_VALUE : start.getY()) ? "out again but still in the hole" : "out again";
             return TaskState.SUCCESS;

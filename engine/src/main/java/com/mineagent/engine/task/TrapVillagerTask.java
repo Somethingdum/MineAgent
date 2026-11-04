@@ -58,7 +58,10 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
 
     @Override
     protected void onStart() {
-        if (nav == null) nav = new PlayerNav(player, TaskContext.navCaches(player));
+        if (nav == null) {
+            nav = new PlayerNav(player, TaskContext.navCaches(player));
+            nav.core().allowWayOut(false); // round its own cell, never through the ground
+        }
         record.extendDeadlineTo(Math.max(record.deadline(), TaskContext.serverPlayer(player).level().getGameTime() + LONGEST_WAIT + 6_000L));
     }
 
