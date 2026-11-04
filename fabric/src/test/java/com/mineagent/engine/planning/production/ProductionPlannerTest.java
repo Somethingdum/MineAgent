@@ -186,6 +186,17 @@ final class ProductionPlannerTest {
         assertEquals(m("coal"), only(p, Action.SMELT, m("cooked_beef")).fuel(), p.summary());
     }
 
+    @Test void noTreeSeenItBurnsTheCoalItHasRatherThanGoLookingForOne() {
+        // A treeless field: planks for three furnaces would be quicker cooking, but only after a search for a tree.
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON));
+        var have = new Have(Map.of(m("coal"), 8, m("oak_planks"), 2, m("beef"), 8), Map.of(), List.of(), 3, true, w, Map.of(), 0, 0);
+        var p = ProductionPlanner.plan(vanilla(), have, m("cooked_beef"), 8);
+        assertTrue(p.possible(), p.summary());
+        assertEquals(m("coal"), only(p, Action.SMELT, m("cooked_beef")).fuel(), p.summary());
+        assertTrue(p.mined().isEmpty(), "nothing to go and find: " + p.mined());
+        // With trees in sight, the planks' speed may win: that's a choice, not a search.
+    }
+
     @Test void somethingItCannotGetSaysWhy() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(), Map.of(), List.of(), 0, false, Map.of()), m("netherite_ingot"), 3);
         assertFalse(p.possible());

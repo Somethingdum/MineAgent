@@ -225,6 +225,8 @@ public final class ProductionPlanner {
 
     /** Pricing more of an item than it holds (more fuel): what it holds is not "free" more. */
     private boolean pricingMore;
+    /** Pricing from what it has seen only (is a search needed for this?). */
+    private boolean seenOnly;
 
     /** Items whose Silk Touch tool is worn out for this job. */
     private final Set<String> noSilk = new HashSet<>();
@@ -235,7 +237,7 @@ public final class ProductionPlanner {
         double wear = toolWear(s, path);
         if (Double.isInfinite(wear)) return wear;
         Where where = have.where(s.block());
-        if (where == Where.UNKNOWN && without.contains(Production.UNSEEN)) return Double.POSITIVE_INFINITY;
+        if (where == Where.UNKNOWN && (seenOnly || without.contains(Production.UNSEEN))) return Double.POSITIVE_INFINITY;
         double reach = where == Where.COMMON ? 0 : where == Where.KNOWN
                 ? WALK_PER_BLOCK * have.knownDistance().getOrDefault(s.block(), 32) / 64.0 : UNSEEN;
         return (s.breakTicks() + MINE_WALK + wear + reach) / s.perBlock();
@@ -576,8 +578,14 @@ public final class ProductionPlanner {
             memo.clear();
             pricingMore = true; // what more of this fuel than it has would cost (infinite: none to be had)
             double fuelUnit = unit(e.getKey(), new HashSet<>(path));
+            // More of it only from something it hasn't seen (trees from a treeless field): that errand is a search.
+            memo.clear();
+            seenOnly = true;
+            double seenUnit = unit(e.getKey(), new HashSet<>(path));
+            seenOnly = false;
             pricingMore = false;
             memo.clear();
+            double errand = Double.isInfinite(seenUnit) && !Double.isInfinite(fuelUnit) ? SEARCH_TICKS : ERRAND_TICKS;
             int haveFuel = available(e.getKey());
             for (int f = 1; f <= Math.max(mostStations, haveStations); f++) {
                 var sp = FurnaceSplit.split(items, f, r.cookTicks(), burn);
@@ -585,7 +593,7 @@ public final class ProductionPlanner {
                 double build = extra == 0 ? 0 : !furnace ? Double.POSITIVE_INFINITY
                         : buildCost.computeIfAbsent(extra, n -> furnacesCost(n, path));
                 int buy = Math.max(0, sp.fuelTotal() - haveFuel);
-                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) ? Double.POSITIVE_INFINITY : buy * fuelUnit + ERRAND_TICKS;
+                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) ? Double.POSITIVE_INFINITY : buy * fuelUnit + errand;
                 double total = sp.ticks() + build + fuelCost + sp.furnaces() * TEND_TICKS;
                 if (best == null || total < best.total() - 1e-9
                         || (Math.abs(total - best.total()) < 1e-9 && sp.furnaces() < best.split().furnaces())) {
