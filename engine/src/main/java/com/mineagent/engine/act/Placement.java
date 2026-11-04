@@ -198,6 +198,10 @@ public final class Placement {
         if (!isWithinReach(player, target)) {
             return Attempt.failure("target is outside interaction reach");
         }
+        var kept = com.mineagent.engine.world.ProtectedAreas.at(level.dimension().location().toString(), target.getX(), target.getY(), target.getZ());
+        if (kept != null) {
+            return Attempt.failure("that's in the " + kept.name() + ": I was told not to touch it");
+        }
         if (atAfkFarm(player, target)) {
             return Attempt.failure("a player is AFK at a farm here: nothing is placed within 16 blocks of them until they're back");
         }

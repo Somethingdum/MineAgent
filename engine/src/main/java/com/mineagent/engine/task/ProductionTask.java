@@ -569,6 +569,19 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         ServerPlayer sp = sp();
         int got = count(sp, item(step.item())) - itemBefore;
         if (sub != null) {
+            // A minute with nothing mined (a block it can't get to, far off): that try is over; three, and the source.
+            long now = sp.level().getGameTime();
+            if (got > lastGot) {
+                lastGot = got;
+                mineProgressAt = now;
+            }
+            if (now - mineProgressAt > 1_200) {
+                sub.interrupt();
+                sub = null;
+                mineProgressAt = now;
+                if (++stalls >= 3) return outOf(step.block());
+                return TaskState.RUNNING;
+            }
             TaskState st = sub.tick();
             if (st == TaskState.RUNNING) return TaskState.RUNNING;
             sub = null;
@@ -595,10 +608,12 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 record.toolCallId() + ":mine", step.block(), n, 32));
         sub.start();
         lastGot = got;
+        mineProgressAt = sp.level().getGameTime();
         return TaskState.RUNNING;
     }
 
     private int lastGot;
+    private long mineProgressAt;
 
     // ── Closest source first (MA7.6) ────────────────────────────────
 

@@ -167,12 +167,25 @@ public final class RouteMemory {
         return Optional.ofNullable(best);
     }
 
+    /** A place forgotten by its name ("you can touch the garden"): whether there was one. */
+    public synchronized boolean forget(String name, String kind) {
+        boolean any = false;
+        for (Place p : List.copyOf(places.values())) {
+            if (p.name().equalsIgnoreCase(name) && (kind == null || kind.equals(p.kind()))) {
+                places.remove(p.id());
+                any = true;
+            }
+        }
+        if (any) placesVersion++;
+        return any;
+    }
+
     /** It looked and the place is not there (a chest gone, a village it can't find): less sure of it. */
     public synchronized void doubted(String id) {
         Place p = places.get(id);
         if (p == null) return;
         double c = p.confidence() * 0.6;
-        if (c < 0.15 && !"home".equals(p.kind()) && !"named".equals(p.kind())) places.remove(id);
+        if (c < 0.15 && !"home".equals(p.kind()) && !"named".equals(p.kind()) && !"protected".equals(p.kind())) places.remove(id);
         else places.put(id, new Place(p.id(), p.kind(), p.name(), p.at(), Math.max(c, 0.15), p.checked()));
         placesVersion++;
     }
@@ -184,7 +197,7 @@ public final class RouteMemory {
     private void trimPlaces() {
         while (places.size() > MAX_PLACES) {
             Place worst = places.values().stream()
-                    .filter(p -> !"home".equals(p.kind()) && !"named".equals(p.kind()))
+                    .filter(p -> !"home".equals(p.kind()) && !"named".equals(p.kind()) && !"protected".equals(p.kind()))
                     .min(Comparator.comparingDouble(Place::confidence).thenComparingLong(Place::checked))
                     .orElse(null);
             if (worst == null) break;

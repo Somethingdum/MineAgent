@@ -3453,4 +3453,71 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA10.2, with a scripted model: its owner looks at a chest and says "walk over to that". The call carries
+     * the referents code made; the model's first pick, somewhere else, is refused with the list; its second, the chest
+     * from the list, is taken, and the companion goes there.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_referent", timeoutTicks = 1_000_000)
+    public void aScriptedModelPicksThatFromTheReferents(GameTestHelper helper) {
+        String fake = FakeSmh.start();
+        if (fake != null) {
+            fail(helper, fake);
+            return;
+        }
+        Scene s = scene(helper, "Pointer", true, null);
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(3, 1, 9, Blocks.CHEST);
+        BlockPos chest = helper.absolutePos(new BlockPos(3, 1, 9));
+        // Its owner at (3, 1, 3) looks at the chest, six blocks south and a little down.
+        BlockPos o = helper.absolutePos(new BlockPos(3, 1, 3));
+        s.owner().teleportTo(helper.getLevel(), o.getX() + 0.5, o.getY(), o.getZ() + 0.5, 0.0f, 12.0f);
+        int before = FakeSmh.CALLS.size();
+        boolean[] refused = {false};
+        var pattern = java.util.regex.Pattern.compile("\\[1\\] the chest they are looking at at (-?\\d+), (-?\\d+), (-?\\d+)");
+        FakeSmh.script = call -> {
+            String text = call.text();
+            if (!call.hasTools()) return null;
+            if (text.contains("That, it or there means one of these")) {
+                refused[0] = true;
+                var m = pattern.matcher(text);
+                if (!m.find()) return null;
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("goal_mode", "xzy");
+                args.addProperty("x", Integer.parseInt(m.group(1)));
+                args.addProperty("y", Integer.parseInt(m.group(2)));
+                args.addProperty("z", Integer.parseInt(m.group(3)) - 1);
+                return FakeSmh.toolCall("goto", args);
+            }
+            if (text.contains("[REFERENTS]") && text.contains("walk over to that")) {
+                var args = new com.google.gson.JsonObject();
+                args.addProperty("goal_mode", "xzy");
+                args.addProperty("x", chest.getX() + 30);
+                args.addProperty("y", chest.getY());
+                args.addProperty("z", chest.getZ() + 30);
+                return FakeSmh.toolCall("goto", args);
+            }
+            return null;
+        };
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "walk over to that"));
+        long deadline = now() + 60_000L;
+        helper.onEachTick(() -> {
+            trace(helper, s, "referent");
+            double d = Math.sqrt(s.body().blockPosition().distSqr(chest));
+            boolean listed = FakeSmh.CALLS.stream().skip(before).anyMatch(c -> c.text().contains("[REFERENTS]")
+                    && c.text().contains(chest.getX() + ", " + chest.getY() + ", " + chest.getZ()));
+            if (refused[0] && listed && d <= 2.5) {
+                FakeSmh.script = null;
+                tidy(s);
+                helper.succeed();
+            } else if (now() > deadline) {
+                FakeSmh.script = null;
+                String how = "listed " + listed + ", wrong pick refused " + refused[0] + String.format(", %.1f from the chest", d)
+                        + "; calls " + (FakeSmh.CALLS.size() - before);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
 }

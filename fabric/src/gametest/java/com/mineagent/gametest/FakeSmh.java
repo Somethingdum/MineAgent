@@ -44,6 +44,29 @@ final class FakeSmh {
     }
 
     static final List<Call> CALLS = new CopyOnWriteArrayList<>();
+    /**
+     * A scripted model for a scene: given a call, the assistant message to answer with (tool calls and all), or null for
+     * the usual "On it.". Set by a scene and put back to null after.
+     */
+    static volatile java.util.function.Function<Call, JsonObject> script;
+
+    /** An assistant message calling one tool with these arguments. */
+    static JsonObject toolCall(String name, JsonObject arguments) {
+        JsonObject fn = new JsonObject();
+        fn.addProperty("name", name);
+        fn.addProperty("arguments", arguments.toString());
+        JsonObject call = new JsonObject();
+        call.addProperty("id", "call_" + java.util.UUID.randomUUID().toString().substring(0, 8));
+        call.addProperty("type", "function");
+        call.add("function", fn);
+        JsonArray calls = new JsonArray();
+        calls.add(call);
+        JsonObject message = new JsonObject();
+        message.addProperty("role", "assistant");
+        message.add("content", com.google.gson.JsonNull.INSTANCE);
+        message.add("tool_calls", calls);
+        return message;
+    }
     private static HttpServer server;
     private static String failure;
 
@@ -65,14 +88,20 @@ final class FakeSmh {
                     } catch (RuntimeException bad) {
                         body = new JsonObject();
                     }
-                    CALLS.add(new Call(exchange.getRequestURI().getPath(), exchange.getRequestHeaders().getFirst("Authorization"), body));
-                    JsonObject message = new JsonObject();
-                    message.addProperty("role", "assistant");
-                    message.addProperty("content", "On it.");
+                    Call call = new Call(exchange.getRequestURI().getPath(), exchange.getRequestHeaders().getFirst("Authorization"), body);
+                    CALLS.add(call);
+                    var scripted = script;
+                    JsonObject message = scripted == null ? null : scripted.apply(call);
+                    boolean tools = message != null && message.has("tool_calls");
+                    if (message == null) {
+                        message = new JsonObject();
+                        message.addProperty("role", "assistant");
+                        message.addProperty("content", "On it.");
+                    }
                     JsonObject choice = new JsonObject();
                     choice.addProperty("index", 0);
                     choice.add("message", message);
-                    choice.addProperty("finish_reason", "stop");
+                    choice.addProperty("finish_reason", tools ? "tool_calls" : "stop");
                     JsonArray choices = new JsonArray();
                     choices.add(choice);
                     JsonObject usage = new JsonObject();

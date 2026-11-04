@@ -34,7 +34,10 @@ public final class AfkFarms {
 
     /** Whether the block at x, y, z in {@code dim} is in a farm whose player is AFK. */
     public static boolean protects(String dim, int x, int y, int z) {
-        if (dim == null || AREAS.isEmpty()) return false;
+        if (dim == null) return false;
+        // And the places an owner said not to touch (MA10.2): the same rule, nothing placed or broken there.
+        if (ProtectedAreas.protects(dim, x, y, z)) return true;
+        if (AREAS.isEmpty()) return false;
         for (Area a : AREAS.values()) if (a.holds(dim, x, y, z)) return true;
         return false;
     }

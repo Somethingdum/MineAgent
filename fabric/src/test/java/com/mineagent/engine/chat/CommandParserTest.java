@@ -178,6 +178,19 @@ final class CommandParserTest {
         assertEquals("steve", CommandParser.parse("go after steve please", "Pal").orElseThrow().value());
         assertFalse(CommandParser.parse("kill 5 cows", "Pal").map(x -> x.kind() == CommandParser.Kind.HUNT_PLAYER).orElse(false));
         assertNotEquals(CommandParser.Kind.HUNT_PLAYER, CommandParser.parse("hunt for a village", "Pal").map(x -> x.kind()).orElse(null));
+        // Standing orders about places (MA10.2).
+        var keep = CommandParser.parse("don't touch my garden", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.PROTECT, keep.kind());
+        assertEquals("garden", keep.value());
+        assertEquals("wheat farm", CommandParser.parse("leave the wheat farm alone please", "Pal").orElseThrow().value());
+        var free = CommandParser.parse("you can touch the garden now", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.UNPROTECT, free.kind());
+        assertEquals("garden", free.value());
+        assertEquals(CommandParser.Kind.UNPROTECT, CommandParser.parse("stop protecting my farm", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.GUARD_OFF, CommandParser.parse("stop protecting steve", "Pal").orElseThrow().kind(), "a player: guard duty");
+        assertEquals(CommandParser.Kind.PROGRESS, CommandParser.parse("progress report", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.GUARD_HERE, CommandParser.parse("guard that", "Pal").orElseThrow().kind());
+        assertEquals("that", CommandParser.parse("guard that horse", "Pal").orElseThrow().value());
     }
 
     @Test void ordersToMineOnItsOwn() {

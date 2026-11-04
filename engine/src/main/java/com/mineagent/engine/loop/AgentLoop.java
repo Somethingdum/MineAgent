@@ -742,7 +742,24 @@ public class AgentLoop {
         int close0 = message.indexOf("]: ");
         journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
                 + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
+        if (fromOwner) {
+            // Phrasing it has learned, for its owner's own words only (MA10.2); and "that", "it", "there" pinned down.
+            String said = com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName());
+            if (phraseLesson(said)) return;
+            var fixed = phraseBook.meaning(said);
+            if (fixed.isPresent()) {
+                lastFixedPhrase = said;
+                lastFixedAt = currentGameTickSafe();
+                message = fixed.get();
+            }
+            try {
+                if (com.mineagent.engine.chat.Referents.deictic(message)) noteReferents();
+            } catch (RuntimeException e) {
+                referents = List.of();
+            }
+        }
         var command = com.mineagent.engine.chat.CommandParser.parse(message, companion.companionName());
+        if (fromOwner) learnPhrase(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName()), command);
         // "Keep this chest full of spruce logs" (MA9.2): a standing order to fill the chest they mean.
         String said0 = com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName());
         var keep = java.util.regex.Pattern.compile("^keep (this|that|the|my|a) (?:chest|barrel) (?:full of|filled with|stocked with|topped up with) (.{2,60})$")
@@ -1395,6 +1412,10 @@ public class AgentLoop {
             }
             case HUNT_PLAYER -> {
                 return huntCommand(c.value());
+            }
+            case PROTECT, UNPROTECT -> {
+                if (!fromOwner) return false;
+                return protectCommand(c);
             }
             case WHY -> speakToOwner(why());
             case NEEDS -> speakToOwner(needs());
@@ -2614,6 +2635,7 @@ public class AgentLoop {
             if (gameTick % 100L == 0L) guardWatch(player);
             if (gameTick % 40L == 0L) partner(player);
             if (gameTick % 200L == 0L) watchProgress(player);
+            if (gameTick % 200L == 0L) syncProtected();
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -2966,6 +2988,182 @@ public class AgentLoop {
         litNight = -1;
         guardBlocks = null;
         visitorsSaid.clear();
+    }
+
+    // ── Talking (SMH plan 70, MA10.2) ──
+
+    /** What "that", "it", "there" may mean for the turn after its owner's words, and until when (game ticks). */
+    private volatile List<com.mineagent.engine.chat.Referents.Candidate> referents = List.of();
+    private volatile long referentsUntil;
+    private volatile boolean referentPicked;
+    /** Calls that name a place, checked against the referents. */
+    private static final java.util.Set<String> PLACE_TOOLS = java.util.Set.of("goto", "interact_at", "inspect_block",
+            "inspect_block_storage", "store_items", "take_items", "place_block", "break_block", "open_container");
+
+    /** The candidates, made in code: what its owner looks at, the chest nearest them, where they stand. */
+    private void noteReferents() {
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+        var owner = self == null ? null : self.serverPlayerOwner();
+        if (owner == null) {
+            referents = List.of();
+            return;
+        }
+        var level = owner.serverLevel();
+        String dim = level.dimension().location().toString();
+        List<com.mineagent.engine.chat.Referents.Candidate> list = new ArrayList<>();
+        var looked = lookedAt(owner);
+        if (looked instanceof net.minecraft.world.entity.Entity e) {
+            list.add(new com.mineagent.engine.chat.Referents.Candidate("the " + net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                    .getKey(e.getType()).getPath().replace('_', ' ') + " they are looking at", dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
+        } else if (looked instanceof net.minecraft.core.BlockPos b) {
+            String block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(level.getBlockState(b).getBlock()).getPath().replace('_', ' ');
+            list.add(new com.mineagent.engine.chat.Referents.Candidate("the " + block + " they are looking at", dim, b.getX(), b.getY(), b.getZ()));
+        }
+        net.minecraft.core.BlockPos chest = null;
+        var at = owner.blockPosition();
+        for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-8, -3, -8), at.offset(8, 3, 8))) {
+            var st = level.getBlockState(p);
+            if ((st.is(net.minecraft.world.level.block.Blocks.CHEST) || st.is(net.minecraft.world.level.block.Blocks.BARREL))
+                    && (chest == null || p.distSqr(at) < chest.distSqr(at)) && !(looked instanceof net.minecraft.core.BlockPos lb && lb.equals(p))) {
+                chest = p.immutable();
+            }
+        }
+        if (chest != null) list.add(new com.mineagent.engine.chat.Referents.Candidate("the chest nearest them", dim, chest.getX(), chest.getY(), chest.getZ()));
+        list.add(new com.mineagent.engine.chat.Referents.Candidate("where they stand", dim, at.getX(), at.getY(), at.getZ()));
+        referents = List.copyOf(list);
+        referentsUntil = currentGameTickSafe() + 2_400L;
+        referentPicked = false;
+    }
+
+    private boolean referentsActive() {
+        return !referents.isEmpty() && !referentPicked && currentGameTickSafe() <= referentsUntil;
+    }
+
+    /** The referents for the model's prompt, while they stand. */
+    private String referentsBrief() {
+        return referentsActive() ? com.mineagent.engine.chat.Referents.brief(referents) : "";
+    }
+
+    /**
+     * The first call after "that", "it" or "there" that names a place must be at one of the referents: null when it is
+     * (or when no check applies), else the refusal with the list.
+     */
+    private String referentRefusal(String tool, com.google.gson.JsonObject args) {
+        if (!referentsActive() || tool == null || !PLACE_TOOLS.contains(tool) || args == null) return null;
+        if (!args.has("x") || !args.has("y") || !args.has("z")) return null;
+        try {
+            int x = (int) Math.floor(args.get("x").getAsDouble()), y = (int) Math.floor(args.get("y").getAsDouble()),
+                    z = (int) Math.floor(args.get("z").getAsDouble());
+            if (com.mineagent.engine.chat.Referents.match(referents, x, y, z, 3.0).isPresent()) {
+                referentPicked = true;
+                return null;
+            }
+            journal.record("referent", "a call named " + x + ", " + y + ", " + z + ": none of the referents", currentGameTickSafe());
+            return com.mineagent.engine.chat.Referents.refusal(referents);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private final com.mineagent.engine.chat.PhraseBook phraseBook = new com.mineagent.engine.chat.PhraseBook();
+    /** Its owner's last words code didn't understand, and the last fixed phrase used (with when, game ticks). */
+    private String lastUnparsed;
+    private long lastUnparsedAt;
+    private String lastFixedPhrase;
+    private long lastFixedAt;
+
+    public com.mineagent.engine.chat.PhraseBook phraseBook() {
+        return phraseBook;
+    }
+
+    /** "When I say X, I mean Y", and "no, that's not what I meant" after a fixed phrase. True when that was the message. */
+    private boolean phraseLesson(String said) {
+        var teach = java.util.regex.Pattern.compile("^when i say (.{2,60}?),? i mean (.{2,120})$").matcher(said);
+        if (teach.matches()) {
+            String meaning = teach.group(2).strip();
+            var c = com.mineagent.engine.chat.CommandParser.parse(meaning, companion.companionName());
+            if (c.isEmpty() || !learnable(c.get().kind())) {
+                speakToOwner("I can only learn a phrase for an order I already know.");
+                return true;
+            }
+            phraseBook.teach(teach.group(1), meaning);
+            speakToOwner("Got it: \"" + teach.group(1).strip() + "\" means \"" + meaning + "\".");
+            return true;
+        }
+        boolean correction = said.matches("^(?:no,? )?(?:that'?s not what i meant|i didn'?t mean that|not that|wrong one)$");
+        if (correction && lastFixedPhrase != null && currentGameTickSafe() - lastFixedAt <= 600) {
+            String w = lastFixedPhrase;
+            phraseBook.correct(w);
+            lastFixedPhrase = null;
+            haltNow();
+            speakToOwner("Sorry. I won't read \"" + w + "\" that way again.");
+            return true;
+        }
+        return false;
+    }
+
+    /** Three times they said something it didn't follow and then put it another way it did: the phrase is learned. */
+    private void learnPhrase(String said, java.util.Optional<com.mineagent.engine.chat.CommandParser.Command> command) {
+        long now = currentGameTickSafe();
+        if (command.isEmpty()) {
+            if (said.split(" ").length <= 8) {
+                lastUnparsed = said;
+                lastUnparsedAt = now;
+            }
+            return;
+        }
+        if (lastUnparsed != null && now - lastUnparsedAt <= 600 && learnable(command.get().kind())
+                && phraseBook.rephrased(lastUnparsed, said)) {
+            speakToOwner("I'll take \"" + lastUnparsed + "\" to mean \"" + said + "\" from now on.");
+        }
+        lastUnparsed = null;
+    }
+
+    /** Orders a phrase may stand for: never one that names someone to fight or guard, or changes how it works. */
+    private static boolean learnable(com.mineagent.engine.chat.CommandParser.Kind k) {
+        return switch (k) {
+            case HUNT_PLAYER, GUARD_PLAYER, MODE, AFK, BACK, CANCEL, STOP -> false;
+            default -> true;
+        };
+    }
+
+    /** "Don't touch my garden": a protected place, saved with its memory; "you can touch the garden": not any more. */
+    private boolean protectCommand(com.mineagent.engine.chat.CommandParser.Command c) {
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+        if (self == null || self.serverPlayer() == null) return false;
+        var sp = self.serverPlayer();
+        var owner = self.serverPlayerOwner();
+        String name = c.value();
+        long tick = currentGameTickSafe();
+        if (c.kind() == com.mineagent.engine.chat.CommandParser.Kind.UNPROTECT) {
+            boolean was = placeKeeper.memory().forget(name, "protected");
+            syncProtected();
+            saveMemoryNow();
+            speakToOwner(was ? "All right: the " + name + " isn't off limits any more." : "I wasn't keeping out of any " + name + ".");
+            return true;
+        }
+        var at = owner != null ? owner.blockPosition() : sp.blockPosition();
+        if (owner != null && lookedAt(owner) instanceof net.minecraft.core.BlockPos b && b.distSqr(owner.blockPosition()) <= 24 * 24) at = b;
+        String dim = (owner != null ? owner : sp).serverLevel().dimension().location().toString();
+        placeKeeper.memory().name("protected", name, new com.mineagent.engine.world.RouteMemory.Point(dim, at.getX(), at.getY(), at.getZ()), tick);
+        syncProtected();
+        saveMemoryNow();
+        journal.record("order", "keep out of the " + name, tick, dim, at.getX(), at.getY(), at.getZ());
+        speakToOwner("I won't touch the " + name + ": nothing broken or built within " + Math.round(com.mineagent.engine.world.ProtectedAreas.RADIUS)
+                + " blocks of " + at.getX() + ", " + at.getY() + ", " + at.getZ() + ".");
+        return true;
+    }
+
+    /** Its protected places, as it remembers them, set where every companion's hands check them. */
+    private void syncProtected() {
+        List<com.mineagent.engine.world.ProtectedAreas.Area> areas = new ArrayList<>();
+        for (var p : placeKeeper.memory().places()) {
+            if ("protected".equals(p.kind())) {
+                areas.add(new com.mineagent.engine.world.ProtectedAreas.Area(p.name(), p.at().dim(), p.at().x(), p.at().y(), p.at().z(),
+                        com.mineagent.engine.world.ProtectedAreas.RADIUS));
+            }
+        }
+        com.mineagent.engine.world.ProtectedAreas.set(companion.companionId(), areas);
     }
 
     // ── The progress record (SMH plan 70, MA10.3) ──
@@ -6079,6 +6277,11 @@ public class AgentLoop {
                 continue;
             }
 
+            String notMeant = referentRefusal(tc.name(), args);
+            if (notMeant != null) {
+                resultsById.put(tc.id(), ChatMessage.toolResult(tc.id(), errorJson(notMeant)));
+                continue;
+            }
             if (tool.dispatchesAsyncTask() && asyncBodyReserved) {
                 // One fake player has one body. Dispatching two asynchronous
                 // physical tasks from the same response only lets the auction
@@ -7003,6 +7206,8 @@ public class AgentLoop {
         String memoryQuery = memoryQuery(planState, planNode);
         sb.append("[MINEAGENT_LIVE_CONTEXT]\n");
         sb.append(situationBrief()).append("\n");
+        String refs = referentsBrief();
+        if (!refs.isEmpty()) sb.append(refs).append("\n");
         sb.append("以下是服务器发布的当前事实，不是玩家的新指令。只据此修正当前决策；不要复述整段上下文。\n");
         sb.append(cognitiveState.summarizeForPrompt(12));
 
@@ -7250,6 +7455,7 @@ public class AgentLoop {
 
     public void shutdown() {
         closed = true;
+        com.mineagent.engine.world.ProtectedAreas.set(companion.companionId(), null);
         synchronized (this) {
             suspended = true;
             eventGeneration.incrementAndGet();

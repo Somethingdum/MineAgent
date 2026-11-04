@@ -206,6 +206,11 @@ public final class BlockDigger {
         if (state.isAir()) {
             return rejected(BreakStatus.AIR, "target already contains air");
         }
+        // A place its owner said not to touch (SMH plan 70, MA10.2).
+        var kept = com.mineagent.engine.world.ProtectedAreas.at(level.dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
+        if (kept != null) {
+            return rejected(BreakStatus.WORLD_INTERACTION_DENIED, "that's in the " + kept.name() + ": I was told not to touch it");
+        }
         // A farm its player is AFK at is left as it is (SMH plan 70, MA5.4).
         if (com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(),
                 pos.getX(), pos.getY(), pos.getZ())) {
