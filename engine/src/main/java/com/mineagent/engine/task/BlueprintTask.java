@@ -530,6 +530,16 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
                 ? "Built the " + shown() + " at " + corner.toShortString() + ": " + materialsLine() + "; every block checked." + still
                 : "Built the " + shown() + " at " + corner.toShortString() + ", but " + missing.size()
                         + " blocks are missing; I couldn't place them (" + String.join("; ", where) + ").";
+        // A quarter of it or more not there is no hut (the run on 7ab68c7 "built the hut, but 57 blocks are missing":
+        // none of it, from nine under its site): said as a failure, and not kept or counted.
+        if (missing.size() * 4 > print.blocks().size()) {
+            line = "I couldn't build the " + shown() + " at " + corner.toShortString() + ": " + missing.size() + " of its "
+                    + print.blocks().size() + " blocks wouldn't go in from where I could stand (" + String.join("; ", where) + ")";
+            say(line + ".");
+            outcome = line;
+            phase = Phase.FAILED;
+            return TaskState.FAILED;
+        }
         say(line);
         var loop = TaskContext.agentLoop(player);
         if (loop != null) {
