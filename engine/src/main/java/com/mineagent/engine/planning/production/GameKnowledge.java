@@ -55,8 +55,15 @@ public final class GameKnowledge {
      * The game's recipes and drops, with the trades the villagers near offer now (SMH plan 70: a fletcher's arrows for
      * emeralds, its emeralds for sticks), each priced, with its uses left, in {@link #have}.
      */
+    /** Buckets filled as the game fills them: water from a source block, milk from a grown cow, mooshroom or goat. */
+    static final List<Recipe> FILLS = List.of(
+            new Recipe(Production.FILL + "minecraft:water", Kind.FILL, "minecraft:water_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
+            new Recipe(Production.FILL + ENTITY + "minecraft:cow", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
+            new Recipe(Production.FILL + ENTITY + "minecraft:mooshroom", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
+            new Recipe(Production.FILL + ENTITY + "minecraft:goat", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0));
+
     public static Book book(ServerPlayer sp) {
-        Book b = recipesAndDrops(sp);
+        Book b = recipesAndDrops(sp).with(FILLS);
         return com.mineagent.engine.settings.Switches.tradesInPlans() ? b.with(trades(sp).recipes()) : b;
     }
 
@@ -592,6 +599,16 @@ public final class GameKnowledge {
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 12, 24))) {
             if (!level.isLoaded(p)) continue;
             var st = level.getBlockState(p);
+            if (st.getFluidState().isSourceOfType(net.minecraft.world.level.material.Fluids.WATER) && level.getBlockState(p.above()).isAir()) {
+                // Still water open above: a bucket fills there (MA7, buckets only from a source).
+                String key = Production.FILL + "minecraft:water";
+                int d = (int) Math.sqrt(p.distSqr(at));
+                if (!distance.containsKey(key) || d < distance.get(key)) {
+                    where.put(key, Where.KNOWN);
+                    distance.put(key, d);
+                }
+                continue;
+            }
             if (lavaFuel && st.is(net.minecraft.world.level.block.Blocks.LAVA) && st.getFluidState().isSource()) {
                 lava++;
                 int d = (int) Math.sqrt(p.distSqr(at));
@@ -623,6 +640,16 @@ public final class GameKnowledge {
             String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
             herd.merge(key, 1, Integer::sum);
             herdAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);
+        }
+        // Grown cows, mooshrooms and goats near: milked, and left as they were.
+        for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, new net.minecraft.world.phys.AABB(at).inflate(32),
+                a -> a.isAlive() && !a.isBaby() && (a instanceof net.minecraft.world.entity.animal.Cow || a instanceof net.minecraft.world.entity.animal.goat.Goat))) {
+            String key = Production.FILL + ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
+            int d = (int) Math.sqrt(e.blockPosition().distSqr(at));
+            if (!distance.containsKey(key) || d < distance.get(key)) {
+                where.put(key, Where.KNOWN);
+                distance.put(key, d);
+            }
         }
         // Sheep ready to shear, by colour: shearing leaves them, so there is no two to leave.
         Map<String, Integer> limited = new HashMap<>();

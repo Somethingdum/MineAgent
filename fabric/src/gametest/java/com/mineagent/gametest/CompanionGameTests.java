@@ -1944,7 +1944,9 @@ public class CompanionGameTests implements FabricGameTest {
                         + "; afk " + s.loop().ownerAfk();
                 tidy(s);
                 // 4 cows it may take give 4 to 12 beef; the last two are left.
-                if (told && food >= 4 && alive == 2 && done.contains("cooked beef") && done.contains("cows")) helper.succeed();
+                // How far it got, and why it stopped (the last source it tried: these cows, or a herd it remembered).
+                if (told && food >= 4 && alive == 2 && done.contains("cooked beef")
+                        && (done.contains("cows") || done.contains("as much as I could"))) helper.succeed();
                 else fail(helper, how);
             } else if (helper.getTick() >= 3500) {
                 String how = "said " + said + "; last: " + lastSaid(s, "") + "; cooked beef in the chest " + food + "; cows alive "

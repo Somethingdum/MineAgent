@@ -577,6 +577,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             step = todo.poll();
             stalls = 0;
             branchMining = false;
+            fillTicks = 0;
             stepStarted = sp().level().getGameTime();
             itemBefore = count(sp(), item(step.item()));
             if (step.action() == Action.SMELT) smeltStage = 0;
@@ -590,6 +591,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case CRAFT -> craft();
             case SMELT -> smelt();
             case TRADE -> trade();
+            case FILL -> fill();
         };
         if (s == TaskState.SUCCESS) {
             step = null;
@@ -798,6 +800,72 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      * When none are near, it goes to where it last saw some; when there are none there either, the round is planned
      * again without them.
      */
+    private int fillTicks;
+
+    /**
+     * A bucket filled as a player fills one (the plan's FILL): at a source block of still water, the bucket used on it from
+     * the side; milk from a grown cow, mooshroom or goat, the bucket used on it. Never from flowing water.
+     */
+    private TaskState fill() {
+        ServerPlayer sp = sp();
+        ServerLevel level = sp.serverLevel();
+        int got = count(sp, item(step.item())) - itemBefore;
+        if (got >= step.count()) {
+            fillTicks = 0;
+            return TaskState.SUCCESS;
+        }
+        if (count(sp, net.minecraft.world.item.Items.BUCKET) == 0) return fail("I have no empty bucket to fill");
+        if (++fillTicks > 1_200) return fail("I couldn't fill a bucket here");
+        String what = step.block() == null ? "" : step.block().substring(Production.FILL.length());
+        if (what.startsWith(Production.ENTITY)) {
+            var type = BuiltInRegistries.ENTITY_TYPE.getOptional(ResourceLocation.tryParse(what.substring(Production.ENTITY.length()))).orElse(null);
+            net.minecraft.world.entity.animal.Animal best = null;
+            for (var a : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Animal.class, new net.minecraft.world.phys.AABB(sp.blockPosition()).inflate(32),
+                    x -> x.isAlive() && !x.isBaby() && (type == null || x.getType() == type))) {
+                if (best == null || a.distanceToSqr(sp) < best.distanceToSqr(sp)) best = a;
+            }
+            if (best == null) return outOf(step.block());
+            if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, best)) {
+                chase(best.blockPosition(), 1);
+                return TaskState.RUNNING;
+            }
+            nav.cancel();
+            chasing = null;
+            TaskContext.inputDriver(player).clear();
+            if (!TaskContext.selectInventoryItemForHand(player, "minecraft:bucket", net.minecraft.world.InteractionHand.MAIN_HAND)) return TaskState.RUNNING;
+            sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, best.getEyePosition());
+            com.mineagent.engine.act.Interaction.interactEntity(sp, best, net.minecraft.world.InteractionHand.MAIN_HAND);
+            TaskContext.syncInventory(sp);
+            wait = 4;
+            return TaskState.RUNNING;
+        }
+        // Water: the nearest source block open above.
+        BlockPos at = sp.blockPosition(), water = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 6, 24))) {
+            if (!level.getFluidState(p).isSourceOfType(net.minecraft.world.level.material.Fluids.WATER) || !level.getBlockState(p.above()).isAir()) continue;
+            double d = p.distSqr(at);
+            if (d < bestD) {
+                bestD = d;
+                water = p.immutable();
+            }
+        }
+        if (water == null) return outOf(step.block());
+        if (water.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
+            chase(water, 2);
+            return TaskState.RUNNING;
+        }
+        nav.cancel();
+        chasing = null;
+        TaskContext.inputDriver(player).clear();
+        if (!TaskContext.selectInventoryItemForHand(player, "minecraft:bucket", net.minecraft.world.InteractionHand.MAIN_HAND)) return TaskState.RUNNING;
+        sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, net.minecraft.world.phys.Vec3.atCenterOf(water).add(0, 0.4, 0));
+        com.mineagent.engine.act.Interaction.useItem(sp, net.minecraft.world.InteractionHand.MAIN_HAND);
+        TaskContext.syncInventory(sp);
+        wait = 4;
+        return TaskState.RUNNING;
+    }
+
     /** The trading under way for a TRADE step, and the times it has tried. */
     private TradeTask tradeSub;
     private int tradeTries;
@@ -2164,6 +2232,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case CRAFT -> "crafting " + ProductionPlanner.plural(step.item(), step.count());
             case SMELT -> "smelting " + ProductionPlanner.plural(step.input(), step.count());
             case TRADE -> "trading for " + ProductionPlanner.plural(step.item(), step.count());
+            case FILL -> "filling " + (step.count() == 1 ? "a bucket" : step.count() + " buckets");
         };
         String summary = String.format(java.util.Locale.ROOT, "making %s%s: %s, %,d of %,d in", what,
                 chestPos != null ? " for the chest at " + chestPos.toShortString() : "", doing, delivered, Math.max(target, 0));

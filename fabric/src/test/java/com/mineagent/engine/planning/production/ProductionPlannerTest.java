@@ -530,4 +530,31 @@ final class ProductionPlannerTest {
         assertTrue(p.steps().stream().noneMatch(st -> m("emerald_ore").equals(st.block())), "no emerald ore dug: " + p.summary());
         assertTrue(ProductionPlanner.rarity(m("deepslate_emerald_ore")) > ProductionPlanner.rarity(m("iron_ore")));
     }
+
+    // ── Buckets (the owner: "It can only fill a bucket from a source block or mob") ──
+
+    static Book withFills() {
+        return vanilla().with(List.of(
+                new Recipe("fill:minecraft:water", Kind.FILL, m("water_bucket"), 1, List.of(new Need(List.of(m("bucket")), 1)), false, 0),
+                new Recipe("fill:entity:minecraft:cow", Kind.FILL, m("milk_bucket"), 1, List.of(new Need(List.of(m("bucket")), 1)), false, 0),
+                new Recipe(m("bucket"), Kind.CRAFT, m("bucket"), 1, List.of(new Need(List.of(m("iron_ingot")), 3)), true, 0)));
+    }
+
+    @Test void aBucketFilledOnlyAtWaterOrACowItKnowsOf() {
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, "fill:minecraft:water", Where.KNOWN));
+        Have near = new Have(Map.of(m("bucket"), 1), Map.of(), List.of(), 0, true, w, Map.of("fill:minecraft:water", 6));
+        Plan p = ProductionPlanner.plan(withFills(), near, m("water_bucket"), 1);
+        assertTrue(p.possible(), p.summary());
+        assertEquals(1, only(p, Action.FILL, m("water_bucket")).count());
+        assertTrue(p.summary().contains("fill 1 bucket with water"), p.summary());
+        Have dry = new Have(Map.of(m("bucket"), 1), Map.of(), List.of(), 0, true, Map.of(m("stone"), Where.COMMON), Map.of());
+        Plan none = ProductionPlanner.plan(withFills(), dry, m("water_bucket"), 1);
+        assertFalse(none.possible());
+        assertTrue(none.summary().contains("no still water near"), none.summary());
+        Plan milk = ProductionPlanner.plan(withFills(), dry, m("milk_bucket"), 1);
+        assertTrue(milk.summary().contains("no cow, mooshroom or goat near"), milk.summary());
+        Map<String, Where> cows = new HashMap<>(Map.of(m("stone"), Where.COMMON, "fill:entity:minecraft:cow", Where.KNOWN));
+        Plan milked = ProductionPlanner.plan(withFills(), new Have(Map.of(m("bucket"), 1), Map.of(), List.of(), 0, true, cows, Map.of()), m("milk_bucket"), 1);
+        assertTrue(milked.summary().contains("milk a cow into 1 bucket"), milked.summary());
+    }
 }

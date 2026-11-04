@@ -50,7 +50,14 @@ public final class Production {
      * TRADE: a villager's offer, "trade:&lt;profession&gt;:&lt;villager&gt;:&lt;offer&gt;", its price the needs, its uses left in
      * {@link Have#limited()} and the walk to it in {@link Have#knownDistance()}, both by the recipe's id.
      */
-    public enum Kind { CRAFT, SMELT, BLAST, SMOKE, CAMPFIRE, STONECUT, TRADE }
+    public enum Kind { CRAFT, SMELT, BLAST, SMOKE, CAMPFIRE, STONECUT, TRADE, FILL }
+
+    /**
+     * FILL: a bucket filled as the game fills one, only from a source block or an animal: "fill:minecraft:water" at a
+     * water source, "fill:entity:minecraft:cow" milked from a grown cow. The recipe's id is the place, which must be known
+     * near ({@link Have#where}).
+     */
+    public static final String FILL = "fill:";
 
     /** A trade's recipe id: "trade:fletcher:&lt;uuid&gt;:0". */
     public static final String TRADE = "trade:";
