@@ -483,6 +483,17 @@ public final class GameKnowledge {
                         && !com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(), x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
             carried.merge(id(e.getItem().getItem()), e.getItem().getCount(), Integer::sum);
         }
+        // The stations it put down further off (within 64: it went after sheep, the furnaces stayed): counted too.
+        if (loop != null) {
+            for (BlockPos p : loop.stationsNear(dim, at, 64)) {
+                if (Math.abs(p.getX() - at.getX()) <= 24 && Math.abs(p.getZ() - at.getZ()) <= 24 && Math.abs(p.getY() - at.getY()) <= 6) continue; // in the scan below
+                if (!level.isLoaded(p)) continue;
+                var st = level.getBlockState(p);
+                if (st.is(Blocks.FURNACE)) furnaces++;
+                else if (st.is(Blocks.SMOKER)) smokers++;
+                else if (st.is(Blocks.BLAST_FURNACE)) blasts++;
+            }
+        }
         // Its furnaces and table within 24 (where it put them for the last job, a walk away): the job goes back to them.
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 6, 24))) {
             if (!level.isLoaded(p)) continue;

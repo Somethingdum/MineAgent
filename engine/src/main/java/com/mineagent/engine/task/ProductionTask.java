@@ -1289,7 +1289,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     if (furnaces.contains(p)) continue;
                     var st = level.getBlockState(p);
                     if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
-                    if (Placement.placeBlock(sp, p.immutable(), station.defaultBlockState())) furnaces.add(p.immutable());
+                    if (Placement.placeBlock(sp, p.immutable(), station.defaultBlockState())) {
+                        furnaces.add(p.immutable());
+                        var loop = TaskContext.agentLoop(player);
+                        if (loop != null) loop.noteStation(level.dimension().location().toString(), p.immutable()); // its workshop, remembered
+                    }
                 }
             }
             if (furnaces.isEmpty()) return fail("I have no furnace to smelt " + ProductionPlanner.name(step.input()) + " in");
@@ -1460,6 +1464,19 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (d < best) {
                 best = d;
                 nearest = p.immutable();
+            }
+        }
+        if (nearest == null) {
+            // None in sight: the ones it put down for an earlier job, a walk away (it chased the sheep off).
+            var loop = TaskContext.agentLoop(player);
+            if (loop != null) {
+                for (BlockPos p : loop.stationsNear(level.dimension().location().toString(), here, 64)) {
+                    if (level.isLoaded(p) && level.getBlockState(p).is(station) && !furnacesOutOfReach.contains(p)) {
+                        nearest = p;
+                        best = p.distSqr(here);
+                        break;
+                    }
+                }
             }
         }
         if (nearest == null || best <= 12 * 12 || count(sp, station.asItem()) >= step.furnaces()) return here;

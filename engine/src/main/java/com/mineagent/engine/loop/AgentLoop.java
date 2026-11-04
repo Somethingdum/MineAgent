@@ -3609,10 +3609,34 @@ public class AgentLoop {
         goTo(home, List.of(), false);
     }
 
+    // ── Its workshop: the furnaces it put down, remembered (SMH plan 70, production) ──
+
+    /** The furnaces, smokers and blast furnaces it put down, by dimension and block (at most 64). */
+    private final java.util.LinkedHashSet<String> stations = new java.util.LinkedHashSet<>();
+
+    public synchronized void noteStation(String dim, net.minecraft.core.BlockPos p) {
+        stations.remove(dim + "|" + p.asLong());
+        stations.add(dim + "|" + p.asLong());
+        while (stations.size() > 64) stations.remove(stations.iterator().next());
+    }
+
+    /** The stations it put down in this dimension within {@code radius} of a point, nearest first. */
+    public synchronized List<net.minecraft.core.BlockPos> stationsNear(String dim, net.minecraft.core.BlockPos at, double radius) {
+        List<net.minecraft.core.BlockPos> out = new ArrayList<>();
+        for (String k : stations) {
+            int bar = k.lastIndexOf('|');
+            if (!k.substring(0, bar).equals(dim)) continue;
+            var p = net.minecraft.core.BlockPos.of(Long.parseLong(k.substring(bar + 1)));
+            if (p.distSqr(at) <= radius * radius) out.add(p);
+        }
+        out.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(at)));
+        return out;
+    }
+
     // ── Hard: the gear goal rises with the danger (SMH plan 70, MA8.7) ──
 
     /**
-     * Where the danger has grown (Hard, or local difficulty high: mobs there wear better armour over the weeks), with
+     * On Hard, where the danger grows with the time spent in a place (mobs there wear better armour over the weeks), with
      * nothing to do, it makes the iron armour it lacks, a piece at a time, from what it has and has seen
      * ({@code behaviour.gearGoal}). Its owner's orders always come first.
      */
@@ -3622,8 +3646,8 @@ public class AgentLoop {
         LiveBodyState body = liveBodyState.get();
         if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
         var level = self.serverLevel();
-        float local = level.getCurrentDifficultyAt(self.blockPosition()).getEffectiveDifficulty();
-        if (level.getDifficulty() != net.minecraft.world.Difficulty.HARD && local < 4.0f) return;
+        // Hard only: there zombies break doors and the local difficulty climbs past anything Normal reaches.
+        if (level.getDifficulty() != net.minecraft.world.Difficulty.HARD) return;
         var want = new net.minecraft.world.item.Item[] {net.minecraft.world.item.Items.IRON_CHESTPLATE, net.minecraft.world.item.Items.IRON_LEGGINGS,
                 net.minecraft.world.item.Items.IRON_HELMET, net.minecraft.world.item.Items.IRON_BOOTS};
         var slots = new net.minecraft.world.entity.EquipmentSlot[] {net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.entity.EquipmentSlot.LEGS,
