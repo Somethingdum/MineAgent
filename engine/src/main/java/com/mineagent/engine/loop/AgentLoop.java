@@ -6607,7 +6607,8 @@ public class AgentLoop {
         int tried = orderRungs.getOrDefault(g.id(), 0);
         var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
         var owner = self == null ? null : self.serverPlayerOwner();
-        boolean ownerHere = owner != null && !ownerActivity.afk();
+        // On its own nobody is asked (the three-day benchmark: "Say carry on" to no one, the hut set aside).
+        boolean ownerHere = owner != null && !ownerActivity.afk() && !onItsOwn;
         boolean model = System.currentTimeMillis() - lastSmhHintMs > 300_000L;
         var rung = com.mineagent.engine.goal.RecoveryLadder.next(f, tried, ownerHere, model);
         orderRungs.put(g.id(), com.mineagent.engine.goal.RecoveryLadder.after(rung));

@@ -701,6 +701,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         if (step.tool() != null && !step.tool().isEmpty() && !hasTool(sp, toolKind(step.tool()))) {
             String made = makeTool(sp, toolKind(step.tool()));
+            if (made == null && toolReplans++ < 3) {
+                // More wear than it planned spares for (the three-day benchmark: a hut's 55 cobblestone, its stone
+                // pickaxe worn through, and one made from what it had right after the job gave up): the rest planned
+                // again from what it has now, a new tool in that plan.
+                todo.clear();
+                step = null;
+                phase = Phase.ROUND;
+                return TaskState.RUNNING;
+            }
             if (made == null) return fail("my " + toolKind(step.tool()) + " is worn out and I can't make another");
             if (made.isEmpty()) return TaskState.RUNNING; // walking to a table, or one is going down
         }
@@ -1624,6 +1633,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private long lastWorkTrace;
     /** Times a craft found an input short and it planned again. */
     private int craftReplans;
+    /** Times the rest was planned again for a tool worn through with no spare planned. */
+    private int toolReplans;
 
     /**
      * One call of its craft tool: "ok" when it crafted, "" when it is first getting to a table (or putting one down),
