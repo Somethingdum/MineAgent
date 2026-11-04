@@ -4149,15 +4149,16 @@ public class CompanionGameTests implements FabricGameTest {
             if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 1100) {
                 var a = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(loot));
                 var b = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(trapped));
+                // Asked before its slots are read: reading them makes the loot, as opening does.
+                boolean aOpened = a.getLootTable() == null, trappedShut = b.getLootTable() != null;
                 int left = 0;
                 for (int i = 0; i < a.getContainerSize(); i++) left += a.getItem(i).getCount();
                 int carried = 0;
                 for (int i = 0; i < 36; i++) carried += s.body().getInventory().getItem(i).getCount();
-                boolean trappedShut = b.getLootTable() != null;
-                String how = "looted chest opened " + (a.getLootTable() == null) + " with " + left + " left in it, " + carried
+                String how = "looted chest opened " + aOpened + " with " + left + " left in it, " + carried
                         + " carried, trapped one shut " + trappedShut + "; said: " + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
                 tidy(s);
-                if (a.getLootTable() == null && left == 0 && carried > 0 && trappedShut && !done.isEmpty()) helper.succeed();
+                if (aOpened && left == 0 && carried > 0 && trappedShut && !done.isEmpty()) helper.succeed();
                 else fail(helper, how);
             }
         });

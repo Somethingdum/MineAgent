@@ -121,6 +121,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         chests.add(p);
                     }
                     chests.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(sp.blockPosition())));
+                    System.out.println("[MineAgent] loot: " + chests.size() + " unopened, " + skipped + " trapped, round " + site.toShortString());
                     var loop = TaskContext.agentLoop(player);
                     if (loop != null && record.go) loop.noteLooted(level.dimension().location().toString(), site);
                     if (chests.isEmpty()) return end(opened > 0 || skipped == 0 && !record.go,
@@ -131,7 +132,10 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     return TaskState.RUNNING;
                 }
                 case OPEN -> {
-                    if (index >= chests.size()) return end(true, null);
+                    if (index >= chests.size()) {
+                        System.out.println("[MineAgent] loot: done with " + chests.size() + ", opened " + opened);
+                        return end(true, null);
+                    }
                     if (full(sp)) return end(opened > 0, "my pack is full");
                     BlockPos c = chests.get(index);
                     if (sp.containerMenu != sp.inventoryMenu) {
@@ -149,6 +153,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         return TaskState.RUNNING;
                     }
                     if (rc.getLootTable() == null) {
+                        System.out.println("[MineAgent] loot: " + c.toShortString() + " already opened (tried " + c.equals(triedAt) + ")");
                         // Opened by it (its loot made as it opened, the screen shut again at once): taken from the chest
                         // itself. Else someone else opened it since.
                         if (c.equals(triedAt)) {
@@ -173,6 +178,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     TaskContext.inputDriver(player).clear();
                     triedAt = c;
                     boolean open = com.mineagent.engine.act.Interaction.openContainer(sp, c);
+                    System.out.println("[MineAgent] loot: opening " + c.toShortString() + ": " + open + ", screen " + sp.containerMenu.getClass().getSimpleName());
                     if (sp.containerMenu != sp.inventoryMenu) { // open: all of it into the pack, as it stands open
                         takeAll(sp, sp.containerMenu);
                         sp.closeContainer();
