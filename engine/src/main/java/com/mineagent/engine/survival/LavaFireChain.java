@@ -22,6 +22,8 @@ import net.minecraft.world.phys.Vec3;
  * Lava and fire (SMH plan 70, MA8.1): out of lava the shortest safe way (the nearest block it can stand on, jumped
  * to); burning, water on itself (its bucket poured at its feet and taken back up, or into water near), or out of the
  * fire it stands in. Above the breath chain: lava kills faster than water. Switch: {@code behaviour.escapeLavaFire}.
+ * And fire on blocks near it put out, as a player punches it out (not a fireplace on netherrack, nor in the Nether):
+ * {@code behaviour.putOutFires}, a little above an order, so a fire by the base doesn't wait for the job to end.
  */
 public final class LavaFireChain implements TaskChain {
     static final float PRIORITY = 9.5f;
@@ -34,6 +36,11 @@ public final class LavaFireChain implements TaskChain {
     private int previousSlot = -1;
     private BlockPos goal;
     private int goalAge;
+    /** Above an order (5.0), below a fight (5.5): a fire near it is put out now. */
+    static final float FIRE_OUT = 5.1f;
+    private BlockPos fire;
+    private int fireScan, fireTries;
+    private final java.util.Set<BlockPos> fireMissed = new java.util.HashSet<>();
 
     public LavaFireChain(AgentPlayer companion) {
         this.companion = companion;
@@ -53,6 +60,7 @@ public final class LavaFireChain implements TaskChain {
             if (waterPlaced != null) return PRIORITY;
             if (sp.isInLava()) return PRIORITY;
             if (sp.isOnFire() && !sp.hasEffect(MobEffects.FIRE_RESISTANCE)) return PRIORITY;
+            if (com.mineagent.engine.settings.Switches.putOutFires() && fireNear(sp) != null) return FIRE_OUT;
             return Float.NEGATIVE_INFINITY;
         } catch (RuntimeException e) {
             return Float.NEGATIVE_INFINITY;
@@ -81,6 +89,10 @@ public final class LavaFireChain implements TaskChain {
                     return;
                 }
                 walkAt(sp, input, Vec3.atBottomCenterOf(goal));
+                return;
+            }
+            if (fire != null && !sp.isOnFire()) {
+                putOut(sp, level);
                 return;
             }
             // Burning, out of lava.
@@ -118,6 +130,54 @@ public final class LavaFireChain implements TaskChain {
         } catch (RuntimeException e) {
             System.err.println("[MineAgent] Lava/fire tick error: " + e.getMessage());
             input.clear();
+        }
+    }
+
+    /**
+     * A fire within its reach (it looks every half second): fire on a block, not one on a block that burns for ever in
+     * this world (a fireplace of netherrack), and none in the Nether, where fire is part of the place.
+     */
+    private BlockPos fireNear(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        if (fire != null && level.getBlockState(fire).getBlock() instanceof BaseFireBlock) return fire;
+        fire = null;
+        if (++fireScan % 10 != 0) return null;
+        if (level.dimension() == net.minecraft.world.level.Level.NETHER) return null;
+        if (fireMissed.size() > 64) fireMissed.clear();
+        BlockPos at = sp.blockPosition();
+        double best = 4.5 * 4.5;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-5, -2, -5), at.offset(5, 3, 5))) {
+            var st = level.getBlockState(p);
+            if (!st.is(net.minecraft.world.level.block.Blocks.FIRE)) continue;
+            if (level.getBlockState(p.below()).is(level.dimensionType().infiniburn())) continue; // a fireplace
+            if (fireMissed.contains(p)) continue;
+            double d = p.distToCenterSqr(sp.getEyePosition());
+            if (d < best) {
+                best = d;
+                fire = p.immutable();
+                fireTries = 0;
+            }
+        }
+        return fire;
+    }
+
+    /** Punched out, as a player puts out a fire: a fire breaks at once. */
+    private void putOut(ServerPlayer sp, ServerLevel level) {
+        TaskContext.inputDriver(companion).clear();
+        if (!(level.getBlockState(fire).getBlock() instanceof BaseFireBlock)) {
+            fire = null;
+            return;
+        }
+        var r = com.mineagent.engine.task.BlockDigger.startBreakingDetailed(sp, fire);
+        if (level.getBlockState(fire).isAir()) {
+            SurvivalBuiltin.bodyLog(companion).report("I put out a fire at " + fire.toShortString());
+            System.out.println("[MineAgent] put out a fire at " + fire.toShortString());
+            fire = null;
+            return;
+        }
+        if (!r.allowed() || ++fireTries > 20) {
+            fireMissed.add(fire); // out of its reach or sight from here: it doesn't stand there trying
+            fire = null;
         }
     }
 

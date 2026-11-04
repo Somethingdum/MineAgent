@@ -33,4 +33,19 @@ final class PhraseBookTest {
         assertTrue(b.meaning("the usual").isEmpty());
         assertFalse(b.correct("the usual"), "nothing left to correct");
     }
+
+    @Test void keptAcrossARestartWithTheReadingsOnTheWay() {
+        var b = new PhraseBook();
+        b.teach("the usual", "make me 64 torches");
+        b.rephrased("sort it", "light up the area");
+        b.rephrased("sort it", "light up the area");
+        var json = new com.google.gson.Gson().toJson(b.exportState());
+        var again = new PhraseBook();
+        again.importState(new com.google.gson.Gson().fromJson(json, PhraseBook.State.class));
+        assertEquals("make me 64 torches", again.meaning("the usual").orElseThrow());
+        assertTrue(again.meaning("sort it").isEmpty(), "two readings: not fixed yet");
+        assertTrue(again.rephrased("sort it", "light up the area"), "the third, after the restart, fixes it");
+        again.importState(new PhraseBook.State(java.util.Map.of("same", "same", "", "x"), null, null));
+        assertTrue(again.fixedPhrases().isEmpty(), "malformed phrases are not taken back");
+    }
 }

@@ -170,8 +170,17 @@ public final class GameKnowledge {
                 new Probe(new ItemStack(Items.SHEARS), "shears", 0, false));
         Map<String, List<Source>> out = new HashMap<>();
         BlockPos at = sp.blockPosition();
+        if (com.mineagent.engine.settings.Switches.pickBerries()) {
+            // Berries picked by hand, the plant left to grow more (MA8.5): a ripe bush gives 2 to 3, a vine 1.
+            out.computeIfAbsent("minecraft:sweet_berries", k -> new ArrayList<>()).add(new Source("minecraft:sweet_berries",
+                    Production.CROP + "minecraft:sweet_berry_bush", "", 0, false, 2.5, 2));
+            out.computeIfAbsent("minecraft:glow_berries", k -> new ArrayList<>()).add(new Source("minecraft:glow_berries",
+                    Production.CROP + "minecraft:cave_vines", "", 0, false, 1.0, 2));
+        }
         for (Block block : BuiltInRegistries.BLOCK) {
             BlockState state = block.defaultBlockState();
+            if (block == net.minecraft.world.level.block.Blocks.SWEET_BERRY_BUSH || block == net.minecraft.world.level.block.Blocks.CAVE_VINES
+                    || block == net.minecraft.world.level.block.Blocks.CAVE_VINES_PLANT) continue; // picked, above, not broken
             if (block instanceof net.minecraft.world.level.block.CropBlock crop) {
                 // A crop is harvested ripe and planted again (MA8.5), never broken green for its seeds.
                 try {
@@ -464,8 +473,9 @@ public final class GameKnowledge {
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 12, 24))) {
             if (!level.isLoaded(p)) continue;
             var st = level.getBlockState(p);
-            if (st.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(st)) {
-                String key = Production.CROP + id(st.getBlock());
+            String berry = com.mineagent.engine.task.ProductionTask.ripeBerries(st);
+            if (berry != null || st.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(st)) {
+                String key = Production.CROP + (berry != null ? berry : id(st.getBlock()));
                 int d = (int) Math.sqrt(p.distSqr(at));
                 if (!distance.containsKey(key) || d < distance.get(key)) {
                     where.put(key, Where.KNOWN);

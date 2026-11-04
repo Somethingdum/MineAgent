@@ -31,15 +31,32 @@ public final class Manners {
         if (self != null) ASKED.put(self.getUUID(), self.serverLevel().getGameTime() + 5);
     }
 
-    /** Whether it may go and take this item: nobody threw it, it did, it was handed over, or it was asked to. */
+    /** What it handed to someone (the item on the ground), to the game tick it is left alone until: theirs now. */
+    private static final Map<UUID, Long> HANDED = new ConcurrentHashMap<>();
+
+    /** It threw this to someone: it leaves it for them (five minutes), unless asked to pick things up. */
+    public static void handedOver(ItemEntity item, ServerPlayer self) {
+        if (item == null || self == null) return;
+        long now = self.serverLevel().getGameTime();
+        if (HANDED.size() > 512) HANDED.values().removeIf(until -> until < now);
+        HANDED.put(item.getUUID(), now + 6_000);
+    }
+
+    /**
+     * Whether it may go and take this item: nobody threw it, it did (and not to someone), it was handed over, or it
+     * was asked to.
+     */
     public static boolean mayTake(ItemEntity item, ServerPlayer self) {
         if (item == null) return false;
         if (self == null || !com.mineagent.engine.settings.Switches.manners()) return true;
+        Long until = ASKED.get(self.getUUID());
+        boolean asked = until != null && until >= self.serverLevel().getGameTime();
+        Long theirs = HANDED.get(item.getUUID());
+        if (theirs != null && theirs >= self.serverLevel().getGameTime() && !asked) return false;
         Entity thrower = item.getOwner();
         if (thrower == null || thrower.getUUID().equals(self.getUUID())) return true;
         if (!(thrower instanceof Player)) return true;
-        Long until = ASKED.get(self.getUUID());
-        if (until != null && until >= self.serverLevel().getGameTime()) return true;
+        if (asked) return true;
         return handedTo(thrower, self);
     }
 

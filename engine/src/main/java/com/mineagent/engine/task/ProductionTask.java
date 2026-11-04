@@ -364,9 +364,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         double bestCost = Double.POSITIVE_INFINITY;
         for (var e : GameKnowledge.foods().entrySet()) {
             if (foodsDone.contains(e.getKey())) continue;
-            var plan = ProductionPlanner.plan(book, have, e.getKey(), 16, without);
-            if (!plan.possible()) continue;
-            double cost = plan.ticks() / (16.0 * Math.max(1f, e.getValue()));
+            // Priced for 16, or for as many as it can make here (the cows near, less the two it leaves).
+            int n = 16;
+            var plan = ProductionPlanner.plan(book, have, e.getKey(), n, without);
+            if (!plan.possible()) {
+                n = ProductionPlanner.most(book, have, e.getKey(), 16, without);
+                if (n <= 0) continue;
+                plan = ProductionPlanner.plan(book, have, e.getKey(), n, without);
+                if (!plan.possible()) continue;
+            }
+            double cost = plan.ticks() / (n * (double) Math.max(1f, e.getValue())) * (n < 16 ? 16.0 / n : 1.0);
             if (cost < bestCost) {
                 bestCost = cost;
                 best = e.getKey();
@@ -902,16 +909,18 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             TaskContext.inputDriver(player).clear();
             return TaskState.SUCCESS;
         }
-        var block = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(step.block().substring(Production.CROP.length()))).orElse(null);
-        if (!(block instanceof net.minecraft.world.level.block.CropBlock kind)) return outOf(step.block());
+        String plant = step.block().substring(Production.CROP.length());
+        var block = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(plant)).orElse(null);
+        boolean berries = BERRY_PLANTS.contains(plant);
+        if (!berries && !(block instanceof net.minecraft.world.level.block.CropBlock)) return outOf(step.block());
         String dim = level.dimension().location().toString();
-        if (crop == null || !(level.getBlockState(crop).getBlock() == block && kind.isMaxAge(level.getBlockState(crop)))) {
+        if (crop == null || !ripe(level.getBlockState(crop), plant, block)) {
             crop = null;
             double best = Double.MAX_VALUE;
             BlockPos at = sp.blockPosition();
-            for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -4, -24), at.offset(24, 4, 24))) {
+            for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -4, -24), at.offset(24, berries ? 8 : 4, 24))) {
                 var st = level.getBlockState(p);
-                if (st.getBlock() != block || !kind.isMaxAge(st) || AfkFarmsProtect(dim, p)) continue;
+                if (!ripe(st, plant, block) || AfkFarmsProtect(dim, p)) continue;
                 double d = p.distSqr(at);
                 if (d < best) {
                     best = d;
@@ -933,6 +942,20 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         nav.cancel();
         chasing = null;
         TaskContext.inputDriver(player).clear();
+        if (berries) {
+            // Picked as a player picks them: used by hand, the plant left to grow more.
+            if (count(sp, net.minecraft.world.item.Items.BONE_MEAL) > 0 && sp.getMainHandItem().is(net.minecraft.world.item.Items.BONE_MEAL)) {
+                sp.getInventory().selected = (sp.getInventory().selected + 1) % 9; // not the bone meal: that grows it
+            }
+            sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, net.minecraft.world.phys.Vec3.atCenterOf(crop));
+            com.mineagent.engine.act.Interaction.interactBlock(sp, crop, net.minecraft.world.InteractionHand.MAIN_HAND);
+            TaskContext.syncInventory(sp);
+            lootAt = crop;
+            lootWait = 30;
+            crop = null;
+            wait = 4;
+            return TaskState.RUNNING;
+        }
         if (BlockDigger.startBreakingDetailed(sp, crop).allowed() || level.getBlockState(crop).isAir()) {
             if (level.getBlockState(crop).isAir()) {
                 lootAt = crop;
@@ -943,6 +966,29 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
         }
         return TaskState.RUNNING;
+    }
+
+    /** The plants whose berries are picked by hand rather than broken: a bush, and glow berry vines. */
+    private static final java.util.Set<String> BERRY_PLANTS = java.util.Set.of("minecraft:sweet_berry_bush", "minecraft:cave_vines");
+
+    /**
+     * The plant it picks berries from, if this block has ripe ones (a bush at its last two ages, a vine with berries
+     * on): "minecraft:sweet_berry_bush" or "minecraft:cave_vines"; null otherwise. Off with {@code behaviour.pickBerries}.
+     */
+    public static String ripeBerries(net.minecraft.world.level.block.state.BlockState st) {
+        if (!com.mineagent.engine.settings.Switches.pickBerries()) return null;
+        if (st.is(Blocks.SWEET_BERRY_BUSH)) {
+            return st.getValue(net.minecraft.world.level.block.SweetBerryBushBlock.AGE) >= 2 ? "minecraft:sweet_berry_bush" : null;
+        }
+        if ((st.is(Blocks.CAVE_VINES) || st.is(Blocks.CAVE_VINES_PLANT)) && net.minecraft.world.level.block.CaveVines.hasGlowBerries(st)) {
+            return "minecraft:cave_vines";
+        }
+        return null;
+    }
+
+    private static boolean ripe(net.minecraft.world.level.block.state.BlockState st, String plant, net.minecraft.world.level.block.Block block) {
+        if (BERRY_PLANTS.contains(plant)) return plant.equals(ripeBerries(st));
+        return st.getBlock() == block && block instanceof net.minecraft.world.level.block.CropBlock kind && kind.isMaxAge(st);
     }
 
     private static boolean AfkFarmsProtect(String dim, BlockPos p) {

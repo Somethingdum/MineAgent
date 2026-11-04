@@ -67,6 +67,37 @@ public final class PhraseBook {
         return Map.copyOf(fixed);
     }
 
+    /** What is kept with the world: the fixed phrases, oldest first, and the readings on the way to one. */
+    public record State(Map<String, String> fixed, Map<String, String> readingMeanings, Map<String, Integer> readingTimes) {}
+
+    public synchronized State exportState() {
+        Map<String, String> meanings = new LinkedHashMap<>();
+        Map<String, Integer> times = new LinkedHashMap<>();
+        readings.forEach((w, r) -> {
+            meanings.put(w, r.meaning());
+            times.put(w, r.times());
+        });
+        return new State(new LinkedHashMap<>(fixed), meanings, times);
+    }
+
+    /** Back from the world's memory: only well-formed phrases, at most {@link #MAX}. */
+    public synchronized void importState(State s) {
+        fixed.clear();
+        readings.clear();
+        if (s == null) return;
+        if (s.fixed() != null) s.fixed().forEach((w, m) -> {
+            String nw = norm(w), nm = norm(m);
+            if (!nw.isEmpty() && !nm.isEmpty() && !nw.equals(nm)) put(nw, nm);
+        });
+        if (s.readingMeanings() != null) s.readingMeanings().forEach((w, m) -> {
+            Integer t = s.readingTimes() == null ? null : s.readingTimes().get(w);
+            String nw = norm(w), nm = norm(m);
+            if (!nw.isEmpty() && !nm.isEmpty() && t != null && t > 0 && t < TIMES && !fixed.containsKey(nw) && readings.size() < MAX * 4) {
+                readings.put(nw, new Reading(nm, t));
+            }
+        });
+    }
+
     private void put(String w, String m) {
         fixed.remove(w);
         fixed.put(w, m);

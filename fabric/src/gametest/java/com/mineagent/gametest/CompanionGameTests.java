@@ -3758,4 +3758,62 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA8.5, food that renews: "get me 4 sweet berries" by three ripe bushes: picked by hand, the bushes left. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_berries", timeoutTicks = 1200)
+    public void berriesPickedAndTheBushesLeft(GameTestHelper helper) {
+        Scene s = scene(helper, "Forager");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos[] bushes = {new BlockPos(7, 1, 3), new BlockPos(8, 1, 6), new BlockPos(5, 1, 7)};
+        for (BlockPos b : bushes) {
+            helper.setBlock(b.below(), Blocks.GRASS_BLOCK);
+            helper.setBlock(b, Blocks.SWEET_BERRY_BUSH.defaultBlockState().setValue(net.minecraft.world.level.block.SweetBerryBushBlock.AGE, 3));
+        }
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "get me 4 sweet berries"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "berries");
+            String done = lastSaid(s, "Done");
+            String failed = lastSaid(s, "I can't");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1150) {
+                int berries = s.body().getInventory().countItem(Items.SWEET_BERRIES);
+                int standing = 0;
+                for (BlockPos b : bushes) if (helper.getLevel().getBlockState(helper.absolutePos(b)).is(Blocks.SWEET_BERRY_BUSH)) standing++;
+                String how = berries + " berries, " + standing + " bushes standing; plan: " + lastSaid(s, "On it") + "; said: "
+                        + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (berries >= 4 && standing == 3) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA8.1: a fire on a plank by it is put out, as a player punches it out; the fire on the netherrack (a
+     * fireplace) is left burning.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fire_out", timeoutTicks = 400)
+    public void aFireByItIsPutOutAndTheFireplaceLeft(GameTestHelper helper) {
+        Scene s = scene(helper, "Warden");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(6, 0, 3, Blocks.OAK_PLANKS);
+        helper.setBlock(2, 0, 6, Blocks.NETHERRACK);
+        helper.runAfterDelay(10, () -> {
+            helper.setBlock(6, 1, 3, Blocks.FIRE);
+            helper.setBlock(2, 1, 6, Blocks.FIRE);
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 12) return;
+            trace(helper, s, "fire out");
+            boolean out = !helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(6, 1, 3))).is(Blocks.FIRE);
+            boolean plank = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(6, 0, 3))).is(Blocks.OAK_PLANKS);
+            boolean hearth = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(2, 1, 6))).is(Blocks.FIRE);
+            // Out, and the fireplace still burning a good while after: it is left alone.
+            if (out && helper.getTick() >= 160 || helper.getTick() >= 380) {
+                String how = "fire out " + out + ", plank " + plank + ", fireplace burning " + hearth;
+                tidy(s);
+                if (out && plank && hearth) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

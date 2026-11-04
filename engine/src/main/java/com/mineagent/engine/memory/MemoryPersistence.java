@@ -77,6 +77,8 @@ public class MemoryPersistence {
     private static final String GOAL_BOOK_FILE = "goal_book.json";
     /** Places, routes and the trail under way (SMH plan 70, MA5.6). */
     private static final String ROUTE_FILE = "routes.json";
+    /** Learned phrases and the running summary of talks (SMH plan 70, MA10.2). */
+    private static final String TALKS_FILE = "talks.json";
 
     private static final String SEMANTIC_WORLD_FILE = "semantic_world.json";
     private static final String ROLLING_PLAN_FILE = "rolling_plan.json";
@@ -199,6 +201,45 @@ public class MemoryPersistence {
     /** Keep this world's places and routes with its memory (MA5.6). */
     public synchronized void setRouteMemory(com.mineagent.engine.world.RouteMemory memory) {
         this.routeMemory = memory;
+    }
+
+    private volatile com.mineagent.engine.chat.PhraseBook phraseBook;
+    private volatile com.mineagent.engine.chat.TalkSummary talkSummary;
+
+    /** Keep this world's learned phrases and talk summary with its memory (MA10.2). */
+    public synchronized void setTalks(com.mineagent.engine.chat.PhraseBook phrases, com.mineagent.engine.chat.TalkSummary talks) {
+        this.phraseBook = phrases;
+        this.talkSummary = talks;
+    }
+
+    private void saveTalks() throws IOException {
+        var phrases = phraseBook;
+        var talks = talkSummary;
+        if (phrases == null && talks == null) return;
+        JsonObject data = new JsonObject();
+        data.addProperty("version", FORMAT_VERSION);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        if (phrases != null && com.mineagent.engine.settings.Switches.keepPhrases()) data.add("phrases", GSON.toJsonTree(phrases.exportState()));
+        if (talks != null && com.mineagent.engine.settings.Switches.talkSummary()) data.add("talks", GSON.toJsonTree(talks.exportState()));
+        writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
+    }
+
+    private void loadTalks() throws IOException {
+        Path file = memoryDir.resolve(TALKS_FILE);
+        if (!Files.exists(file)) return;
+        JsonObject data = readRoot(file);
+        try {
+            var phrases = phraseBook;
+            if (phrases != null && com.mineagent.engine.settings.Switches.keepPhrases() && data.has("phrases") && data.get("phrases").isJsonObject()) {
+                phrases.importState(GSON.fromJson(data.get("phrases"), com.mineagent.engine.chat.PhraseBook.State.class));
+            }
+            var talks = talkSummary;
+            if (talks != null && com.mineagent.engine.settings.Switches.talkSummary() && data.has("talks") && data.get("talks").isJsonObject()) {
+                talks.importState(GSON.fromJson(data.get("talks"), com.mineagent.engine.chat.TalkSummary.State.class));
+            }
+        } catch (RuntimeException malformed) {
+            throw new IOException("invalid talks", malformed);
+        }
     }
 
     private void loadRoutes() throws IOException {
@@ -383,6 +424,9 @@ public class MemoryPersistence {
         try { saveGoalBook(); } catch (Exception e) {
             System.err.println("[MineAgent] Save goal book failed: " + e.getMessage());
         }
+        try { saveTalks(); } catch (Exception e) {
+            System.err.println("[MineAgent] Save talks failed: " + e.getMessage());
+        }
         // Places and routes are in the memory store now (MA5.7); routes.json is only read, once, to carry them over.
         try { saveTactics(); } catch (Exception e) {
             System.err.println("[MineAgent] Save tactics failed: " + e.getMessage());
@@ -442,6 +486,7 @@ public class MemoryPersistence {
         loadWithQuarantine(CURRICULUM_FILE, "curriculum", this::loadCurriculum);
         loadWithQuarantine(GOAL_BOOK_FILE, "goal book", this::loadGoalBook);
         loadWithQuarantine(ROUTE_FILE, "routes", this::loadRoutes);
+        loadWithQuarantine(TALKS_FILE, "talks", this::loadTalks);
 
         try {
             loadTactics();

@@ -72,6 +72,11 @@ final class BehaviourSwitchesTest {
         assertTrue(d.huntDrops());
         assertFalse(d.liveTracking(), "a hunt uses where it last saw them unless you allow the live position");
         assertTrue(d.replantTrees(), "leaving no trace: a sapling where it felled a tree");
+        assertTrue(d.putOutFires(), "fire near it put out, a fireplace left");
+        assertTrue(d.pickBerries(), "berries picked, the bush left");
+        assertTrue(d.lavaFuel(), "lava buckets for big smelts");
+        assertTrue(d.keepPhrases(), "learned phrases kept");
+        assertTrue(d.talkSummary(), "a running summary of talks");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

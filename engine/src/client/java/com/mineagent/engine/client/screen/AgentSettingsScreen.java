@@ -40,7 +40,7 @@ public class AgentSettingsScreen extends Screen {
             {"manners", "Manners"}, {"recoverDrops", "Fetch my things when I die"}, {"feedOwner", "Feed me when I'm low"},
             {"offerTools", "Offer tools"}, {"partner", "Take the other half of my job"}, {"guardPerimeter", "Guard the perimeter"},
             {"fightPlayers", "Fight players I name"}, {"huntDrops", "Bring a hunted player's drops"},
-            {"liveTracking", "Hunt by live position"}, {"replantTrees", "Replant trees it fells"}};
+            {"liveTracking", "Hunt by live position"}, {"replantTrees", "Replant trees it fells"}, {"putOutFires", "Put out fires near it"}, {"pickBerries", "Pick berries"}, {"lavaFuel", "Lava buckets as fuel"}, {"keepPhrases", "Remember what my words mean"}, {"talkSummary", "Keep a summary of our talks"}};
     private static final int[] READY_FOOD = {2, 4, 8, 16, 32};
     private static final int[] READY_TORCHES = {4, 8, 16, 32, 64};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};

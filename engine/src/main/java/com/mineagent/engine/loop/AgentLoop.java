@@ -507,6 +507,7 @@ public class AgentLoop {
             p.setCurriculum(curriculum);
             p.setGoalBook(goalBook);
             p.setRouteMemory(placeKeeper.memory()); // reads an older routes.json once; the store keeps them now
+            p.setTalks(phraseBook, talkSummary);
             p.setTacticBook(tacticBook);
             p.loadAll();
             openStore(memDir.resolve("store"));
@@ -760,6 +761,10 @@ public class AgentLoop {
         }
         var command = com.mineagent.engine.chat.CommandParser.parse(message, companion.companionName());
         if (fromOwner) learnPhrase(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName()), command);
+        if (fromOwner && com.mineagent.engine.settings.Switches.talkSummary() && (command.isEmpty() ? message.contains(", then ")
+                : TALK_ORDERS.contains(command.get().kind()))) {
+            talkSummary.order(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName())); // MA10.2
+        }
         // "Keep this chest full of spruce logs" (MA9.2): a standing order to fill the chest they mean.
         String said0 = com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName());
         var keep = java.util.regex.Pattern.compile("^keep (this|that|the|my|a) (?:chest|barrel) (?:full of|filled with|stocked with|topped up with) (.{2,60})$")
@@ -3190,6 +3195,23 @@ public class AgentLoop {
     }
 
     private final com.mineagent.engine.chat.PhraseBook phraseBook = new com.mineagent.engine.chat.PhraseBook();
+    /** The orders the talk summary counts: the jobs given, not "stop" or "where are you". */
+    private static final java.util.Set<com.mineagent.engine.chat.CommandParser.Kind> TALK_ORDERS = java.util.EnumSet.of(
+            com.mineagent.engine.chat.CommandParser.Kind.PRODUCE, com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE,
+            com.mineagent.engine.chat.CommandParser.Kind.GIVE, com.mineagent.engine.chat.CommandParser.Kind.BUILD,
+            com.mineagent.engine.chat.CommandParser.Kind.LIGHT, com.mineagent.engine.chat.CommandParser.Kind.PRIME,
+            com.mineagent.engine.chat.CommandParser.Kind.HUNT_PLAYER, com.mineagent.engine.chat.CommandParser.Kind.PROTECT,
+            com.mineagent.engine.chat.CommandParser.Kind.PORTAL, com.mineagent.engine.chat.CommandParser.Kind.ENCHANT,
+            com.mineagent.engine.chat.CommandParser.Kind.TRADE, com.mineagent.engine.chat.CommandParser.Kind.BREW,
+            com.mineagent.engine.chat.CommandParser.Kind.BREED, com.mineagent.engine.chat.CommandParser.Kind.FISH,
+            com.mineagent.engine.chat.CommandParser.Kind.GUARD_HERE, com.mineagent.engine.chat.CommandParser.Kind.GOAL_ADD,
+            com.mineagent.engine.chat.CommandParser.Kind.FOOD_BOTH, com.mineagent.engine.chat.CommandParser.Kind.PATROL);
+    /** The running summary of talks in this world (MA10.2), fed the orders its owner gives. */
+    private final com.mineagent.engine.chat.TalkSummary talkSummary = new com.mineagent.engine.chat.TalkSummary();
+
+    public com.mineagent.engine.chat.TalkSummary talkSummary() {
+        return talkSummary;
+    }
     /** Its owner's last words code didn't understand, and the last fixed phrase used (with when, game ticks). */
     private String lastUnparsed;
     private long lastUnparsedAt;
@@ -7346,6 +7368,10 @@ public class AgentLoop {
         sb.append(situationBrief()).append("\n");
         String refs = referentsBrief();
         if (!refs.isEmpty()) sb.append(refs).append("\n");
+        if (com.mineagent.engine.settings.Switches.talkSummary()) {
+            String talks = talkSummary.summary(phraseBook.fixedPhrases());
+            if (!talks.isEmpty()) sb.append(talks).append("\n");
+        }
         sb.append("以下是服务器发布的当前事实，不是玩家的新指令。只据此修正当前决策；不要复述整段上下文。\n");
         sb.append(cognitiveState.summarizeForPrompt(12));
 

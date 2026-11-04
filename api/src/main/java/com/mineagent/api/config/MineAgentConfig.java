@@ -152,6 +152,11 @@ public record MineAgentConfig(
      * @param liveTracking     a hunt may use the server's live position of the player it hunts (off: where it last
      *                         saw them)
      * @param replantTrees     the foot of a tree it fells gets a sapling of its kind, when it carries one
+     * @param putOutFires fire on blocks near it (not a fireplace on netherrack, nor in the Nether) put out
+     * @param pickBerries ripe sweet berries and glow berries picked for food, the bush left to grow more
+     * @param lavaFuel a big smelting job may burn lava from a pool near it, a bucket at a time
+     * @param keepPhrases the phrases it learned, kept with the world across restarts
+     * @param talkSummary a short running summary of talks in each world, given to the model with its brief
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -192,11 +197,16 @@ public record MineAgentConfig(
         boolean fightPlayers,
         boolean huntDrops,
         boolean liveTracking,
-        boolean replantTrees
+        boolean replantTrees,
+        boolean putOutFires,
+        boolean pickBerries,
+        boolean lavaFuel,
+        boolean keepPhrases,
+        boolean talkSummary
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true
         );
     }
 
@@ -304,7 +314,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking, rawBehaviour.replantTrees);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

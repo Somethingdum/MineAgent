@@ -62,6 +62,11 @@ public final class Switches {
     public static boolean huntDrops() { return b().huntDrops(); }
     public static boolean liveTracking() { return b().liveTracking(); }
     public static boolean replantTrees() { return b().replantTrees(); }
+    public static boolean putOutFires() { return b().putOutFires(); }
+    public static boolean pickBerries() { return b().pickBerries(); }
+    public static boolean lavaFuel() { return b().lavaFuel(); }
+    public static boolean keepPhrases() { return b().keepPhrases(); }
+    public static boolean talkSummary() { return b().talkSummary(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

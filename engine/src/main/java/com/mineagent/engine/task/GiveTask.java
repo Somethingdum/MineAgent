@@ -80,7 +80,7 @@ public class GiveTask extends CompanionTask<GiveTask.GiveRecord> {
                 ItemStack out = inv.removeItem(i, Math.min(left, s.getCount()));
                 left -= out.getCount();
                 gave.merge(id, out.getCount(), Integer::sum);
-                sp.drop(out, false, true);
+                com.mineagent.engine.survival.Manners.handedOver(sp.drop(out, false, true), sp);
             }
             if (left <= 0) break;
         }

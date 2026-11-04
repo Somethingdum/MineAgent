@@ -192,7 +192,7 @@ public class RecoverTask extends CompanionTask<RecoverTask.RecoverRecord> {
                 ItemStack rest = HopperBlockEntity.addItem(null, chest, out, null);
                 if (!rest.isEmpty()) sp.getInventory().add(rest);
             } else {
-                sp.drop(out, false, true);
+                com.mineagent.engine.survival.Manners.handedOver(sp.drop(out, false, true), sp);
             }
         }
         if (chest != null) chest.setChanged();
