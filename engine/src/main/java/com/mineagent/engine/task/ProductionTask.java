@@ -780,6 +780,12 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 }
                 if (herdSeen == null) return outOf(step.block());
                 if (sp.blockPosition().distSqr(herdSeen) <= 8 * 8 || navFailed) {
+                    // Gone from there (or no way to them): forgotten, so the next plan doesn't count on them.
+                    var mem = TaskContext.agentLoop(player);
+                    if (mem != null) {
+                        mem.placeKeeper().sightings().gone(com.mineagent.engine.memory.Sightings.Kind.ANIMAL, ResourceLocation.tryParse(kind).getPath(),
+                                level.dimension().location().toString(), herdSeen.getX(), herdSeen.getY(), herdSeen.getZ());
+                    }
                     herdSeen = null;
                     chasing = null;
                     navFailed = false;

@@ -4167,8 +4167,14 @@ public class CompanionGameTests implements FabricGameTest {
         }
         helper.onEachTick(() -> {
             trace(helper, s, "partner-ore");
-            int raw = s.body().getInventory().countItem(Items.RAW_IRON);
-            if (raw >= 1 && helper.getTick() > 60) {
+            // Dug out: the ore gone, its iron with the companion (or lying there, or picked up by the miner beside it).
+            boolean gone = !is(helper, 6, 1, 7, Blocks.IRON_ORE) && !is(helper, 7, 2, 7, Blocks.IRON_ORE);
+            int raw = s.body().getInventory().countItem(Items.RAW_IRON) + miner.getInventory().countItem(Items.RAW_IRON);
+            for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(6, 1, 7))).inflate(8), e -> e.getItem().is(Items.RAW_IRON))) {
+                raw += e.getItem().getCount();
+            }
+            if (gone && raw >= 1 && helper.getTick() > 60) {
                 tidy(s);
                 helper.succeed();
             } else if (helper.getTick() >= 880) {
