@@ -55,6 +55,10 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
     private BlockPos center;
     private List<BlockPos> cells = List.of();
     private int index, ticks, tilled, planted, grassBroken, cooldown;
+    /** Cells given up (no way to them, or the hoe or seed won't take), and tries on each. */
+    private final java.util.Set<BlockPos> given = new java.util.HashSet<>();
+    private final java.util.Map<BlockPos, Integer> tries = new java.util.HashMap<>();
+    private int walkTicks;
     private BlockPos grass, pickup;
     private int pickupTicks;
     private String outcome = "";
@@ -140,59 +144,54 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
                     return TaskState.RUNNING;
                 }
                 case TILL -> {
-                    if (index >= cells.size()) {
+                    // As a player works a field: every cell within reach from where it stands, then the nearest left.
+                    BlockPos c = pick(sp, level, true);
+                    if (c == null) {
                         phase = Phase.PLANT;
-                        index = 0;
-                        return TaskState.RUNNING;
-                    }
-                    BlockPos c = cells.get(index);
-                    var st = level.getBlockState(c);
-                    if (st.is(Blocks.FARMLAND) || !(st.is(Blocks.GRASS_BLOCK) || st.is(Blocks.DIRT))) {
-                        if (st.is(Blocks.FARMLAND)) tilled++;
-                        next();
+                        ticks = 0;
                         return TaskState.RUNNING;
                     }
                     if (!near(sp, c, 4.0)) {
-                        if (++ticks > 400) next();
-                        return walk(c, 2);
+                        if (++walkTicks > 300) {
+                            given.add(c);
+                            walkTicks = 0;
+                        }
+                        return walk(c, 1);
                     }
+                    walkTicks = 0;
                     nav.cancel();
                     BlockPos up = c.above();
                     if (!level.getBlockState(up).isAir()) { // grass or a flower on it: off first, as a player clears it
-                        if (!level.getBlockState(up).canBeReplaced() || !level.getFluidState(up).isEmpty()) {
-                            next();
-                            return TaskState.RUNNING;
-                        }
                         BlockDigger.startBreaking(sp, up);
                         cooldown = 2;
+                        if (tries.merge(c, 1, Integer::sum) > 8) given.add(c);
                         return TaskState.RUNNING;
                     }
                     int h = hoe(sp);
-                    if (h < 0) return end(tilled > 0, "my hoe broke");
+                    if (h < 0) return end(count(level, false) > 0, "my hoe broke");
                     TaskContext.selectInventoryItem(player, BuiltInRegistries.ITEM.getKey(sp.getInventory().getItem(h).getItem()).toString());
                     useOnTop(sp, c);
-                    cooldown = 3;
-                    if (++ticks > 20) next();
+                    cooldown = 2;
+                    if (tries.merge(c, 1, Integer::sum) > 6) given.add(c);
                     return TaskState.RUNNING;
                 }
                 case PLANT -> {
                     Item seed = seeds(sp);
-                    if (seed == null || index >= cells.size()) return end(true, null);
-                    BlockPos c = cells.get(index);
-                    if (!level.getBlockState(c).is(Blocks.FARMLAND) || !level.getBlockState(c.above()).isAir()) {
-                        if (level.getBlockState(c.above()).getBlock() instanceof net.minecraft.world.level.block.CropBlock) planted++;
-                        next();
-                        return TaskState.RUNNING;
-                    }
+                    BlockPos c = seed == null ? null : pick(sp, level, false);
+                    if (c == null) return end(true, null);
                     if (!near(sp, c, 4.0)) {
-                        if (++ticks > 400) next();
-                        return walk(c, 2);
+                        if (++walkTicks > 300) {
+                            given.add(c);
+                            walkTicks = 0;
+                        }
+                        return walk(c, 1);
                     }
+                    walkTicks = 0;
                     nav.cancel();
                     TaskContext.selectInventoryItem(player, BuiltInRegistries.ITEM.getKey(seed).toString());
                     useOnTop(sp, c);
-                    cooldown = 3;
-                    if (++ticks > 20) next();
+                    cooldown = 2;
+                    if (tries.merge(c.above(), 1, Integer::sum) > 6) given.add(c);
                     return TaskState.RUNNING;
                 }
                 default -> {
@@ -231,6 +230,39 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
     private static Item seeds(ServerPlayer sp) {
         for (Item s : SEEDS) if (sp.getInventory().countItem(s) > 0) return s;
         return null;
+    }
+
+    /**
+     * The next cell to work: one still to till (grass or dirt, open over it) or to plant (farmland, open over it), the
+     * nearest within reach first, else the nearest of all; none given up. Null when the field is done.
+     */
+    private BlockPos pick(ServerPlayer sp, ServerLevel level, boolean till) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos c : cells) {
+            if (given.contains(c)) continue;
+            var st = level.getBlockState(c);
+            var up = level.getBlockState(c.above());
+            boolean todo = till ? (st.is(Blocks.GRASS_BLOCK) || st.is(Blocks.DIRT)) && (up.isAir() || up.canBeReplaced() && level.getFluidState(c.above()).isEmpty())
+                    : st.is(Blocks.FARMLAND) && up.isAir();
+            if (!todo) continue;
+            double d = Vec3.atCenterOf(c).add(0, 0.5, 0).distanceToSqr(sp.getEyePosition());
+            if (d < bestD) {
+                bestD = d;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /** Its farmland, or its crops, counted over the field. */
+    private int count(ServerLevel level, boolean crops) {
+        int n = 0;
+        for (BlockPos c : cells) {
+            if (crops ? level.getBlockState(c.above()).getBlock() instanceof net.minecraft.world.level.block.CropBlock
+                    : level.getBlockState(c).is(Blocks.FARMLAND)) n++;
+        }
+        return n;
     }
 
     /**
@@ -366,6 +398,11 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
         TaskContext.inputDriver(player).clear();
         phase = Phase.DONE;
         ok = ok && center != null;
+        if (center != null) {
+            ServerLevel lvl = TaskContext.serverPlayer(player).serverLevel();
+            tilled = count(lvl, false);
+            planted = count(lvl, true);
+        }
         if (ok) {
             outcome = "Made a farm at " + center.getX() + ", " + center.getZ() + ": " + tilled + " farmland, "
                     + (planted == 0 ? "nothing planted yet" : planted + " planted") + ", water in the middle" + (why == null ? "" : "; " + why);
