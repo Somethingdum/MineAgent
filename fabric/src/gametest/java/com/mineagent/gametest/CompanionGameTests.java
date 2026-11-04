@@ -4327,4 +4327,32 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA11.1, blaze rods: "get me 2 blaze rods" with eight blazes about (held still here: the fighting itself is
+     * the fight scenes'): hunted for their rods (one kill in two gives one), the rods picked up.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_blaze_rods", timeoutTicks = 2400)
+    public void blazeRodsFromBlazes(GameTestHelper helper) {
+        Scene s = scene(helper, "Rodder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
+        for (int k = 0; k < 8; k++) {
+            var blaze = helper.spawn(EntityType.BLAZE, new BlockPos(7 + (k % 4) * 2, 1, 6 + (k / 4) * 3));
+            blaze.setNoAi(true);
+        }
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "get me 2 blaze rods"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "blaze rods");
+            int rods = s.body().getInventory().countItem(Items.BLAZE_ROD);
+            String done = lastSaid(s, "Done");
+            String failed = lastSaid(s, "I can't");
+            if (rods >= 2 || !failed.isEmpty() || helper.getTick() >= 2350) {
+                String how = rods + " blaze rods; plan: " + lastSaid(s, "On it") + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (rods >= 2) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

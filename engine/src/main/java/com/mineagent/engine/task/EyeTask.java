@@ -33,12 +33,12 @@ public class EyeTask extends CompanionTask<EyeTask.EyeRecord> {
 
     private enum Phase { THROW, WATCH, PICK, MOVE, DONE, FAILED }
 
-    /** How far apart the throws are: the lines cross at a good angle for a stronghold some hundreds of blocks off. */
+    /** How far apart the eyes are: the lines cross at a good angle for a stronghold some hundreds of blocks off. */
     static final double APART = 64;
 
     private Phase phase = Phase.THROW;
     private PlayerNav nav;
-    private final List<EyeTriangulation.Throw> throws = new ArrayList<>();
+    private final List<EyeTriangulation.Throw> eyes = new ArrayList<>();
     private Vec3 from;
     private EyeOfEnder eye;
     private BlockPos second;
@@ -87,7 +87,7 @@ public class EyeTask extends CompanionTask<EyeTask.EyeRecord> {
                     if (eye != null && eye.isAlive()) {
                         Vec3 d = eye.position().subtract(from);
                         if (d.horizontalDistance() >= 6.0 || ticks > 60) {
-                            throws.add(new EyeTriangulation.Throw(from.x, from.z, d.x, d.z));
+                            eyes.add(new EyeTriangulation.Throw(from.x, from.z, d.x, d.z));
                             System.out.println("[MineAgent] eye flew " + String.format(java.util.Locale.ROOT, "%.1f, %.1f", d.x, d.z) + " from " + BlockPos.containing(from).toShortString());
                             phase = Phase.PICK;
                             ticks = 0;
@@ -137,8 +137,8 @@ public class EyeTask extends CompanionTask<EyeTask.EyeRecord> {
 
     /** One throw done: the first sends it to the side for the second; two (or more) give the place. */
     private TaskState afterThrow(ServerPlayer sp) {
-        if (throws.size() >= 2) {
-            var at = EyeTriangulation.locate(throws);
+        if (eyes.size() >= 2) {
+            var at = EyeTriangulation.locate(eyes);
             if (at.isEmpty()) {
                 if (++tries > 2) return end(false, "the eyes flew too nearly the same way to tell where it is");
                 return goToSide(sp, APART * 2);
@@ -157,7 +157,7 @@ public class EyeTask extends CompanionTask<EyeTask.EyeRecord> {
     }
 
     private TaskState goToSide(ServerPlayer sp, double apart) {
-        var last = throws.get(throws.size() - 1);
+        var last = eyes.get(eyes.size() - 1);
         double[] p = EyeTriangulation.secondThrowFrom(last, apart);
         int x = (int) Math.round(p[0]), z = (int) Math.round(p[1]);
         int y = sp.serverLevel().isLoaded(new BlockPos(x, sp.getBlockY(), z))

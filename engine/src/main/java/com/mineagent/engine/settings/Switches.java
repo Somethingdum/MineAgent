@@ -68,6 +68,7 @@ public final class Switches {
     public static boolean keepPhrases() { return b().keepPhrases(); }
     public static boolean talkSummary() { return b().talkSummary(); }
     public static boolean fillHoles() { return b().fillHoles(); }
+    public static boolean huntMonsters() { return b().huntMonsters(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

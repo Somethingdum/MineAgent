@@ -754,7 +754,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             wait = 12; // its drops can be picked up after 10 ticks
             return TaskState.RUNNING;
         }
-        if (prey != null && (prey.isRemoved() || !GameKnowledge.huntable(prey) || ++preyTicks > 900)) {
+        if (prey != null && (prey.isRemoved() || !GameKnowledge.quarry(prey) || ++preyTicks > 900)) {
             unreachable.add(prey.getUUID());
             prey = null;
         }
@@ -1051,9 +1051,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         String dim = level.dimension().location().toString();
         var all = level.getEntities((net.minecraft.world.entity.Entity) null,
                 new net.minecraft.world.phys.AABB(sp.blockPosition()).inflate(HUNT_RADIUS, 24, HUNT_RADIUS),
-                e -> e.getType() == type && GameKnowledge.huntable(e)
+                e -> e.getType() == type && GameKnowledge.quarry(e)
                         && !com.mineagent.engine.world.AfkFarms.protects(dim, e.getBlockX(), e.getBlockY(), e.getBlockZ()));
-        if (all.size() <= GameKnowledge.LEAVE) return null;
+        boolean monsters = !all.isEmpty() && GameKnowledge.monsterQuarry(all.get(0));
+        if (all.isEmpty() || !monsters && all.size() <= GameKnowledge.LEAVE) return null; // two of a herd left; no monster need be
         net.minecraft.world.entity.Entity best = null;
         for (var e : all) {
             if (unreachable.contains(e.getUUID())) continue;

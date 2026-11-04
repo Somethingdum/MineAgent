@@ -326,17 +326,18 @@ public final class GameKnowledge {
                     "shears", 0, false, 2.0, 30));
         }
         for (var type : BuiltInRegistries.ENTITY_TYPE) {
-            if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;
+            boolean monster = QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString()) && com.mineagent.engine.settings.Switches.huntMonsters();
+            if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE && !monster) continue;
             try {
                 var entity = type.create(level);
-                if (!(entity instanceof net.minecraft.world.entity.animal.Animal living) || !huntable(living)) {
+                if (!(entity instanceof net.minecraft.world.entity.LivingEntity living) || !monster && !huntable(living)) {
                     if (entity != null) entity.discard();
                     continue;
                 }
                 living.moveTo(sp.getX(), sp.getY(), sp.getZ());
                 var table = server.reloadableRegistries().getLootTable(living.getLootTable()); // a sheep's by its colour: wool too
                 Map<String, Double> got = new HashMap<>();
-                int rolls = 4;
+                int rolls = monster ? 8 : 4; // a blaze's rod is one kill in two
                 for (int i = 0; i < rolls; i++) {
                     var params = new net.minecraft.world.level.storage.loot.LootParams.Builder(level)
                             .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.THIS_ENTITY, living)
@@ -349,7 +350,7 @@ public final class GameKnowledge {
                     for (ItemStack d : table.getRandomItems(params)) got.merge(id(d.getItem()), d.getCount() / (double) rolls, Double::sum);
                 }
                 living.discard();
-                int ticks = 60 + (int) Math.ceil(living.getMaxHealth() / 4.0) * 12; // the walk to it, a hit every 12 ticks
+                int ticks = (60 + (int) Math.ceil(living.getMaxHealth() / 4.0) * 12) * (monster ? 2 : 1); // a hit every 12 ticks; one that fights back, twice
                 String source = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type);
                 for (var e : got.entrySet()) {
                     if (e.getValue() <= 0) continue;
@@ -360,6 +361,26 @@ public final class GameKnowledge {
             }
         }
         return out;
+    }
+
+    /**
+     * The hostile mobs it goes after when an order needs what they drop (blaze rods, ender pearls, string, slime...),
+     * only those in sight, none left behind ({@code behaviour.huntMonsters}). Never a boss, a warden, a ghast or a wither
+     * skeleton: those it fights only when they come for it.
+     */
+    public static final java.util.Set<String> QUARRY = java.util.Set.of("minecraft:blaze", "minecraft:enderman", "minecraft:spider",
+            "minecraft:cave_spider", "minecraft:skeleton", "minecraft:stray", "minecraft:zombie", "minecraft:husk", "minecraft:creeper",
+            "minecraft:slime", "minecraft:magma_cube", "minecraft:witch", "minecraft:drowned");
+
+    /** A hostile mob of the {@link #QUARRY} it may hunt: grown, unnamed. */
+    public static boolean monsterQuarry(net.minecraft.world.entity.Entity e) {
+        return com.mineagent.engine.settings.Switches.huntMonsters() && e instanceof net.minecraft.world.entity.Mob m && m.isAlive()
+                && !m.isBaby() && !m.hasCustomName() && QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString());
+    }
+
+    /** Anything it may hunt: an animal it may take, or a hostile mob of the quarry. */
+    public static boolean quarry(net.minecraft.world.entity.Entity e) {
+        return huntable(e) || monsterQuarry(e);
     }
 
     /**
@@ -545,6 +566,21 @@ public final class GameKnowledge {
                 limited.put(key, n - LEAVE); // how many it may take: the rest of the herd stays to breed
             }
         });
+        // Hostile mobs in sight whose drops an order may need: all of them, none left (MA11.1).
+        if (com.mineagent.engine.settings.Switches.huntMonsters()) {
+            Map<String, Integer> mobs = new HashMap<>();
+            Map<String, Integer> mobsAt = new HashMap<>();
+            for (var e : level.getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(at).inflate(32), GameKnowledge::monsterQuarry)) {
+                String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
+                mobs.merge(key, 1, Integer::sum);
+                mobsAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);
+            }
+            mobs.forEach((key, n) -> {
+                where.put(key, Where.KNOWN);
+                distance.put(key, mobsAt.get(key));
+                limited.put(key, n);
+            });
+        }
         if (loop != null) {
             for (var type : BuiltInRegistries.ENTITY_TYPE) {
                 if (type.getCategory() != net.minecraft.world.entity.MobCategory.CREATURE) continue;
