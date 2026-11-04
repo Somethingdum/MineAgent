@@ -344,6 +344,18 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
      * The piece to see to: for a repair, worn, with something to mend it, best material and most worn first; for a
      * grind, enchanted with more than curses. The slot, or -1.
      */
+    /**
+     * Whether an item (its path, "diamond_pickaxe") is what it was asked for: a kind of piece by kind ("axe" is no
+     * pickaxe; "boot" is boots), anything else by name.
+     */
+    private boolean isWhat(String id) {
+        String what = record.what.replace(' ', '_');
+        var best = com.mineagent.engine.gear.GodGear.BEST;
+        String kind = best.containsKey(what) ? what : best.containsKey(what + "s") ? what + "s" : null;
+        if (kind != null) return kind.equals(com.mineagent.engine.gear.GodGear.kindOf("minecraft:" + id));
+        return id.contains(what);
+    }
+
     private int pick(ServerPlayer sp) {
         var inv = sp.getInventory();
         int best = -1;
@@ -353,7 +365,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
             ItemStack st = inv.getItem(i);
             if (st.isEmpty()) continue;
             String id = BuiltInRegistries.ITEM.getKey(st.getItem()).getPath();
-            if (!"gear".equals(record.what) && !id.contains(record.what.replace(' ', '_'))) continue;
+            if (!"gear".equals(record.what) && !isWhat(id)) continue;
             if (grind()) {
                 if (!st.isEnchanted() && !st.is(Items.ENCHANTED_BOOK)) continue;
             } else if (bookMode() || bestMode()) {

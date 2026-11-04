@@ -987,6 +987,10 @@ public class AgentLoop {
         if (taskId != null) {
             Runnable after = afterTask.remove(taskId);
             if (after != null && state == TaskState.SUCCESS) afterReady.add(after); // on the next tick, the body free
+            Runnable always = afterTaskAlways.remove(taskId);
+            if (always != null) afterReady.add(always);
+            String godKey = godGearJobs.remove(taskId);
+            if (godKey != null && state != TaskState.SUCCESS) godGearFailed.put(godKey, gameTick);
         }
         liveBodyState.set(new LiveBodyState(null, "idle", null, null,
                 "last_task=" + taskName + " state=" + state
@@ -2978,6 +2982,7 @@ public class AgentLoop {
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
             if (gameTick % 1200L == 600L) gearGoal(player);
             if (gameTick % 1200L == 900L) kitGoal(player);
+            if (gameTick % 1200L == 1100L) godGearGoal(player);
             if (gameTick % 2400L == 1500L) masterTrading(player);
             if (gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
@@ -3793,6 +3798,140 @@ public class AgentLoop {
                     "gear-" + UUID.randomUUID(), id, 1, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
             return;
         }
+    }
+
+    // ── God-tier gear, its end goal (SMH plan 70: "gear that makes a Minecraft sweat blush ... Unless told to speed run") ──
+
+    /** God-tier tries that failed, by {@link com.mineagent.engine.gear.GodGear.Next#key}, with when; its jobs by task id. */
+    private final java.util.Map<String, Long> godGearFailed = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, String> godGearJobs = new java.util.concurrent.ConcurrentHashMap<>();
+    /** What to run once a task it started for itself ends, however it ended. */
+    private final java.util.Map<String, Runnable> afterTaskAlways = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Enchantments by name ("sharpness") and level. */
+    private static java.util.Map<String, Integer> enchantsOf(net.minecraft.world.item.enchantment.ItemEnchantments e) {
+        java.util.Map<String, Integer> out = new java.util.HashMap<>();
+        if (e == null) return out;
+        for (var en : e.entrySet()) {
+            int lvl = en.getIntValue();
+            en.getKey().unwrapKey().ifPresent(k -> out.merge(k.location().getPath(), lvl, Math::max));
+        }
+        return out;
+    }
+
+    /**
+     * In free time, unless speedrunning ({@code behaviour.godGear}): one step up the ladder to god-tier gear (gear/GodGear):
+     * each piece made in diamond (iron while diamond can't be had), then the best enchantments it lacks, from the books it
+     * carries, put on in the cheapest order no step of which is too expensive, or bought from a villager it keeps. A try
+     * that failed waits a day. Never its owner's things: what it makes comes from its own.
+     */
+    private void godGearGoal(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || speedrun || !com.mineagent.engine.settings.Switches.godGear()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var level = self.serverLevel();
+        long now = currentGameTickSafe();
+        godGearFailed.values().removeIf(t -> now - t > 24_000L);
+        var inv = self.getInventory();
+        java.util.Map<String, com.mineagent.engine.gear.GodGear.Piece> pieces = new java.util.HashMap<>();
+        java.util.Map<String, Integer> books = new java.util.HashMap<>();
+        for (int i = 0; i < inv.getContainerSize(); i++) { // the pack, the armour worn and the off hand
+            var st = inv.getItem(i);
+            if (st.isEmpty()) continue;
+            if (st.is(net.minecraft.world.item.Items.ENCHANTED_BOOK)) {
+                enchantsOf(st.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS)).forEach((k, v) -> books.merge(k, v, Math::max));
+                continue;
+            }
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            String kind = com.mineagent.engine.gear.GodGear.kindOf(id);
+            if (kind == null || !com.mineagent.engine.gear.GodGear.LADDER.contains(kind)) continue;
+            var piece = new com.mineagent.engine.gear.GodGear.Piece(kind, com.mineagent.engine.gear.GodGear.tier(id), enchantsOf(st.getEnchantments()));
+            var had = pieces.get(kind);
+            if (had == null || piece.tier() > had.tier() || piece.tier() == had.tier()
+                    && piece.ench().values().stream().mapToInt(Integer::intValue).sum() > had.ench().values().stream().mapToInt(Integer::intValue).sum()) {
+                pieces.put(kind, piece);
+            }
+        }
+        java.util.Map<String, Integer> sold = new java.util.HashMap<>();
+        java.util.Map<String, UUID> seller = new java.util.HashMap<>();
+        for (var v : level.getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class, self.getBoundingBox().inflate(48, 12, 48),
+                net.minecraft.world.entity.npc.Villager::isAlive)) {
+            if (!keepers.contains(v.getUUID().toString())) continue;
+            for (var o : com.mineagent.engine.task.LibrarianTask.offers(v)) {
+                if (o.enchantment() == null) continue;
+                String e = o.enchantment().substring(o.enchantment().indexOf(':') + 1);
+                if (o.level() > sold.getOrDefault(e, 0)) {
+                    sold.put(e, o.level());
+                    seller.put(e, v.getUUID());
+                }
+            }
+        }
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+        java.util.Set<String> without = onItsOwn ? java.util.Set.of() : java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
+        java.util.Map<String, Boolean> makeable = new java.util.HashMap<>();
+        java.util.function.Predicate<String> canMake = item -> makeable.computeIfAbsent(item,
+                k -> com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, k, 1, without).possible());
+        var next = com.mineagent.engine.gear.GodGear.next(pieces, books, sold, canMake, godGearFailed.keySet());
+        if (next == null) return;
+        final String job = "god-" + UUID.randomUUID();
+        switch (next.move()) {
+            case MAKE -> {
+                journal.record("gear", "toward god-tier gear: making " + com.mineagent.engine.planning.production.ProductionPlanner.name(next.what()), now);
+                afterTaskAlways.put(job, () -> com.mineagent.engine.survival.GearUp.run(self));
+                godGearJobs.put(job, next.key());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                        job, next.what(), 1, null, false, !onItsOwn), reply -> { });
+            }
+            case APPLY_BOOKS -> {
+                if (self.experienceLevel < 5) return; // not the levels for an anvil step yet
+                if (!intoPackForAnvil(self, next.kind())) return;
+                journal.record("gear", "toward god-tier gear: my books on my " + next.kind() + " in the best order", now);
+                afterTaskAlways.put(job, () -> com.mineagent.engine.survival.GearUp.run(self));
+                godGearJobs.put(job, next.key());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.AnvilTask.AnvilRecord(
+                        job, "best", next.kind()), reply -> { });
+            }
+            case BUY_BOOK -> {
+                UUID who = seller.get(next.what());
+                if (who == null) return;
+                journal.record("gear", "toward god-tier gear: buying " + next.what() + " from my villager", now);
+                godGearJobs.put(job, next.key());
+                Runnable trade = () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
+                        job, "minecraft:enchanted_book#minecraft:" + next.what(), 1, null, who), reply -> { });
+                if (inv.countItem(net.minecraft.world.item.Items.BOOK) == 0) { // a librarian's book costs a book as well
+                    String make = "god-book-" + UUID.randomUUID();
+                    godGearJobs.put(make, next.key());
+                    afterTask.put(make, trade);
+                    com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                            make, "minecraft:book", 1, null, false, true), reply -> { });
+                } else {
+                    trade.run();
+                }
+            }
+        }
+    }
+
+    /** A piece worn, or a shield in the off hand, moved into the pack for the anvil (it puts it back on after). */
+    private static boolean intoPackForAnvil(net.minecraft.server.level.ServerPlayer self, String kind) {
+        net.minecraft.world.entity.EquipmentSlot slot = switch (kind) {
+            case "helmet" -> net.minecraft.world.entity.EquipmentSlot.HEAD;
+            case "chestplate" -> net.minecraft.world.entity.EquipmentSlot.CHEST;
+            case "leggings" -> net.minecraft.world.entity.EquipmentSlot.LEGS;
+            case "boots" -> net.minecraft.world.entity.EquipmentSlot.FEET;
+            case "shield" -> net.minecraft.world.entity.EquipmentSlot.OFFHAND;
+            default -> null;
+        };
+        if (slot == null) return true;
+        var worn = self.getItemBySlot(slot);
+        if (worn.isEmpty() || !kind.equals(com.mineagent.engine.gear.GodGear.kindOf(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(worn.getItem()).toString()))) return true;
+        int free = self.getInventory().getFreeSlot();
+        if (free < 0) return false;
+        self.getInventory().setItem(free, worn.copy());
+        self.setItemSlot(slot, net.minecraft.world.item.ItemStack.EMPTY);
+        return true;
     }
 
     // ── The kit it keeps: a shield and golden apples (SMH plan 70) ──

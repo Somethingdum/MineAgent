@@ -39,4 +39,32 @@ class GodGearTest {
         var lacks = GodGear.missing("chestplate", Map.of("minecraft:protection".replace("minecraft:", ""), 4, "unbreaking", 2));
         assertEquals(List.of("unbreaking", "mending"), lacks.stream().map(GodGear.Ench::id).toList());
     }
+
+    @Test void theLadderGoesToDiamondThenTheBestBooks() {
+        java.util.Map<String, GodGear.Piece> pieces = new java.util.HashMap<>();
+        pieces.put("sword", new GodGear.Piece("sword", 3, Map.of()));
+        java.util.function.Predicate<String> diamonds = id -> id.equals("minecraft:diamond_sword");
+        var n = GodGear.next(pieces, Map.of(), Map.of(), diamonds, java.util.Set.of());
+        assertEquals(GodGear.Move.MAKE, n.move());
+        assertEquals("minecraft:diamond_sword", n.what(), "iron first goes up to diamond");
+        assertNull(GodGear.next(pieces, Map.of("sharpness", 5), Map.of(), id -> false, java.util.Set.of()),
+                "no books go on an iron sword, and nothing can be made");
+        pieces.put("sword", new GodGear.Piece("sword", 4, Map.of("sharpness", 5)));
+        var books = GodGear.next(pieces, Map.of("unbreaking", 3, "protection", 4), Map.of(), id -> false, java.util.Set.of());
+        assertEquals(GodGear.Move.APPLY_BOOKS, books.move(), "Unbreaking III it carries goes on the diamond sword");
+        assertEquals("sword", books.kind());
+        var buy = GodGear.next(pieces, Map.of("unbreaking", 2), Map.of("mending", 1, "looting", 2), id -> false, java.util.Set.of());
+        assertEquals(GodGear.Move.BUY_BOOK, buy.move(), "a book at too low a level isn't applied; Mending its keeper sells is bought");
+        assertEquals("mending", buy.what());
+        var after = GodGear.next(pieces, Map.of(), Map.of("mending", 1), id -> false, java.util.Set.of(buy.key()));
+        assertNull(after, "a buy that failed a while ago isn't tried again at once, and Looting II isn't the best");
+        pieces.put("pickaxe", new GodGear.Piece("pickaxe", 2, Map.of()));
+        var pick = GodGear.next(pieces, Map.of(), Map.of(), id -> id.equals("minecraft:iron_pickaxe"), java.util.Set.of());
+        assertEquals("minecraft:iron_pickaxe", pick.what(), "no diamonds: iron at least");
+        assertEquals("minecraft:shield", GodGear.next(java.util.Map.of(), Map.of(), Map.of(), id -> id.equals("minecraft:shield"),
+                java.util.Set.of()).what(), "an untiered kind it hasn't got is made");
+        assertEquals(5, GodGear.tier("minecraft:netherite_sword"));
+        assertEquals(2, GodGear.tier("minecraft:chainmail_helmet"));
+    }
 }
+

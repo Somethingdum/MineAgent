@@ -3912,9 +3912,14 @@ public class CompanionGameTests implements FabricGameTest {
                         if (Math.max(Math.abs(p.getX() - other.getX()), Math.abs(p.getZ() - other.getZ())) < 3) near++;
                     }
                 }
-                // The two asked for went to its owner; the rest of the tree it keeps.
+                // The two asked for went to its owner (handed over, or dropped by them: this owner picks nothing up); the
+                // rest of the tree it keeps.
                 int logs = s.body().getInventory().countItem(Items.OAK_LOG) + s.owner().getInventory().countItem(Items.OAK_LOG);
-                String how = standing + " logs still standing, " + logs + " carried or given, " + saplings + " planted (" + near
+                for (var drop : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(-24, -4, -24))).expandTowards(64, 24, 64))) {
+                    if (drop.getItem().is(Items.OAK_LOG)) logs += drop.getItem().getCount();
+                }
+                String how = standing + " logs still standing, " + logs + " carried, given or dropped, " + saplings + " planted (" + near
                         + " too close to the other); said: " + (done.isEmpty() ? lastSaid(s, "") : done);
                 tidy(s);
                 if (standing == 0 && logs >= 5 && saplings >= 1 && near == 0) helper.succeed();
@@ -3960,6 +3965,41 @@ public class CompanionGameTests implements FabricGameTest {
                         + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
                 tidy(s);
                 if (on == 4 && !done.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, god-tier gear as its end goal: no order at all, a diamond sword, a book of Unbreaking III, levels and an
+     * anvil in its pack (a shield and golden apples too, so its kit is kept): in its free time the book goes on the sword.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_god_free_time", timeoutTicks = 2800)
+    public void inFreeTimeItsBooksGoOnItsSword(GameTestHelper helper) {
+        Scene s = scene(helper, "Collector");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.DIAMOND_SWORD));
+        inv.setItem(2, book(helper, net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 3));
+        inv.setItem(3, new ItemStack(Items.ANVIL));
+        inv.setItem(4, new ItemStack(Items.GOLDEN_APPLE, 4));
+        s.body().setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        s.body().giveExperienceLevels(30);
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "god free time");
+            int unbreaking = 0;
+            for (int i = 0; i < 36; i++) {
+                if (!inv.getItem(i).is(Items.DIAMOND_SWORD)) continue;
+                var e = inv.getItem(i).get(net.minecraft.core.component.DataComponents.ENCHANTMENTS);
+                if (e == null) continue;
+                for (var en : e.entrySet()) {
+                    if (en.getKey().is(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING)) unbreaking = en.getIntValue();
+                }
+            }
+            if (unbreaking >= 3 || helper.getTick() >= 2700) {
+                String how = "sword's Unbreaking " + unbreaking + "; levels " + s.body().experienceLevel + "; said: " + lastSaid(s, "");
+                tidy(s);
+                if (unbreaking >= 3) helper.succeed();
                 else fail(helper, how);
             }
         });

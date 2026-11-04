@@ -190,8 +190,23 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
         } else if (!record.want.equals(result)) return false;
         ItemStack a = o.getCostA(), b = o.getCostB();
         if (record.pay != null && !record.pay.equals(BuiltInRegistries.ITEM.getKey(a.getItem()).toString())) return false;
-        if (ProductionTask.count(sp, a.getItem()) < a.getCount()) return false;
-        return b.isEmpty() || ProductionTask.count(sp, b.getItem()) >= b.getCount() + (b.is(a.getItem()) ? a.getCount() : 0);
+        if (held(sp, a.getItem()) < a.getCount()) return false;
+        return b.isEmpty() || held(sp, b.getItem()) >= b.getCount() + (b.is(a.getItem()) ? a.getCount() : 0);
+    }
+
+    /**
+     * What it has of an item to pay with: its pack, and what is already in the trading screen's payment slots (the game
+     * moves a whole stack in for a trade, and what the trade didn't take stays there for the next).
+     */
+    private static int held(ServerPlayer sp, net.minecraft.world.item.Item item) {
+        int n = ProductionTask.count(sp, item);
+        if (sp.containerMenu instanceof MerchantMenu menu) {
+            for (int slot = 0; slot <= 1; slot++) {
+                ItemStack st = menu.getSlot(slot).getItem();
+                if (st.is(item)) n += st.getCount();
+            }
+        }
+        return n;
     }
 
     private boolean navDone() {

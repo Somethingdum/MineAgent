@@ -167,4 +167,80 @@ public final class GodGear {
         if (p.endsWith("_axe")) return "axe";
         return null;
     }
+
+    // ── The ladder it climbs in free time (its owner: "god-tier gear ... as an end goal. Unless told to speed run") ──
+
+    /** A piece of a kind it has: its tier ({@link #tier}) and its enchantments by name ("sharpness") and level. */
+    public record Piece(String kind, int tier, Map<String, Integer> ench) {}
+
+    /** What it does next for a piece: makes one ({@code what} the item), puts its books on, or buys a book ({@code what} the enchantment). */
+    public enum Move { MAKE, APPLY_BOOKS, BUY_BOOK }
+
+    public record Next(String kind, Move move, String what) {
+        /** The key a failed try is remembered by, so the same thing isn't tried again at once. */
+        public String key() {
+            return kind + ":" + move + ":" + what;
+        }
+    }
+
+    /** The pieces worked toward, in the order it works on them: what keeps it alive and earns first. */
+    public static final List<String> LADDER = List.of("sword", "pickaxe", "chestplate", "leggings", "helmet", "boots", "axe", "bow",
+            "shield", "shovel");
+
+    /** Kinds that come in one material only: had (4) or not (0). */
+    public static final java.util.Set<String> UNTIERED = java.util.Set.of("bow", "shield", "crossbow", "trident", "mace", "fishing_rod",
+            "shears", "elytra", "flint_and_steel");
+
+    /** A piece's tier: 1 wood, gold or leather; 2 stone or chainmail; 3 iron; 4 diamond (and any untiered kind); 5 netherite. */
+    public static int tier(String itemId) {
+        String p = itemId.substring(itemId.indexOf(':') + 1);
+        if (p.startsWith("netherite_")) return 5;
+        if (p.startsWith("diamond_")) return 4;
+        if (p.startsWith("iron_")) return 3;
+        if (p.startsWith("stone_") || p.startsWith("chainmail_")) return 2;
+        if (p.startsWith("wooden_") || p.startsWith("golden_") || p.startsWith("leather_") || p.startsWith("turtle_")) return 1;
+        return 4;
+    }
+
+    /**
+     * The next thing to do toward god-tier gear, or null for nothing now. Each piece in {@link #LADDER} order: up to
+     * diamond first (iron when diamond can't be made yet), as {@code canMake} says it can be made; then, on diamond or
+     * better, the best enchantments ({@link #BEST}) it lacks: its books put on when it carries one of them at the level
+     * wanted, else one bought from a villager it keeps that sells it at that level. Nothing in {@code skip} (tries that
+     * failed a while ago, by {@link Next#key}).
+     *
+     * @param books the enchantments it carries as books, by name, at the highest level it has of each
+     * @param sold  the enchantments its keepers sell as books, by name, at the highest level on offer
+     */
+    public static Next next(Map<String, Piece> pieces, Map<String, Integer> books, Map<String, Integer> sold,
+                            java.util.function.Predicate<String> canMake, java.util.Set<String> skip) {
+        for (String kind : LADDER) {
+            Piece p = pieces.get(kind);
+            int t = p == null ? 0 : p.tier();
+            if (UNTIERED.contains(kind)) {
+                if (p == null) {
+                    Next n = new Next(kind, Move.MAKE, "minecraft:" + kind);
+                    if (!skip.contains(n.key()) && canMake.test(n.what())) return n;
+                    continue;
+                }
+            } else if (t < 4) {
+                Next d = new Next(kind, Move.MAKE, "minecraft:diamond_" + kind);
+                if (!skip.contains(d.key()) && canMake.test(d.what())) return d;
+                Next i = new Next(kind, Move.MAKE, "minecraft:iron_" + kind);
+                if (t < 3 && !skip.contains(i.key()) && canMake.test(i.what())) return i;
+                continue; // books go on diamond and better only
+            }
+            List<Ench> lack = missing(kind, p == null ? Map.of() : p.ench());
+            Next apply = new Next(kind, Move.APPLY_BOOKS, kind);
+            if (!skip.contains(apply.key())) {
+                for (Ench e : lack) if (books.getOrDefault(e.id(), 0) >= e.level()) return apply;
+            }
+            for (Ench e : lack) {
+                Next buy = new Next(kind, Move.BUY_BOOK, e.id());
+                if (!skip.contains(buy.key()) && sold.getOrDefault(e.id(), 0) >= e.level()) return buy;
+            }
+        }
+        return null;
+    }
 }
+
