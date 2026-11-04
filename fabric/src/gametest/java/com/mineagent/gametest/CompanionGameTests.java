@@ -4006,7 +4006,8 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * SMH plan 70, "build a base and basic farms": a field of grass, a wooden hoe, a water bucket and 16 wheat seeds:
+     * SMH plan 70, "build a base and basic farms": a field of grass, a stone hoe (a wooden one tills only 59 of the 80), a
+     * water bucket and 16 wheat seeds:
      * "make a farm" makes a 9 by 9 with the water in its middle, tilled round it and the seeds planted.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_tilled_farm", timeoutTicks = 2400)
@@ -4015,7 +4016,7 @@ public class CompanionGameTests implements FabricGameTest {
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         for (int x = 1; x <= 15; x++) for (int z = 1; z <= 15; z++) helper.setBlock(x, 0, z, Blocks.GRASS_BLOCK);
         var inv = s.body().getInventory();
-        inv.setItem(1, new ItemStack(Items.WOODEN_HOE));
+        inv.setItem(1, new ItemStack(Items.STONE_HOE));
         inv.setItem(2, new ItemStack(Items.WATER_BUCKET));
         inv.setItem(3, new ItemStack(Items.WHEAT_SEEDS, 16));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make a farm"));
@@ -4118,6 +4119,45 @@ public class CompanionGameTests implements FabricGameTest {
                 slimesLeft.forEach(net.minecraft.world.entity.Entity::discard);
                 tidy(s);
                 if (balls >= 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, "collect the craziest loot": two chests the world made (a ruined portal's loot, never opened), one of
+     * them with TNT under it as a desert temple has: "loot the chests here" empties the first into its pack and leaves
+     * the trapped one shut.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot", timeoutTicks = 1200)
+    public void theWorldsChestsAreLootedTheTrappedOneLeft(GameTestHelper helper) {
+        Scene s = scene(helper, "Looter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos loot = new BlockPos(8, 1, 6), trapped = new BlockPos(18, 1, 16);
+        for (BlockPos c : new BlockPos[] {loot, trapped}) {
+            helper.setBlock(c, Blocks.CHEST);
+            if (helper.getLevel().getBlockEntity(helper.absolutePos(c)) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest) {
+                chest.setLootTable(net.minecraft.world.level.storage.loot.BuiltInLootTables.RUINED_PORTAL, 42L);
+            }
+        }
+        helper.setBlock(trapped.offset(0, -1, 1), Blocks.TNT);
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "loot the chests here"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "loot");
+            String done = lastSaid(s, "Looted");
+            String none = lastSaid(s, "No loot");
+            if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 1100) {
+                var a = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(loot));
+                var b = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(trapped));
+                int left = 0;
+                for (int i = 0; i < a.getContainerSize(); i++) left += a.getItem(i).getCount();
+                int carried = 0;
+                for (int i = 0; i < 36; i++) carried += s.body().getInventory().getItem(i).getCount();
+                boolean trappedShut = b.getLootTable() != null;
+                String how = "looted chest opened " + (a.getLootTable() == null) + " with " + left + " left in it, " + carried
+                        + " carried, trapped one shut " + trappedShut + "; said: " + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
+                tidy(s);
+                if (a.getLootTable() == null && left == 0 && carried > 0 && trappedShut && !done.isEmpty()) helper.succeed();
                 else fail(helper, how);
             }
         });

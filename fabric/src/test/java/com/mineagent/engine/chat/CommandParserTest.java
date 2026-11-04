@@ -288,6 +288,9 @@ final class CommandParserTest {
         assertEquals("hunt", farmSlime.value());
         assertEquals(32, farmSlime.count().intValue());
         assertEquals("hunt", CommandParser.parse("work the slime farm", "Pal").orElseThrow().value());
+        assertEquals("here", CommandParser.parse("loot the chests here", "Pal").orElseThrow().value());
+        assertEquals("go", CommandParser.parse("go find the craziest loot", "Pal").orElseThrow().value());
+        assertEquals(CommandParser.Kind.LOOT, CommandParser.parse("go looting", "Pal").orElseThrow().kind());
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }

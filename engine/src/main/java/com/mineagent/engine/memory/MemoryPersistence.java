@@ -252,6 +252,7 @@ public class MemoryPersistence {
             data.add("keepers", GSON.toJsonTree(new java.util.ArrayList<>(loop.keepers())));
             data.addProperty("speedrun", loop.speedrun());
             data.addProperty("onItsOwn", loop.onItsOwn());
+            data.add("looted", GSON.toJsonTree(new java.util.ArrayList<>(loop.lootedPlaces())));
         }
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
@@ -291,6 +292,11 @@ public class MemoryPersistence {
             if (loop != null && data.has("protectOwner")) loop.protectOwner(data.get("protectOwner").getAsBoolean());
             if (loop != null && data.has("speedrun")) loop.speedrun(data.get("speedrun").getAsBoolean());
             if (loop != null && data.has("onItsOwn")) loop.onItsOwn(data.get("onItsOwn").getAsBoolean());
+            if (loop != null && data.has("looted") && data.get("looted").isJsonArray()) {
+                java.util.List<String> keys = new java.util.ArrayList<>();
+                for (var e : data.getAsJsonArray("looted")) if (e.isJsonPrimitive()) keys.add(e.getAsString());
+                loop.lootedPlaces(keys);
+            }
             if (loop != null && data.has("keepers") && data.get("keepers").isJsonArray()) {
                 java.util.List<String> ids = new java.util.ArrayList<>();
                 for (var e : data.getAsJsonArray("keepers")) if (e.isJsonPrimitive()) ids.add(e.getAsString());

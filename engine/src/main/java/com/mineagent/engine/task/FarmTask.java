@@ -58,7 +58,9 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
     /** Cells given up (no way to them, or the hoe or seed won't take), and tries on each. */
     private final java.util.Set<BlockPos> given = new java.util.HashSet<>();
     private final java.util.Map<BlockPos, Integer> tries = new java.util.HashMap<>();
-    private int walkTicks;
+    private int walkTicks, hoesMade;
+    /** A new hoe being made, when the last wore out. */
+    private ProductionTask sub;
     private BlockPos grass, pickup;
     private int pickupTicks;
     private String outcome = "";
@@ -168,7 +170,19 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
                         return TaskState.RUNNING;
                     }
                     int h = hoe(sp);
-                    if (h < 0) return end(count(level, false) > 0, "my hoe broke");
+                    if (h < 0) {
+                        // Worn out (a wooden hoe tills 59, a stone one 131): another made from its own things, and on.
+                        if (sub == null) {
+                            if (++hoesMade > 2) return end(count(level, false) > 0, "my hoe broke and I can't make another");
+                            sub = new ProductionTask(player, new ProductionTask.ProduceRecord(record.toolCallId() + ":hoe" + hoesMade,
+                                    hoesMade == 1 ? "minecraft:stone_hoe" : "minecraft:wooden_hoe", 1, null, false, true));
+                            sub.start();
+                        }
+                        TaskState st = sub.tick();
+                        if (st == TaskState.RUNNING) return TaskState.RUNNING;
+                        sub = null;
+                        return TaskState.RUNNING;
+                    }
                     TaskContext.selectInventoryItem(player, BuiltInRegistries.ITEM.getKey(sp.getInventory().getItem(h).getItem()).toString());
                     useOnTop(sp, c);
                     cooldown = 2;
@@ -427,6 +441,8 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
     @Override
     protected void onInterrupt() {
         if (nav != null) nav.cancel();
+        if (sub != null) sub.interrupt();
+        sub = null;
         TaskContext.inputDriver(player).clear();
     }
 }

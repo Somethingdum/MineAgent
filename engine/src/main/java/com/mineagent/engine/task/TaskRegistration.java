@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // Loot from the chests the world made (SMH plan 70: "collect the craziest loot")
+        CompanionTaskFactory.register(
+                LootTask.LootRecord.class,
+                LootTask::new
+        );
+
         // A slime farm worked (SMH plan 70: "highly favoring of slime")
         CompanionTaskFactory.register(
                 SlimeFarmTask.SlimeRecord.class,

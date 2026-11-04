@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1531,7 +1531,14 @@ public class AgentLoop {
                     // What a farm needs, made first from its own things; then the farm (once: a second time, it goes
                     // ahead and says what it lacks).
                     List<String> first = new ArrayList<>();
-                    if (!hoe) first.add("make me 1 wooden hoe");
+                    if (!hoe) {
+                        // A 9 by 9 is 80 tillings: a stone hoe lasts 131, a wooden one 59 (so two of those).
+                        var fbook = com.mineagent.engine.planning.production.GameKnowledge.book(farmer);
+                        var fhave = com.mineagent.engine.planning.production.GameKnowledge.have(farmer, this, null);
+                        boolean stone = com.mineagent.engine.planning.production.ProductionPlanner.plan(fbook, fhave, "minecraft:stone_hoe", 1,
+                                java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN)).possible();
+                        first.add(stone ? "make me 1 stone hoe" : "make me 2 wooden hoes");
+                    }
                     if (!water) first.add("make me 1 water bucket");
                     first.add("make a farm" + ("here".equals(c.value()) ? " here" : ""));
                     farmReady = true;
@@ -1598,6 +1605,14 @@ public class AgentLoop {
                 orderGoal("dig a slime room");
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.MiningTask.MineRecord(
                         "mine-" + UUID.randomUUID(), "ore", 0, false, new int[] {x0, z0, 16, y}), reply -> { });
+                return true;
+            }
+            case LOOT -> {
+                boolean go = "go".equals(c.value());
+                journal.record("order", go ? "go looting" : "loot the chests here", currentGameTickSafe());
+                orderGoal(go ? "go looting" : "loot the chests here");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LootTask.LootRecord(
+                        "loot-" + UUID.randomUUID(), go), reply -> { });
                 return true;
             }
             case TRAIN_VILLAGERS -> {
@@ -4459,6 +4474,37 @@ public class AgentLoop {
         speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then a farm, then the stockpile.");
         saveMemoryNow();
         queueOrders("prime the world, then make a farm");
+    }
+
+    /** Places it has looted (structures, by dimension and chunk), kept with the world, so "go looting" goes on to new ones. */
+    private final java.util.Set<String> looted = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+    private static String lootKey(String dim, net.minecraft.core.BlockPos at) {
+        return dim + "|" + (at.getX() >> 4) + "|" + (at.getZ() >> 4);
+    }
+
+    public void noteLooted(String dim, net.minecraft.core.BlockPos at) {
+        if (looted.size() < 4096) looted.add(lootKey(dim, at));
+        saveMemoryNow();
+    }
+
+    /** Looted already: the structure at {@code at} or one in the chunks beside it. */
+    public boolean looted(String dim, net.minecraft.core.BlockPos at) {
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+            if (looted.contains(lootKey(dim, at.offset(dx * 16, 0, dz * 16)))) return true;
+        }
+        return false;
+    }
+
+    public java.util.Set<String> lootedPlaces() {
+        synchronized (looted) {
+            return java.util.Set.copyOf(looted);
+        }
+    }
+
+    public void lootedPlaces(java.util.Collection<String> keys) {
+        looted.clear();
+        if (keys != null) for (String k : keys) if (k != null && looted.size() < 4096) looted.add(k);
     }
 
     /** A farm order whose hoe and bucket were queued to be made first: the next farm order goes ahead. */
