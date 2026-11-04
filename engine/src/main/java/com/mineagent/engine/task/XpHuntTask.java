@@ -147,6 +147,8 @@ public class XpHuntTask extends CompanionTask<XpHuntTask.XpRecord> {
                         nav.cancel();
                         return TaskState.RUNNING;
                     }
+                    // Nothing about: a walk round its home, a dozen at most without a kill.
+                    if (roams >= 12 && kills == 0) return end(true, "there's nothing about to fight here now");
                     roamTo = roamPoint(level);
                     phase = Phase.ROAM;
                     roams++;
@@ -164,7 +166,11 @@ public class XpHuntTask extends CompanionTask<XpHuntTask.XpRecord> {
                             return TaskState.RUNNING;
                         }
                     }
-                    if (roamTo == null || ticks > 400 || sp.blockPosition().distSqr(roamTo) <= 16 || !nav.isNavigating() && ticks > 20) {
+                    if (roamTo == null) {
+                        if (ticks > 40) phase = Phase.LOOK; // nowhere dry to walk to: a look round again in two seconds
+                        return TaskState.RUNNING;
+                    }
+                    if (ticks > 400 || sp.blockPosition().distSqr(roamTo) <= 16 || !nav.isNavigating() && ticks > 20) {
                         phase = Phase.LOOK;
                         return TaskState.RUNNING;
                     }
