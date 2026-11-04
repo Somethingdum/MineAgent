@@ -267,8 +267,25 @@ public final class ProductionPlanner {
         if (where == Where.UNKNOWN && (seenOnly || without.contains(Production.UNSEEN))) return Double.POSITIVE_INFINITY;
         if (Production.fluid(s.block()) && where != Where.KNOWN) return Double.POSITIVE_INFINITY; // lava in sight only: never gone looking for
         double reach = where == Where.COMMON ? 0 : where == Where.KNOWN
-                ? WALK_PER_BLOCK * have.knownDistance().getOrDefault(s.block(), 32) / 64.0 : UNSEEN;
+                ? WALK_PER_BLOCK * have.knownDistance().getOrDefault(s.block(), 32) / 64.0 : UNSEEN * rarity(s.block());
         return (s.breakTicks() + MINE_WALK + wear + reach) / s.perBlock();
+    }
+
+    /**
+     * How much harder a block it has never seen is to find than most: an emerald ore (in mountains only, a vein of
+     * one) or ancient debris far more than iron; diamonds deep and few. 1 for the rest.
+     */
+    static double rarity(String block) {
+        if (block == null) return 1.0;
+        String b = block.substring(block.indexOf(':') + 1).replaceFirst("^deepslate_", "");
+        return switch (b) {
+            case "emerald_ore", "ancient_debris" -> 25.0;
+            case "diamond_ore" -> 6.0;
+            case "gold_ore", "lapis_ore" -> 3.0;
+            case "redstone_ore" -> 2.0;
+            case "iron_ore" -> 1.5;
+            default -> 1.0;
+        };
     }
 
     /** Its share of the tool a block wears out: none by hand; the cheapest tool per use otherwise. */

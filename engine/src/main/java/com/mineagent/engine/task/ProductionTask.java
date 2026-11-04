@@ -1870,7 +1870,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (put == 0 && room(c, it) == 0) return finish(); // full
         if (delivered < target) {
             say(String.format("%,d of %,d %s in the chest.", delivered, target, ProductionPlanner.plural(itemId, target)));
-            if (put == 0) return fail("I made the " + ProductionPlanner.name(itemId) + " but couldn't put them in the chest");
+            // None put in with some to put: the chest won't take them. With none to put (the round made nothing: the
+            // herd it remembered is gone), the next round says how far it got, or finds another way.
+            if (put == 0 && before > 0) return fail("I made the " + ProductionPlanner.name(itemId) + " but couldn't put them in the chest");
         }
         phase = Phase.ROUND;
         return TaskState.RUNNING;

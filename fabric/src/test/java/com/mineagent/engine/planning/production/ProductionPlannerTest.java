@@ -514,4 +514,20 @@ final class ProductionPlannerTest {
         assertEquals(48, only(p, Action.TRADE, m("arrow")).count(), "three uses left: 48 arrows");
         assertEquals(80, only(p, Action.CRAFT, m("arrow")).count(), "the other 80 crafted");
     }
+
+    @Test void emeraldsAreSoldForNotDugForWhenTheOreIsUnseen() {
+        Book b = withFletcher(true);
+        Map<String, List<Source>> src = new HashMap<>(b.sourcesByItem());
+        src.put(m("emerald"), List.of(new Source(m("emerald"), m("emerald_ore"), "pickaxe", 3, false, 1.0, 23)));
+        Book book = new Book(b.recipesByOutput(), src, b.fuelTicks(), b.durability());
+        // No trees here: the logs it carries are all the wood there is.
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON));
+        Have have = new Have(Map.of(m("oak_log"), 8), Map.of(), List.of(), 0, true, w, Map.of(ARROWS16, 20, STICKS32, 20), 0, 0,
+                Map.of(ARROWS16, 12, STICKS32, 16));
+        Plan p = ProductionPlanner.plan(book, have, m("arrow"), 32);
+        assertTrue(p.possible(), p.summary());
+        assertEquals(2, only(p, Action.TRADE, m("emerald")).count(), p.summary());
+        assertTrue(p.steps().stream().noneMatch(st -> m("emerald_ore").equals(st.block())), "no emerald ore dug: " + p.summary());
+        assertTrue(ProductionPlanner.rarity(m("deepslate_emerald_ore")) > ProductionPlanner.rarity(m("iron_ore")));
+    }
 }
