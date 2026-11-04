@@ -206,6 +206,10 @@ public final class BlockDigger {
         if (state.isAir()) {
             return rejected(BreakStatus.AIR, "target already contains air");
         }
+        // In a bastion with piglins about, a block broken (or a chest opened) turns them all on it (MA11.1).
+        if (com.mineagent.engine.survival.Bastions.angers(level, pos, player)) {
+            return rejected(BreakStatus.WORLD_INTERACTION_DENIED, "this is a bastion with piglins near: breaking a block here turns them all on us");
+        }
         // A place its owner said not to touch (SMH plan 70, MA10.2).
         var kept = com.mineagent.engine.world.ProtectedAreas.at(level.dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
         if (kept != null) {

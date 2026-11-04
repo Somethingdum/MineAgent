@@ -167,6 +167,8 @@ public final class Interaction {
 
             if (state.isAir()) return false;
             if (!isWithinReach(player, pos)) return false;
+            // A chest in a bastion with piglins near turns them all on it (SMH plan 70, MA11.1).
+            if (com.mineagent.engine.survival.Bastions.angers(level, pos, player)) return false;
 
             // Check if the block has a block entity that is a container
             BlockEntity be = level.getBlockEntity(pos);

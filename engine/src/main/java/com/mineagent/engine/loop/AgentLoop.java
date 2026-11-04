@@ -1417,6 +1417,13 @@ public class AgentLoop {
                 if (!fromOwner) return false;
                 return protectCommand(c);
             }
+            case PORTAL -> {
+                journal.record("order", "build a nether portal", currentGameTickSafe());
+                speakToOwner("On it: a nether portal.");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.PortalTask.PortalRecord(
+                        "portal-" + UUID.randomUUID()), reply -> { });
+                return true;
+            }
             case WHY -> speakToOwner(why());
             case NEEDS -> speakToOwner(needs());
             case CANCEL -> {
@@ -2636,6 +2643,7 @@ public class AgentLoop {
             if (gameTick % 40L == 0L) partner(player);
             if (gameTick % 200L == 0L) watchProgress(player);
             if (gameTick % 200L == 0L) syncProtected();
+            if (gameTick % 100L == 0L) goldInTheNether(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -2988,6 +2996,37 @@ public class AgentLoop {
         litNight = -1;
         guardBlocks = null;
         visitorsSaid.clear();
+    }
+
+    // ── The Nether (SMH plan 70, MA11.1) ──
+
+    /**
+     * In the Nether, one piece of gold armour on if it carries one (piglins leave a player wearing gold alone, and
+     * barter with them): in the slot where its armour is worst. Back out, its best armour goes on again (GearUp).
+     */
+    private void goldInTheNether(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || self.serverLevel().dimension() != net.minecraft.world.level.Level.NETHER) return;
+        for (var slot : List.of(net.minecraft.world.entity.EquipmentSlot.HEAD, net.minecraft.world.entity.EquipmentSlot.CHEST,
+                net.minecraft.world.entity.EquipmentSlot.LEGS, net.minecraft.world.entity.EquipmentSlot.FEET)) {
+            var worn = self.getItemBySlot(slot);
+            if (worn.getItem() instanceof net.minecraft.world.item.ArmorItem && golden(worn)) return;
+        }
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!(st.getItem() instanceof net.minecraft.world.item.ArmorItem a) || !golden(st)) continue;
+            var slot = a.getEquipmentSlot();
+            var old = self.getItemBySlot(slot);
+            self.setItemSlot(slot, st.copy());
+            inv.setItem(i, old);
+            TaskContext.syncInventory(self);
+            journal.record("nether", "gold armour on, for the piglins", currentGameTickSafe());
+            return;
+        }
+    }
+
+    private static boolean golden(net.minecraft.world.item.ItemStack st) {
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).getPath().startsWith("golden_");
     }
 
     // ── Talking (SMH plan 70, MA10.2) ──

@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -123,6 +123,8 @@ public final class CommandParser {
             + "|explore for|go and find|hunt for)(?: me| us)? (?:a |an |the |some |another )?([a-z][a-z ]{2,24})$");
     private static final Pattern EXPLORE = Pattern.compile("^(?:explore|go exploring|scout around|explore around|explore a bit)$");
     private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
+    /** "Build a nether portal", "make a portal" (MA11.1): the frame from the obsidian it carries, lit. */
+    private static final Pattern PORTAL = Pattern.compile("^(?:build|make|put up|set up|light)(?: me| us)? (?:a |the )?(?:nether )?portal(?: here| for us)?$");
     /** "Don't touch my garden", "leave the farm alone" (MA10.2): a place no companion breaks or builds in. */
     private static final Pattern PROTECT = Pattern.compile("^(?:(?:don'?t|do not|never) (?:touch|break|mess with|dig up|mine in|grief|build in|change)"
             + " (?:my|the|this|that|our) ([a-z][a-z ]{2,23}?)|leave (?:my|the|this|that|our) ([a-z][a-z ]{2,23}?) alone)(?: here| please)?$");
@@ -171,6 +173,7 @@ public final class CommandParser {
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
         if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
         if (BUILD.matcher(t).matches()) return Optional.of(new Command(Kind.BUILD, "hut", null));
+        if (PORTAL.matcher(t).matches()) return Optional.of(new Command(Kind.PORTAL, null, null));
         var hunt = HUNT_PLAYER.matcher(t);
         if (hunt.matches()) return Optional.of(new Command(Kind.HUNT_PLAYER, hunt.group(1), null));
         if (LIGHT.matcher(t).matches()) return Optional.of(new Command(Kind.LIGHT, null, 8));

@@ -3520,4 +3520,37 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA11.1: "build a nether portal" with 10 obsidian, cobblestone and flint and steel: the frame goes up (the
+     * corners of cobblestone, the top reached from a pillar it takes down after), and the portal is lit.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_portal", timeoutTicks = 1600)
+    public void aPortalFromTheObsidianItWasGivenAndLit(GameTestHelper helper) {
+        Scene s = scene(helper, "Gatewright");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OBSIDIAN, 10));
+        inv.setItem(2, new ItemStack(Items.COBBLESTONE, 16));
+        inv.setItem(3, new ItemStack(Items.FLINT_AND_STEEL));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a nether portal"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "portal");
+            String lit = lastSaid(s, "The portal is lit");
+            String failed = lastSaid(s, "I couldn't build the portal");
+            if (!lit.isEmpty() || !failed.isEmpty()) {
+                int portal = 0;
+                for (BlockPos p : BlockPos.betweenClosed(helper.absolutePos(new BlockPos(-10, 0, -10)), helper.absolutePos(new BlockPos(18, 8, 18)))) {
+                    if (helper.getLevel().getBlockState(p).is(Blocks.NETHER_PORTAL)) portal++;
+                }
+                tidy(s);
+                if (!lit.isEmpty() && portal >= 6) helper.succeed();
+                else fail(helper, portal + " portal blocks; said: " + (lit.isEmpty() ? failed : lit));
+            } else if (helper.getTick() >= 1550) {
+                String how = "said: " + lastSaid(s, "") + "; obsidian left " + inv.countItem(Items.OBSIDIAN);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
 }

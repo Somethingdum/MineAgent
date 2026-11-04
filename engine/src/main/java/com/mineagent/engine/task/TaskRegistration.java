@@ -79,6 +79,12 @@ public final class TaskRegistration {
                 GiveTask::new
         );
 
+        // A nether portal from the obsidian it carries (SMH plan 70, MA11.1)
+        CompanionTaskFactory.register(
+                PortalTask.PortalRecord.class,
+                PortalTask::new
+        );
+
         // Hunting a named player (SMH plan 70, MA10.7)
         CompanionTaskFactory.register(
                 HuntTask.HuntRecord.class,

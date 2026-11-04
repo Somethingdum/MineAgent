@@ -189,6 +189,8 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.UNPROTECT, CommandParser.parse("stop protecting my farm", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.GUARD_OFF, CommandParser.parse("stop protecting steve", "Pal").orElseThrow().kind(), "a player: guard duty");
         assertEquals(CommandParser.Kind.PROGRESS, CommandParser.parse("progress report", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.PORTAL, CommandParser.parse("build a nether portal", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.PORTAL, CommandParser.parse("make us a portal here", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.GUARD_HERE, CommandParser.parse("guard that", "Pal").orElseThrow().kind());
         assertEquals("that", CommandParser.parse("guard that horse", "Pal").orElseThrow().value());
     }
