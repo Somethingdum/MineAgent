@@ -294,6 +294,9 @@ public final class MobDefenseChain implements TaskChain {
             }
         }
         for (Mob mob : sp.level().getEntitiesOfClass(Mob.class, box, Mob::isAlive)) {
+            // The smallest slime does a player no harm (a small magma cube still burns): no threat, no fight; a job
+            // that wants its slimeballs hunts it.
+            if (harmless(mob)) continue;
             boolean enemy = mob instanceof Enemy;
             LivingEntity aim = mob.getTarget();
             boolean targetsSelf = aim == sp;
@@ -417,6 +420,12 @@ public final class MobDefenseChain implements TaskChain {
         for (Hostile h : crowdOf) if (h.targetsSelf() && h.distance() <= 8.0) crowd++;
         return new com.mineagent.engine.combat.FightWeighing.Doing(busy, busy && (travelling || moving), confined, daylight,
                 setup.duty() == Duty.GUARD, crowd);
+    }
+
+    /** A mob that can't hurt a player: the smallest slime (not a magma cube, whose smallest still deals damage). */
+    static boolean harmless(Mob mob) {
+        return mob instanceof net.minecraft.world.entity.monster.Slime slime && !(mob instanceof net.minecraft.world.entity.monster.MagmaCube)
+                && slime.getSize() <= 1;
     }
 
     /** Its owner as the weighing sees them, when within 24 blocks: health, armour, its leave to protect them, the danger on them. */
