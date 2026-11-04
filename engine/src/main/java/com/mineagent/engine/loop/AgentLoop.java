@@ -1352,6 +1352,11 @@ public class AgentLoop {
             case COME -> {
                 var owner = self.serverPlayerOwner();
                 if (owner == null) return false;
+                if (fromOwner && onItsOwn) { // called back: its life on its own is over till it is sent off again
+                    onItsOwn = false;
+                    surviveAt = null;
+                    saveMemoryNow();
+                }
                 haltNow();
                 var args = new com.google.gson.JsonObject();
                 args.addProperty("x", owner.blockPosition().getX());
@@ -1492,7 +1497,28 @@ public class AgentLoop {
                         "anvil-" + UUID.randomUUID(), "best", c.value().replaceAll("s$", "")), reply -> { });
                 return true;
             }
+            case ON_ITS_OWN -> {
+                if (!fromOwner) return false;
+                onItsOwn = "on".equals(c.value());
+                surviveAt = null;
+                journal.record("order", onItsOwn ? "survive on your own" : "stop surviving on your own", currentGameTickSafe());
+                speakToOwner(onItsOwn ? "On my own, then: I'll find a good swamp (slime spawns there), make a base, farms and a stockpile,"
+                        + " and get my gear to god tier. I won't go after the dragon unless you tell me to."
+                        : "Back with you. I'll keep my stockpile, and stay near.");
+                saveMemoryNow();
+                return true;
+            }
+            case SPEEDRUN -> {
+                if (!fromOwner) return false;
+                speedrun = "on".equals(c.value());
+                speakToOwner(speedrun ? "Speedrun: no stockpiling, only what gets us to the end." : "No more speedrun: back to building up.");
+                saveMemoryNow();
+                return true;
+            }
             case BOSS_PREP -> {
+                if (c.value() != null && c.value().startsWith("beat the game")) {
+                    speakToOwner("Beating the game means the dragon: I can get ready for it now; fighting it myself isn't something I do yet.");
+                }
                 String boss = com.mineagent.engine.gear.BossKit.boss(c.value());
                 var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
                 if (boss == null || self == null) return false;
@@ -2937,6 +2963,8 @@ public class AgentLoop {
             if (gameTick % 1200L == 600L) gearGoal(player);
             if (gameTick % 1200L == 900L) kitGoal(player);
             if (gameTick % 2400L == 1500L) masterTrading(player);
+            if (gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
+            if (gameTick % 200L == 100L) surviveOnItsOwn(player);
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
                 journal.record("assumed", st.key() + ": " + (st.yes() ? "yes" : "no"), gameTick);
                 speakToOwner("No answer, so I'm taking that as a " + (st.yes() ? "yes" : "no") + " for now.");
@@ -4103,6 +4131,181 @@ public class AgentLoop {
             case 5 -> "V";
             default -> String.valueOf(n);
         };
+    }
+
+    // ── Hoarding: its own stockpile (SMH plan 70: "a fair base, filled to the brim with valuables") ──
+
+    /** "Speedrun": no hoarding, the end the goal. Kept with the world. */
+    private volatile boolean speedrun;
+    /** "Go survive on your own": it goes looking for what it lacks, further and more often. Kept with the world. */
+    private volatile boolean onItsOwn;
+
+    public boolean speedrun() {
+        return speedrun;
+    }
+
+    public void speedrun(boolean on) {
+        speedrun = on;
+    }
+
+    public boolean onItsOwn() {
+        return onItsOwn;
+    }
+
+    public void onItsOwn(boolean on) {
+        onItsOwn = on;
+    }
+
+    /** On its own: the swamp it is going to for its base, once found (dimension, x, z). */
+    private volatile com.mineagent.engine.world.RouteMemory.Point surviveAt;
+    private volatile boolean surviveFailed;
+
+    /**
+     * On its own (SMH plan 70: "locate a good SWAMP biome, build a base and basic farms, and stock up on resources. In
+     * mass. It should be highly favoring of slime"): with no base yet, the nearest swamp or mangrove swamp (slimes spawn in
+     * both) found as a seed map finds it, gone to, and its base made there: its home, then the world primed (the hut,
+     * beds, food, light). Then the stockpile ({@link #hoard}) takes over, searching as far as it needs.
+     */
+    private void surviveOnItsOwn(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !onItsOwn) return;
+        if (MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) {
+            MineAgentEngine.setCompanionMode(companion.companionId(), MineAgentEngine.CompanionMode.FREE);
+        }
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || skillRuntime.active()) return;
+        var level = self.serverLevel();
+        String dim = level.dimension().location().toString();
+        if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD) return;
+        if (idleHome != null && idleHome.dim().equals(dim)) return; // its base is made
+        if (surviveAt == null && !surviveFailed) {
+            var found = level.findClosestBiome3d(b -> b.is(net.minecraft.world.level.biome.Biomes.SWAMP) || b.is(net.minecraft.world.level.biome.Biomes.MANGROVE_SWAMP),
+                    self.blockPosition(), 3200, 32, 64);
+            if (found == null) {
+                surviveFailed = true;
+                speakToOwner("I found no swamp within 3200 blocks: I'll make my base here instead.");
+                surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+            } else {
+                var p = found.getFirst();
+                int y = level.isLoaded(p) ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getX(), p.getZ()) : self.getBlockY();
+                surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, p.getX(), y, p.getZ());
+                int far = (int) Math.sqrt(self.blockPosition().distSqr(p));
+                speakToOwner("There's a swamp " + far + " blocks off, at " + p.getX() + ", " + p.getZ() + ": I'm going to make my base there.");
+                journal.record("survive", "going to the swamp at " + p.getX() + ", " + p.getZ(), currentGameTickSafe(), dim, p.getX(), y, p.getZ());
+            }
+        }
+        var to = surviveAt;
+        if (to == null) return;
+        double dx = self.getX() - to.x(), dz = self.getZ() - to.z();
+        if (dx * dx + dz * dz > 24.0 * 24.0) {
+            goTo(to, List.of(), false);
+            return;
+        }
+        // There: its base, its home, then the world primed.
+        idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        idleRadius = 48;
+        journal.record("survive", "made my base here", currentGameTickSafe(), dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then the stockpile.");
+        saveMemoryNow();
+        queueOrders("prime the world");
+    }
+
+    /** Its home: the one it was told to stay near, else the one it remembers; null with none. */
+    private net.minecraft.core.BlockPos home(String dim) {
+        var h = idleHome;
+        if (h != null && h.dim().equals(dim)) return new net.minecraft.core.BlockPos(h.x(), h.y(), h.z());
+        for (var p : placeKeeper.memory().places()) {
+            if ("home".equals(p.kind()) && p.at().dim().equals(dim)) return new net.minecraft.core.BlockPos(p.at().x(), p.at().y(), p.at().z());
+        }
+        return null;
+    }
+
+    /** Its own stockpile chest nearest home, within 48 blocks of it, or null. */
+    private net.minecraft.core.BlockPos stash(net.minecraft.server.level.ServerLevel level, String dim, net.minecraft.core.BlockPos home) {
+        net.minecraft.core.BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (String k : ownChests()) {
+            String[] f = k.split("\\|");
+            if (f.length != 4 || !f[0].equals(dim)) continue;
+            try {
+                var p = new net.minecraft.core.BlockPos(Integer.parseInt(f[1]), Integer.parseInt(f[2]), Integer.parseInt(f[3]));
+                if (level.isLoaded(p) && !(level.getBlockEntity(p) instanceof net.minecraft.world.Container)) continue; // gone
+                double d = p.distSqr(home);
+                if (d <= 48.0 * 48.0 && d < bestD) {
+                    bestD = d;
+                    best = p;
+                }
+            } catch (NumberFormatException ignored) {
+                // a key from elsewhere
+            }
+        }
+        return best;
+    }
+
+    /**
+     * With nothing to do and a home: its stockpile filled toward its targets (gear/Hoard), a batch at a time, into a chest
+     * of its own by home (put down first if it has none), from what it can make here: what it has seen, and on its own
+     * whatever it must go looking for. Never its owner's things. Off with "speedrun" or {@code behaviour.hoard}.
+     */
+    private void hoard(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || speedrun || !com.mineagent.engine.settings.Switches.hoard()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        // Following its owner: it stays with them (its stockpile waits till it is free).
+        if (!onItsOwn && MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var level = self.serverLevel();
+        String dim = level.dimension().location().toString();
+        var home = home(dim);
+        if (home == null) return; // no base yet: nowhere to keep a stockpile
+        var stash = stash(level, dim, home);
+        if (stash == null) {
+            if (self.getInventory().countItem(net.minecraft.world.item.Items.CHEST) > 0) {
+                for (int r = 1; r <= 3 && stash == null; r++) {
+                    for (var p : com.mineagent.engine.task.ProductionTask.ringOf(home, r)) {
+                        var st = level.getBlockState(p);
+                        if (!st.canBeReplaced() || !level.getFluidState(p).isEmpty()
+                                || !com.mineagent.engine.pathing.util.BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
+                        if (p.distToCenterSqr(self.getEyePosition()) > 20.0) continue; // within reach: else next time, nearer
+                        if (com.mineagent.engine.act.Placement.placeBlock(self, p, net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState())) {
+                            noteOwnChest(dim, p.getX(), p.getY(), p.getZ());
+                            noteChest(dim, p.getX(), p.getY(), p.getZ(), java.util.Map.of(), currentGameTickSafe());
+                            journal.record("hoard", "a chest of my own by home, for my stockpile", currentGameTickSafe(), dim, p.getX(), p.getY(), p.getZ());
+                            saveMemoryNow();
+                            stash = p;
+                            break;
+                        }
+                    }
+                }
+                if (stash == null && self.blockPosition().distSqr(home) > 16) {
+                    goTo(new com.mineagent.engine.world.RouteMemory.Point(dim, home.getX(), home.getY(), home.getZ()), List.of(), false);
+                }
+                return;
+            }
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                    "hoard-chest-" + UUID.randomUUID(), "minecraft:chest", 1, null, false, true), reply -> { });
+            return;
+        }
+        // What it holds of its own: its pack and its own chests.
+        java.util.Map<String, Integer> has = new java.util.HashMap<>();
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty()) has.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
+        }
+        for (var c : chestMemory().near(dim, home.getX(), home.getY(), home.getZ(), 64.0)) {
+            if (!ownsChest(dim, c.x(), c.y(), c.z())) continue;
+            c.items().forEach((item, n) -> has.merge(item.contains(":") ? item : "minecraft:" + item, n, Integer::sum));
+        }
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+        java.util.Set<String> without = onItsOwn ? java.util.Set.of() : java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
+        var next = com.mineagent.engine.gear.Hoard.next(has, t -> com.mineagent.engine.planning.production.ProductionPlanner
+                .plan(book, have, t.item(), t.count(), without).possible());
+        if (next == null) return;
+        journal.record("hoard", "for my stockpile: " + next.count() + " " + com.mineagent.engine.planning.production.ProductionPlanner.plural(next.item(), next.count()),
+                currentGameTickSafe());
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                "hoard-" + UUID.randomUUID(), next.item(), next.count(), stash, false, !onItsOwn), reply -> { });
     }
 
     // ── Trading mastery: the villagers it keeps (SMH plan 70) ──

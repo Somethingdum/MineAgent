@@ -1,0 +1,44 @@
+package com.mineagent.engine.gear;
+
+import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
+
+/**
+ * Hoarding (SMH plan 70, its owner: "a fair base, filled to the brim with valuables ... a metric ton of golden carrots,
+ * golden apples, en gold apples, shields, weapons, ores, food. Generally hoarder behavior"): what it keeps in its own
+ * stockpile, in the order it goes after it: food first, then what keeps it going (torches, iron, coal, arrows, shields,
+ * golden apples), then the valuables in bulk. Enchanted golden apples can't be made: every one found is kept. Pure.
+ */
+public final class Hoard {
+    private Hoard() {}
+
+    /** One thing to have so many of. */
+    public record Target(String item, int count) {}
+
+    /** The stockpile, in order. */
+    public static final List<Target> TARGETS = List.of(
+            new Target("minecraft:bread", 64), new Target("minecraft:cooked_beef", 64), new Target("minecraft:torch", 128),
+            new Target("minecraft:iron_ingot", 128), new Target("minecraft:coal", 128), new Target("minecraft:arrow", 256),
+            new Target("minecraft:shield", 2), new Target("minecraft:golden_apple", 16), new Target("minecraft:golden_carrot", 128),
+            new Target("minecraft:diamond", 32), new Target("minecraft:obsidian", 32), new Target("minecraft:emerald", 64),
+            new Target("minecraft:diamond_sword", 2), new Target("minecraft:bow", 2),
+            // Then the metric ton.
+            new Target("minecraft:golden_carrot", 512), new Target("minecraft:golden_apple", 64), new Target("minecraft:iron_ingot", 512),
+            new Target("minecraft:gold_ingot", 256), new Target("minecraft:diamond", 128), new Target("minecraft:emerald", 256),
+            new Target("minecraft:cooked_beef", 256), new Target("minecraft:arrow", 1024));
+
+    /** The most it goes after in one go, so its owner's orders never wait long. */
+    public static final int BATCH = 64;
+
+    /** What to go after next: the first target short ({@code has}: what it holds and keeps) that {@code possible} can make. */
+    public static Target next(Map<String, Integer> has, Predicate<Target> possible) {
+        for (Target t : TARGETS) {
+            int short_ = t.count() - has.getOrDefault(t.item(), 0);
+            if (short_ <= 0) continue;
+            Target batch = new Target(t.item(), Math.min(BATCH, short_));
+            if (possible.test(batch)) return batch;
+        }
+        return null;
+    }
+}

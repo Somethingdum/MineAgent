@@ -80,6 +80,7 @@ public final class Switches {
     public static boolean weighFights() { return b().weighFights(); }
     public static boolean tradingMastery() { return b().tradingMastery(); }
     public static boolean wholeTrees() { return b().wholeTrees(); }
+    public static boolean hoard() { return b().hoard(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

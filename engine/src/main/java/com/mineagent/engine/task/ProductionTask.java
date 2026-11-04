@@ -907,6 +907,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** The pillar it put up by a golem: blocks placed, the cell the next goes in, its ticks up there. */
     private int pillared, pillarTicks;
     private BlockPos pillarBase;
+    /** The height its feet were at before the pillar: it comes down to there and digs no lower. */
+    private int pillarFloor = Integer.MIN_VALUE;
 
     /**
      * An iron golem, fought as a player fights one for its iron (SMH plan 70): beside it, a pillar three blocks high put
@@ -950,7 +952,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 input.setJumping(true);
             } else if (pillarBase != null && sp.getY() >= pillarBase.getY() + 1.0 && sp.level().getBlockState(pillarBase).canBeReplaced()
                     && com.mineagent.engine.act.Placement.placeAnySupportBlock(sp, pillarBase)) {
-                if (++pillared == 1) say("Up a pillar by the golem, out of its reach.");
+                if (++pillared == 1) {
+                    pillarFloor = pillarBase.getY();
+                    say("Up a pillar by the golem, out of its reach.");
+                }
                 pillarBase = null;
             }
             if (++pillarTicks > 200) { // no way up here (no blocks left, a roof): not this one
@@ -1012,6 +1017,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         BlockPos under = sp.blockPosition().below();
         var st = sp.level().getBlockState(under);
         if (pillared <= 0) return false;
+        // Down to the ground it started from: the pillar is gone (the ground under it is never dug).
+        if (sp.onGround() && sp.getBlockY() <= pillarFloor) {
+            if (digging != null) com.mineagent.engine.task.BlockDigger.abortBreaking(sp, digging);
+            digging = null;
+            pillared = 0;
+            pillarTicks = 0;
+            airWait = 0;
+            return false;
+        }
         if (st.isAir()) {
             // The block just dug: a tick or two before it drops onto the next one down. A second with nothing under
             // it and not falling: the pillar is gone.
@@ -1689,7 +1703,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     }
                 }
             }
-            if (furnaces.isEmpty()) return fail("I have no furnace to smelt " + ProductionPlanner.name(step.input()) + " in");
+            if (furnaces.isEmpty()) {
+                // None here and none of its own would go down here (a pen's fences round it): by the ones it put down
+                // before, a walk away, when it knows of any.
+                BlockPos by = byFurnaces(sp, level, true);
+                if (by != null && !by.equals(workSpot) && ++furnaceWalks <= 2) {
+                    workSpot = by;
+                    return TaskState.RUNNING;
+                }
+                return fail("I have no furnace to smelt " + ProductionPlanner.name(step.input()) + " in");
+            }
             // Each furnace's share, in whole pieces of fuel's worth, and the fuel for it: as the plan priced it.
             int fuelTicks = fuelTicks(sp); // a smoker or blast furnace burns it twice as fast
             var split = com.mineagent.engine.planning.production.FurnaceSplit.split(step.count(), furnaces.size(), cookTicks(sp), fuelTicks,
@@ -1847,6 +1870,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      * within 24 it can stand by, so the furnaces the plan counted are the ones it uses.
      */
     private BlockPos byFurnaces(ServerPlayer sp, ServerLevel level) {
+        return byFurnaces(sp, level, false);
+    }
+
+    /** Walks to furnaces it knows of, a way off, because none would go down where it stood. */
+    private int furnaceWalks;
+
+    /** As {@link #byFurnaces(ServerPlayer, ServerLevel)}; with {@code evenCarrying}, beside the nearest even with furnaces in its pack. */
+    private BlockPos byFurnaces(ServerPlayer sp, ServerLevel level, boolean evenCarrying) {
         BlockPos here = standing(sp);
         var station = station(sp);
         BlockPos nearest = null;
@@ -1873,7 +1904,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
         }
         workFurnace = nearest;
-        if (nearest == null || best <= 12 * 12 || count(sp, station.asItem()) >= step.furnaces()) return here;
+        if (nearest == null || !evenCarrying && (best <= 12 * 12 || count(sp, station.asItem()) >= step.furnaces())) return here;
         for (BlockPos c : ring(nearest, 1)) {
             if (BlockHelper.isPassable(level.getBlockState(c)) && BlockHelper.isPassable(level.getBlockState(c.above()))
                     && BlockHelper.canStandOn(level.getBlockState(c.below()))) return c.immutable();
@@ -2160,6 +2191,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     static boolean byTall(ServerLevel level, BlockPos p) {
         for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) if (BlockHelper.tall(level.getBlockState(p.relative(d)))) return true;
         return false;
+    }
+
+    /** The cells round a point at a distance (a square ring), nearest first. */
+    public static List<BlockPos> ringOf(BlockPos c, int r) {
+        return ring(c, r);
     }
 
     static List<BlockPos> ring(BlockPos c, int r) {

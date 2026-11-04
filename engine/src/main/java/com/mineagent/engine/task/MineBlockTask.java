@@ -174,7 +174,7 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
         }
 
         if (phase == Phase.DONE && failReason != null) return TaskState.FAILED;
-        if (minedCount >= record.count) return TaskState.SUCCESS;
+        if (minedCount >= record.count && tree == null) return TaskState.SUCCESS; // a tree begun is felled whole first
         return TaskState.RUNNING;
     }
 

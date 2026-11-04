@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -31,7 +31,7 @@ public final class CommandParser {
     private static final Pattern STOP = Pattern.compile("^(stop|halt|freeze|cease|stand still|hold on|stop now|stop that|stop it|stop everything)$");
     private static final Pattern STAY = Pattern.compile("^(stay|stay here|wait|wait here|stay put)$");
     private static final Pattern FOLLOW = Pattern.compile("^(follow|follow me|come with me|stick with me|tail me|keep up)$");
-    private static final Pattern COME = Pattern.compile("^(come|come here|come to me|here|over here|get over here)$");
+    private static final Pattern COME = Pattern.compile("^(come|come here|come back|come to me|here|over here|get over here)$");
     private static final Pattern MODE = Pattern.compile(
             "^(?:(?:go|switch to|switch|use|be|enter|mode)\\s+)?(servant|auto|escort|park|parked)(?:\\s+mode)?$");
     private static final Pattern OWN = Pattern.compile("^(on your own|do your own thing|go do your thing|be free)$");
@@ -185,6 +185,14 @@ public final class CommandParser {
     private static final Pattern BEST_ENCHANTS = Pattern.compile("^(?:make (?:your|my|the) ([a-z ]{3,20}?) god[- ]?tier|god[- ]?tier (?:your|my|the) ([a-z ]{3,20}?)"
             + "|(?:put )?(?:the )?best enchant(?:ment)?s on (?:your|my|the) ([a-z ]{3,20}?)|max out (?:your|my|the) ([a-z ]{3,20}?)(?: enchants| enchantments)?"
             + "|optimi[sz]e (?:your|my|the) ([a-z ]{3,20}?)(?:'s)?(?: enchants| enchantments)?)$");
+    /** "Go survive on your own", "go get OP" (on); "stop surviving on your own" (off; "come here" also brings it back). */
+    private static final Pattern ON_OWN = Pattern.compile("^(?:go )?(?:survive|live) (?:on your own|by yourself|alone)|go get op(?: as hell)?|fend for yourself"
+            + "|go be self[- ]sufficient|go make your own base$");
+    private static final Pattern ON_OWN_OFF = Pattern.compile("^(?:stop (?:surviving|living) (?:on your own|by yourself|alone)|you can stop surviving|you can come back now)$");
+    /** "Speedrun", "let's speedrun" (on); "no more speedrunning", "stop speedrunning" (off). */
+    private static final Pattern SPEEDRUN = Pattern.compile("^(?:let'?s )?speed ?run(?: mode)?(?: the game)?$");
+    private static final Pattern SPEEDRUN_OFF = Pattern.compile("^(?:no more speed ?running|stop speed ?running|no speed ?run|speed ?run off)$");
+    private static final Pattern BEAT_GAME = Pattern.compile("^(?:go )?(?:beat|finish|win) the game$");
     /** "Get ready for the dragon", "prepare for the wither", "gear up for the dragon fight": the kit for it made. */
     private static final Pattern BOSS_PREP = Pattern.compile("^(?:get (?:ready|prepared)|prepare|prep|gear up|stock up) for (?:the )?((?:ender )?dragon|wither|end)(?: fight| boss)?$");
     /** "What do you need for god gear", "how's your gear": what each piece lacks of its best. */
@@ -334,6 +342,11 @@ public final class CommandParser {
             if (what != null && !what.matches("(?:max|out|gear|stats?|levels?)")) return Optional.of(new Command(Kind.BEST_ENCHANTS, what.strip(), null));
         }
         if (GEAR_REPORT.matcher(t).matches()) return Optional.of(new Command(Kind.GEAR_REPORT, null, null));
+        if (ON_OWN.matcher(t).matches()) return Optional.of(new Command(Kind.ON_ITS_OWN, "on", null));
+        if (ON_OWN_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.ON_ITS_OWN, "off", null));
+        if (SPEEDRUN.matcher(t).matches()) return Optional.of(new Command(Kind.SPEEDRUN, "on", null));
+        if (SPEEDRUN_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.SPEEDRUN, "off", null));
+        if (BEAT_GAME.matcher(t).matches()) return Optional.of(new Command(Kind.BOSS_PREP, "beat the game: dragon", null));
         var boss = BOSS_PREP.matcher(t);
         if (boss.matches()) return Optional.of(new Command(Kind.BOSS_PREP, boss.group(1), null));
         if (PROTECTION_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "off", null));

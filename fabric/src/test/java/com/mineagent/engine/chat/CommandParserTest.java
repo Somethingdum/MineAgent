@@ -264,4 +264,18 @@ final class CommandParserTest {
         assertTrue(CommandParser.parse("make it rain", "Pal").map(c -> c.kind() != CommandParser.Kind.PRODUCE).orElse(true),
                 "no count: not an order to make something");
     }
+
+    @Test void livingOnItsOwnAndSpeedruns() {
+        assertEquals(CommandParser.Kind.ON_ITS_OWN, CommandParser.parse("Go survive on your own", "Pal").orElseThrow().kind());
+        assertEquals("on", CommandParser.parse("go get OP as hell", "Pal").orElseThrow().value());
+        assertEquals("on", CommandParser.parse("fend for yourself", "Pal").orElseThrow().value());
+        assertEquals("off", CommandParser.parse("stop surviving on your own", "Pal").orElseThrow().value());
+        assertEquals(CommandParser.Kind.COME, CommandParser.parse("come back", "Pal").orElseThrow().kind(), "called back: it comes");
+        assertEquals(CommandParser.Kind.GO_PLACE, CommandParser.parse("come back home", "Pal").orElseThrow().kind(), "still a trip home");
+        assertEquals("on", CommandParser.parse("let's speedrun", "Pal").orElseThrow().value());
+        assertEquals(CommandParser.Kind.SPEEDRUN, CommandParser.parse("stop speedrunning", "Pal").orElseThrow().kind());
+        assertEquals("off", CommandParser.parse("stop speedrunning", "Pal").orElseThrow().value());
+        var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
+    }
 }
