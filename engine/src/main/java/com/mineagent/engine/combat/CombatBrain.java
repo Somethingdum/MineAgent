@@ -153,6 +153,17 @@ public final class CombatBrain {
         };
     }
 
+    /**
+     * With a bow and arrows, what is coming for someone in plain sight is its business out to the bow's reach (SMH plan
+     * 70): it is shot from where it stands ({@code RangedChoice}), not walked to. Not on escort (it keeps to its ward), and
+     * not what arrows can't land on or what is fled.
+     */
+    public static boolean inBowReach(Hostile h, Self self, Context c) {
+        if (!self.hasBow() || self.arrows() <= 0 || c.duty() == Duty.ESCORT || !h.attacking() || !h.lineOfSight()) return false;
+        MobPolicy p = MobPolicy.of(h.type());
+        return !p.mustFlee() && !RangedChoice.NO_ARROWS.contains(p.id()) && h.distance() <= RangedChoice.MAX;
+    }
+
     /** Andy Omega §12.1, with no duty: as if idle where it stands. */
     public static Assessment assess(List<Hostile> hostiles, Self self, Tactics tactics) {
         return assess(hostiles, self, tactics, Context.idle());
@@ -176,7 +187,7 @@ public final class CombatBrain {
             if (p.fleeUnlessGeared() && undergeared && h.distance() < 8.0 && (h.angry() || h.targetsSelf())) {
                 return new Assessment(threat(h), strength, Posture.FLEEING, i, h.targetsOwner(), "too strong for this gear: " + p.id());
             }
-            if (!relevant(h, context)) continue;
+            if (!relevant(h, context) && !inBowReach(h, self, context)) continue;
             double t = threat(h);
             if (t <= 0.0) continue;
             total += t;

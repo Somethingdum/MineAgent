@@ -344,6 +344,11 @@ public class RangedAttackTask
     private void aimAtTarget() {
         if (target == null) return;
         ServerPlayer sp = TaskContext.serverPlayer(player);
+        // A bow drawn to full: aimed as the arrow flies, air and all (combat/ArrowAim).
+        if (sp.getMainHandItem().is(Items.BOW) && record.chargeTicks >= com.mineagent.engine.act.BowShot.FULL_DRAW) {
+            com.mineagent.engine.act.BowShot.aim(sp, target);
+            return;
+        }
         Vec3 shooterPos = sp.getEyePosition();
         Vec3 targetPos = target.position().add(0, target.getBbHeight() * 0.75, 0);
         Vec3 leadPos = Ballistics.calculateLead(shooterPos, targetPos,

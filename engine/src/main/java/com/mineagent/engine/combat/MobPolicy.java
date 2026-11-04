@@ -51,6 +51,7 @@ public record MobPolicy(String id, int danger, boolean preferRanged, double keep
             Map.entry("witch", p("witch", 6, true, 0, false, false, false, false, false)),
             Map.entry("blaze", p("blaze", 7, true, 0, true, false, false, false, false)),
             Map.entry("ghast", p("ghast", 6, true, 0, true, false, false, false, false)),
+            // It attacks from range (met behind a shield), but arrows glance off it: combat/RangedChoice never shoots one.
             Map.entry("breeze", p("breeze", 6, true, 0, true, false, false, false, false)),
             Map.entry("phantom", p("phantom", 4, false, 0, true, false, false, false, false)),
             Map.entry("vex", p("vex", 5, false, 0, true, false, false, false, false)),

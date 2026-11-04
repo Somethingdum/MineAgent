@@ -3341,6 +3341,99 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /** A husk set on the companion, held where it is (it neither walks nor burns): the bow scenes' target. */
+    private static net.minecraft.world.entity.monster.Husk husk(GameTestHelper helper, Scene s, BlockPos rel) {
+        var h = EntityType.HUSK.create(helper.getLevel());
+        BlockPos at = helper.absolutePos(rel);
+        h.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 180.0f, 0.0f);
+        h.setNoAi(true);
+        helper.getLevel().addFreshEntity(h);
+        h.setTarget(s.body());
+        return h;
+    }
+
+    /**
+     * SMH plan 70, "clutch with a bow": two husks coming for it, one on the ground 34 blocks out and one on a pillar 6
+     * up, 35 out; it shoots both dead from where it stands, aimed as the arrow flies (air and drop), and does not walk
+     * to them.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bow_far", timeoutTicks = 1200)
+    public void longShotsFromWhereItStands(GameTestHelper helper) {
+        Scene s = scene(helper, "Fletcher");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos stand = helper.absolutePos(new BlockPos(3, 1, -12));
+        s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos ownerAt = helper.absolutePos(new BlockPos(-12, 1, -14));
+        s.owner().teleportTo(helper.getLevel(), ownerAt.getX() + 0.5, ownerAt.getY(), ownerAt.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getInventory().setItem(1, new ItemStack(Items.BOW));
+        s.body().getInventory().setItem(2, new ItemStack(Items.ARROW, 32));
+        for (int y = 1; y <= 5; y++) helper.setBlock(18, y, 18, Blocks.STONE);
+        net.minecraft.world.entity.monster.Husk[] h = {null, null};
+        helper.runAfterDelay(10, () -> {
+            h[0] = husk(helper, s, new BlockPos(3, 1, 22));
+            h[1] = husk(helper, s, new BlockPos(18, 6, 18));
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "bow-far");
+            if (h[0] == null) return;
+            int arrows = s.body().getInventory().countItem(Items.ARROW);
+            double moved = Math.sqrt(s.body().distanceToSqr(stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5));
+            if (!h[0].isAlive() && !h[1].isAlive()) {
+                tidy(s);
+                if (moved <= 3.0) helper.succeed();
+                else fail(helper, String.format("both dead, but it walked %.1f blocks (%d arrows left)", moved, arrows));
+            } else if (helper.getTick() >= 1180 || arrows == 0) {
+                String how = String.format("ground husk %.0f/%.0f, pillar husk %.0f/%.0f, %d arrows left, moved %.1f, holding %s",
+                        h[0].getHealth(), h[0].getMaxHealth(), h[1].getHealth(), h[1].getMaxHealth(), arrows, moved,
+                        s.body().getMainHandItem());
+                tidy(s);
+                for (var x : h) if (x.isAlive()) x.discard();
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, "clutch with a bow": a husk going sideways across its front 26 blocks out, a block every 8 ticks; the
+     * arrow is sent where it will be, so it is hit within a few arrows (aimed where it stands, each would fall behind).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bow_lead", timeoutTicks = 800)
+    public void aMovingTargetIsLed(GameTestHelper helper) {
+        Scene s = scene(helper, "Leader");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos stand = helper.absolutePos(new BlockPos(3, 1, -4));
+        s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos ownerAt = helper.absolutePos(new BlockPos(-12, 1, -14));
+        s.owner().teleportTo(helper.getLevel(), ownerAt.getX() + 0.5, ownerAt.getY(), ownerAt.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getInventory().setItem(1, new ItemStack(Items.BOW));
+        s.body().getInventory().setItem(2, new ItemStack(Items.ARROW, 32));
+        net.minecraft.world.entity.monster.Husk[] h = {null};
+        double[] x = {-12, 0.125};
+        helper.runAfterDelay(10, () -> h[0] = husk(helper, s, new BlockPos(-12, 1, 22)));
+        helper.onEachTick(() -> {
+            trace(helper, s, "bow-lead");
+            if (h[0] == null) return;
+            // Back and forth along the far side, a block every 8 ticks.
+            x[0] += x[1];
+            if (x[0] > 20 || x[0] < -12) x[1] = -x[1];
+            BlockPos row = helper.absolutePos(new BlockPos(0, 1, 22));
+            Vec3 o = helper.absoluteVec(new Vec3(x[0], 1, 22.5));
+            h[0].moveTo(o.x, row.getY(), o.z, 180.0f, 0.0f);
+            int used = 32 - s.body().getInventory().countItem(Items.ARROW);
+            if (h[0].getHealth() < h[0].getMaxHealth() || !h[0].isAlive()) {
+                tidy(s);
+                if (h[0].isAlive()) h[0].discard();
+                if (used <= 4) helper.succeed();
+                else fail(helper, "hit, but only after " + used + " arrows");
+            } else if (used > 4 || helper.getTick() >= 780) {
+                String how = "not hit after " + used + " arrows; holding " + s.body().getMainHandItem();
+                tidy(s);
+                h[0].discard();
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA10.1: on guard with a bow, a creeper 16 blocks out (outside the 8-block perimeter) is shot at range. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_guard_creeper", timeoutTicks = 600)
     public void onGuardACreeperIsShotAtRange(GameTestHelper helper) {

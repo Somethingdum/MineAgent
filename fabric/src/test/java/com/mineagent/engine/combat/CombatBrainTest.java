@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /** SMH plan 69, block 3: the fighting mind, its "never" rules, and fighting only what is its business. */
 final class CombatBrainTest {
     private static final Self STRONG = new Self(20, 20, 15, true, 4, true, 32, 18, false);
+    /** As strong, without the bow: what it walks to and fights hand to hand. */
+    private static final Self STRONG_MELEE = new Self(20, 20, 15, true, 4, false, 0, 18, false);
     private static final Self WEAK = new Self(12, 20, 0, false, 2, false, 0, 10, false);
     private static final Self BARE = new Self(20, 20, 15, false, 4, false, 0, 18, false);
     private static final Tactics BALANCED = Tactics.of("balanced", 6);
@@ -96,8 +98,10 @@ final class CombatBrainTest {
                 "a zombie idling 10 blocks off in the cave");
         assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(mobAt("zombie", 6, true, 6)), STRONG, BALANCED, WORK).posture(),
                 "one coming at it");
-        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(mobAt("zombie", 12, true, 12)), STRONG, BALANCED, WORK).posture(),
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(mobAt("zombie", 12, true, 12)), STRONG_MELEE, BALANCED, WORK).posture(),
                 "an attacker 12 blocks out is met when it is close");
+        assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(mobAt("zombie", 12, true, 12)), STRONG, BALANCED, WORK).posture(),
+                "with a bow, shot as it comes");
         assertEquals(Posture.SAFE, CombatBrain.assess(List.of(mobAt("zombie", 9, false, 9)), STRONG, BALANCED).posture(),
                 "idle: a passive zombie is not its business");
         // A skeleton shooting at it from across the cave is dealt with (and then it goes back to work)...
@@ -118,8 +122,10 @@ final class CombatBrainTest {
     @Test void aGuardClearsItsPerimeterAndNeverChasesOutOfIt() {
         assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(mobAt("zombie", 9, false, 6)), STRONG, BALANCED, GUARD).posture(),
                 "inside the perimeter it is cleared, not watched");
-        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(mobAt("zombie", 8, true, 15)), STRONG, BALANCED, GUARD).posture(),
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(mobAt("zombie", 8, true, 15)), STRONG_MELEE, BALANCED, GUARD).posture(),
                 "a zombie outside is left alone");
+        assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(mobAt("zombie", 8, true, 15)), STRONG, BALANCED, GUARD).posture(),
+                "with a bow it is shot from the post (never walked to: survival/MobDefenseChain holds)");
         Hostile shooting = new Hostile("skeleton", 14, 0, 20, true, false, false, true, true, 0, true, 14, false);
         assertNotEquals(Posture.SAFE, CombatBrain.assess(List.of(shooting), STRONG, BALANCED, GUARD).posture(),
                 "a skeleton shooting in from just outside");
@@ -131,7 +137,7 @@ final class CombatBrainTest {
         Move m = act(leaving, STRONG, 1.0, true, false, false, GUARD).move();
         assertTrue(m == Move.RETURN || m == Move.HOLD, "never chased out: " + m);
         Hostile farArcher = new Hostile("skeleton", 20, 0, 20, true, false, false, true, true, 0, true, 20, false);
-        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(farArcher), STRONG, BALANCED, GUARD).posture(),
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(farArcher), STRONG_MELEE, BALANCED, GUARD).posture(),
                 "an archer 10 past the perimeter is not chased");
     }
 
@@ -144,10 +150,12 @@ final class CombatBrainTest {
         assertEquals(Posture.ENGAGED, CombatBrain.assess(List.of(farOff), STRONG, BALANCED).posture(), "idle, 20 out");
         // ...past 24 blocks it does not, and one at it from 12 while it works still waits until it is close.
         Hostile tooFar = new Hostile("zombie", 30, 0, 20, false, true, false, false, true, 0, true, 30, false);
-        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(tooFar), STRONG, BALANCED, WORK).posture());
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(tooFar), STRONG_MELEE, BALANCED, WORK).posture());
+        assertTrue(CombatBrain.inBowReach(tooFar, STRONG, WORK) && !CombatBrain.relevant(tooFar, WORK),
+                "with a bow, shot at from the work, not walked to");
         // A guard keeps to what it guards.
         Hostile outside = new Hostile("zombie", 15, 0, 20, false, true, false, false, true, 0, true, 15, false);
-        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(outside), STRONG, BALANCED, GUARD).posture());
+        assertEquals(Posture.SAFE, CombatBrain.assess(List.of(outside), STRONG_MELEE, BALANCED, GUARD).posture());
     }
 
     @Test void arrowsArePredictedFromWhereTheyAreGoing() {

@@ -182,7 +182,7 @@ public final class MobDefenseChain implements TaskChain {
 
             if (posture == Posture.SAFE || posture == Posture.ALERT) {
                 if (fighting) endFight(loop, fled ? Scorecard.Outcome.RETREATED : Scorecard.Outcome.DONE);
-                if (shootCreeper(s, sp, input)) return;
+                if (shootAtRange(s, sp, input, false)) return;
                 if (s.setup().duty() == Duty.GUARD && s.anchor() != null) keepPost(s, sp, input);
                 else stop(input, sp);
                 return;
@@ -218,7 +218,16 @@ public final class MobDefenseChain implements TaskChain {
                     && act.move() != Move.RETURN && act.move() != Move.HOLD) {
                 act = new Action(Move.FLEE, 0, !act.shield(), false, act.shield(), false);
             }
-            if (shootCreeper(s, sp, input)) return;
+            if (act.move() != Move.FLEE && shootAtRange(s, sp, input, true)) return;
+            if (sp.isUsingItem() && sp.getUseItem().getItem() instanceof BowItem) sp.stopUsingItem();
+            // Its business only because the bow reaches it: shot from here or not at all, never walked to.
+            if (target != null && act.move() != Move.FLEE && !CombatBrain.relevant(target, s.context())) {
+                if (nav != null && nav.isNavigating()) nav.cancel();
+                navGoal = null;
+                input.clear();
+                if (targetMob != null) face(sp, targetMob.getEyePosition());
+                return;
+            }
             apply(act, s, target, targetMob, sp, input);
             // For the game tests: what it saw and did, every 2 seconds of a fight (the property is unset in play).
             if (Boolean.getBoolean("mineagent.traceFights") && sp.level().getGameTime() % 40 == 0 && targetMob != null) {
@@ -362,7 +371,8 @@ public final class MobDefenseChain implements TaskChain {
     }
 
     private static AABB scanBox(ServerPlayer sp, Vec3 anchor, AgentLoop.CombatSetup setup) {
-        AABB around = sp.getBoundingBox().inflate(SCAN_RADIUS);
+        // With a bow and arrows it looks out to the bow's reach (combat/RangedChoice).
+        AABB around = sp.getBoundingBox().inflate(carriesBow(sp) ? com.mineagent.engine.combat.RangedChoice.MAX : SCAN_RADIUS);
         if (setup.duty() != Duty.GUARD && setup.duty() != Duty.ESCORT) return around;
         double r = setup.perimeter() + 8.0;
         return new AABB(Math.min(around.minX, anchor.x - r), Math.min(around.minY, anchor.y - 8), Math.min(around.minZ, anchor.z - r),
@@ -540,45 +550,39 @@ public final class MobDefenseChain implements TaskChain {
     }
 
     /**
-     * On guard, a creeper coming in (MA10.1): an arrow before it gets to the perimeter, from where it stands. Only with a
-     * bow and arrows, a clear line past nobody, and the creeper 6 to 24 blocks off and not already hissing close by.
-     * True while it draws or looses.
+     * The bow at range (MA10.1, and SMH plan 70's "clutch with a bow"): whom {@code combat/RangedChoice} picks (a creeper
+     * coming in, an archer, anything coming for someone, and on guard anything near the post), shot from where it stands,
+     * drawn to full and aimed as the arrow flies ({@code act/BowShot}). Against an archer it side-steps while it draws.
+     * Out of the fight ({@code engaged} false) only on guard or at what is already coming for someone. True while it
+     * draws or looses.
      */
-    private boolean shootCreeper(Snapshot s, ServerPlayer sp, InputDriver input) {
-        if (s.setup().duty() != Duty.GUARD || !com.mineagent.engine.settings.Switches.guardPerimeter()) return false;
-        Creeper best = null;
-        double bestD = Double.MAX_VALUE;
-        for (Mob m : s.mobs()) {
-            if (!(m instanceof Creeper c) || !c.isAlive()) continue;
-            double d = c.distanceTo(sp);
-            if (d < 6.0 || d > 24.0 || c.getSwellDir() > 0 && d < 8.0 || !sp.hasLineOfSight(c)) continue;
-            if (d < bestD) {
-                bestD = d;
-                best = c;
-            }
-        }
+    private boolean shootAtRange(Snapshot s, ServerPlayer sp, InputDriver input, boolean engaged) {
         boolean drawing = sp.isUsingItem() && sp.getUseItem().getItem() instanceof BowItem;
-        if (best == null) {
+        boolean guard = s.setup().duty() == Duty.GUARD && com.mineagent.engine.settings.Switches.guardPerimeter();
+        int i = !com.mineagent.engine.settings.Switches.bowAtRange() && !guard ? -1
+                : com.mineagent.engine.combat.RangedChoice.pick(s.hostiles(), s.self(), sp.isInWater(), guard);
+        if (i >= 0 && !com.mineagent.engine.settings.Switches.bowAtRange() && !"creeper".equals(s.hostiles().get(i).type())) i = -1;
+        if (i >= 0 && !engaged && !guard && !s.hostiles().get(i).targetsSelf() && !s.hostiles().get(i).targetsOwner()) i = -1;
+        if (i < 0) {
             if (drawing) sp.stopUsingItem();
             return false;
         }
-        int arrows = 0;
-        boolean bow = false;
-        var inv = sp.getInventory();
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack st = inv.getItem(i);
-            if (st.getItem() instanceof BowItem) bow = true;
-            if (BuiltInRegistries.ITEM.getKey(st.getItem()).getPath().endsWith("arrow")) arrows += st.getCount();
-        }
-        if (!bow || arrows == 0) return false;
+        Mob best = s.mobs().get(i);
+        Hostile h = s.hostiles().get(i);
         if (!(sp.getMainHandItem().getItem() instanceof BowItem)
                 && !TaskContext.selectInventoryItemForHand(companion, "minecraft:bow", InteractionHand.MAIN_HAND)) return false;
         if (nav != null && nav.isNavigating()) nav.cancel();
         navGoal = null;
         input.clear();
         shield(false, sp);
+        // An archer drawing on it: a side-step every second and a half while it draws (its aim takes its own motion in).
+        boolean archerOnIt = false;
+        for (Hostile o : s.hostiles()) if (o.drawingBow() && o.lineOfSight() && o.targetsSelf()) archerOnIt = true;
+        if (archerOnIt) input.setStrafe((sp.level().getGameTime() / 30) % 2 == 0 ? 1.0f : -1.0f);
         var state = com.mineagent.engine.act.BowShot.tick(sp, best);
-        if (state == com.mineagent.engine.act.BowShot.State.LOOSED) bodyLog.report("on guard: an arrow at a creeper " + Math.round(bestD) + " blocks out");
+        if (state == com.mineagent.engine.act.BowShot.State.LOOSED) {
+            bodyLog.report("an arrow at a " + h.type().replace('_', ' ') + " " + Math.round(h.distance()) + " blocks out");
+        }
         return state != com.mineagent.engine.act.BowShot.State.NO_BOW && state != com.mineagent.engine.act.BowShot.State.HELD_BACK;
     }
 
