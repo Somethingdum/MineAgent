@@ -188,12 +188,25 @@ public final class MobDefenseChain implements TaskChain {
                 return;
             }
 
-            Hostile target = a.primary() >= 0 ? s.hostiles().get(a.primary()) : null;
-            Mob targetMob = a.primary() >= 0 ? s.mobs().get(a.primary()) : null;
+            int primary = a.primary();
+            boolean running = posture == Posture.FLEEING || posture == Posture.OVERWHELMED;
+            // Running with none picked to fight (the fifth benchmark run: "target is null" every tick, so it neither
+            // fought nor ran, and died five times the first night): away from the nearest of them.
+            if (primary < 0 && running) {
+                double best = Double.MAX_VALUE;
+                for (int i = 0; i < s.hostiles().size(); i++) {
+                    if (s.hostiles().get(i).distance() < best) {
+                        best = s.hostiles().get(i).distance();
+                        primary = i;
+                    }
+                }
+            }
+            Hostile target = primary >= 0 ? s.hostiles().get(primary) : null;
+            Mob targetMob = primary >= 0 ? s.mobs().get(primary) : null;
             if (!fighting && target != null) beginFight(loop, s, target, sp);
             fightTicks++;
-            if (posture == Posture.FLEEING || posture == Posture.OVERWHELMED) {
-                if (!fled) bodyLog.report(a.reason() + ", getting away from " + target.type());
+            if (running) {
+                if (!fled) bodyLog.report(a.reason() + (target == null ? "" : ", getting away from " + target.type()));
                 fled = true;
             }
             if (loop != null && fightTicks % 40 == 1) {

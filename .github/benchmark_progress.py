@@ -35,14 +35,21 @@ def read():
     # Its work traced (what it is stuck on and why), the noise left out.
     noise = ("Lesson failed", "LLM call", "saved companion", "Saved ", "Loaded ", "transport failure", "[MineAgent][",
              "paused for survival chain", "LLM retries", "Stale request", "Trimmed history", "food to make")
-    traced = [l.split("[STDOUT]: ", 1)[-1] for l in lines
-              if "[MineAgent] " in l and not any(n in l for n in noise)]
+    traced = []
+    for l in lines:
+        if "[MineAgent] " not in l or any(n in l for n in noise):
+            continue
+        t = l.split("[STDOUT]: ", 1)[-1].split("[STDERR]: ", 1)[-1]
+        # A line said over and over (an error every tick) once, at its last place, so it can't push the rest out.
+        if t in traced:
+            traced.remove(t)
+        traced.append(t)
     finished = [l for l in bench if "[BENCH] done" in l]
     done = bool(finished)
     shown = [l for l in bench if l.strip() != "[BENCH] report"]
     title = (finished[-1] if finished else shown[-1] if shown else "[BENCH] Starting").replace("[BENCH] ", "", 1)
     summary = "\n".join(["Status:"] + shown[-12:] + ["", "What it said lately:"] + said[-40:]
-                        + ["", "Its work, traced:"] + [t[:400] for t in traced[-40:]])
+                        + ["", "Its work, traced:"] + [t[:400] for t in traced[-60:]])
     return title[:250], summary[:60000], done
 
 
