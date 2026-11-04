@@ -1442,6 +1442,9 @@ public class AgentLoop {
                 haltNow();
                 standDown();
                 String print = c.value() == null ? "hut" : c.value();
+                // The home hut is stone: cobblestone (its pickaxe digs it anywhere, a creeper does it less harm; wood near
+                // a base runs out, the three-day benchmark found: 27 planks of the 55). Its door of the wood about.
+                if ("hut_home".equals(print)) wall = "minecraft:cobblestone";
                 String said = switch (print) {
                     case "dirt_shelter" -> "build a dirt shelter";
                     case "small_wood_house" -> "build a small wood house";
@@ -1521,8 +1524,8 @@ public class AgentLoop {
                 onItsOwn = "on".equals(c.value());
                 surviveAt = null;
                 journal.record("order", onItsOwn ? "survive on your own" : "stop surviving on your own", currentGameTickSafe());
-                speakToOwner(onItsOwn ? "On my own, then: I'll find a good swamp (slime spawns there), make a base, farms and a stockpile,"
-                        + " and get my gear to god tier. I won't go after the dragon unless you tell me to."
+                speakToOwner(onItsOwn ? "On my own, then: a first base here and my gear up to iron; then a good swamp (slime spawns there)"
+                        + " for my main base, farms and a stockpile, and my gear to god tier. I won't go after the dragon unless you tell me to."
                         : "Back with you. I'll keep my stockpile, and stay near.");
                 saveMemoryNow();
                 return true;
@@ -5220,13 +5223,15 @@ public class AgentLoop {
     private volatile double swampBest = Double.MAX_VALUE;
 
     /** Its starter kit's tries, and when the last was (game ticks); when it last kept its base up. */
-    private volatile int kitTries;
+    private volatile int kitTries, keptUpTries;
+    /** What its starter kit lacked when it last kept its base up. */
+    private volatile String lastKit = "";
     private volatile long kitAt = Long.MIN_VALUE / 2, keptUpAt = Long.MIN_VALUE / 2, hutAt = Long.MIN_VALUE / 2;
 
     /**
      * Its base kept up while it lives on its own (SMH plan 70, its owner: "It should EASILY handle lost progression in any
      * area. And bounce back from it fast."): what its starter kit lacks (lost in a death, worn out, burnt) made again,
-     * every two minutes at most; the hut built again if none stands by home (a creeper, a griefer), a game day apart at
+     * every two minutes at most; the hut built again if none stands by home (a creeper, a griefer), five minutes apart at
      * most.
      */
     private void keepBaseUp(net.minecraft.server.level.ServerPlayer self, String dim, long now) {
@@ -5236,12 +5241,18 @@ public class AgentLoop {
         keptUpAt = now;
         String kit = starterKit(self);
         if (!kit.isEmpty()) {
-            journal.record("survive", "keeping up: " + kit.replace(", then ", ", "), now);
-            queueOwn(kit, "owner");
+            // Short of the same as last time (no more of it near here: the trees cut, the animals left to breed): new
+            // ground first, explored, and the kit made there.
+            boolean again = kit.equals(lastKit);
+            lastKit = kit;
+            keptUpTries++;
+            journal.record("survive", "keeping up: " + kit.replace(", then ", ", ") + (again ? " (exploring for it first)" : ""), now);
+            queueOwn(again ? "explore, then " + kit : kit, "owner");
             return;
         }
+        lastKit = "";
         var h = home(dim);
-        if (h != null && !hutNear(dim, h) && now - hutAt >= 24_000) {
+        if (h != null && !hutNear(dim, h) && now - hutAt >= 6_000) {
             hutAt = now;
             journal.record("survive", "no hut by home: building one", now);
             queueOwn("build a home hut", "owner");
@@ -5268,7 +5279,10 @@ public class AgentLoop {
             if (!hasTool(self, kind, 2)) o.add("make me a stone " + kind);
         }
         var inv = self.getInventory();
-        if (inv.countItem(net.minecraft.world.item.Items.COAL) + inv.countItem(net.minecraft.world.item.Items.CHARCOAL) < 8) o.add("make me 8 charcoal");
+        // Coal mined (it is in the stone it digs anyway; charcoal wants wood, which near a base runs out), else charcoal.
+        if (inv.countItem(net.minecraft.world.item.Items.COAL) + inv.countItem(net.minecraft.world.item.Items.CHARCOAL) < 8) {
+            o.add(kitTries + keptUpTries > 1 && (kitTries + keptUpTries) % 2 == 0 ? "make me 8 charcoal" : "make me 8 coal");
+        }
         if (foodOn(self) < 16) o.add("make me 16 food");
         return String.join(", then ", o);
     }
