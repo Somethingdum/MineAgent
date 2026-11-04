@@ -203,9 +203,41 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                 }
                 case WAIT -> {
                     BlockPos cell = at(layout.cell()), door = at(layout.door());
-                    if (v.blockPosition().equals(cell)) {
+                    // Shoving it in: into the way in for a second, against it, then back out to its spot.
+                    if (nudging > 0) {
+                        nudging--;
+                        if (nudging > 10) {
+                            if (nudging % 5 == 0 || !nav.isNavigating()) nav.navigateNear(cell.getX(), cell.getY(), cell.getZ(), 0);
+                            nav.tick();
+                            return TaskState.RUNNING;
+                        }
+                        nav.cancel();
+                        TaskContext.inputDriver(player).clear();
+                    }
+                    boolean inCell = v.blockPosition().equals(cell);
+                    // In, all of it: the game puts no block where a body reaches, and one coming in or turning round
+                    // reaches over into the way in.
+                    boolean clear = !v.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(door))
+                            && !sp.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(door));
+                    if (inCell && !clear && !sp.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(door))) {
+                        // Two seconds at the edge: a shove in, as a player would give it (it can go no further than
+                        // the job site), and the door put in behind it.
+                        if (++edgeTicks > 40 && nudging == 0) {
+                            nudging = 30;
+                            edgeTicks = 0;
+                        }
+                    } else if (!inCell) {
+                        edgeTicks = 0;
+                    }
+                    if (inCell && clear) {
                         // In: the door, from where it can reach it (it waits close by for this).
-                        if (door.distToCenterSqr(sp.getEyePosition()) <= 4.5 * 4.5 && Placement.placeAnySupportBlock(sp, door)) {
+                        boolean put = door.distToCenterSqr(sp.getEyePosition()) <= 4.5 * 4.5 && Placement.placeAnySupportBlock(sp, door);
+                        if (!put && Boolean.getBoolean("mineagent.traceWork") && ticks % 100 == 0) {
+                            System.out.println("[MineAgent] cell: the villager is in, no door yet: "
+                                    + Placement.whyNot(sp, door, net.minecraft.world.level.block.Blocks.COBBLESTONE.defaultBlockState())
+                                    + ", " + String.format("%.1f", Math.sqrt(door.distToCenterSqr(sp.getEyePosition()))) + " off");
+                        }
+                        if (put) {
                             var loop = TaskContext.agentLoop(player);
                             if (loop != null) {
                                 loop.keepVillager(v.getUUID());
@@ -292,7 +324,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
-    private int offCell, traceAt, jumpTicks, blockingTicks, groundY = Integer.MIN_VALUE;
+    private int offCell, traceAt, jumpTicks, blockingTicks, edgeTicks, nudging, groundY = Integer.MIN_VALUE;
     /** The block over its eyes it is jumping to put in. */
     private BlockPos jumpFor;
     private boolean onlyItsSpotLeft;
