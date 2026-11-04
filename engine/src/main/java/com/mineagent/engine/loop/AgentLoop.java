@@ -1523,6 +1523,7 @@ public class AgentLoop {
                 return true;
             }
             case REPAIR, GRIND -> {
+                if (c.kind() == com.mineagent.engine.chat.CommandParser.Kind.REPAIR && repairBuilding(c.value())) return true;
                 boolean grind = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.GRIND;
                 String words = (grind ? "disenchant your " : "repair your ") + c.value();
                 journal.record("order", words, currentGameTickSafe());
@@ -2860,6 +2861,7 @@ public class AgentLoop {
             if (gameTick % 100L == 0L) schedule(player);
             if (gameTick % 100L == 0L) stayNearHome(player);
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
+            if (gameTick % 1200L == 600L) gearGoal(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3284,6 +3286,40 @@ public class AgentLoop {
         return best;
     }
 
+    /**
+     * "Repair the hut", "fix the dirt shelter" (MA9.1): the nearest of its builds of that kind, built back from its saved
+     * blueprint at the corner it stands on (what is missing put back, the rest left). False when the words are not a
+     * building it has built.
+     */
+    private boolean repairBuilding(String what) {
+        String w = what == null ? "" : what.toLowerCase(java.util.Locale.ROOT).strip();
+        String print = w.contains("dirt") ? "dirt_shelter" : w.contains("wood") ? "small_wood_house"
+                : w.matches("(?:the |our |my )?(?:hut|house|shelter|base|home|cabin)") ? "hut" : null;
+        if (print == null || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return false;
+        var me = com.mineagent.engine.world.PlaceKeeper.point(self.serverPlayer());
+        com.mineagent.engine.world.RouteMemory.Place best = null;
+        for (var p : placeKeeper.memory().places()) {
+            if (!"build".equals(p.kind()) || !p.at().dim().equals(me.dim())) continue;
+            String name = p.name() == null ? "" : p.name();
+            if (!name.startsWith(print + "|") && !("hut".equals(print) && name.startsWith("dirt_shelter|") && w.contains("shelter"))) continue;
+            if (best == null || p.at().distance(me) < best.at().distance(me)) best = p;
+        }
+        if (best == null) return false;
+        String[] f = best.name().split("\\|");
+        String wall = f.length > 1 ? f[1] : "oak_planks", door = f.length > 2 ? f[2] : "oak_door";
+        if (!wall.contains(":")) wall = "minecraft:" + wall;
+        if (!door.contains(":")) door = "minecraft:" + door;
+        haltNow();
+        standDown();
+        String said = "repair the " + f[0].replace('_', ' ');
+        journal.record("order", said, currentGameTickSafe());
+        orderGoal(said);
+        speakToOwner("Repairing the " + f[0].replace('_', ' ') + " at " + best.at().x() + ", " + best.at().y() + ", " + best.at().z() + " from its blueprint.");
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BlueprintTask.BlueprintRecord(
+                "build-" + UUID.randomUUID(), f[0], wall, door, new net.minecraft.core.BlockPos(best.at().x(), best.at().y(), best.at().z())), reply -> { });
+        return true;
+    }
+
     /** "Mending", "silk touch", "unbreaking 3": the enchantment's id ("minecraft:mending"), or null. */
     private String enchantmentId(String words) {
         if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return null;
@@ -3571,6 +3607,44 @@ public class AgentLoop {
         if (dx * dx + dz * dz <= (double) idleRadius * idleRadius) return;
         journal.record("home", "back within " + idleRadius + " blocks of home", currentGameTickSafe());
         goTo(home, List.of(), false);
+    }
+
+    // ── Hard: the gear goal rises with the danger (SMH plan 70, MA8.7) ──
+
+    /**
+     * Where the danger has grown (Hard, or local difficulty high: mobs there wear better armour over the weeks), with
+     * nothing to do, it makes the iron armour it lacks, a piece at a time, from what it has and has seen
+     * ({@code behaviour.gearGoal}). Its owner's orders always come first.
+     */
+    private void gearGoal(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !com.mineagent.engine.settings.Switches.gearGoal()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var level = self.serverLevel();
+        float local = level.getCurrentDifficultyAt(self.blockPosition()).getEffectiveDifficulty();
+        if (level.getDifficulty() != net.minecraft.world.Difficulty.HARD && local < 4.0f) return;
+        var want = new net.minecraft.world.item.Item[] {net.minecraft.world.item.Items.IRON_CHESTPLATE, net.minecraft.world.item.Items.IRON_LEGGINGS,
+                net.minecraft.world.item.Items.IRON_HELMET, net.minecraft.world.item.Items.IRON_BOOTS};
+        var slots = new net.minecraft.world.entity.EquipmentSlot[] {net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.entity.EquipmentSlot.LEGS,
+                net.minecraft.world.entity.EquipmentSlot.HEAD, net.minecraft.world.entity.EquipmentSlot.FEET};
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+        com.mineagent.engine.planning.production.Production.Have have = null;
+        for (int i = 0; i < want.length; i++) {
+            var worn = self.getItemBySlot(slots[i]);
+            double wornValue = worn.getItem() instanceof net.minecraft.world.item.ArmorItem a ? a.getDefense() : 0;
+            if (wornValue >= ((net.minecraft.world.item.ArmorItem) want[i]).getDefense()) continue;
+            if (self.getInventory().countItem(want[i]) > 0) continue; // GearUp puts it on
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(want[i]).toString();
+            if (have == null) have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+            var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, 1,
+                    java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN));
+            if (!plan.possible()) continue;
+            journal.record("gear", "the danger here has grown: making " + com.mineagent.engine.planning.production.ProductionPlanner.name(id), currentGameTickSafe());
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                    "gear-" + UUID.randomUUID(), id, 1, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
+            return;
+        }
     }
 
     // ── Leaving no trace: holes near home filled (SMH plan 70, MA9.4) ──

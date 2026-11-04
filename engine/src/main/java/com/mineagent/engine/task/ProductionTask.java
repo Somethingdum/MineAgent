@@ -1385,7 +1385,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 fuelled[i] += gave;
                 used.merge(step.fuel(), gave, Integer::sum);
             }
-            if (!furnace.getItem(0).isEmpty() || !furnace.getItem(2).isEmpty() || loaded[i] < share[i]) anyBusy = true;
+            // Short of its share with none left to load (the cows gave less beef than counted on): not waited on; the round
+            // after plans the rest.
+            if (!furnace.getItem(0).isEmpty() || !furnace.getItem(2).isEmpty() || loaded[i] < share[i] && count(sp, in) > 0) anyBusy = true;
         }
         TaskContext.syncInventory(sp);
         int made = count(sp, out) - itemBefore;

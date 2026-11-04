@@ -4494,4 +4494,76 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA9.1, repair from a saved blueprint: the hut built, three of its blocks knocked out, "repair the hut": put back. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_repair_hut", timeoutTicks = 3600)
+    public void aDamagedHutIsRepairedFromItsBlueprint(GameTestHelper helper) {
+        Scene s = scene(helper, "Mender");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.TORCH, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a hut"));
+        BlockPos[] knocked = new BlockPos[3];
+        boolean[] asked = {false};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "repair hut");
+            if (!asked[0]) {
+                String built = lastSaid(s, "Built the hut at ");
+                if (built.isEmpty()) {
+                    if (helper.getTick() >= 2000) {
+                        tidy(s);
+                        fail(helper, "the hut wasn't built; said: " + lastSaid(s, ""));
+                    }
+                    return;
+                }
+                // Three wall blocks of the planks it built with, knocked out.
+                int n = 0;
+                for (BlockPos p : BlockPos.betweenClosed(helper.absolutePos(new BlockPos(-12, 2, -12)), helper.absolutePos(new BlockPos(20, 2, 20)))) {
+                    if (n < 3 && helper.getLevel().getBlockState(p).is(Blocks.OAK_PLANKS)) {
+                        knocked[n++] = p.immutable();
+                        helper.getLevel().setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+                    }
+                }
+                asked[0] = true;
+                MineAgentEngine.onPlayerChat(s.owner(), "repair the hut");
+                return;
+            }
+            String done = lastSaid(s, "Built the hut at ");
+            boolean back = knocked[0] != null;
+            for (BlockPos p : knocked) if (p == null || !helper.getLevel().getBlockState(p).is(Blocks.OAK_PLANKS)) back = false;
+            if (back && done.contains("every block checked") || helper.getTick() >= 3550) {
+                String how = "knocked-out blocks back " + back + "; said: " + lastSaid(s, "");
+                tidy(s);
+                if (back) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA8.7: on Hard, with iron and nothing to do, it makes the iron armour it lacks, and wears it. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_gear_goal", timeoutTicks = 3200)
+    public void onHardItMakesTheArmourItLacks(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        var was = helper.getLevel().getDifficulty();
+        server.setDifficulty(net.minecraft.world.Difficulty.HARD, true);
+        Scene s = scene(helper, "Armourer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.IRON_INGOT, 24));
+        inv.setItem(2, new ItemStack(Items.CRAFTING_TABLE));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 400 == 0) trace(helper, s, "gear goal");
+            var chest = s.body().getItemBySlot(EquipmentSlot.CHEST);
+            boolean armoured = chest.is(Items.IRON_CHESTPLATE) || inv.countItem(Items.IRON_CHESTPLATE) > 0;
+            if (armoured || helper.getTick() >= 3150) {
+                String how = "iron chestplate " + armoured + " (wearing " + chest + "); said: " + lastSaid(s, "");
+                server.setDifficulty(was, true);
+                tidy(s);
+                if (armoured) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

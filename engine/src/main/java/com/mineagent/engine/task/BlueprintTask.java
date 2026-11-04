@@ -389,7 +389,13 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
                         + " blocks are missing; I couldn't place them (" + String.join("; ", where) + ").";
         say(line);
         var loop = TaskContext.agentLoop(player);
-        if (loop != null) loop.journal().record("built", line, level.getGameTime());
+        if (loop != null) {
+            loop.journal().record("built", line, level.getGameTime());
+            // The blueprint kept with where it stands, so "repair the hut" builds it back from it (MA9.1).
+            loop.placeKeeper().memory().name("build", record.name + "|" + record.wall.replace("minecraft:", "") + "|" + record.door.replace("minecraft:", ""),
+                    new com.mineagent.engine.world.RouteMemory.Point(level.dimension().location().toString(), corner.getX(), corner.getY(), corner.getZ()),
+                    level.getGameTime());
+        }
         outcome = line;
         phase = missing.isEmpty() ? Phase.DONE : Phase.FAILED;
         return missing.isEmpty() ? TaskState.SUCCESS : TaskState.FAILED;
