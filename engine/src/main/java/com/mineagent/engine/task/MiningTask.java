@@ -155,6 +155,7 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             return TaskState.RUNNING;
         }
         try {
+            if (gettingNowhere()) return fail("I was getting nowhere down here: nothing dug and no step taken for a long while");
             return switch (phase) {
                 case START -> begin();
                 case READY -> ready();
@@ -171,6 +172,37 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             return fail("something went wrong: " + e.getMessage());
         }
     }
+
+    /**
+     * Getting nowhere (SMH plan 70, its owner: "it getting stuck in some dumb loop"): while digging, or taking the haul
+     * home and coming back, three minutes standing on one block with nothing gained or put away, or ten minutes with
+     * nothing gained or put away wherever it walks. (Getting ready and making its tools are their own jobs, watched there.)
+     */
+    private boolean gettingNowhere() {
+        if (phase != Phase.DIG && phase != Phase.VEIN && phase != Phase.HOME && phase != Phase.DEPOSIT && phase != Phase.BACK) {
+            watchSig = null;
+            return false;
+        }
+        ServerPlayer sp = sp();
+        long now = sp.level().getGameTime();
+        int held = 0;
+        var inv = sp.getInventory();
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) held += inv.getItem(i).getCount();
+        String sig = phase + ":" + held + ":" + sp.blockPosition().asLong();
+        if (watchSig == null || held != heldLast) {
+            heldLast = held;
+            heldAt = now;
+        }
+        if (!sig.equals(watchSig)) {
+            watchSig = sig;
+            watchAt = now;
+        }
+        return now - watchAt > 3_600 || now - heldAt > 12_000;
+    }
+
+    private String watchSig;
+    private long watchAt, heldAt;
+    private int heldLast = -1;
 
     private TaskState fail(String why) {
         if (sub != null) sub.interrupt();
