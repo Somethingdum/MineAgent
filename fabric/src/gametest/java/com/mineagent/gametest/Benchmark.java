@@ -202,6 +202,12 @@ public final class Benchmark implements ModInitializer {
                 || placedNear(over, centre, Blocks.BLAST_FURNACE) || placedNear(over, centre, Blocks.SMOKER);
         boolean table = has.containsKey("minecraft:crafting_table") || placedNear(over, centre, Blocks.CRAFTING_TABLE);
         boolean hut = home != null && loop.hutNear("minecraft:overworld", home) || !loop.journal().search("built the hut", null, 3).isEmpty();
+        // Which kind of home (a hut of what, or dug into a hillside or down a stairway), from the place it kept.
+        String hutKind = "";
+        for (var p : loop.placeKeeper().memory().places()) {
+            if ("build".equals(p.kind()) && p.name() != null && p.name().startsWith("hut")) hutKind = p.name().split("\\|", 3).length > 1
+                    ? p.name().split("\\|", 3)[0].replace("hut_", "") + " " + p.name().split("\\|", 3)[1] : p.name();
+        }
         int deaths = 0, comeBack = 0;
         for (var e : loop.journal().search("", "death", 2_000)) {
             if (e.text().startsWith("came back")) comeBack++;
@@ -223,7 +229,8 @@ public final class Benchmark implements ModInitializer {
         out.put("at", dim + " " + sp.blockPosition().toShortString());
         out.put("health", sp.getHealth());
         out.put("doing", loop.doing());
-        out.put("summary", (minimum ? "MINIMUM MET" : "not yet") + " | hut " + hut + ", furnace " + furnace + ", table " + table + ", food " + food
+        out.put("hutKind", hutKind);
+        out.put("summary", (minimum ? "MINIMUM MET" : "not yet") + " | hut " + hut + (hutKind.isEmpty() ? "" : " (" + hutKind + ")") + ", furnace " + furnace + ", table " + table + ", food " + food
                 + ", fuel " + fuel + ", tools " + tools + " | " + dim + " " + sp.blockPosition().toShortString() + ", health "
                 + String.format("%.0f", sp.getHealth()) + ", deaths " + deaths + ", doing: " + loop.doing());
         return out;
