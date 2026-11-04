@@ -5087,9 +5087,15 @@ public class AgentLoop {
         // Its first base, where it stands (SMH plan 70, its owner: "It shouldn't wait to build a hut until it finds a
         // swamp ... The first hut is for it's progression up to iron level. After that, it'll go find a swamp and begin
         // it's hoarding. It can make it's first hut anywhere it wants."): a home hut, then the climb to iron from it.
-        idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        // On the ground, not where it stands in a tunnel or a cave (its hut goes up there).
+        int baseY = self.getBlockY();
+        if (!level.canSeeSky(self.blockPosition().above())) {
+            int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, self.getBlockX(), self.getBlockZ());
+            if (top > baseY + 1) baseY = top;
+        }
+        idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), baseY, self.getBlockZ());
         idleRadius = 48;
-        journal.record("survive", "made my first base here", now, dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        journal.record("survive", "made my first base here", now, dim, self.getBlockX(), baseY, self.getBlockZ());
         speakToOwner("Made my first base here: a hut, then iron gear. Once I'm in iron I'll find a swamp for my main base and start hoarding.");
         saveMemoryNow();
         // Its own prime: nothing handed over (its owner isn't here; what's yours is had on asking).

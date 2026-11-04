@@ -144,6 +144,12 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             toFill = new ArrayList<>(lastFill);
         } else {
             BlockPos here = ProductionTask.standing(sp);
+            // Underground (the seventh benchmark run made its first base in its coal tunnel, "no ground I can build
+            // it on"): the ground over its head, where a hut goes.
+            if (!level.canSeeSky(here.above())) {
+                int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, here.getX(), here.getZ());
+                if (top > here.getY() + 1) here = new BlockPos(here.getX(), top, here.getZ());
+            }
             BlockPos best = null;
             double bestD = Double.MAX_VALUE;
             for (int dy : new int[] {0, -1, 1, -2, 2}) {
