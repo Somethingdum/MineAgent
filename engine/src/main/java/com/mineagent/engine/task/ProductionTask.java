@@ -1121,6 +1121,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         var hunter = TaskContext.agentLoop(player);
         if (hunter != null) hunter.noteHunting(kind.substring(kind.indexOf(':') + 1)); // a reason to fight one (combat/FightWeighing)
         if (prey != null && !prey.isAlive()) {
+            System.out.println("[MineAgent] hunt: " + kind + " down at " + prey.blockPosition().toShortString() + ", carrying " + got + " of "
+                    + step.count() + " " + step.item());
             hunted.merge(step.block(), 1, Integer::sum);
             lootAt = prey.blockPosition().immutable();
             lootWait = 100;
@@ -1214,6 +1216,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         var drops = sp.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                 new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive() && com.mineagent.engine.survival.Manners.mayTake(e, sp));
         if (drops.isEmpty() || --lootWait <= 0 || navFailed) {
+            if (!drops.isEmpty()) System.out.println("[MineAgent] hunt: left " + drops.size() + " drops by " + lootAt.toShortString()
+                    + (navFailed ? " (no way to them)" : " (out of time)"));
             lootAt = null;
             chasing = null;
             nav.cancel();
