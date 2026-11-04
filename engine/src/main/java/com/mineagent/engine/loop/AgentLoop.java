@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-") || taskId.startsWith("netherite-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-") || taskId.startsWith("netherite-") || taskId.startsWith("recover-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -6564,7 +6564,7 @@ public class AgentLoop {
                 orderSince = now;
                 return;
             }
-            if (ended == TaskState.FAILED) {
+            if (ended == TaskState.FAILED && com.mineagent.engine.learning.DeathNote.recoveryAt(g.text()) == null) {
                 if (recover(g, note)) return;
             } else {
                 orderRungs.remove(g.id());
@@ -6582,6 +6582,7 @@ public class AgentLoop {
         // An owner's order doesn't wait on a model's turn (a chat reply, a practice idea): only on the body being free.
         if (busy || skillRuntime.active()) return;
         if (now - orderSince < 40L) return;
+        if (recoverOwnThings(g, now)) return;
         var order = orderIn(g.text(), companion.companionName());
         if (order.isEmpty() || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self)) return;
         dispatchingGoal = g.id();
@@ -6595,6 +6596,33 @@ public class AgentLoop {
             goalBook.pauseActive();
             saveMemoryNow();
         }
+    }
+
+    /**
+     * Its things where it died (the goal its death set, MA3.9), gone for by code, with no model (the fourth benchmark
+     * run's companion stood idle half a day behind "Recover your gear at ...", which only a model's turn had run): a
+     * walk back, what lies there picked up and kept. Once tried, done whatever came of it; and done, untried, once
+     * the five minutes things lie on the ground are up. True when the goal was this one.
+     */
+    private boolean recoverOwnThings(com.mineagent.engine.planning.GoalBook.Goal g, long now) {
+        int[] at = com.mineagent.engine.learning.DeathNote.recoveryAt(g.text());
+        if (at == null || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return false;
+        if (now - g.createdTick() > com.mineagent.engine.learning.DeathNote.ITEMS_LAST_TICKS || !com.mineagent.engine.settings.Switches.recoverDrops()) {
+            journal.record("death", "my things where I died are gone by now: not going back for them", now);
+            var next = goalBook.markDone(g.id());
+            saveMemoryNow();
+            next.ifPresent(n -> speakToOwner("Next: " + com.mineagent.engine.goal.Orders.withoutMark(n.text()) + "."));
+            return true;
+        }
+        String dim = g.text().contains(" in the nether") ? "minecraft:the_nether" : g.text().contains(" in the end") ? "minecraft:the_end"
+                : "minecraft:overworld";
+        orderGoalId = g.id();
+        orderSince = now;
+        orderSeen = false;
+        lastOrderState = null;
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.RecoverTask.RecoverRecord(
+                "recover-" + UUID.randomUUID(), dim, new net.minecraft.core.BlockPos(at[0], at[1], at[2]), true), reply -> { });
+        return true;
     }
 
     /**

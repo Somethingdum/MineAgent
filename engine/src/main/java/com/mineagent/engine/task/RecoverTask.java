@@ -30,11 +30,18 @@ public class RecoverTask extends CompanionTask<RecoverTask.RecoverRecord> {
     public static final class RecoverRecord extends TaskRecord {
         public final String dim;
         public final BlockPos at;
+        /** Its own things, where it died: picked up and kept (no model needed to go back for them). */
+        public final boolean own;
 
         public RecoverRecord(String toolCallId, String dim, BlockPos at) {
+            this(toolCallId, dim, at, false);
+        }
+
+        public RecoverRecord(String toolCallId, String dim, BlockPos at, boolean own) {
             super(toolCallId);
             this.dim = dim;
             this.at = at.immutable();
+            this.own = own;
         }
     }
 
@@ -98,7 +105,7 @@ public class RecoverTask extends CompanionTask<RecoverTask.RecoverRecord> {
                     ticks = 0;
                     return TaskState.RUNNING;
                 }
-                if (ticks > 3_600) return end(false, "I couldn't get to where you died");
+                if (ticks > 3_600) return end(false, record.own ? "I couldn't get to where I died" : "I couldn't get to where you died");
                 go(record.at, 2);
                 return TaskState.RUNNING;
             }
@@ -119,6 +126,9 @@ public class RecoverTask extends CompanionTask<RecoverTask.RecoverRecord> {
                 }
                 if (near == null || ticks > 1_200) {
                     tally(sp);
+                    if (record.own) {
+                        return got.isEmpty() ? end(false, "nothing of mine was left there") : end(true, "Got my things back: " + line() + ".");
+                    }
                     if (got.isEmpty()) return end(false, "nothing of yours was left there");
                     phase = Phase.BACK;
                     ticks = 0;
@@ -266,7 +276,7 @@ public class RecoverTask extends CompanionTask<RecoverTask.RecoverRecord> {
         TaskContext.inputDriver(player).clear();
         outcome = line;
         var loop = TaskContext.agentLoop(player);
-        if (loop != null) loop.say(ok ? line : "I couldn't get your things back: " + line + ".");
+        if (loop != null) loop.say(ok ? line : (record.own ? "I couldn't get my things back: " : "I couldn't get your things back: ") + line + ".");
         phase = ok ? Phase.DONE : Phase.FAILED;
         return ok ? TaskState.SUCCESS : TaskState.FAILED;
     }

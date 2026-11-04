@@ -31,6 +31,14 @@ public final class DeathNote {
                 + ": go there carefully (whatever killed you may still be there) and pick up what you dropped; it vanishes 5 minutes after the death.";
     }
 
+    /** Where a recovery goal sends it ({@code x y z}), or null for any other goal's words. */
+    public static int[] recoveryAt(String goalText) {
+        if (goalText == null || !goalText.startsWith(RECOVER_PREFIX)) return null;
+        var m = java.util.regex.Pattern.compile("^(-?\\d+) (-?\\d+) (-?\\d+)").matcher(goalText.substring(RECOVER_PREFIX.length()));
+        if (!m.find()) return null;
+        return new int[] {Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3))};
+    }
+
     /** The note on the goal it was on. */
     public static String note(String cause, int x, int y, int z) {
         String c = cause == null || cause.isBlank() ? "died" : cause.strip();
