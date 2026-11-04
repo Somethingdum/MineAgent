@@ -121,6 +121,12 @@ public final class TaskRegistration {
                 DumpJunkTask::new
         );
 
+        // A villager shut in a cell it walked into, built round its job site (SMH plan 70)
+        CompanionTaskFactory.register(
+                TrapVillagerTask.TrapRecord.class,
+                TrapVillagerTask::new
+        );
+
         // One who took from its chest told to give it back to its face (SMH plan 70)
         CompanionTaskFactory.register(
                 ConfrontTask.ConfrontRecord.class,

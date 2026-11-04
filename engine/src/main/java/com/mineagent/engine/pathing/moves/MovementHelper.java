@@ -23,7 +23,25 @@ public final class MovementHelper {
         BlockState feet = ctx.getBlockState(x, y, z);
         BlockState head = ctx.getBlockState(x, y + 1, z);
         if (feet == null || head == null) return false;
+        if (plateOverTnt(ctx, x, y, z, feet)) return false;
         return BlockHelper.isPassable(feet) && BlockHelper.isPassable(head);
+    }
+
+    /**
+     * A pressure plate with TNT under it (a desert temple's): never walked onto, nor fallen onto (SMH plan 70: temple
+     * traps). Other plates are walked over as a player walks over them.
+     */
+    static boolean plateOverTnt(CalculationContext ctx, int x, int y, int z, BlockState feet) {
+        if (!feet.is(net.minecraft.tags.BlockTags.PRESSURE_PLATES)) return false;
+        for (int dy = 1; dy <= 3; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    BlockState b = ctx.getBlockState(x + dx, y - dy, z + dz);
+                    if (b != null && b.is(net.minecraft.world.level.block.Blocks.TNT)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -49,6 +67,7 @@ public final class MovementHelper {
         BlockState feet = ctx.getBlockState(x, y, z);
         BlockState head = ctx.getBlockState(x, y + 1, z);
         if (below == null || feet == null || head == null) return false;
+        if (plateOverTnt(ctx, x, y, z, feet)) return false;
         boolean hasSupport = BlockHelper.canStandOn(below)
                 // A ladder/vine node is supported by the climbable itself;
                 // requiring a solid floor makes every elevated segment

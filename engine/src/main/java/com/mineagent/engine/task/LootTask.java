@@ -32,9 +32,13 @@ import java.util.Map;
  * Loot (SMH plan 70: "collect the craziest loot"): the chests and barrels the world made and no one has opened yet (they
  * still hold their loot table; a chest someone filled never does, so its owner's chests are never touched), round where
  * it stands, or round the nearest ruined portal, village, igloo or beached shipwreck it hasn't looted (sent with "go
- * looting"). Each opened as a player opens one and everything taken. A trapped chest, and any chest with TNT, a
- * tripwire, a dispenser or a stone pressure plate by it (a desert temple's floor, a jungle temple's), is left alone and
- * said so.
+ * looting"), desert and jungle temples and mineshafts among them. Each opened as a player opens one and everything taken,
+ * and the chest minecarts the world made (a mineshaft's) the same way. Traps are taken apart first, from beside, never
+ * stepped on (SMH plan 70, its owner: "Temple traps should be programmed"): a jungle temple's tripwire hooks broken before
+ * their string (string cut with shears, or left once its hooks are gone), its dispensers broken (their arrows taken); a
+ * desert temple's pressure plate over the TNT broken from the floor beside it (the pathfinder never steps on a plate with
+ * TNT under it, nor on string). A trapped chest (redstone of its own) and any chest by a trap it couldn't take apart is
+ * left alone and said so.
  */
 public class LootTask extends CompanionTask<LootTask.LootRecord> {
     public static final class LootRecord extends TaskRecord {
@@ -52,14 +56,24 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
     /** The structures it goes looting at: on the surface, no boss, no warden, no traps it can't see. */
     static final List<String> SITES = List.of("minecraft:ruined_portal", "minecraft:ruined_portal_desert", "minecraft:ruined_portal_jungle",
             "minecraft:ruined_portal_swamp", "minecraft:ruined_portal_mountain", "minecraft:village_plains", "minecraft:village_desert",
-            "minecraft:village_savanna", "minecraft:village_snowy", "minecraft:village_taiga", "minecraft:igloo", "minecraft:shipwreck_beached");
+            "minecraft:village_savanna", "minecraft:village_snowy", "minecraft:village_taiga", "minecraft:igloo", "minecraft:shipwreck_beached",
+            "minecraft:desert_pyramid", "minecraft:jungle_pyramid", "minecraft:mineshaft", "minecraft:mineshaft_mesa");
+    /** Sites under the ground: gone to at their own depth, not the surface over them. */
+    static final java.util.Set<String> UNDERGROUND = java.util.Set.of("minecraft:mineshaft", "minecraft:mineshaft_mesa");
 
-    private enum Phase { FIND, TRAVEL, SCAN, OPEN, DONE }
+    private enum Phase { FIND, TRAVEL, SCAN, DISARM, OPEN, CARTS, DONE }
 
     private PlayerNav nav;
     private Phase phase = Phase.FIND;
     private BlockPos site, triedAt;
     private final List<BlockPos> chests = new ArrayList<>();
+    /** The parts of the traps by its chests, in the order to take them apart; those it couldn't. */
+    private final List<BlockPos> parts = new ArrayList<>();
+    private final List<BlockPos> stuckParts = new ArrayList<>();
+    /** Chest minecarts with their loot still in them. */
+    private final List<net.minecraft.world.entity.vehicle.MinecartChest> carts = new ArrayList<>();
+    private boolean underground;
+    private int part, disarmed;
     private int index, ticks, opened, skipped, openTries;
     private final Map<String, Integer> got = new LinkedHashMap<>();
     private String outcome = "";
@@ -88,7 +102,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         return TaskState.RUNNING;
                     }
                     site = nearestSite(sp, level);
-                    if (site == null) return end(false, "there's no ruined portal, village, igloo or wreck within 1,600 blocks I haven't looted");
+                    if (site == null) return end(false, "there's nowhere worth looting within 1,600 blocks I haven't looted");
                     say("Off looting: the nearest place worth it, at " + site.getX() + ", " + site.getZ() + ", "
                             + (int) Math.sqrt(site.distSqr(sp.blockPosition())) + " blocks away.");
                     phase = Phase.TRAVEL;
@@ -97,14 +111,14 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                 }
                 case TRAVEL -> {
                     double dx = sp.getX() - site.getX(), dz = sp.getZ() - site.getZ();
-                    if (dx * dx + dz * dz <= 24.0 * 24.0) {
+                    if (dx * dx + dz * dz <= 24.0 * 24.0 && (!underground || Math.abs(sp.getY() - site.getY()) <= 12)) {
                         nav.cancel();
                         phase = Phase.SCAN;
                         return TaskState.RUNNING;
                     }
                     if (ticks > 36_000) return end(false, "I couldn't get there");
                     if (ticks % 100 == 1 || !nav.isNavigating()) {
-                        int y = level.isLoaded(site) ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        int y = underground ? site.getY() : level.isLoaded(site) ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                                 site.getX(), site.getZ()) : sp.getBlockY();
                         nav.navigateNear(site.getX(), y, site.getZ(), 8);
                     }
@@ -113,27 +127,133 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                 }
                 case SCAN -> {
                     chests.clear();
+                    parts.clear();
                     for (BlockPos p : unopened(level, site, RADIUS)) {
-                        if (trapped(level, p)) {
+                        if (level.getBlockEntity(p) instanceof TrappedChestBlockEntity) {
                             skipped++;
                             continue;
                         }
                         chests.add(p);
+                        for (BlockPos q : trapParts(level, p)) if (!parts.contains(q)) parts.add(q);
                     }
                     chests.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(sp.blockPosition())));
-                    System.out.println("[MineAgent] loot: " + chests.size() + " unopened, " + skipped + " trapped, round " + site.toShortString());
+                    order(parts, level);
+                    carts.clear();
+                    carts.addAll(level.getEntitiesOfClass(net.minecraft.world.entity.vehicle.MinecartChest.class,
+                            new net.minecraft.world.phys.AABB(site).inflate(RADIUS, 24, RADIUS), c -> c.isAlive() && c.getLootTable() != null));
+                    carts.sort(java.util.Comparator.comparingDouble(c -> c.distanceToSqr(sp)));
+                    System.out.println("[MineAgent] loot: " + chests.size() + " unopened, " + parts.size() + " trap parts, " + carts.size()
+                            + " chest minecarts, " + skipped + " trapped, round " + site.toShortString());
                     var loop = TaskContext.agentLoop(player);
                     if (loop != null && record.go) loop.noteLooted(level.dimension().location().toString(), site);
-                    if (chests.isEmpty()) return end(opened > 0 || skipped == 0 && !record.go,
-                            skipped > 0 ? "the only chests here have traps by them" : "there are no unopened chests here");
-                    phase = Phase.OPEN;
+                    if (chests.isEmpty() && carts.isEmpty()) return end(opened > 0 || skipped == 0 && !record.go,
+                            skipped > 0 ? "the only chests here are trapped" : "there are no unopened chests here");
+                    phase = parts.isEmpty() ? Phase.OPEN : Phase.DISARM;
+                    if (!parts.isEmpty()) say("Taking the traps apart first: " + parts.size() + (parts.size() == 1 ? " part." : " parts."));
                     index = 0;
+                    part = 0;
                     ticks = 0;
+                    return TaskState.RUNNING;
+                }
+                case DISARM -> {
+                    // Gone (broken by it, or never there): the next part.
+                    while (part < parts.size() && !isTrapPart(level, parts.get(part))) {
+                        part++;
+                        disarmed++;
+                        ticks = 0;
+                    }
+                    if (part >= parts.size()) {
+                        // Chests by a part it couldn't take apart stay shut.
+                        if (!stuckParts.isEmpty()) {
+                            int before = chests.size();
+                            chests.removeIf(c -> stuckParts.stream().anyMatch(q -> q.distSqr(c) <= 6 * 6 * 3));
+                            skipped += before - chests.size();
+                        }
+                        if (disarmed > 0) say("Traps taken apart: " + disarmed + (disarmed == 1 ? " part." : " parts."));
+                        phase = Phase.OPEN;
+                        index = 0;
+                        ticks = 0;
+                        return TaskState.RUNNING;
+                    }
+                    BlockPos q = parts.get(part);
+                    // From beside it, never on it: the pathfinder keeps off a plate over TNT and off string.
+                    if (q.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0 || standingOn(sp, q)) {
+                        if (ticks > 900) {
+                            stuckParts.add(q);
+                            part++;
+                            ticks = 0;
+                            return TaskState.RUNNING;
+                        }
+                        if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(q.getX(), q.getY(), q.getZ(), 2);
+                        nav.tick();
+                        return TaskState.RUNNING;
+                    }
+                    nav.cancel();
+                    TaskContext.inputDriver(player).clear();
+                    var st = level.getBlockState(q);
+                    // String cut with shears doesn't set it off (with its hooks gone first, nothing does).
+                    if (st.is(Blocks.TRIPWIRE)) TaskContext.selectInventoryItem(player, "minecraft:shears");
+                    if (ticks % 20 == 1) BlockDigger.startBreaking(sp, q);
+                    if (ticks > 400) {
+                        stuckParts.add(q);
+                        part++;
+                        ticks = 0;
+                    }
+                    return TaskState.RUNNING;
+                }
+                case CARTS -> {
+                    while (index < carts.size() && (!carts.get(index).isAlive() || carts.get(index).getLootTable() == null && carts.get(index) != triedCart)) index++;
+                    if (index >= carts.size()) return end(true, null);
+                    if (full(sp)) return end(opened > 0, "my pack is full");
+                    var cart = carts.get(index);
+                    if (sp.containerMenu != sp.inventoryMenu) {
+                        takeAll(sp, sp.containerMenu);
+                        sp.closeContainer();
+                        opened++;
+                        index++;
+                        ticks = 0;
+                        return TaskState.RUNNING;
+                    }
+                    if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, cart)) {
+                        if (ticks > 900) {
+                            index++;
+                            ticks = 0;
+                            return TaskState.RUNNING;
+                        }
+                        if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(cart.getBlockX(), cart.getBlockY(), cart.getBlockZ(), 1);
+                        nav.tick();
+                        return TaskState.RUNNING;
+                    }
+                    nav.cancel();
+                    TaskContext.inputDriver(player).clear();
+                    triedCart = cart;
+                    sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, cart.position());
+                    com.mineagent.engine.act.Interaction.interactEntity(sp, cart, net.minecraft.world.InteractionHand.MAIN_HAND);
+                    if (sp.containerMenu != sp.inventoryMenu) {
+                        takeAll(sp, sp.containerMenu);
+                        sp.closeContainer();
+                        opened++;
+                        index++;
+                        ticks = 0;
+                        return TaskState.RUNNING;
+                    }
+                    if (++openTries > 30) {
+                        index++;
+                        openTries = 0;
+                        ticks = 0;
+                    }
                     return TaskState.RUNNING;
                 }
                 case OPEN -> {
                     if (index >= chests.size()) {
                         System.out.println("[MineAgent] loot: done with " + chests.size() + ", opened " + opened);
+                        if (!carts.isEmpty()) {
+                            phase = Phase.CARTS;
+                            index = 0;
+                            ticks = 0;
+                            openTries = 0;
+                            return TaskState.RUNNING;
+                        }
                         return end(true, null);
                     }
                     if (full(sp)) return end(opened > 0, "my pack is full");
@@ -262,15 +382,39 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
         return out;
     }
 
-    /** TNT, a tripwire, a dispenser or a stone pressure plate within five blocks of it: a trap, left alone. */
-    static boolean trapped(ServerLevel level, BlockPos chest) {
-        for (BlockPos p : BlockPos.betweenClosed(chest.offset(-5, -5, -5), chest.offset(5, 5, 5))) {
-            var st = level.getBlockState(p);
-            if (st.is(Blocks.TNT) || st.is(Blocks.TRIPWIRE) || st.is(Blocks.TRIPWIRE_HOOK) || st.is(Blocks.DISPENSER)
-                    || st.is(Blocks.STONE_PRESSURE_PLATE)) return true;
+    /**
+     * The parts of the traps within six blocks of a chest: tripwire hooks, dispensers, tripwire string, and pressure
+     * plates with TNT under them. TNT with nothing to set it off is no trap.
+     */
+    static List<BlockPos> trapParts(ServerLevel level, BlockPos chest) {
+        List<BlockPos> out = new ArrayList<>();
+        for (BlockPos p : BlockPos.betweenClosed(chest.offset(-6, -5, -6), chest.offset(6, 5, 6))) {
+            if (isTrapPart(level, p)) out.add(p.immutable());
         }
-        return false;
+        return out;
     }
+
+    static boolean isTrapPart(ServerLevel level, BlockPos p) {
+        var st = level.getBlockState(p);
+        return st.is(Blocks.TRIPWIRE_HOOK) || st.is(Blocks.DISPENSER) || st.is(Blocks.TRIPWIRE)
+                || st.is(net.minecraft.tags.BlockTags.PRESSURE_PLATES) && com.mineagent.engine.pathing.util.BlockHelper.tntUnder(level, p);
+    }
+
+    /** Hooks first (their string then sets nothing off), the dispensers, the string, the plates; nearest first within each. */
+    private static void order(List<BlockPos> parts, ServerLevel level) {
+        parts.sort(java.util.Comparator.comparingInt((BlockPos p) -> {
+            var st = level.getBlockState(p);
+            return st.is(Blocks.TRIPWIRE_HOOK) ? 0 : st.is(Blocks.DISPENSER) ? 1 : st.is(Blocks.TRIPWIRE) ? 2 : 3;
+        }));
+    }
+
+    /** Its feet on (or in) that block. */
+    private static boolean standingOn(ServerPlayer sp, BlockPos p) {
+        BlockPos at = sp.blockPosition();
+        return at.equals(p) || at.below().equals(p);
+    }
+
+    private net.minecraft.world.entity.vehicle.MinecartChest triedCart;
 
     /** The nearest structure of {@link #SITES} within 100 chunks it hasn't looted, or null. */
     private BlockPos nearestSite(ServerPlayer sp, ServerLevel level) {
@@ -289,7 +433,10 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
             var match = level.getChunkSource().getGenerator().findNearestMapStructure(level, set, from, 100, false);
             if (match == null) return null;
             BlockPos at = match.getFirst();
-            if (loop == null || !loop.looted(dim, at)) return at;
+            if (loop == null || !loop.looted(dim, at)) {
+                underground = match.getSecond().unwrapKey().map(k -> UNDERGROUND.contains(k.location().toString())).orElse(false);
+                return at;
+            }
             double dx = at.getX() - sp.getX(), dz = at.getZ() - sp.getZ();
             double len = Math.max(1.0, Math.sqrt(dx * dx + dz * dz));
             from = new BlockPos((int) (at.getX() + dx / len * 96), at.getY(), (int) (at.getZ() + dz / len * 96));

@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-") || taskId.startsWith("trap-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1619,6 +1619,36 @@ public class AgentLoop {
                 journal.record("order", "dump the junk", currentGameTickSafe());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DumpJunkTask.DumpRecord(
                         "junk-" + UUID.randomUUID(), hoardKeeps()), reply -> { });
+                return true;
+            }
+            case TRAP_VILLAGER -> {
+                var me = self.serverPlayer();
+                var owner = self.serverPlayerOwner();
+                if (me == null) return false;
+                // The villager its owner looks at, else the nearest to them (or to it) with a job site.
+                var from = owner != null && owner.level() == me.level() ? owner : me;
+                net.minecraft.world.entity.npc.Villager pick = null;
+                double best = Double.MAX_VALUE;
+                for (var v : me.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class, from.getBoundingBox().inflate(24, 8, 24),
+                        net.minecraft.world.entity.npc.Villager::isAlive)) {
+                    if (v.isBaby() || v.getBrain().getMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE).isEmpty()) continue;
+                    var look = from.getViewVector(1.0f);
+                    var to = v.getEyePosition().subtract(from.getEyePosition());
+                    double d = to.length();
+                    double score = d - (d > 0 && look.dot(to.scale(1 / d)) > 0.97 ? 100 : 0);
+                    if (score < best) {
+                        best = score;
+                        pick = v;
+                    }
+                }
+                if (pick == null) {
+                    speakToOwner("There's no villager with a job site near you to shut in.");
+                    return true;
+                }
+                journal.record("order", "trap a villager", currentGameTickSafe());
+                speakToOwner("I'll build a cell round its job site and shut it in when it comes to work.");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TrapVillagerTask.TrapRecord(
+                        "trap-" + UUID.randomUUID(), pick.getUUID()), reply -> { });
                 return true;
             }
             case FORGIVE -> {
@@ -5284,7 +5314,49 @@ public class AgentLoop {
                 return;
             }
         }
+        if (trapKeeper(self, level)) return;
         trainKeepers(self, level);
+    }
+
+    /** Kept villagers it has shut in a cell (task/TrapVillagerTask), by their ids; kept with the world. */
+    private final java.util.Set<String> trapped = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+    public void noteTrapped(UUID id) {
+        if (id == null) return;
+        synchronized (trapped) {
+            while (trapped.size() >= 256) trapped.remove(trapped.iterator().next());
+            trapped.add(id.toString());
+        }
+        saveMemoryNow();
+    }
+
+    public java.util.Set<String> trappedVillagers() {
+        synchronized (trapped) {
+            return java.util.Set.copyOf(trapped);
+        }
+    }
+
+    public void trappedVillagers(java.util.Collection<String> ids) {
+        trapped.clear();
+        if (ids != null) for (String s : ids) if (s != null && trapped.size() < 256) trapped.add(s);
+    }
+
+    /**
+     * A villager it keeps that isn't shut in yet, near and with a job site: its cell built round the job site, for it to
+     * walk into (task/TrapVillagerTask). One that never came is tried later, longer each time.
+     */
+    private boolean trapKeeper(net.minecraft.server.level.ServerPlayer self, net.minecraft.server.level.ServerLevel level) {
+        for (var v : level.getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class, self.getBoundingBox().inflate(48, 12, 48),
+                net.minecraft.world.entity.npc.Villager::isAlive)) {
+            String id = v.getUUID().toString();
+            if (!keepers.contains(id) || trapped.contains(id) || v.isBaby()) continue;
+            if (v.getBrain().getMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE).isEmpty() || !mayTry("trap:" + id)) continue;
+            journal.record("mastery", "building a cell round a keeper's job site, for it to walk into", currentGameTickSafe());
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TrapVillagerTask.TrapRecord(
+                    freeJob("trap-", "trap:" + id), v.getUUID()), reply -> { });
+            return true;
+        }
+        return false;
     }
 
     /** What to run once a task it started for itself is done (by task id), and what is ready to run on the next tick. */

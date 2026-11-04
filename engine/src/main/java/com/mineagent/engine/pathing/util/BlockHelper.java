@@ -139,7 +139,21 @@ public final class BlockHelper {
                 || state.is(Blocks.CACTUS)
                 || state.is(Blocks.SWEET_BERRY_BUSH)
                 || state.is(Blocks.WITHER_ROSE)
-                || state.is(Blocks.POWDER_SNOW);
+                || state.is(Blocks.POWDER_SNOW)
+                // A tripwire's string: walked through, it sets off its trap (SMH plan 70: temple traps).
+                || state.is(Blocks.TRIPWIRE);
+    }
+
+    /** TNT under a block, within three below it and one to each side (a desert temple's floor under its plate). */
+    public static boolean tntUnder(net.minecraft.world.level.BlockGetter level, BlockPos p) {
+        for (int dy = 1; dy <= 3; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (level.getBlockState(p.offset(dx, -dy, dz)).is(Blocks.TNT)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

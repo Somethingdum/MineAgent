@@ -250,6 +250,7 @@ public class MemoryPersistence {
             data.add("answers", GSON.toJsonTree(loop.asking().exportTold()));
             data.addProperty("protectOwner", loop.protectsOwner());
             data.add("keepers", GSON.toJsonTree(new java.util.ArrayList<>(loop.keepers())));
+            data.add("trapped", GSON.toJsonTree(new java.util.ArrayList<>(loop.trappedVillagers())));
             data.addProperty("speedrun", loop.speedrun());
             data.addProperty("onItsOwn", loop.onItsOwn());
             data.add("looted", GSON.toJsonTree(new java.util.ArrayList<>(loop.lootedPlaces())));
@@ -308,6 +309,11 @@ public class MemoryPersistence {
                 java.util.List<String> keys = new java.util.ArrayList<>();
                 for (var e : data.getAsJsonArray("looted")) if (e.isJsonPrimitive()) keys.add(e.getAsString());
                 loop.lootedPlaces(keys);
+            }
+            if (loop != null && data.has("trapped") && data.get("trapped").isJsonArray()) {
+                java.util.List<String> ids = new java.util.ArrayList<>();
+                for (var e : data.getAsJsonArray("trapped")) if (e.isJsonPrimitive()) ids.add(e.getAsString());
+                loop.trappedVillagers(ids);
             }
             if (loop != null && data.has("keepers") && data.get("keepers").isJsonArray()) {
                 java.util.List<String> ids = new java.util.ArrayList<>();

@@ -87,6 +87,10 @@ public class LibrarianTask extends CompanionTask<LibrarianTask.RollRecord> {
                     phase = Phase.CELL;
                     ticks = 0;
                 }
+                if (phase == Phase.CELL) {
+                    return end(true, "a librarian selling " + book() + (locked ? ", one bought to fix it" : "")
+                            + (st == TaskState.SUCCESS ? ", shut in a cell by its lectern" : ", not shut in yet (it didn't come to its lectern)"));
+                }
                 return TaskState.RUNNING;
             }
             ticks++;
@@ -207,9 +211,10 @@ public class LibrarianTask extends CompanionTask<LibrarianTask.RollRecord> {
                     sub.start();
                 }
                 case CELL -> {
-                    TaskState c = cell(sp, level);
-                    if (c != TaskState.RUNNING) return end(true, "a librarian selling " + book() + (locked ? ", one bought to fix it" : "")
-                            + (c == TaskState.SUCCESS ? ", walled in with its lectern" : ", not walled in (no blocks, or it wouldn't stay put)"));
+                    // The cell round its lectern, for it to walk into as it comes to work (task/TrapVillagerTask): built
+                    // first, shut once it is in, as walls put up round it while it stood there didn't hold it.
+                    sub = new TrapVillagerTask(player, new TrapVillagerTask.TrapRecord(record.toolCallId() + ":cell", villager.getUUID()));
+                    sub.start();
                 }
                 default -> {
                     return phase == Phase.DONE ? TaskState.SUCCESS : TaskState.FAILED;
@@ -219,45 +224,6 @@ public class LibrarianTask extends CompanionTask<LibrarianTask.RollRecord> {
         } catch (RuntimeException e) {
             return end(false, "something went wrong: " + e.getMessage());
         }
-    }
-
-    /** The cell's blocks placed so far, and the cell it is building round. */
-    private BlockPos cellAt;
-
-    /**
-     * A cell round the villager where it stands by its lectern: its four sides at its feet and head walled, a roof, the
-     * lectern for one side at its feet and a window over it to trade through. Built when it stands in the cell beside
-     * the lectern; RUNNING while it builds, SUCCESS when sealed, FAILED with no blocks or after two minutes.
-     */
-    private TaskState cell(ServerPlayer sp, ServerLevel level) {
-        if (ticks > 2_400 || !Placement.hasSupportBlock(sp)) return TaskState.FAILED;
-        BlockPos v = villager.blockPosition();
-        // Beside its lectern (or diagonal to it): the cell is where it stands.
-        if (Math.abs(v.getX() - lectern.getX()) > 1 || Math.abs(v.getZ() - lectern.getZ()) > 1 || v.getY() != lectern.getY()) return TaskState.RUNNING;
-        cellAt = v;
-        List<BlockPos> walls = new ArrayList<>();
-        for (Direction d : Direction.Plane.HORIZONTAL) {
-            BlockPos side = v.relative(d);
-            if (side.equals(lectern)) continue; // the lectern is that side; the window is over it
-            walls.add(side);
-            walls.add(side.above());
-        }
-        walls.add(v.above(2));
-        boolean sealed = true;
-        for (BlockPos w : walls) {
-            var st = level.getBlockState(w);
-            if (!st.canBeReplaced()) continue;
-            sealed = false;
-            if (w.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
-                if (ticks % 20 == 1) nav.navigateNear(w.getX(), w.getY(), w.getZ(), 2);
-                nav.tick();
-                return TaskState.RUNNING;
-            }
-            nav.cancel();
-            Placement.placeAnySupportBlock(sp, w);
-            return TaskState.RUNNING; // one a tick
-        }
-        return sealed ? TaskState.SUCCESS : TaskState.RUNNING;
     }
 
     /** The nearest grown villager with no job, or a librarian no one has traded with, within 32 blocks. */

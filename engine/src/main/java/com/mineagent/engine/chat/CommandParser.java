@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE, DRAGON, END_PORTAL, DUMP_JUNK, GRIND_XP, FORGIVE, REVENGE }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE, DRAGON, END_PORTAL, DUMP_JUNK, GRIND_XP, FORGIVE, REVENGE, TRAP_VILLAGER }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -205,6 +205,10 @@ public final class CommandParser {
             + "|revenge (?:mode|on|style)|thieves die|go revenge mode)$");
     private static final Pattern REVENGE_OFF = Pattern.compile("^(?:(?:just )?ask (?:for (?:your|the) (?:stuff|things|items) back|them to give it back)"
             + "|don'?t kill thieves|no (?:more )?revenge|revenge off)$");
+    /** "Trap that villager", "lock the villager in", "wall in the librarian": a cell built round its job site, shut once it is in. */
+    private static final Pattern TRAP = Pattern.compile("^(?:trap|lock up|lock in|wall in|wall up|box in|cage|shut in) (?:the |that |this |a |my )?"
+            + "(?:villager|librarian|farmer|cleric|armou?rer|weaponsmith|toolsmith|fletcher|cartographer|butcher|leatherworker|mason|shepherd|fisherman)s?(?: in| up)?$"
+            + "|^(?:lock|wall|box|shut) (?:the |that |this )?villagers? (?:in|up)$");
     private static final Pattern DUMP = Pattern.compile("^(?:dump|throw (?:out|away)|toss|get rid of|bin|burn|trash)(?: all)? (?:your |the |that |all the |all your )?(?:junk|trash|garbage|rubbish|useless stuff|extra cobble(?:stone)?)$"
             + "|^(?:clean|clear|sort|tidy) (?:out |up )?your (?:inventory|pack|bag)$");
     /** "Cure the zombie villager", "cure that zombie", "cure zombie villagers". */
@@ -297,6 +301,7 @@ public final class CommandParser {
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
         if (DUMP.matcher(t).matches()) return Optional.of(new Command(Kind.DUMP_JUNK, null, null));
+        if (TRAP.matcher(t).matches()) return Optional.of(new Command(Kind.TRAP_VILLAGER, null, null));
         var forgive = FORGIVE.matcher(t);
         if (forgive.matches()) return Optional.of(new Command(Kind.FORGIVE, forgive.group(1) != null ? forgive.group(1) : forgive.group(2), null));
         if (REVENGE_ON.matcher(t).matches()) return Optional.of(new Command(Kind.REVENGE, "on", null));

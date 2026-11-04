@@ -332,4 +332,10 @@ final class CommandParserTest {
         assertEquals("off", CommandParser.parse("don't kill thieves", "Pal").orElseThrow().value());
         assertTrue(CommandParser.parse("let me know", "Pal").map(c -> c.kind() != CommandParser.Kind.FORGIVE).orElse(true), "not a forgiving");
     }
+
+    @Test void villagersTrapped() {
+        for (String said : new String[] {"trap that villager", "lock the villager in", "wall in the librarian", "trap the villagers", "box in that farmer"}) {
+            assertEquals(CommandParser.Kind.TRAP_VILLAGER, CommandParser.parse(said, "Pal").orElseThrow(() -> new AssertionError(said)).kind(), said);
+        }
+    }
 }

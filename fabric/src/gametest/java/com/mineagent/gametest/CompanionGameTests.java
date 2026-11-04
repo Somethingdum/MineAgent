@@ -4169,6 +4169,56 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, trapping villagers ("They move too much to block in easily."): a villager with no job wanders the field;
+     * a lectern stands off by itself. The cell is built round the lectern first, open at one end; the villager comes to
+     * take the lectern as villagers do, steps into the only spot beside it, and one block shuts it in. It stays in.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trap_villager", timeoutTicks = 3000)
+    public void aWanderingVillagerWalksIntoItsCellAndIsShutIn(GameTestHelper helper) {
+        Scene s = scene(helper, "Warden2");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        // Villagers work by day: the clock on to the next morning (never back).
+        long t = helper.getLevel().getDayTime(), morning = t - Math.floorMod(t, 24_000L) + 2_500L;
+        helper.getLevel().setDayTime(morning < t ? morning + 24_000L : morning);
+        s.body().getInventory().setItem(1, new ItemStack(Items.COBBLESTONE, 64));
+        BlockPos lectern = new BlockPos(12, 1, 10);
+        helper.setBlock(lectern, Blocks.LECTERN);
+        var villager = helper.spawn(EntityType.VILLAGER, new BlockPos(3, 1, 12));
+        BlockPos abs = helper.absolutePos(lectern);
+        helper.runAfterDelay(5, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.engine.task.TrapVillagerTask.TrapRecord("trap-scene", villager.getUUID(), abs), r -> { }));
+        long[] shutAt = {-1};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) {
+                trace(helper, s, "trap");
+                System.out.println("[SCENE trap] villager at " + rel(helper, villager.blockPosition()).toShortString() + ", "
+                        + villager.getVillagerData().getProfession());
+            }
+            String done = lastSaid(s, "The villager walked into its cell");
+            if (!done.isEmpty() && shutAt[0] < 0) shutAt[0] = helper.getTick();
+            String failed = lastSaid(s, "I couldn't shut the villager in");
+            // Shut in, and still in a hundred ticks on.
+            if (shutAt[0] >= 0 && helper.getTick() >= shutAt[0] + 100 || !failed.isEmpty() || helper.getTick() >= 2900) {
+                var cellNow = rel(helper, villager.blockPosition());
+                boolean besideLectern = Math.abs(cellNow.getX() - lectern.getX()) + Math.abs(cellNow.getZ() - lectern.getZ()) == 1;
+                // Every way out of where it stands is a block (or the lectern), at its feet.
+                int open = 0;
+                for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                    BlockPos n = villager.blockPosition().relative(d);
+                    if (helper.getLevel().getBlockState(n).getCollisionShape(helper.getLevel(), n).isEmpty()) open++;
+                }
+                String how = "shut in " + (shutAt[0] >= 0) + "; the villager at " + cellNow.toShortString() + " beside the lectern " + besideLectern
+                        + ", ways out at its feet " + open + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                boolean ok = shutAt[0] >= 0 && besideLectern && open == 0;
+                villager.discard();
+                tidy(s);
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** A chest of the companion's own by it, holding {@code n} diamonds, as it would know it. */
     private static net.minecraft.world.level.block.entity.ChestBlockEntity ownChest(GameTestHelper helper, Scene s, BlockPos at, int n) {
         helper.setBlock(at, Blocks.CHEST);
@@ -4575,40 +4625,136 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * SMH plan 70, "collect the craziest loot": two chests the world made (a ruined portal's loot, never opened), one of
-     * them with TNT under it as a desert temple has: "loot the chests here" empties the first into its pack and leaves
-     * the trapped one shut.
+     * SMH plan 70, temple traps ("Temple traps should be programmed"): two chests the world made (ruined portal loot, never
+     * opened); in front of the second, a stone pressure plate over nine TNT, as a desert temple's floor. "Loot the chests
+     * here": the plate is broken from beside it (never stepped on), the TNT all still there, both chests emptied into its
+     * pack.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot", timeoutTicks = 1200)
-    public void theWorldsChestsAreLootedTheTrappedOneLeft(GameTestHelper helper) {
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot", timeoutTicks = 1400)
+    public void aDesertTrapIsTakenApartAndBothChestsLooted(GameTestHelper helper) {
         Scene s = scene(helper, "Looter");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
-        BlockPos loot = new BlockPos(8, 1, 6), trapped = new BlockPos(18, 1, 16);
-        for (BlockPos c : new BlockPos[] {loot, trapped}) {
+        BlockPos loot = new BlockPos(8, 1, 6), guarded = new BlockPos(14, 1, 14), plate = new BlockPos(14, 1, 12);
+        for (BlockPos c : new BlockPos[] {loot, guarded}) {
             helper.setBlock(c, Blocks.CHEST);
             if (helper.getLevel().getBlockEntity(helper.absolutePos(c)) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest) {
                 chest.setLootTable(net.minecraft.world.level.storage.loot.BuiltInLootTables.RUINED_PORTAL, 42L);
             }
         }
-        helper.setBlock(trapped.offset(0, -1, 1), Blocks.TNT);
+        for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) helper.setBlock(plate.offset(dx, -1, dz), Blocks.TNT);
+        helper.setBlock(plate, Blocks.STONE_PRESSURE_PLATE);
         helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "loot the chests here"));
         helper.onEachTick(() -> {
             if (helper.getTick() % 200 == 0) trace(helper, s, "loot");
             String done = lastSaid(s, "Looted");
             String none = lastSaid(s, "No loot");
-            if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 1100) {
+            if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 1300) {
                 var a = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(loot));
-                var b = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(trapped));
-                // Asked before its slots are read: reading them makes the loot, as opening does.
-                boolean aOpened = a.getLootTable() == null, trappedShut = b.getLootTable() != null;
-                int left = 0;
-                for (int i = 0; i < a.getContainerSize(); i++) left += a.getItem(i).getCount();
+                var b = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(guarded));
+                // Asked before their slots are read: reading them makes the loot, as opening does.
+                boolean aOpened = a != null && a.getLootTable() == null, bOpened = b != null && b.getLootTable() == null;
+                int tnt = 0;
+                for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
+                    if (helper.getLevel().getBlockState(helper.absolutePos(plate.offset(dx, -1, dz))).is(Blocks.TNT)) tnt++;
+                }
+                boolean plateGone = !helper.getLevel().getBlockState(helper.absolutePos(plate)).is(Blocks.STONE_PRESSURE_PLATE);
                 int carried = 0;
                 for (int i = 0; i < 36; i++) carried += s.body().getInventory().getItem(i).getCount();
-                String how = "looted chest opened " + aOpened + " with " + left + " left in it, " + carried
-                        + " carried, trapped one shut " + trappedShut + "; said: " + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
+                String how = "first chest opened " + aOpened + ", the guarded one " + bOpened + "; plate gone " + plateGone + ", TNT left " + tnt
+                        + " of 9; carried " + carried + "; alive " + s.body().isAlive() + "; said: "
+                        + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
+                boolean ok = aOpened && bOpened && plateGone && tnt == 9 && carried > 0 && s.body().isAlive();
                 tidy(s);
-                if (aOpened && left == 0 && carried > 0 && trappedShut && !done.isEmpty()) helper.succeed();
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, temple traps: a jungle temple's tripwire across the only way to the chest (walls either side), its
+     * hooks on the walls and a dispenser of arrows by one hook. The hooks are broken first, then the dispenser and the
+     * string; nothing is fired, and the chest is looted.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot_tripwire", timeoutTicks = 1400)
+    public void aTripwireTrapIsTakenApartBeforeTheChest(GameTestHelper helper) {
+        Scene s = scene(helper, "Delver");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos chest = new BlockPos(8, 1, 16);
+        helper.setBlock(chest, Blocks.CHEST);
+        if (helper.getLevel().getBlockEntity(helper.absolutePos(chest)) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity c) {
+            c.setLootTable(net.minecraft.world.level.storage.loot.BuiltInLootTables.JUNGLE_TEMPLE, 7L);
+        }
+        // A wall across the field at z 12, two high, but for the tripwire's gap at x 7 to 9.
+        for (int x = -1; x <= 17; x++) {
+            if (x >= 7 && x <= 9) continue;
+            helper.setBlock(x, 1, 12, Blocks.MOSSY_COBBLESTONE);
+            helper.setBlock(x, 2, 12, Blocks.MOSSY_COBBLESTONE);
+        }
+        for (int x = 7; x <= 9; x++) helper.setBlock(x, 2, 12, Blocks.MOSSY_COBBLESTONE);
+        var hook = Blocks.TRIPWIRE_HOOK.defaultBlockState().setValue(net.minecraft.world.level.block.TripWireHookBlock.ATTACHED, true);
+        // The hooks sit in the gap's ends, on the wall either side, facing in.
+        helper.setBlock(new BlockPos(7, 1, 12), hook.setValue(net.minecraft.world.level.block.TripWireHookBlock.FACING, net.minecraft.core.Direction.EAST));
+        helper.setBlock(new BlockPos(9, 1, 12), hook.setValue(net.minecraft.world.level.block.TripWireHookBlock.FACING, net.minecraft.core.Direction.WEST));
+        helper.setBlock(new BlockPos(8, 1, 12), Blocks.TRIPWIRE.defaultBlockState().setValue(net.minecraft.world.level.block.TripWireBlock.ATTACHED, true));
+        // The dispenser beside the wall by the first hook, facing the way it comes.
+        helper.setBlock(new BlockPos(7, 1, 11), Blocks.DISPENSER.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.DispenserBlock.FACING, net.minecraft.core.Direction.NORTH));
+        if (helper.getLevel().getBlockEntity(helper.absolutePos(new BlockPos(7, 1, 11))) instanceof net.minecraft.world.level.block.entity.DispenserBlockEntity d) {
+            d.setItem(0, new ItemStack(Items.ARROW, 9));
+        }
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "loot the chests here"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "tripwire");
+            String done = lastSaid(s, "Looted");
+            String none = lastSaid(s, "No loot");
+            int arrowsFlying = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.projectile.Arrow.class,
+                    new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(0, 0, 0))).expandTowards(20, 8, 20), a -> a.getOwner() == null).size();
+            if (arrowsFlying > 0 || !done.isEmpty() || !none.isEmpty() || helper.getTick() >= 1300) {
+                var c = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(chest));
+                boolean opened = c != null && c.getLootTable() == null;
+                int parts = 0;
+                for (BlockPos q : new BlockPos[] {new BlockPos(7, 1, 12), new BlockPos(8, 1, 12), new BlockPos(9, 1, 12), new BlockPos(7, 1, 11)}) {
+                    if (!helper.getLevel().getBlockState(helper.absolutePos(q)).isAir()) parts++;
+                }
+                String how = "chest opened " + opened + "; trap parts left " + parts + "; arrows fired " + arrowsFlying + "; health "
+                        + s.body().getHealth() + "; said: " + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
+                boolean ok = opened && parts == 0 && arrowsFlying == 0 && s.body().getHealth() >= s.body().getMaxHealth() - 0.5f;
+                tidy(s);
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** SMH plan 70: a mineshaft's chest minecart (its loot not made yet) is opened as a player opens one and emptied. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot_cart", timeoutTicks = 800)
+    public void aChestMinecartIsLooted(GameTestHelper helper) {
+        Scene s = scene(helper, "Prospector");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos rail = new BlockPos(10, 1, 8);
+        helper.setBlock(rail, Blocks.RAIL);
+        BlockPos abs = helper.absolutePos(rail);
+        var cart = new net.minecraft.world.entity.vehicle.MinecartChest(helper.getLevel(), abs.getX() + 0.5, abs.getY() + 0.1, abs.getZ() + 0.5);
+        cart.setLootTable(net.minecraft.world.level.storage.loot.BuiltInLootTables.ABANDONED_MINESHAFT, 11L);
+        helper.getLevel().addFreshEntity(cart);
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "loot the chests here"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "cart");
+            String done = lastSaid(s, "Looted");
+            String none = lastSaid(s, "No loot");
+            if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 700) {
+                boolean opened = cart.getLootTable() == null;
+                int left = 0;
+                for (int i = 0; i < cart.getContainerSize(); i++) left += cart.getItem(i).getCount();
+                int carried = 0;
+                for (int i = 0; i < 36; i++) carried += s.body().getInventory().getItem(i).getCount();
+                String how = "cart opened " + opened + ", " + left + " left in it, " + carried + " carried; said: "
+                        + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
+                boolean ok = opened && left == 0 && carried > 0;
+                cart.discard();
+                tidy(s);
+                if (ok) helper.succeed();
                 else fail(helper, how);
             }
         });
