@@ -11,8 +11,8 @@ import java.util.List;
  *
  * <p>Along one direction {@code d} from the job site J: the cell C (beside J, where it stands to work), then the way in E.
  * Walls at feet and head on C's two sides and on every other cell round J it could work from (behind J and its four
- * corners), a roof over C, over J and over E (so it can't climb on J or on the door block and out), hung from a block
- * over C's side wall (each block goes against one already there, in the order given). The door is E's
+ * corners), a roof over C and over E (so it can't climb on the door block and out), hung from a block over C's side
+ * wall, and a block on J (no standing on it; each block goes against one already there, in the order given). The door is E's
  * feet block, one placement; E's head stays open, a gap one high that a villager can't get through and that it is
  * traded with through, from outside E. Pure.
  */
@@ -47,12 +47,13 @@ public final class VillagerCell {
             walls.add(p);
             walls.add(p.plus(0, 1, 0));
         }
-        // Roofs: over the cell, over the job site (no standing on it), over the way in (no climbing on the door block).
-        // A block goes against another (the game's rule): first one over the cell's side wall, for the cell's roof to go
-        // against, and the other two against that.
+        // Roofs: over the cell and over the way in (no climbing on the door block), and a block on the job site (no
+        // standing on it, and too high to climb from the cell). A block goes against another (the game's rule): first
+        // one over the cell's side wall, for the cell's roof to go against, and the way in's against that; the one on the
+        // job site against the inside of its side walls, in sight from the way in.
         walls.add(c.plus(sx, 2, sz));
         walls.add(c.plus(0, 2, 0));
-        walls.add(j.plus(0, 2, 0));
+        walls.add(j.plus(0, 1, 0));
         walls.add(e.plus(0, 2, 0));
         return new Layout(j, c, e, e, e.plus(dx, 0, dz), List.copyOf(walls));
     }

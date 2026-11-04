@@ -27,8 +27,8 @@ class VillagerCellTest {
             assertTrue(l.walls().contains(new VillagerCell.Pos(c.x(), c.y() + 2, c.z())), "a roof");
             assertTrue(l.walls().contains(new VillagerCell.Pos(l.door().x(), l.door().y() + 2, l.door().z())),
                     "nothing to climb out on over the door block");
-            assertTrue(l.walls().contains(new VillagerCell.Pos(l.jobSite().x(), l.jobSite().y() + 2, l.jobSite().z())),
-                    "nor over its job site");
+            assertTrue(l.walls().contains(new VillagerCell.Pos(l.jobSite().x(), l.jobSite().y() + 1, l.jobSite().z())),
+                    "nor standing on its job site");
         }
     }
 
@@ -48,7 +48,7 @@ class VillagerCellTest {
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) if (x != 0 || z != 0) round.add(new VillagerCell.Pos(j.x() + x, j.y(), j.z() + z));
         round.remove(l.cell());
         for (var p : round) assertTrue(l.walls().contains(p), "no other spot by its job site: " + p);
-        assertEquals(18, l.walls().size(), "seven cells walled two high, three roofs and the block they hang from");
+        assertEquals(18, l.walls().size(), "seven cells walled two high, two roofs and the block they hang from, one on the job site");
     }
 
     @Test void eachBlockGoesAgainstOneAlreadyThere() {
