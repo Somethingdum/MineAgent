@@ -370,6 +370,9 @@ public class PathingCore {
     private boolean inAHole() {
         var sp = TaskContext.serverPlayer(player);
         if (sp == null || !com.mineagent.engine.settings.Switches.wayOutOfHoles()) return false;
+        // The Overworld's: under the Nether's roof everywhere is "under the ground", and its walks (to a portal, home
+        // through it) are their own business.
+        if (sp.serverLevel().dimension() != net.minecraft.world.level.Level.OVERWORLD) return false;
         if (surfaceAround(sp) - sp.getBlockY() < 2) return false;
         var level = sp.serverLevel();
         var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
