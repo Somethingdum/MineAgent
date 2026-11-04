@@ -5403,13 +5403,11 @@ public class AgentLoop {
         // Its owner: "The main goals are a tool kit and a shabby hut. A bed if possible." And "It just needs ENOUGH food
         // to survive until morning." So: a stone pickaxe and a crafting table (carried: the benchmark found the one it
         // put down left up the hill from its mine; living on its own, its hut goes up after these, see coreKit), the
-        // rest of its tools, a furnace, a night's food, fuel, and a bed when there is wool to be had here.
+        // rest of its tools, a furnace, fuel, a night's food, and a bed when there is wool to be had here.
         o.add(coreKit(self));
         o.removeIf(String::isEmpty);
         for (String kind : List.of("sword", "axe", "shovel")) if (!hasTool(self, kind, 2)) o.add("make me a stone " + kind);
         if (inv.countItem(net.minecraft.world.item.Items.FURNACE) == 0 && !furnaceAtHome(self)) o.add("make me 1 furnace");
-        if (foodOn(self) < KIT_FOOD) o.add("make me " + KIT_FOOD + " food");
-        // Coal mined (it is in the stone it digs anyway; charcoal wants wood, which near a base runs out), else charcoal.
         // Coal where it has seen coal ore near; else charcoal, from the trees it fells anyway and its furnace (the
         // three-world run: a whole game in one world on 3 coal, its coal orders done "as much as I could"). Every
         // other try, the other.
@@ -5422,6 +5420,9 @@ public class AgentLoop {
             boolean other = kitTries + keptUpTries > 1 && (kitTries + keptUpTries) % 2 == 0;
             o.add(coalNear != other ? "make me 8 coal" : "make me 8 charcoal");
         }
+        // Food after its fuel: a hunt can run on half a day with nothing to show (the herds left to breed, or none here),
+        // and its fuel waited behind it; the fuel is sure, from the trees and its furnace.
+        if (foodOn(self) < KIT_FOOD) o.add("make me " + KIT_FOOD + " food");
         String bed = bedToMake(self);
         if (bed != null) o.add("make me 1 " + bed);
         return String.join(", then ", o);

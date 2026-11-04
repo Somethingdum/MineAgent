@@ -51,7 +51,7 @@ def read():
     shown = [l for l in bench if l.strip() != "[BENCH] report"]
     title = (finished[-1] if finished else shown[-1] if shown else "[BENCH] Starting").replace("[BENCH] ", "", 1)
     summary = "\n".join(["Status:"] + shown[-12:] + ["", "What it said lately:"] + said[-40:]
-                        + ["", "Its work, traced:"] + [t[:400] for t in traced[-60:]])
+                        + ["", "Its work, traced:"] + [t[:1500 if "food to make" in t else 400] for t in traced[-60:]])
     return title[:250], summary[:60000], done
 
 

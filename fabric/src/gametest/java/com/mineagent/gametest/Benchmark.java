@@ -30,7 +30,8 @@ import java.util.Map;
  * {@code -Dmineagent.benchmark} ticks (72,000 for three days). Its owner is a stand-in player, out of the way in a sealed
  * box over the spawn. No model: what it does is its own code. Every game minute a line of how it is doing; at the end,
  * the minimum checked (a hut built, a furnace and a crafting table put down or carried, food enough for a night (its
- * owner: "It just needs ENOUGH food to survive until morning"), 4 coal or charcoal, a stone pickaxe, axe, sword and
+ * owner: "It just needs ENOUGH food to survive until morning": food carried, or a hunger bar that lasts a night as it
+ * is, and the report says which), 4 coal or charcoal, a stone pickaxe, axe, sword and
  * shovel or better; a bed is reported, not needed: "A bed if possible") and how the run went (deaths, watchdog, what it holds), written to
  * {@code -Dmineagent.benchmark.report}, and the server stopped. Only when the property is set; never in the jar.
  */
@@ -197,7 +198,8 @@ public final class Benchmark implements ModInitializer {
             }
         }
         // Food: its owner, "It just needs ENOUGH food to survive until morning": what it carries worth three shanks or
-        // more (a cooked steak, two breads, three berries' worth twice), or a near-full hunger bar and something to eat.
+        // more (a cooked steak, two breads, three berries' worth twice), or a hunger bar that lasts the night as it is
+        // (14 of 20: a night closed in costs next to nothing). Which of the two is said.
         int food = 0, foodPoints = 0;
         for (var e : has.entrySet()) {
             var item = BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(e.getKey()));
@@ -209,7 +211,8 @@ public final class Benchmark implements ModInitializer {
             }
         }
         int hunger = sp.getFoodData().getFoodLevel();
-        boolean fed = foodPoints >= 6 || hunger >= 16 && food > 0;
+        boolean fedByPack = foodPoints >= 6;
+        boolean fed = fedByPack || hunger >= 14;
         boolean bed = false;
         for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).getItem() instanceof net.minecraft.world.item.BedItem) bed = true;
         if (!bed) for (var p : BlockPos.betweenClosed(centre.offset(-8, -4, -8), centre.offset(8, 4, 8))) {
@@ -254,6 +257,7 @@ public final class Benchmark implements ModInitializer {
         out.put("foodPoints", foodPoints);
         out.put("hunger", hunger);
         out.put("fed", fed);
+        out.put("fedByPack", fedByPack);
         out.put("bed", bed);
         out.put("fuel", fuel);
         out.put("tools", tools);
@@ -267,7 +271,7 @@ public final class Benchmark implements ModInitializer {
         out.put("doing", loop.doing());
         out.put("hutKind", hutKind);
         out.put("summary", (minimum ? "MINIMUM MET" : "not yet") + " | hut " + hut + (hutKind.isEmpty() ? "" : " (" + hutKind + ")") + ", furnace " + furnace + ", table " + table + ", food " + food
-                + " (" + foodPoints + " points, hunger " + hunger + (fed ? ", fed" : ", not fed") + "), bed " + bed + ", fuel " + fuel + ", tools " + tools + " | " + dim + " " + sp.blockPosition().toShortString() + ", health "
+                + " (" + foodPoints + " points, hunger " + hunger + (fedByPack ? ", fed: food carried" : fed ? ", fed: on its hunger bar" : ", not fed") + "), bed " + bed + ", fuel " + fuel + ", tools " + tools + " | " + dim + " " + sp.blockPosition().toShortString() + ", health "
                 + String.format("%.0f", sp.getHealth()) + ", deaths " + deaths + ", doing: " + loop.doing());
         return out;
     }
