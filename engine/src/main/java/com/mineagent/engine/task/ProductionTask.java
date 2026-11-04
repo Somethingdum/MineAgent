@@ -509,6 +509,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         String why = "no more " + list + (ran.size() > gone.size() ? " (or anything else to make it from)" : "") + " near here"
                 + (ran.stream().anyMatch(Production::animal) ? "; I leave two of each kind to breed" : "");
         lastWhy = why;
+        // What ran out here (a golem it couldn't take, herds down to their last two) kept from the next orders' plans a
+        // while too: a hunt that ends this way, not by outOf, left the next order to plan the same golem again.
+        var giving = TaskContext.agentLoop(player);
+        if (giving != null) for (String w : without) giving.gaveUp(w);
         // What it made of this before running out (seven of eight cooked) goes in first, not left in its pack.
         if (leftoversPut.add(itemId)) {
             int spareNow = spare(sp(), item(itemId));
