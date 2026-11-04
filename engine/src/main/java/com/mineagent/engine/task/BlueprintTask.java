@@ -161,6 +161,9 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
         var box = new net.minecraft.world.phys.AABB(c.getX(), c.getY(), c.getZ(), c.getX() + print.width(), c.getY() + print.height() + 1,
                 c.getZ() + print.depth());
         if (!level.getEntitiesOfClass(net.minecraft.world.entity.player.Player.class, box, p -> p != sp()).isEmpty()) return -1;
+        // Nor round an animal (a cow walled in is one it can't get to, and nobody wants it there).
+        if (!level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, box.inflate(1.0),
+                e -> !(e instanceof net.minecraft.world.entity.player.Player) && e.isAlive()).isEmpty()) return -1;
         var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
         String dim = level.dimension().location().toString();
         java.util.Map<Long, String> wants = new java.util.HashMap<>();

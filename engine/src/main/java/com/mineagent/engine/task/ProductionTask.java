@@ -1171,7 +1171,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             return TaskState.RUNNING;
         }
         // Each pass: take what is done, top up each furnace's input to its share, and its fuel to what that burns.
-        boolean anyBusy = false;
+        boolean anyBusy = false, shortOfFuel = false, anyLit = false;
         int fuelTicks = fuelTicks(sp); // a smoker or blast furnace burns it twice as fast
         int cook = cookTicks(sp);
         for (int i = 0; i < furnaces.size(); i++) {
@@ -1194,6 +1194,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
             int fuelFor = (int) Math.ceil(loaded[i] * (double) cook / fuelTicks);
             int addFuel = fuelFor - fuelled[i];
+            if (addFuel > 0 && count(sp, fuel) == 0 && furnace.getItem(1).isEmpty()) shortOfFuel = true;
+            var lit = level.getBlockState(f);
+            if (lit.hasProperty(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT) && lit.getValue(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT)) anyLit = true;
             if (addFuel > 0 && count(sp, fuel) > 0) {
                 int before = count(sp, fuel);
                 insert(sp, furnace, fuel, addFuel, Direction.NORTH);
@@ -1206,10 +1209,31 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         TaskContext.syncInventory(sp);
         int made = count(sp, out) - itemBefore;
         if (made >= step.count() || (!anyBusy && count(sp, in) == 0)) return TaskState.SUCCESS;
+        if (shortOfFuel && !anyLit) {
+            // The fuel ran short (fewer sheep or trees than it counted on): the input comes back out, so it is counted, and
+            // the rest is planned again with the fuel there is to get, instead of waiting on cold furnaces.
+            if (fuelReplans++ >= 3) return fail("I ran out of fuel for the " + ProductionPlanner.name(step.item()));
+            for (BlockPos f : furnaces) {
+                if (level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace && sp.canInteractWithBlock(f, 1.0)) {
+                    ItemStack back = furnace.removeItem(0, furnace.getItem(0).getCount());
+                    if (!back.isEmpty()) sp.getInventory().add(back);
+                    ItemStack done = furnace.removeItem(2, furnace.getItem(2).getCount());
+                    if (!done.isEmpty()) sp.getInventory().add(done);
+                }
+            }
+            TaskContext.syncInventory(sp);
+            todo.clear();
+            step = null;
+            phase = Phase.ROUND;
+            return TaskState.RUNNING;
+        }
         if (level.getGameTime() > smeltDeadline) return fail("the furnaces stopped before the " + ProductionPlanner.name(step.item()) + " was done");
         wait = 20; // a look every second
         return TaskState.RUNNING;
     }
+
+    /** Times the fuel ran short in this job and it planned again. */
+    private int fuelReplans;
 
     private int fuelTicks(ServerPlayer sp) {
         int t = Math.max(1, GameKnowledge.book(sp).fuelTicks().getOrDefault(step.fuel(), 1_600));
