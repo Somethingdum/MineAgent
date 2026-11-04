@@ -3291,6 +3291,42 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * Straight down (Baritone's MovementDownward): on top of a stone pillar five high, a pickaxe, cows below. Every way
+     * off is a fall it won't take; its walks to them find no way twice, and the way out digs down through the pillar to
+     * the ground, and it gets its food.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_pillar_down", timeoutTicks = 2400)
+    public void onAPillarItDigsDownToItsFood(GameTestHelper helper) {
+        Scene s = scene(helper, "Stylite");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int y = 1; y <= 5; y++) helper.setBlock(5, y, 5, Blocks.STONE);
+        BlockPos top = helper.absolutePos(new BlockPos(5, 6, 5));
+        s.body().teleportTo(helper.getLevel(), top.getX() + 0.5, top.getY(), top.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        helper.spawn(EntityType.COW, new BlockPos(11, 1, 11));
+        helper.spawn(EntityType.COW, new BlockPos(12, 1, 9));
+        helper.spawn(EntityType.COW, new BlockPos(10, 1, 12));
+        var inv = s.body().getInventory();
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 1 food"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "pillar down");
+            BlockPos at = rel(helper, s.body().blockPosition());
+            if (at.getY() <= 2 && inv.countItem(Items.BEEF) + inv.countItem(Items.COOKED_BEEF) >= 1) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                int stone = 0;
+                for (int y = 1; y <= 5; y++) if (is(helper, 5, y, 5, Blocks.STONE)) stone++;
+                String how = "at " + at.toShortString() + ", pillar blocks left " + stone + ", beef " + inv.countItem(Items.BEEF) + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * The one way out of anywhere (AltoClef's progress checkers, Mindcraft's unstuck mode): penned in by leaves two high
      * (the land's own, as a thicket: fences would be someone's build, never broken), not a hole and not a tree, cows
      * outside. Its walks to them find no way; the second time here, the next looks again breaking what is in the way,

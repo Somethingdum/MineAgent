@@ -49,3 +49,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Baritone
+
+From [Baritone](https://github.com/cabaletta/baritone) (LGPL-3.0, as this mod), branch `1.20.4`: the move straight
+down through the block under its feet, its rule and its cost (`MovementDownward`: ground two under, the block's mining
+time plus a fall of one), and the shortest partial path worth walking (`AbstractNodeCostSearch.MIN_DIST_PATH`, five
+blocks). Rewritten for the mod's own pathing, into:
+
+- `engine/src/main/java/com/mineagent/engine/pathing/moves/movements/MovementDownward.java`
+- `engine/src/main/java/com/mineagent/engine/pathing/astar/AStarPathFinder.java` (`MIN_DIST_PATH`)
+
+Baritone is licensed under the GNU Lesser General Public License, version 3, the same licence as this mod (see
+`LICENSE`).

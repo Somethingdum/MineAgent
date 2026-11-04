@@ -314,6 +314,11 @@ public class AStarPathFinder {
         if (ctx.allowPillar()) {
             expandPillar(current, goal, favoring, ctx);
         }
+        // And its reverse, digging straight down (Baritone's MovementDownward), when its walk may dig through.
+        if (ctx.allowDigThrough()) {
+            double down = new com.mineagent.engine.pathing.moves.movements.MovementDownward(current.x, current.y, current.z).calculateCost(ctx);
+            if (down < Double.POSITIVE_INFINITY) considerNode(current, current.x, current.y - 1, current.z, down, goal, favoring);
+        }
 
         // Ladders, vines and scaffolding are true vertical edges and consume
         // no support block; treating them as pillars wastes inventory.
@@ -651,6 +656,11 @@ public class AStarPathFinder {
         // Pillar
         if (dx == 0 && dz == 0 && dy == 1) {
             return new MovementPillar(from.x, from.y, from.z);
+        }
+
+        // Straight down, digging (a ladder or vine down is a climb, taken above when there is one)
+        if (dx == 0 && dz == 0 && dy == -1) {
+            return new com.mineagent.engine.pathing.moves.movements.MovementDownward(from.x, from.y, from.z);
         }
 
         // Cardinal traverse
