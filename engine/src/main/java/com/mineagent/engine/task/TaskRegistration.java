@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // The End portal opened, and gone through when asked (SMH plan 70)
+        CompanionTaskFactory.register(
+                EndPortalTask.PortalRecord.class,
+                EndPortalTask::new
+        );
+
         // The dragon, on its owner's word only (SMH plan 70)
         CompanionTaskFactory.register(
                 DragonTask.DragonRecord.class,

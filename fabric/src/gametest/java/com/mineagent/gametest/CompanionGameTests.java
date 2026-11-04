@@ -3980,6 +3980,47 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, the way to the End: a portal ring of twelve frames facing in, three with their eyes already, lava under
+     * its middle as in a stronghold, nine eyes of ender in its pack: "open the end portal" puts them in from outside the
+     * ring and the portal opens.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_end_portal", timeoutTicks = 1200)
+    public void theEndPortalIsOpenedWithItsEyes(GameTestHelper helper) {
+        Scene s = scene(helper, "Seeker");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        int cx = 11, cz = 10;
+        for (int x = cx - 1; x <= cx + 1; x++) for (int z = cz - 1; z <= cz + 1; z++) helper.setBlock(x, 0, z, Blocks.LAVA);
+        int n = 0;
+        for (int i = -1; i <= 1; i++) {
+            Object[][] sides = {{cx + i, cz - 2, net.minecraft.core.Direction.SOUTH}, {cx + i, cz + 2, net.minecraft.core.Direction.NORTH},
+                    {cx - 2, cz + i, net.minecraft.core.Direction.EAST}, {cx + 2, cz + i, net.minecraft.core.Direction.WEST}};
+            for (Object[] f : sides) {
+                var st = Blocks.END_PORTAL_FRAME.defaultBlockState().setValue(net.minecraft.world.level.block.EndPortalFrameBlock.FACING, (net.minecraft.core.Direction) f[2])
+                        .setValue(net.minecraft.world.level.block.EndPortalFrameBlock.HAS_EYE, n++ % 4 == 0);
+                helper.setBlock((int) f[0], 1, (int) f[1], st);
+            }
+        }
+        s.body().getInventory().setItem(1, new ItemStack(Items.ENDER_EYE, 9));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "open the end portal"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "end portal");
+            int portal = 0;
+            for (int x = cx - 1; x <= cx + 1; x++) for (int z = cz - 1; z <= cz + 1; z++) {
+                if (helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, 1, z))).is(Blocks.END_PORTAL)) portal++;
+            }
+            String done = lastSaid(s, "The End portal is open");
+            String failed = lastSaid(s, "I couldn't open");
+            if (portal == 9 && !done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1100) {
+                String how = portal + " portal blocks, eyes left " + s.body().getInventory().countItem(Items.ENDER_EYE) + "; said: "
+                        + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                tidy(s);
+                if (portal == 9) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {

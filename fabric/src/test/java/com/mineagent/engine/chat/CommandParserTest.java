@@ -298,6 +298,10 @@ final class CommandParserTest {
         assertEquals("splash_weakness", CommandParser.parse("brew a splash potion of weakness", "Pal").orElseThrow().value());
         assertEquals("fight", CommandParser.parse("kill the ender dragon", "Pal").orElseThrow().value());
         assertEquals("crystals", CommandParser.parse("shoot the end crystals", "Pal").orElseThrow().value());
+        assertEquals("open", CommandParser.parse("open the end portal", "Pal").orElseThrow().value());
+        assertEquals("go", CommandParser.parse("take me to the end", "Pal").orElseThrow().value());
+        assertTrue(CommandParser.parse("light the portal", "Pal").map(c -> c.kind() != CommandParser.Kind.END_PORTAL).orElse(true),
+                "lighting a portal is the Nether's");
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }
