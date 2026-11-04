@@ -321,7 +321,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             for (BlockPos p : ring(at, r)) {
                 var level = sp.serverLevel();
                 var st = level.getBlockState(p);
-                if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
+                if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))
+                        || byTall(level, p)) continue;
                 if (Placement.placeBlock(sp, p.immutable(), Blocks.CHEST.defaultBlockState())) {
                     chestPos = p.immutable();
                     say("I've put a chest down here, at " + chestPos.toShortString() + ", to fill.");
@@ -1333,7 +1334,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     if (furnaces.size() >= step.furnaces() || count(sp, station.asItem()) == 0) break;
                     if (furnaces.contains(p)) continue;
                     var st = level.getBlockState(p);
-                    if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
+                    if (!BlockHelper.isPassable(st) || !st.getFluidState().isEmpty() || !BlockHelper.canStandOn(level.getBlockState(p.below()))
+                            || byTall(level, p)) continue;
                     if (Placement.placeBlock(sp, p.immutable(), station.defaultBlockState())) {
                         furnaces.add(p.immutable());
                         var loop = TaskContext.agentLoop(player);
@@ -1767,7 +1769,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             for (BlockPos p : ring(standing(sp), ring)) {
                 var st = level.getBlockState(p);
                 if ((st.isAir() || st.canBeReplaced()) && !(st.getBlock() instanceof net.minecraft.world.level.block.CropBlock)
-                        && st.getFluidState().isEmpty() && BlockHelper.canStandOn(level.getBlockState(p.below()))
+                        && st.getFluidState().isEmpty() && BlockHelper.canStandOn(level.getBlockState(p.below())) && !byTall(level, p)
                         && Placement.placeBlock(sp, p.immutable(), state)) return true;
             }
         }
@@ -1784,6 +1786,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     /** The cells at Chebyshev distance {@code r} round {@code c}, at its height. */
+    /**
+     * Next to a fence or a wall: a block put there is a step up onto it (a block's top to a fence's is half a block, which
+     * a player walks up), and over the fence out of the pen. Its workshop goes elsewhere.
+     */
+    static boolean byTall(ServerLevel level, BlockPos p) {
+        for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) if (BlockHelper.tall(level.getBlockState(p.relative(d)))) return true;
+        return false;
+    }
+
     static List<BlockPos> ring(BlockPos c, int r) {
         List<BlockPos> out = new ArrayList<>();
         for (int dx = -r; dx <= r; dx++) {

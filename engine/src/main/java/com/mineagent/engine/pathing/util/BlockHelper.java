@@ -38,8 +38,18 @@ public final class BlockHelper {
      */
     @SuppressWarnings("deprecation")
     public static boolean canStandOn(BlockState state) {
-        return state != null && !isHazardous(state)
+        return state != null && !isHazardous(state) && !tall(state)
                 && (state.isSolid() || state.is(Blocks.SCAFFOLDING));
+    }
+
+    /**
+     * A block a block and a half high (a fence, a wall, a fence gate): the game counts it solid, but its top is half a
+     * block above the cell over it, so no walk or jump lands there as on a block, and a pen walked out of over its fence
+     * is one it can't get back into. Never ground to stand on, for paths.
+     */
+    public static boolean tall(BlockState state) {
+        return state.is(net.minecraft.tags.BlockTags.FENCES) || state.is(net.minecraft.tags.BlockTags.WALLS)
+                || state.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock;
     }
 
     /**
