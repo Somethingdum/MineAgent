@@ -1222,6 +1222,13 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 navFailed = true;
             }
             if (navFailed) {
+                if (Boolean.getBoolean("mineagent.traceWork")) {
+                    var pp = prey.blockPosition();
+                    System.out.println("[MineAgent] hunt: left the " + kind + " at " + pp.toShortString() + String.format(" (%.1f off)", sp.distanceTo(prey))
+                            + " from " + sp.blockPosition().toShortString() + ": " + nav.core().lastFailureDetail() + ", it in water "
+                            + prey.isInWater() + ", under it " + level.getBlockState(pp.below()).getBlock() + ", sky over it "
+                            + level.canSeeSky(pp.above()) + ", the hunter in water " + sp.isInWater());
+                }
                 unreachable.add(prey.getUUID());
                 prey = null;
                 navFailed = false;
