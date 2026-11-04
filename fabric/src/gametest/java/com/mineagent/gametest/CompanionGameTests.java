@@ -4005,6 +4005,42 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, "build a base and basic farms": a field of grass, a wooden hoe, a water bucket and 16 wheat seeds:
+     * "make a farm" makes a 9 by 9 with the water in its middle, tilled round it and the seeds planted.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_farm", timeoutTicks = 2400)
+    public void aFarmIsMadeWaterInTheMiddle(GameTestHelper helper) {
+        Scene s = scene(helper, "Farmer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 1; x <= 15; x++) for (int z = 1; z <= 15; z++) helper.setBlock(x, 0, z, Blocks.GRASS_BLOCK);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.WOODEN_HOE));
+        inv.setItem(2, new ItemStack(Items.WATER_BUCKET));
+        inv.setItem(3, new ItemStack(Items.WHEAT_SEEDS, 16));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make a farm"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "farm");
+            String done = lastSaid(s, "Made a farm");
+            String failed = lastSaid(s, "I couldn't make the farm");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2300) {
+                int farmland = 0, crops = 0, water = 0;
+                for (BlockPos p : BlockPos.betweenClosed(new BlockPos(0, -1, 0), new BlockPos(16, 2, 16))) {
+                    var st = helper.getLevel().getBlockState(helper.absolutePos(p));
+                    if (st.is(Blocks.FARMLAND)) farmland++;
+                    if (st.is(Blocks.WHEAT)) crops++;
+                    if (helper.getLevel().getFluidState(helper.absolutePos(p)).isSource()
+                            && helper.getLevel().getFluidState(helper.absolutePos(p)).is(net.minecraft.tags.FluidTags.WATER)) water++;
+                }
+                String how = farmland + " farmland, " + crops + " wheat planted, " + water + " water; said: "
+                        + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (farmland >= 70 && crops >= 16 && water == 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "catch me 1 fish" by a pool: the rod cast, reeled in on a bite, a fish caught. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fish", timeoutTicks = 3000)
     public void aFishCaughtAtAPool(GameTestHelper helper) {

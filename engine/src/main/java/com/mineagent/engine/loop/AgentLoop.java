@@ -976,7 +976,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1514,6 +1514,34 @@ public class AgentLoop {
                         + " and get my gear to god tier. I won't go after the dragon unless you tell me to."
                         : "Back with you. I'll keep my stockpile, and stay near.");
                 saveMemoryNow();
+                return true;
+            }
+            case FARM -> {
+                var farmer = self.serverPlayer();
+                if (farmer == null) return false;
+                journal.record("order", "make a farm", currentGameTickSafe());
+                var finv = farmer.getInventory();
+                boolean hoe = false;
+                for (int i = 0; i < Math.min(36, finv.getContainerSize()); i++) {
+                    if (finv.getItem(i).getItem() instanceof net.minecraft.world.item.HoeItem) hoe = true;
+                }
+                boolean water = finv.countItem(net.minecraft.world.item.Items.WATER_BUCKET) > 0;
+                if ((!hoe || !water) && !farmReady) {
+                    // What a farm needs, made first from its own things; then the farm (once: a second time, it goes
+                    // ahead and says what it lacks).
+                    List<String> first = new ArrayList<>();
+                    if (!hoe) first.add("make me 1 wooden hoe");
+                    if (!water) first.add("make me 1 water bucket");
+                    first.add("make a farm" + ("here".equals(c.value()) ? " here" : ""));
+                    farmReady = true;
+                    speakToOwner("A farm needs " + (!hoe && !water ? "a hoe and a water bucket" : !hoe ? "a hoe" : "a water bucket") + ": making that first.");
+                    return queueOrders(String.join(", then ", first));
+                }
+                farmReady = false;
+                net.minecraft.core.BlockPos at = "here".equals(c.value()) ? farmer.blockPosition() : null;
+                orderGoal("make a farm");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.FarmTask.FarmRecord(
+                        "farm-" + UUID.randomUUID(), at), reply -> { });
                 return true;
             }
             case TRAIN_VILLAGERS -> {
@@ -4360,9 +4388,17 @@ public class AgentLoop {
         idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
         idleRadius = 48;
         journal.record("survive", "made my base here", currentGameTickSafe(), dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
-        speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then the stockpile.");
+        speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then a farm, then the stockpile.");
         saveMemoryNow();
-        queueOrders("prime the world");
+        queueOrders("prime the world, then make a farm");
+    }
+
+    /** A farm order whose hoe and bucket were queued to be made first: the next farm order goes ahead. */
+    private volatile boolean farmReady;
+
+    /** Its home in a dimension, as {@link #home}: for its tasks. */
+    public net.minecraft.core.BlockPos homeIn(String dim) {
+        return home(dim);
     }
 
     /** Its home: the one it was told to stay near, else the one it remembers; null with none. */

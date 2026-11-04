@@ -278,6 +278,9 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.TRAIN_VILLAGERS, CommandParser.parse("train your villagers", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.TRAIN_VILLAGERS, CommandParser.parse("max out my villagers", "Pal").orElseThrow().kind(),
                 "villagers maxed are trained, not enchanted");
+        assertEquals(CommandParser.Kind.FARM, CommandParser.parse("make a farm", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.FARM, CommandParser.parse("make me a farm", "Pal").orElseThrow().kind(), "a farm, not an item called farm");
+        assertEquals("here", CommandParser.parse("plant a farm here", "Pal").orElseThrow().value());
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }

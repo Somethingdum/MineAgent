@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // Farms made (SMH plan 70: "build a base and basic farms")
+        CompanionTaskFactory.register(
+                FarmTask.FarmRecord.class,
+                FarmTask::new
+        );
+
         // Holes near home filled (SMH plan 70, MA9.4)
         CompanionTaskFactory.register(
                 FillHolesTask.FillRecord.class,
