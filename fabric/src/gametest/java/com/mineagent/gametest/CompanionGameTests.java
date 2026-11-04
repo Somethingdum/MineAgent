@@ -3976,9 +3976,10 @@ public class CompanionGameTests implements FabricGameTest {
             if (left == 0 && !done.isEmpty() || helper.getTick() >= 1500) {
                 String how = left + " crystals left, health " + s.body().getHealth() + ", arrows left " + s.body().getInventory().countItem(Items.ARROW)
                         + "; said: " + (done.isEmpty() ? lastSaid(s, "") : done);
+                boolean ok = left == 0 && s.body().isAlive(); // before the tidy takes it away
                 crystals.forEach(net.minecraft.world.entity.Entity::discard);
                 tidy(s);
-                if (left == 0 && s.body().isAlive()) helper.succeed();
+                if (ok) helper.succeed();
                 else fail(helper, how);
             }
         });

@@ -93,11 +93,6 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
                     }
                     // Out of range or out of sight: nearer, by the pillar (it walks, it doesn't climb).
                     double d = sp.distanceTo(crystal);
-                    if (crystalTicks % 100 == 0) {
-                        System.out.println("[MineAgent] crystal at " + crystal.blockPosition().toShortString() + String.format(java.util.Locale.ROOT, ": %.1f away", d)
-                                + ", in sight " + sp.hasLineOfSight(crystal) + ", in hand " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(sp.getMainHandItem().getItem())
-                                + ", drawing " + sp.isUsingItem() + " " + sp.getTicksUsingItem() + ", " + crystalTicks + " ticks on it");
-                    }
                     if (d > SHOT || !sp.hasLineOfSight(crystal)) {
                         if (++crystalTicks > 1_200) { // no way to see it: the next
                             caged++;
@@ -113,7 +108,6 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
                     TaskContext.inputDriver(player).clear();
                     bowInHand(sp);
                     var shotState = BowShot.tick(sp, crystal);
-                    if (crystalTicks % 100 == 0) System.out.println("[MineAgent] crystal shot: " + shotState);
                     if (sidestep(sp, shotState, crystal)) return TaskState.RUNNING;
                     if (++crystalTicks > 1_600) { // shot and shot and still there: the next
                         caged++;

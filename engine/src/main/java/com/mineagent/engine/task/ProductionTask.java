@@ -1895,7 +1895,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             System.out.println("[MineAgent] furnaces at the deadline, it at " + sp.blockPosition().toShortString() + ":" + what);
             return fail("the furnaces stopped before the " + ProductionPlanner.name(step.item()) + " was done");
         }
-        if (level.getGameTime() % 400 < 20) {
+        if (smeltDeadline - level.getGameTime() < 1_200 && level.getGameTime() % 400 < 20) { // near its deadline: what holds it up
             StringBuilder what = new StringBuilder();
             for (int i = 0; i < furnaces.size(); i++) {
                 BlockPos f = furnaces.get(i);
