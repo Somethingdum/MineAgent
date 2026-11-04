@@ -1,0 +1,9 @@
+// A throwaway build that only translates AltoClef's sources from Yarn's names to Mojang's (SMH plan 70: port the best
+// existing code). Loom's migrateMappings runs Fabric's source remapper (Mercury) over them; nothing here is shipped.
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+    }
+}
+rootProject.name = 'remap-altoclef'

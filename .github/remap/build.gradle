@@ -1,0 +1,33 @@
+plugins {
+    id 'fabric-loom' version '1.7-SNAPSHOT'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'MiranCZRepo'
+        url = 'https://mirancz.github.io/maven/'
+        artifactUrls('https://mirancz.github.io/maven/cabaletta/baritone-unoptimized/1.21.1')
+    }
+    maven { url = 'https://babbaj.github.io/maven/' }
+}
+
+// AltoClef's own dependencies at commit 1f8e038 (its build.gradle, 1.21.1), so the remapper can follow calls through them.
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.1'
+    mappings 'net.fabricmc:yarn:1.21.1+build.3:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.2'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.110.0+1.21.1'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.16.0'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.16.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.0'
+    implementation 'dev.babbaj:nether-pathfinder:1.5'
+    implementation 'io.github.llamalad7:mixinextras-fabric:0.3.5'
+    if (!project.hasProperty('noBaritone')) {
+        modImplementation 'cabaletta:baritone-unoptimized-fabric:1.21.1'
+    }
+}

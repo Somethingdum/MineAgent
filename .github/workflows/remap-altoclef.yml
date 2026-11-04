@@ -1,0 +1,69 @@
+name: Remap AltoClef
+
+# SMH plan 70: AltoClef's sources in Mojang's names, the copy the engine's ports are made from (.github/remap/README.md).
+on:
+  push:
+    branches: [smh-companion]
+    paths: ['.github/remap/**', '.github/workflows/remap-altoclef.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check out AltoClef 1f8e038
+        run: |
+          git clone --quiet https://github.com/MiranCZ/altoclef "$RUNNER_TEMP/altoclef"
+          git -C "$RUNNER_TEMP/altoclef" checkout --quiet 1f8e038
+          git -C "$RUNNER_TEMP/altoclef" log --oneline -1
+
+      - name: Remap from Yarn to Mojang's names
+        run: |
+          chmod +x gradlew
+          out="$RUNNER_TEMP/mojmap"
+          args="migrateMappings --mappings net.minecraft:mappings:1.21.1 --input $RUNNER_TEMP/altoclef/src/main/java --output $out"
+          if ! ./gradlew --no-daemon -p .github/remap $args; then
+            echo "With Baritone on the classpath it failed; once more without it."
+            rm -rf "$out"
+            ./gradlew --no-daemon -p .github/remap -PnoBaritone $args
+          fi
+          find "$out" -name '*.java' | wc -l
+
+      - name: Keep it in third_party/altoclef
+        run: |
+          rm -rf third_party/altoclef
+          mkdir -p third_party/altoclef/src/main
+          cp -r "$RUNNER_TEMP/mojmap" third_party/altoclef/src/main/java
+          cp "$RUNNER_TEMP/altoclef/LICENSE" third_party/altoclef/LICENSE
+          cp .github/remap/README.md third_party/altoclef/README.md
+          # Spot checks: Yarn class names that must be gone from the imports.
+          for y in 'net.minecraft.util.math.BlockPos' 'net.minecraft.item.Items' 'net.minecraft.entity.ItemEntity'; do
+            echo "$y: $(grep -rl "import $y;" third_party/altoclef | wc -l) files still import it"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/altoclef
+          if git diff --cached --quiet; then echo "Nothing changed."; exit 0; fi
+          git commit -q -F - <<'MSG'
+          AltoClef 1f8e038 in Mojang's names (Loom migrateMappings), the copy ports are made from
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01Li1nwwTBR4H5BX1Z3D59KY
+          MSG
+          git push origin HEAD:smh-companion
