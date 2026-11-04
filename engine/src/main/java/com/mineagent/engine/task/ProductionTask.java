@@ -1559,10 +1559,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             walkingTo = p.immutable();
             arrived = false;
             navFailed = false;
+            softTicks = 0;
             nav.navigateNear(p.getX(), p.getY(), p.getZ(), radius);
             return false;
         }
-        if (navFailed || arrived && !nav.isNavigating()) {
+        // Twenty seconds round and round it (the way there keeps being found and lost): there as near as it gets; the
+        // caller sees whether that is in reach.
+        if (navFailed || arrived && !nav.isNavigating() || ++softTicks > 400) {
+            if (softTicks > 400) nav.cancel();
             walkingTo = null;
             navFailed = false;
             return true;
@@ -1570,6 +1574,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         nav.tick();
         return false;
     }
+
+    /** Ticks on the current soft walk. */
+    private int softTicks;
     /** Times a craft found an input short and it planned again. */
     private int craftReplans;
 
