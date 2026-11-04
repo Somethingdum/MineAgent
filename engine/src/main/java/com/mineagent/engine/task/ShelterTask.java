@@ -46,10 +46,18 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             this(toolCallId, untilMorning, null);
         }
 
+        /** Blocks of a shelter of its own left standing (its last one ended with them up): taken down, nothing else. */
+        public final List<BlockPos> takeDown;
+
         public ShelterRecord(String toolCallId, boolean untilMorning, BlockPos home) {
+            this(toolCallId, untilMorning, home, List.of());
+        }
+
+        public ShelterRecord(String toolCallId, boolean untilMorning, BlockPos home, List<BlockPos> takeDown) {
             super(toolCallId);
             this.untilMorning = untilMorning;
             this.home = home == null ? null : home.immutable();
+            this.takeDown = takeDown == null ? List.of() : List.copyOf(takeDown);
         }
     }
 
@@ -70,8 +78,10 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
 
     /** By here in the day it is home for the night: the walk home starts sooner by the length of the way. */
     public static final long DUSK = 11_000L;
-    /** The earliest a walk home for the night starts, and from when a shelter till morning holds. */
+    /** From when a shelter till morning holds. */
     public static final long EVENING = 9_500L;
+    /** The earliest a walk home for the night starts (a long way home); a shelter begun that early holds from then. */
+    public static final long EARLIEST_HOME = 8_000L;
     /** The sun well up: the undead out in it are burning. */
     static final long SUN_UP = 600L;
     /** And gone by now, or in the shade where waiting on them does nothing. */
@@ -132,8 +142,12 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     private BlockPos relocateTo;
     private int holdTicks;
     private int backTicks;
+    /** From when in the day this shelter holds: the evening, or earlier when it set out for home earlier. */
+    private long holdsFrom = EVENING;
     /** The block it is breaking is what stood in its own cell (snow, grass), not the ground under it. */
     private boolean clearing;
+    /** Its blocks it couldn't take down: handed on, to come down when its body is free. */
+    private final List<BlockPos> leftUp = new ArrayList<>();
 
     public ShelterTask(AgentPlayer player, ShelterRecord record) {
         super(player, record);
@@ -151,7 +165,16 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             begun = true;
             long now = sp.level().getGameTime();
             record.extendDeadlineTo(Math.max(record.deadline(), now + LONGEST));
-            if (record.home != null && com.mineagent.engine.settings.Switches.homeAtNight()) {
+            long t = sp.serverLevel().getDayTime() % 24_000L;
+            if (record.untilMorning && t >= EARLIEST_HOME && t < EVENING) holdsFrom = t;
+            if (!record.takeDown.isEmpty()) {
+                // Walls of its own left up: down they come, from here.
+                AfkFarms.clear(sp.getUUID());
+                placed.addAll(record.takeDown);
+                feet = sp.blockPosition();
+                start = feet.immutable();
+                phase = Phase.OPEN;
+            } else if (record.home != null && com.mineagent.engine.settings.Switches.homeAtNight()) {
                 phase = Phase.GO;
                 GOING_HOME.add(sp.getUUID());
             } else {
@@ -351,7 +374,11 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     protected TaskState onTick() {
         ServerPlayer sp = TaskContext.serverPlayer(player);
         var loop = TaskContext.agentLoop(player);
-        boolean stay = record.untilMorning ? stillNight(sp.serverLevel(), sp) : loop != null && loop.afkSheltering();
+        // On its way home it is not yet sheltering: nothing to open. Set out early (a long way home), it holds from then.
+        long t = sp.serverLevel().getDayTime() % 24_000L;
+        boolean stay = !record.takeDown.isEmpty() ? false
+                : record.untilMorning ? phase == Phase.GO || t >= holdsFrom || stillNight(sp.serverLevel(), sp)
+                : loop != null && loop.afkSheltering();
         if (!stay && phase != Phase.OPEN) {
             AfkFarms.clear(sp.getUUID());
             AT_HOME.remove(sp.getUUID());
@@ -470,6 +497,22 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
                 failures = 0;
                 return TaskState.RUNNING;
             }
+            if (gaps > 0 && !roomMode && record.untilMorning && !relocated && digDepth(sp) == 0 && (relocateTo = groundToDig(sp)) != null) {
+                // Its walls won't close here (a cliff's edge, a tree top: nothing to set them against) and the ground
+                // here won't dig: to ground that will, and in there. Its blocks put up here come with it.
+                if (trace()) System.out.println("[MineAgent] shelter: " + gaps + " gaps left in my walls; to ground I can dig at " + relocateTo.toShortString());
+                relocated = true;
+                skipped.clear();
+                failures = 0;
+                if (nav == null) newNav();
+                target = relocateTo;
+                walkTicks = 0;
+                walks = 0;
+                navFailed = false;
+                nav.navigateTo(target.getX(), target.getY(), target.getZ());
+                phase = Phase.GO;
+                return TaskState.RUNNING;
+            }
             if (gaps > 0 && !roomMode && !triedDig && record.untilMorning && digDepth(sp) > 0) {
                 if (trace()) System.out.println("[MineAgent] shelter: " + gaps + " gaps left in my walls; digging in instead");
                 digTo = digDepth(sp);
@@ -586,7 +629,7 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             outcome = sp.blockPosition().getY() < (start == null ? Integer.MIN_VALUE : start.getY()) ? "out again but still in the hole" : "out again";
             AT_HOME.remove(sp.getUUID());
             GOING_HOME.remove(sp.getUUID());
-            return TaskState.SUCCESS;
+            return TaskState.SUCCESS; // what it couldn't take down is handed on as it ends (onInterrupt)
         }
         BlockPos b = placed.get(placed.size() - 1);
         if (breaking == null || !breaking.equals(b)) {
@@ -600,7 +643,12 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
                 if (backTicks == 1 || !nav.isNavigating() && backTicks % 40 == 0) nav.navigateTo(feet.getX(), feet.getY(), feet.getZ());
                 nav.tick();
             } else {
-                placed.remove(placed.size() - 1); // out of reach or not its to break: left
+                if (trace()) {
+                    var why = com.mineagent.engine.task.BlockDigger.assessBreak(sp, b);
+                    System.out.println("[MineAgent] shelter: can't take down " + sp.serverLevel().getBlockState(b).getBlock() + " at "
+                            + b.toShortString() + " (" + why.status() + ": " + why.detail() + "), from " + sp.blockPosition().toShortString());
+                }
+                leftUp.add(placed.remove(placed.size() - 1)); // out of reach or not its to break: left, for now
             }
             return TaskState.RUNNING;
         }
@@ -665,10 +713,26 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     @Override
     protected void onInterrupt() {
         var sp = TaskContext.serverPlayer(player);
+        if (trace()) System.out.println("[MineAgent] shelter: ended in " + phase + " with " + placed.size() + " of its blocks up, at "
+                + sp.blockPosition().toShortString());
         AfkFarms.clear(sp.getUUID());
         AT_HOME.remove(sp.getUUID());
         GOING_HOME.remove(sp.getUUID());
         if (nav != null) nav.cancel();
         TaskContext.inputDriver(player).clear();
+        // Cut short with its walls up (a death, a fight's end, its owner's word): they're taken down later, never left
+        // to shut it in (the three-world run stood a day and a half inside walls of its own).
+        List<BlockPos> up = new ArrayList<>(placed);
+        up.addAll(leftUp);
+        leaveWalls(sp, up);
+    }
+
+    /** Its own blocks still standing, handed to its loop to take down when its body is free. */
+    private void leaveWalls(ServerPlayer sp, List<BlockPos> blocks) {
+        var loop = TaskContext.agentLoop(player);
+        if (loop == null || blocks.isEmpty() || !record.takeDown.isEmpty() && blocks.size() >= record.takeDown.size()) return;
+        List<BlockPos> standing = new ArrayList<>();
+        for (BlockPos b : blocks) if (!sp.serverLevel().getBlockState(b).isAir() && !standing.contains(b)) standing.add(b.immutable());
+        if (!standing.isEmpty()) loop.wallsLeft(sp.serverLevel().dimension().location().toString(), standing);
     }
 }

@@ -3255,6 +3255,56 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * What the three-world run found (a day and a half stood inside walls of its own at a cliff's edge, its pathing
+     * stalled against them): walled in for the night with dirt, its shelter cut short with the walls still up; in the
+     * morning the walls come down before anything else.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_walls_left", timeoutTicks = 1600)
+    public void wallsLeftUpByAShelterCutShortComeDown(GameTestHelper helper) {
+        Scene s = scene(helper, "Unwalled");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(4, new ItemStack(Items.DIRT, 16));
+        var level = helper.getLevel();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(10, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L));
+        long[] cutAt = {-1};
+        BlockPos[] in = {null};
+        helper.onEachTick(() -> {
+            trace(helper, s, "walls left");
+            BlockPos at = s.body().blockPosition();
+            if (cutAt[0] < 0 && !lastSaid(s, "Walled in").isEmpty() && !level.canSeeSky(at.above())) {
+                cutAt[0] = helper.getTick();
+                in[0] = at.immutable();
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L); // morning
+                MineAgentEngine.getCompanion(s.companion().companionId()).ifPresent(c -> c.auction.cancelTask()); // cut short
+            }
+            if (cutAt[0] < 0) {
+                if (helper.getTick() >= 1500) {
+                    tidy(s);
+                    fail(helper, "never walled in; said: " + lastSaid(s, ""));
+                }
+                return;
+            }
+            int up = 0;
+            for (BlockPos p : new BlockPos[] {in[0].north(), in[0].south(), in[0].east(), in[0].west(), in[0].above().north(),
+                    in[0].above().south(), in[0].above().east(), in[0].above().west(), in[0].above(2)}) {
+                if (!level.getBlockState(p).isAir()) up++;
+            }
+            if (helper.getTick() > cutAt[0] + 20 && up <= 1) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 1550) {
+                String how = "cut short at " + cutAt[0] + ", " + up + " of its blocks still up round " + rel(helper, in[0]).toShortString()
+                        + ", " + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * SMH plan 70: its home dug into the hillside, then the evening (its owner away): it closes the doorway of the room
      * it dug from inside and waits there; in the morning the doorway is open again.
      */

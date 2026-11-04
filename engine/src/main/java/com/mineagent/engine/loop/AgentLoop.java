@@ -6731,6 +6731,7 @@ public class AgentLoop {
      */
     private void orderHeartbeat(net.minecraft.server.level.ServerPlayer player) {
         if (player == null || suspended || guarding()) return;
+        if (takeDownLeftWalls(player)) return;
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
         var active = goalBook.active();
         if (active.isEmpty()) {
@@ -7003,7 +7004,7 @@ public class AgentLoop {
     }
 
     /** Its home for the night: the nearest hut it made here, within this many blocks. */
-    static final double HOME_FOR_NIGHT_REACH = 160.0;
+    static final double HOME_FOR_NIGHT_REACH = 320.0;
 
     /** The nearest hut it made in this world within reach of a walk before dusk, or null. */
     net.minecraft.core.BlockPos homeForTheNight(net.minecraft.server.level.ServerPlayer player) {
@@ -7040,7 +7041,7 @@ public class AgentLoop {
         long t = level.getDayTime() % 24_000L;
         double dist = Math.sqrt(home.distSqr(player.blockPosition()));
         // About three blocks a second over the ground with its turns and climbs, and the closing up after.
-        long leaveAt = Math.max(com.mineagent.engine.task.ShelterTask.EVENING, com.mineagent.engine.task.ShelterTask.DUSK - (long) (dist * 6.5));
+        long leaveAt = Math.max(com.mineagent.engine.task.ShelterTask.EARLIEST_HOME, com.mineagent.engine.task.ShelterTask.DUSK - (long) (dist * 6.5));
         if (t < leaveAt || t >= 23_000L) return false;
         LiveBodyState body = liveBodyState.get();
         boolean task = body != null && body.taskId() != null;
@@ -7069,6 +7070,44 @@ public class AgentLoop {
 
     /** The goals it explored new ground for once already, before trying them again. */
     private final java.util.Set<String> exploredFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Blocks of a shelter of its own left standing, and in which world: taken down first when its body is free. */
+    private volatile java.util.List<net.minecraft.core.BlockPos> leftWalls = java.util.List.of();
+    private volatile String leftWallsDim;
+    private volatile int leftWallsTries;
+
+    /** A shelter of its own ended with these of its blocks still up. */
+    public void wallsLeft(String dim, java.util.List<net.minecraft.core.BlockPos> blocks) {
+        leftWalls = java.util.List.copyOf(blocks);
+        leftWallsDim = dim;
+        leftWallsTries = 0;
+        journal.record("night", blocks.size() + " blocks of my shelter left up: taking them down when I'm free", currentGameTickSafe());
+    }
+
+    /**
+     * Its own walls left up taken down, ahead of its orders: by day, its body free, within reach of a walk (twice at
+     * most). True when it set about it.
+     */
+    private boolean takeDownLeftWalls(net.minecraft.server.level.ServerPlayer player) {
+        if (leftWalls.isEmpty() || player == null) return false;
+        var level = player.serverLevel();
+        if (!level.dimension().location().toString().equals(leftWallsDim) || nightNow(level) || leftWallsTries >= 2) {
+            if (leftWallsTries >= 2) leftWalls = java.util.List.of();
+            return false;
+        }
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null) return false;
+        boolean near = false;
+        for (var b : leftWalls) if (b.closerThan(player.blockPosition(), 5.0)) near = true;
+        if (!near) {
+            leftWalls = java.util.List.of(); // gone from there: its pathing breaks through them as it needs
+            return false;
+        }
+        leftWallsTries++;
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                new com.mineagent.engine.task.ShelterTask.ShelterRecord("shelter-down-" + UUID.randomUUID(), false, null, leftWalls), reply -> { });
+        return true;
+    }
 
     /** Its night's shelter, sent and not yet finished; when it was sent (game ticks); seen at work since. */
     private volatile String nightTaskId;

@@ -150,6 +150,22 @@ public final class Benchmark implements ModInitializer {
         b.append(" | sky ").append(level.canSeeSky(at.above())).append(", surface y ")
                 .append(level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, at.getX(), at.getZ()));
         b.append(" | blocks it carries: ").append(com.mineagent.engine.act.Placement.supportBlockCount(sp));
+        // Each block hemming it in, and why it may not break it (its own walls kept it in a whole day once).
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
+        StringBuilder walls = new StringBuilder();
+        for (BlockPos p : new BlockPos[] {at.north(), at.south(), at.east(), at.west(), at.above().north(), at.above().south(),
+                at.above().east(), at.above().west(), at.above(2), at.below()}) {
+            var st = level.getBlockState(p);
+            if (st.isAir() || !st.getFluidState().isEmpty()) continue;
+            var why = com.mineagent.engine.task.BlockDigger.assessBreak(sp, p);
+            walls.append(walls.length() == 0 ? "" : "; ").append(p.subtract(at).toShortString()).append(' ')
+                    .append(BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath())
+                    .append(placed.isPlaced(p.getX(), p.getY(), p.getZ()) ? " placed" : "")
+                    .append(why.allowed() ? "" : " (" + why.status() + ": " + why.detail() + ")");
+        }
+        if (walls.length() > 0) b.append(" | round it: ").append(walls);
+        b.append(" | AFK quiet here ").append(com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(),
+                at.getX(), at.getY(), at.getZ()));
         b.append(" | body: ").append(MineAgentEngine.getCompanion(companion.companionId()).map(c -> c.auction.inControl()).orElse("gone"));
         System.out.println(b);
     }
