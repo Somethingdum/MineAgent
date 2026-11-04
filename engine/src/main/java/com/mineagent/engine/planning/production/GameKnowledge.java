@@ -372,11 +372,12 @@ public final class GameKnowledge {
     private static Map<String, List<Source>> animals(ServerPlayer sp, ServerLevel level) {
         Map<String, List<Source>> out = new HashMap<>();
         var server = level.getServer();
-        // Wool by shearing, the sheep left to grow it back (the catalogue, MA7.3): 1 to 3 a sheep of that colour.
+        // Wool by shearing, the sheep left to grow it back (the catalogue, MA7.3): 1 to 3 a sheep of that colour, priced at
+        // the 1 it is sure of (two shorn for a bed's three wool came up short when the dice gave one each).
         for (var colour : net.minecraft.world.item.DyeColor.values()) {
             String wool = "minecraft:" + colour.getName() + "_wool";
             out.computeIfAbsent(wool, k -> new ArrayList<>()).add(new Source(wool, Production.SHEAR + "minecraft:sheep:" + colour.getName(),
-                    "shears", 0, false, 2.0, 30));
+                    "shears", 0, false, 1.0, 30));
         }
         for (var type : BuiltInRegistries.ENTITY_TYPE) {
             boolean monster = QUARRY.contains(BuiltInRegistries.ENTITY_TYPE.getKey(type).toString()) && com.mineagent.engine.settings.Switches.huntMonsters()

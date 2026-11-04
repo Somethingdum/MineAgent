@@ -103,11 +103,13 @@ public class EndPortalTask extends CompanionTask<EndPortalTask.PortalRecord> {
                         return TaskState.RUNNING;
                     }
                     BlockPos f = frames.get(index);
-                    // From outside the ring: the side of the frame away from the middle.
-                    BlockPos out = f.offset(Integer.signum(f.getX() - centre.getX()) * 2, 0, Integer.signum(f.getZ() - centre.getZ()) * 2);
-                    if (f.distToCenterSqr(sp.getEyePosition()) > 3.5 * 3.5) {
+                    // From outside the ring: the cell beside the frame away from the middle.
+                    int ox = Math.abs(f.getX() - centre.getX()) >= 2 ? Integer.signum(f.getX() - centre.getX()) : 0;
+                    int oz = Math.abs(f.getZ() - centre.getZ()) >= 2 ? Integer.signum(f.getZ() - centre.getZ()) : 0;
+                    BlockPos out = f.offset(ox, 0, oz);
+                    if (f.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
                         if (ticks > 600) return end(false, "I couldn't get to the frames");
-                        if (ticks % 30 == 1 || !nav.isNavigating()) nav.navigateNear(out.getX(), out.getY(), out.getZ(), 1);
+                        if (ticks % 30 == 1 || !nav.isNavigating()) nav.navigateNear(out.getX(), out.getY(), out.getZ(), 0);
                         nav.tick();
                         return TaskState.RUNNING;
                     }
