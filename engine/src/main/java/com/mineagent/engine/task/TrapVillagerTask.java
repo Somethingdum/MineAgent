@@ -198,6 +198,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     }
                     phase = Phase.WAIT;
                     ticks = 0;
+                    traceAt = 0;
                     return TaskState.RUNNING;
                 }
                 case WAIT -> {
@@ -216,8 +217,26 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         }
                     }
                     if (ticks > LONGEST_WAIT) return end(false, "it never came to its job site");
+                    if (Boolean.getBoolean("mineagent.traceWork") && ticks >= traceAt) {
+                        traceAt = ticks + 400;
+                        var site = v.getBrain().getMemory(MemoryModuleType.JOB_SITE);
+                        System.out.println("[MineAgent] cell: waiting, it at " + sp.blockPosition().toShortString() + " (for "
+                                + (waitAt == null ? "none" : waitAt.toShortString()) + "), the villager at " + v.blockPosition().toShortString()
+                                + ", " + v.getVillagerData().getProfession() + ", job site " + site.map(g -> g.pos().toShortString()).orElse("none")
+                                + "; the cell " + cell.toShortString() + ", the way in " + door.toShortString());
+                    }
                     // Wait out of its way, by the door, where the door is in reach: outside it, a step off the line in.
+                    // Never in the way in or the cell, the only way to its job site: if it can't get to its spot from
+                    // there, another one.
                     if (waitAt == null) waitAt = waitSpot(level, layout);
+                    boolean inTheWay = sp.blockPosition().equals(door) || sp.blockPosition().equals(cell);
+                    if (inTheWay && ++blockingTicks > 100) {
+                        BlockPos other = nextStand(level, sp);
+                        if (other != null && !other.equals(door) && !other.equals(cell)) this.waitAt = other;
+                        blockingTicks = 0;
+                    } else if (!inTheWay) {
+                        blockingTicks = 0;
+                    }
                     BlockPos waitAt = this.waitAt;
                     if (sp.blockPosition().distSqr(waitAt) > 2) {
                         if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(waitAt.getX(), waitAt.getY(), waitAt.getZ(), 1);
@@ -273,7 +292,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
-    private int offCell, traceAt, jumpTicks, groundY = Integer.MIN_VALUE;
+    private int offCell, traceAt, jumpTicks, blockingTicks, groundY = Integer.MIN_VALUE;
     /** The block over its eyes it is jumping to put in. */
     private BlockPos jumpFor;
     private boolean onlyItsSpotLeft;
