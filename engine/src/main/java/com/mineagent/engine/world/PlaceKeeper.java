@@ -203,6 +203,11 @@ public final class PlaceKeeper {
      * against a ledge may have no ground straight out from its face, so it looks all round.
      */
     public static RouteMemory.Point besidePortal(ServerPlayer sp) {
+        return besidePortal(sp, java.util.Set.of());
+    }
+
+    /** As {@link #besidePortal(ServerPlayer)}, passing over the spots in {@code tried} (it couldn't get to them). */
+    public static RouteMemory.Point besidePortal(ServerPlayer sp, java.util.Set<Long> tried) {
         if (sp == null) return null;
         ServerLevel level = sp.serverLevel();
         BlockPos feet = sp.blockPosition();
@@ -214,6 +219,7 @@ public final class PlaceKeeper {
                     for (int dz = -r; dz <= r; dz++) {
                         if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue; // this ring only
                         BlockPos p = feet.offset(dx, dy, dz);
+                        if (tried.contains(p.asLong())) continue;
                         if (canStandOutside(level, p)) return new RouteMemory.Point(dim, p.getX(), p.getY(), p.getZ());
                     }
                 }

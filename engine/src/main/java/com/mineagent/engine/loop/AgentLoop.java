@@ -1616,8 +1616,10 @@ public class AgentLoop {
                     standDown();
                     var portal = com.mineagent.engine.world.PlaceKeeper.portalBlockNear(me, link.get().from());
                     // Standing in the portal already (it came through it): out first, then back in.
+                    portalOutTried.clear();
                     var out = com.mineagent.engine.world.PlaceKeeper.standingInPortal(me)
                             ? com.mineagent.engine.world.PlaceKeeper.besidePortal(me) : null;
+                    if (out != null) portalOutTried.add(net.minecraft.core.BlockPos.asLong(out.x(), out.y(), out.z()));
                     goTo(out != null ? out : portal, java.util.List.of(), false, "xzy");
                     crossing = new Crossing(to, portal, tick, out != null ? Crossing.Stage.OUT : Crossing.Stage.IN, tick);
                     speakToOwner("Through the portal " + com.mineagent.engine.world.PlaceKeeper.whereFrom(here, link.get().from())
@@ -1703,6 +1705,9 @@ public class AgentLoop {
         return c == null ? "" : c.stage().name();
     }
 
+    /** The spots beside a portal it tried to step out to on this crossing (block positions). */
+    private final java.util.Set<Long> portalOutTried = new java.util.HashSet<>();
+
     /** Through the portal: on to the place; or it says it couldn't get through. */
     private void watchCrossing(net.minecraft.server.level.ServerPlayer me, long tick) {
         Crossing c = crossing;
@@ -1719,9 +1724,16 @@ public class AgentLoop {
         } else if (c.stage() == Crossing.Stage.OUT && !inPortal) {
             crossing = c.next(Crossing.Stage.WAITING, tick);
         } else if (c.stage() == Crossing.Stage.OUT && tick - c.stageSince() >= PORTAL_RETRY) {
-            // Still in it: the way out failed; another try.
-            var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
-            if (out != null) goTo(out, java.util.List.of(), false, "xzy");
+            // Still in it: the way out failed; another spot (not the one it couldn't get to).
+            var out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me, portalOutTried);
+            if (out == null) {
+                portalOutTried.clear();
+                out = com.mineagent.engine.world.PlaceKeeper.besidePortal(me);
+            }
+            if (out != null) {
+                portalOutTried.add(net.minecraft.core.BlockPos.asLong(out.x(), out.y(), out.z()));
+                goTo(out, java.util.List.of(), false, "xzy");
+            }
             crossing = c.next(Crossing.Stage.OUT, tick);
         } else if (c.stage() == Crossing.Stage.WAITING && inPortal) {
             // Still touching it, so its cooldown restarts: further out, then wait again from there.

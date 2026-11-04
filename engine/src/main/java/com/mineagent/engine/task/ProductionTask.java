@@ -1054,11 +1054,20 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (got >= step.count()) return TaskState.SUCCESS;
         int batchesLeft = Math.max(1, (int) Math.ceil((step.count() - got) / (double) Math.max(1, step.count() / Math.max(1, step.batches()))));
         String r = craftOnce(sp, step.recipe(), Math.min(64, batchesLeft));
+        if (r == null && lastCraftError.contains("Missing ingredients") && craftReplans++ < 3) {
+            // Fewer of an input than it counted on (sheep gave less wool): the rest planned again from what it has.
+            todo.clear();
+            step = null;
+            phase = Phase.ROUND;
+            return TaskState.RUNNING;
+        }
         if (r == null) return fail("I couldn't craft " + ProductionPlanner.name(step.item()) + ": " + lastCraftError);
         return TaskState.RUNNING;
     }
 
     private String lastCraftError = "";
+    /** Times a craft found an input short and it planned again. */
+    private int craftReplans;
 
     /**
      * One call of its craft tool: "ok" when it crafted, "" when it is first getting to a table (or putting one down),

@@ -210,8 +210,13 @@ public class PortalTask extends CompanionTask<PortalTask.PortalRecord> {
                     // The pillar it stood on, taken down from the top.
                     for (int h = raised - 1; h >= 0; h--) {
                         BlockPos p = stand().above(h);
-                        if (!level.getBlockState(p).is(filler.getBlock())) continue;
-                        if (com.mineagent.engine.task.BlockDigger.breakBlock(sp, p) || ++tries > 300) tries = 0;
+                        if (!level.getBlockState(p).is(filler.getBlock()) || leftStanding.contains(p.asLong())) continue;
+                        if (com.mineagent.engine.task.BlockDigger.breakBlock(sp, p)) {
+                            tries = 0;
+                        } else if (++tries > 200 || !com.mineagent.engine.task.BlockDigger.assessBreak(sp, p).allowed()) {
+                            leftStanding.add(p.asLong()); // it can't take this one down: left
+                            tries = 0;
+                        }
                         return TaskState.RUNNING;
                     }
                     return end(true, litLine());
@@ -224,6 +229,9 @@ public class PortalTask extends CompanionTask<PortalTask.PortalRecord> {
             return end(false, "something went wrong: " + e.getMessage());
         }
     }
+
+    /** Pillar blocks it couldn't take down. */
+    private final java.util.Set<Long> leftStanding = new java.util.HashSet<>();
 
     /** How many blocks up the pillar it stands. */
     private int raised;

@@ -3707,6 +3707,11 @@ public class CompanionGameTests implements FabricGameTest {
             if (!done.isEmpty() || helper.getTick() >= 880) {
                 boolean planted = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(8, 1, 6))).is(Blocks.OAK_SAPLING);
                 int logs = s.body().getInventory().countItem(Items.OAK_LOG);
+                // The last one may still be falling or lying there as it finishes.
+                for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(8, 1, 6))).inflate(6), e -> e.getItem().is(Items.OAK_LOG))) {
+                    logs += e.getItem().getCount();
+                }
                 tidy(s);
                 if (planted && logs >= 3) helper.succeed();
                 else fail(helper, "sapling planted " + planted + ", " + logs + " logs; said: " + (done.isEmpty() ? lastSaid(s, "") : done));
