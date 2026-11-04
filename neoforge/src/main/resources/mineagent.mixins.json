@@ -6,7 +6,8 @@
   "server": [
     "NameTagMixin",
     "ServerLevelMixin",
-    "PlayerListMixin"
+    "PlayerListMixin",
+    "ItemEntityMixin"
   ],
   "client": [],
   "injectors": {

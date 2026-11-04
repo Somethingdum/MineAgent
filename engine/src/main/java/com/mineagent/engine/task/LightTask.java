@@ -124,7 +124,7 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
     }
 
     /** A spot a mob could spawn on: solid ground, room for feet and head, no fluid. */
-    static boolean spawnable(ServerLevel level, BlockPos p) {
+    public static boolean spawnable(ServerLevel level, BlockPos p) {
         var feet = level.getBlockState(p);
         return feet.isAir() && level.getBlockState(p.above()).isAir() && level.getFluidState(p).isEmpty()
                 && BlockHelper.canStandOn(level.getBlockState(p.below()));

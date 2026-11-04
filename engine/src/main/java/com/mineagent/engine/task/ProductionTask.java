@@ -616,7 +616,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         net.minecraft.world.entity.item.ItemEntity best = null;
         for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                 new net.minecraft.world.phys.AABB(sp.blockPosition()).inflate(GameKnowledge.GROUND, 6, GameKnowledge.GROUND),
-                x -> x.isAlive() && !ignoredDrops.contains(x.getUUID())
+                x -> x.isAlive() && !ignoredDrops.contains(x.getUUID()) && com.mineagent.engine.survival.Manners.mayTake(x, sp)
                         && wanted.contains(BuiltInRegistries.ITEM.getKey(x.getItem().getItem()).toString())
                         && !com.mineagent.engine.world.AfkFarms.protects(dim, x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
             if (best == null || e.distanceToSqr(sp) < best.distanceToSqr(sp)) best = e;
@@ -768,7 +768,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private boolean pickingUp(ServerPlayer sp) {
         if (lootAt == null) return false;
         var drops = sp.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
-                new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive());
+                new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive() && com.mineagent.engine.survival.Manners.mayTake(e, sp));
         if (drops.isEmpty() || --lootWait <= 0 || navFailed) {
             lootAt = null;
             chasing = null;

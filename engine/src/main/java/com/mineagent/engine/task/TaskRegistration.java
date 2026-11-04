@@ -79,6 +79,12 @@ public final class TaskRegistration {
                 GiveTask::new
         );
 
+        // Its owner's things after they die, fetched back (SMH plan 70, MA10.8)
+        CompanionTaskFactory.register(
+                RecoverTask.RecoverRecord.class,
+                RecoverTask::new
+        );
+
         // Mining on its own: branch tunnels at the ore's height (SMH plan 70, MA7.8)
         CompanionTaskFactory.register(
                 MiningTask.MineRecord.class,

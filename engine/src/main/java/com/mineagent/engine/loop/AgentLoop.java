@@ -2569,6 +2569,7 @@ public class AgentLoop {
             practice(player, goalVerified, gameTick);
             if (gameTick % 20L == 0L) orderHeartbeat(player);
             if (gameTick % 100L == 0L) nightCare(player);
+            if (gameTick % 20L == 0L) lookAfterOwner(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3471,6 +3472,104 @@ public class AgentLoop {
                 errand("minecraft:torch", wantTorches - torches);
             }
         }
+    }
+
+    // ── Looking after you (SMH plan 70, MA10.8) ──
+
+    /**
+     * Its owner died at {@code at} in {@code dim}: it goes for their things before they vanish (five minutes on the
+     * ground) and brings them back, or puts them in the chest at home. False when it can't (off, another dimension, too
+     * far, or they fell out of the world), and the caller does as before.
+     */
+    public boolean ownerDied(String dim, net.minecraft.core.BlockPos at) {
+        if (!com.mineagent.engine.settings.Switches.recoverDrops() || suspended) return false;
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return false;
+        var sp = self.serverPlayer();
+        if (!sp.serverLevel().dimension().location().toString().equals(dim)) return false;
+        if (at.getY() < sp.serverLevel().getMinBuildHeight() || sp.blockPosition().distSqr(at) > 160 * 160) return false;
+        long now = currentGameTickSafe();
+        journal.record("owner", "you died at " + at.getX() + ", " + at.getY() + ", " + at.getZ() + ": fetching your things",
+                now, dim, at.getX(), at.getY(), at.getZ());
+        speakToOwner("I'll fetch your things from where you died.");
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.RecoverTask.RecoverRecord(
+                "recover-" + UUID.randomUUID(), dim, at), reply -> { });
+        return true;
+    }
+
+    /** When it last handed its owner food, and when it last offered each worn tool (game ticks). */
+    private long fedOwnerAt = Long.MIN_VALUE / 2, noFoodSaidAt = Long.MIN_VALUE / 2;
+    private final Map<String, Long> toolOffered = new java.util.HashMap<>();
+
+    /** Five minutes between handing food, and between offers for the same tool. */
+    static final long CARE_PAUSE = 6_000L;
+
+    /**
+     * Looking after its owner while they're about (MA10.8): food when they're low, from what it has beyond its own floor;
+     * a word when the tool in their hand is nearly broken and it has, or can make, another.
+     */
+    private void lookAfterOwner(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        var owner = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayerOwner() : null;
+        if (owner == null || !owner.isAlive() || owner.isSpectator() || owner.serverLevel() != self.serverLevel()) return;
+        if (ownerActivity.afk() || owner.distanceTo(self) > 32) return;
+        long now = currentGameTickSafe();
+        LiveBodyState body = liveBodyState.get();
+        String task = body == null ? null : body.taskId();
+        boolean handing = task != null && (task.startsWith("give-") || task.startsWith("feed-") || task.startsWith("recover-"));
+        int hunger = owner.getFoodData().getFoodLevel();
+        if (com.mineagent.engine.settings.Switches.feedOwner() && !handing && hunger <= 6 && now - fedOwnerAt >= CARE_PAUSE) {
+            int give = Math.min(Math.max(2, Math.min(8, (20 - hunger + 5) / 6)), spareFood(self));
+            if (give > 0) {
+                fedOwnerAt = now;
+                journal.record("owner", "you were low on food: handing you " + give, now);
+                speakToOwner("You're low on food; here's some.");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.GiveTask.GiveRecord(
+                        "feed-" + UUID.randomUUID(), com.mineagent.engine.task.ProductionTask.FOOD, give), reply -> { });
+                return;
+            }
+            if (now - noFoodSaidAt >= CARE_PAUSE) {
+                noFoodSaidAt = now;
+                speakToOwner("You're low on food, and I've none to spare.");
+            }
+        }
+        if (!com.mineagent.engine.settings.Switches.offerTools()) return;
+        var held = owner.getMainHandItem();
+        if (held.isEmpty() || !held.isDamageableItem() || held.getMaxDamage() <= 0) return;
+        int left = held.getMaxDamage() - held.getDamageValue();
+        if (left > Math.max(3, held.getMaxDamage() / 20)) return;
+        String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+        if (now - toolOffered.getOrDefault(id, Long.MIN_VALUE / 2) < CARE_PAUSE) return;
+        toolOffered.put(id, now);
+        String name = com.mineagent.engine.planning.production.ProductionPlanner.name(id);
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty() && st.is(held.getItem()) && st.getMaxDamage() - st.getDamageValue() > left) {
+                speakToOwner("Your " + name + " is nearly broken. I have another: say \"give me " + aOrAn(name) + "\".");
+                return;
+            }
+        }
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+        if (com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, 1,
+                java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN)).possible()) {
+            speakToOwner("Your " + name + " is nearly broken. I can make another: say \"make me " + aOrAn(name) + "\".");
+        }
+    }
+
+    /** Food it can hand over: what it carries beyond its own floor (half what it takes on a trip, at least 2). */
+    private int spareFood(net.minecraft.server.level.ServerPlayer self) {
+        var foods = com.mineagent.engine.planning.production.GameKnowledge.foods().keySet();
+        int food = 0;
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty() && foods.contains(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString())) {
+                food += st.getCount();
+            }
+        }
+        return Math.max(0, food - Math.max(2, com.mineagent.engine.settings.Switches.readyFood() / 2));
     }
 
     /** What it last tried on its own, by need, and the day it tried (MA8.8): once a day each, never a loop. */

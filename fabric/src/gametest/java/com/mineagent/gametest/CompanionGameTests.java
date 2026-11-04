@@ -2981,4 +2981,161 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA10.8: its owner dies 9 blocks off with diamonds and iron on them. The companion goes for their things
+     * before they vanish and, with its owner not there to take them, puts them in the chest at home.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_owner_death", timeoutTicks = 900)
+    public void ownersThingsFetchedToTheChestAtHome(GameTestHelper helper) {
+        Scene s = scene(helper, "Fetcher");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(5, 1, 3, Blocks.CHEST);
+        BlockPos chest = helper.absolutePos(new BlockPos(5, 1, 3));
+        helper.runAfterDelay(2, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
+        helper.runAfterDelay(20, () -> {
+            BlockPos far = helper.absolutePos(new BlockPos(12, 1, 12));
+            s.owner().teleportTo(helper.getLevel(), far.getX() + 0.5, far.getY(), far.getZ() + 0.5, 0.0f, 0.0f);
+            s.owner().getInventory().setItem(0, new ItemStack(Items.DIAMOND, 5));
+            s.owner().getInventory().setItem(1, new ItemStack(Items.IRON_INGOT, 3));
+            s.owner().kill();
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "owner-death");
+            String done = lastSaid(s, "I got your things back");
+            String failed = lastSaid(s, "I couldn't get your things back");
+            if (!done.isEmpty() || !failed.isEmpty()) {
+                var c = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(chest);
+                int diamonds = 0, iron = 0;
+                for (int i = 0; c != null && i < c.getContainerSize(); i++) {
+                    if (c.getItem(i).is(Items.DIAMOND)) diamonds += c.getItem(i).getCount();
+                    if (c.getItem(i).is(Items.IRON_INGOT)) iron += c.getItem(i).getCount();
+                }
+                tidy(s);
+                if (diamonds == 5 && iron == 3) helper.succeed();
+                else fail(helper, "the chest has " + diamonds + " diamonds and " + iron + " iron; said: " + (done.isEmpty() ? failed : done));
+            } else if (helper.getTick() >= 880) {
+                String how = "said: " + lastSaid(s, "") + "; carrying " + s.body().getInventory().countItem(Items.DIAMOND) + " diamonds";
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA10.8: its owner's food runs low (4 of 20) and it carries 12 bread: it hands them some, keeping its floor. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_feed", timeoutTicks = 400)
+    public void aHungryOwnerIsHandedFood(GameTestHelper helper) {
+        Scene s = scene(helper, "Feeder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(3, new ItemStack(Items.BREAD, 12));
+        BlockPos off = helper.absolutePos(new BlockPos(10, 1, 3));
+        s.body().teleportTo(helper.getLevel(), off.getX() + 0.5, off.getY(), off.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(10, () -> s.owner().getFoodData().setFoodLevel(4));
+        helper.onEachTick(() -> {
+            trace(helper, s, "feed");
+            int handed = s.owner().getInventory().countItem(Items.BREAD);
+            for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    s.owner().getBoundingBox().inflate(4.0), e -> e.getItem().is(Items.BREAD))) handed += e.getItem().getCount();
+            int kept = s.body().getInventory().countItem(Items.BREAD);
+            if (handed > 0 && kept + handed == 12) {
+                String said = lastSaid(s, "You're low on food");
+                tidy(s);
+                if (handed >= 2 && kept >= 4 && !said.isEmpty()) helper.succeed();
+                else fail(helper, "handed " + handed + ", kept " + kept + "; said: " + said);
+            } else if (helper.getTick() >= 380) {
+                String how = "handed " + handed + ", kept " + kept + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA10.5: what its owner threw down is theirs to leave there. Two diamonds the owner dropped (looking
+     * away from it) lie at its feet and stay there; an emerald nobody threw, next to them, it picks up as ever.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_manners", timeoutTicks = 300)
+    public void whatItsOwnerThrewIsLeftAlone(GameTestHelper helper) {
+        Scene s = scene(helper, "Mannerly");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos spot = helper.absolutePos(new BlockPos(8, 1, 3));
+        s.body().teleportTo(helper.getLevel(), spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 0.0f, 0.0f);
+        net.minecraft.world.entity.item.ItemEntity[] thrown = {null};
+        helper.runAfterDelay(10, () -> {
+            thrown[0] = s.owner().drop(new ItemStack(Items.DIAMOND, 2), false, true);
+            if (thrown[0] != null) {
+                thrown[0].setDeltaMovement(Vec3.ZERO);
+                thrown[0].setPos(spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5);
+            }
+            var emerald = new net.minecraft.world.entity.item.ItemEntity(helper.getLevel(), spot.getX() + 0.5, spot.getY(),
+                    spot.getZ() + 0.5, new ItemStack(Items.EMERALD, 1));
+            emerald.setDeltaMovement(Vec3.ZERO);
+            helper.getLevel().addFreshEntity(emerald);
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "manners");
+            if (helper.getTick() < 200) {
+                if (thrown[0] != null && !thrown[0].isAlive() && s.body().getInventory().countItem(Items.DIAMOND) > 0) {
+                    tidy(s);
+                    fail(helper, "it took the diamonds its owner threw");
+                }
+                return;
+            }
+            boolean diamondsThere = thrown[0] != null && thrown[0].isAlive();
+            int diamonds = s.body().getInventory().countItem(Items.DIAMOND);
+            int emeralds = s.body().getInventory().countItem(Items.EMERALD);
+            tidy(s);
+            if (thrown[0] == null) fail(helper, "the owner's throw made no item");
+            else if (diamondsThere && diamonds == 0 && emeralds == 1) helper.succeed();
+            else fail(helper, "diamonds still there " + diamondsThere + ", it carries " + diamonds + " diamonds and " + emeralds + " emeralds");
+        });
+    }
+
+    /**
+     * Plan 70, MA10.5, out of its owner's line of fire: told to shoot a cow with its owner standing between, it never
+     * looses an arrow whose path passes them; it steps aside for a clear line and hits the cow from there.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_line_of_fire", timeoutTicks = 600)
+    public void noShotPastItsOwner(GameTestHelper helper) {
+        Scene s = scene(helper, "Archer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos from = helper.absolutePos(new BlockPos(3, 1, 0));
+        BlockPos ownerAt = helper.absolutePos(new BlockPos(3, 1, 4));
+        s.body().teleportTo(helper.getLevel(), from.getX() + 0.5, from.getY(), from.getZ() + 0.5, 0.0f, 0.0f);
+        s.owner().teleportTo(helper.getLevel(), ownerAt.getX() + 0.5, ownerAt.getY(), ownerAt.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getInventory().selected = 0;
+        s.body().getInventory().setItem(0, new ItemStack(Items.BOW));
+        s.body().getInventory().setItem(1, new ItemStack(Items.ARROW, 32));
+        var cow = EntityType.COW.create(helper.getLevel());
+        BlockPos cowAt = helper.absolutePos(new BlockPos(3, 1, 11));
+        cow.moveTo(cowAt.getX() + 0.5, cowAt.getY(), cowAt.getZ() + 0.5, 0.0f, 0.0f);
+        cow.setNoAi(true);
+        helper.getLevel().addFreshEntity(cow);
+        float health = s.owner().getHealth();
+        boolean[] crossed = {false};
+        helper.runAfterDelay(10, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.tools.combat.RangedAttackTool.RangedAttackTaskRecord("shoot-" + java.util.UUID.randomUUID(),
+                        cow.getId(), 20), reply -> { }));
+        helper.onEachTick(() -> {
+            trace(helper, s, "line-of-fire");
+            var box = s.owner().getBoundingBox().inflate(0.3);
+            for (var a : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.projectile.AbstractArrow.class,
+                    box.inflate(8.0), a -> a.getOwner() == s.body())) {
+                if (box.clip(new Vec3(a.xo, a.yo, a.zo), a.position()).isPresent() || box.contains(a.position())) crossed[0] = true;
+            }
+            if (crossed[0] || s.owner().getHealth() < health) {
+                tidy(s);
+                fail(helper, "an arrow passed its owner (health " + s.owner().getHealth() + ")");
+            } else if (cow.getHealth() < cow.getMaxHealth() || !cow.isAlive()) {
+                double aside = Math.abs(s.body().getX() - (from.getX() + 0.5));
+                tidy(s);
+                if (aside >= 1.0) helper.succeed();
+                else fail(helper, String.format("the cow was hit, but from %.1f blocks aside", aside));
+            } else if (helper.getTick() >= 580) {
+                String how = "the cow was never hit; at " + rel(helper, s.body().blockPosition()).toShortString();
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
 }

@@ -75,7 +75,7 @@ public final class PickupItemsReflex implements Reflex {
             ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
             AABB box = sp.getBoundingBox().inflate(PICKUP_RADIUS);
             List<ItemEntity> items = sp.level().getEntitiesOfClass(ItemEntity.class, box,
-                    item -> item.isAlive() && !item.hasPickUpDelay());
+                    item -> item.isAlive() && !item.hasPickUpDelay() && com.mineagent.engine.survival.Manners.mayTake(item, sp));
             if (items.isEmpty()) return Optional.empty();
             items.sort(Comparator.comparingDouble(e -> e.distanceTo(sp)));
             return Optional.of(items.get(0));

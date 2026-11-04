@@ -52,6 +52,15 @@ public final class Switches {
     public static int primeMeat() { return b().primeMeat(); }
     public static int primeTorches() { return b().primeTorches(); }
     public static boolean primeFullIron() { return b().primeFullIron(); }
+    public static boolean manners() { return b().manners(); }
+    public static boolean recoverDrops() { return b().recoverDrops(); }
+    public static boolean feedOwner() { return b().feedOwner(); }
+    public static boolean offerTools() { return b().offerTools(); }
+    public static boolean partner() { return b().partner(); }
+    public static boolean guardPerimeter() { return b().guardPerimeter(); }
+    public static boolean fightPlayers() { return b().fightPlayers(); }
+    public static boolean huntDrops() { return b().huntDrops(); }
+    public static boolean liveTracking() { return b().liveTracking(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

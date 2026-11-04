@@ -1426,16 +1426,22 @@ public final class MineAgentEngine {
         var respawnPos = deadPlayer.getRespawnPosition();
         var destination = respawnPos != null ? respawnPos : level.getSharedSpawnPos();
 
+        // Its owner's things first (SMH plan 70, MA10.8): a companion that can reach where they died goes there;
+        // the rest are sent to the respawn point as before.
+        String diedIn = deadPlayer.serverLevel().dimension().location().toString();
+        net.minecraft.core.BlockPos diedAt = deadPlayer.blockPosition();
         int moved = 0;
         for (UUID companionId : companionIds) {
             CompanionState state = COMPANIONS.get(companionId);
-            if (state != null && com.mineagent.engine.entity.SafeTeleport.near(
+            if (state == null) continue;
+            if (state.loop.ownerDied(diedIn, diedAt)) continue;
+            if (com.mineagent.engine.entity.SafeTeleport.near(
                     state.companion.serverPlayer(), level, destination, 0f, 0f)) {
                 moved++;
             }
         }
 
-        deadPlayer.sendSystemMessage(Component.literal(
+        if (moved > 0) deadPlayer.sendSystemMessage(Component.literal(
                 "§7[MineAgent] " + moved
                         + " companion(s) sent to your respawn point."));
     }

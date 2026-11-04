@@ -98,6 +98,8 @@ public class CollectItemsTask extends CompanionTask<CollectItemsTool.CollectItem
             return TaskState.FAILED;
         }
 
+        // Asked to pick things up: what players threw is fair game for now (SMH plan 70, MA10.5).
+        com.mineagent.engine.survival.Manners.asked(TaskContext.serverPlayer(player));
         switch (phase) {
             case SCAN -> scanForItems();
             case NAVIGATE -> tickNavigate();

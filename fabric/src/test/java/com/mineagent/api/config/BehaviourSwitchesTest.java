@@ -62,6 +62,15 @@ final class BehaviourSwitchesTest {
         assertEquals(64, d.primeMeat(), "prime a world: 64 meat each");
         assertEquals(32, d.primeTorches());
         assertTrue(d.primeFullIron());
+        assertTrue(d.manners(), "manners: what you threw is left alone, no shot past a player");
+        assertTrue(d.recoverDrops());
+        assertTrue(d.feedOwner());
+        assertTrue(d.offerTools());
+        assertTrue(d.partner());
+        assertTrue(d.guardPerimeter());
+        assertTrue(d.fightPlayers(), "only players you name, or who attack first");
+        assertTrue(d.huntDrops());
+        assertFalse(d.liveTracking(), "a hunt uses where it last saw them unless you allow the live position");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

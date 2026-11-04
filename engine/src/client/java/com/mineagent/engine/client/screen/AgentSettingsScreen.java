@@ -36,7 +36,11 @@ public class AgentSettingsScreen extends Screen {
             {"afkFarmLeftAlone", "Leave my AFK farm"}, {"afkKeepBusy", "Keep busy when I'm AFK"},
             {"huntForOrders", "Hunt for orders"}, {"oreSightOnly", "Only ore it has seen"},
             {"readyCheck", "Ready before trips"}, {"sparePickaxe", "Spare pickaxe"}, {"escapeLavaFire", "Out of lava and fire"},
-            {"sleepWhenAway", "Sleep nights when I'm away"}, {"liveOnOwn", "Look after itself when I'm away"}};
+            {"sleepWhenAway", "Sleep nights when I'm away"}, {"liveOnOwn", "Look after itself when I'm away"},
+            {"manners", "Manners"}, {"recoverDrops", "Fetch my things when I die"}, {"feedOwner", "Feed me when I'm low"},
+            {"offerTools", "Offer tools"}, {"partner", "Take the other half of my job"}, {"guardPerimeter", "Guard the perimeter"},
+            {"fightPlayers", "Fight players I name"}, {"huntDrops", "Bring a hunted player's drops"},
+            {"liveTracking", "Hunt by live position"}};
     private static final int[] READY_FOOD = {2, 4, 8, 16, 32};
     private static final int[] READY_TORCHES = {4, 8, 16, 32, 64};
     private static final int[] AFK_MINUTES = {1, 3, 5, 10, 20};
@@ -279,11 +283,14 @@ public class AgentSettingsScreen extends Screen {
         int i = 0;
         for (String[] sw : SWITCHES) {
             boolean on = !b.has(sw[0]) || b.get(sw[0]).getAsBoolean();
-            int x = left + (i % cols) * (w + gap);
-            this.addRenderableWidget(Button.builder(Component.literal(sw[1] + ": " + (on ? "on" : "off")), ignored -> {
-                command("mineagent setconfig behaviour." + sw[0] + " " + (on ? "off" : "on"));
-                command("mineagent settings");
-            }).bounds(x, y + (i / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
+            int slot = i - behaviourPage * PER_PAGE;
+            if (slot >= 0 && slot < PER_PAGE) {
+                int x = left + (slot % cols) * (w + gap);
+                this.addRenderableWidget(Button.builder(Component.literal(sw[1] + ": " + (on ? "on" : "off")), ignored -> {
+                    command("mineagent setconfig behaviour." + sw[0] + " " + (on ? "off" : "on"));
+                    command("mineagent settings");
+                }).bounds(x, y + (slot / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
+            }
             i++;
         }
         i = cycle(b, "afkMinutes", "behaviour.afkMinutes", "AFK after", " min", AFK_MINUTES, i, cols, w, gap, y);
@@ -292,8 +299,21 @@ public class AgentSettingsScreen extends Screen {
         i = cycle(b, "readyTorches", "behaviour.readyTorches", "Trip torches", "", READY_TORCHES, i, cols, w, gap, y);
         i = cycle(m, "thingsSeen", "memory.thingsSeen", "Things seen", "", THINGS_SEEN, i, cols, w, gap, y);
         i = cycle(m, "journalDays", "memory.journalDays", "Journal", " days", JOURNAL_DAYS, i, cols, w, gap, y);
-        cycle(m, "chests", "memory.chests", "Chests", "", CHESTS, i, cols, w, gap, y);
+        i = cycle(m, "chests", "memory.chests", "Chests", "", CHESTS, i, cols, w, gap, y);
+        // More switches than fit: pages, and a button to turn them (SMH plan 70, Switches).
+        int pages = (i + PER_PAGE - 1) / PER_PAGE;
+        if (behaviourPage >= pages) behaviourPage = 0;
+        if (pages > 1) {
+            this.addRenderableWidget(Button.builder(Component.literal("Page " + (behaviourPage + 1) + " of " + pages + " >"), ignored -> {
+                behaviourPage = (behaviourPage + 1) % pages;
+                rebuild();
+            }).bounds(left, y + (PER_PAGE / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
+        }
     }
+
+    /** Which page of the behaviour switches is showing, and how many go on a page (7 rows of 3). */
+    private static int behaviourPage = 0;
+    private static final int PER_PAGE = 21;
 
     /** A setting stepped through a few values; the one after its present value is sent. */
     private int cycle(JsonObject from, String field, String key, String label, String unit, int[] values,
@@ -302,12 +322,14 @@ public class AgentSettingsScreen extends Screen {
         int next = values[0];
         for (int v : values) if (v > now) { next = v; break; }
         final int send = next;
-        int x = left + (i % cols) * (w + gap);
+        int slot = i - behaviourPage * PER_PAGE;
+        if (slot < 0 || slot >= PER_PAGE) return i + 1;
+        int x = left + (slot % cols) * (w + gap);
         String shown = now == 0 && values[0] == 0 ? "no limit" : String.format("%,d", now) + unit;
         this.addRenderableWidget(Button.builder(Component.literal(label + ": " + shown), ignored -> {
             command("mineagent setconfig " + key + " " + send);
             command("mineagent settings");
-        }).bounds(x, y + (i / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
+        }).bounds(x, y + (slot / cols) * (BUTTON_HEIGHT + 3), w, BUTTON_HEIGHT).build());
         return i + 1;
     }
 

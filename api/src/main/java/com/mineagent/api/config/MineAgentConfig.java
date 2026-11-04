@@ -141,6 +141,16 @@ public record MineAgentConfig(
      * @param primeMeat        "prime the world": cooked meat each (0 to 128)
      * @param primeTorches     "prime the world": torches each (0 to 128)
      * @param primeFullIron    "prime the world": a full iron set each (armour, sword, pickaxe); off, a helmet each
+     * @param manners          never takes what a player threw unless handed it or asked; never shoots past a player
+     * @param recoverDrops     when its owner dies, it fetches their things from where they died
+     * @param feedOwner        hands its owner food when they run low (keeping its own floor)
+     * @param offerTools       tells its owner when their tool is nearly broken and it has or can make another
+     * @param partner          takes the other half of its owner's job when it has nothing else to do
+     * @param guardPerimeter   while guarding: lights the perimeter and shoots creepers before they reach it
+     * @param fightPlayers     fights players its owner names, and players who attack it or its owner first
+     * @param huntDrops        after hunting a named player, picks up what they dropped for its owner
+     * @param liveTracking     a hunt may use the server's live position of the player it hunts (off: where it last
+     *                         saw them)
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -171,11 +181,20 @@ public record MineAgentConfig(
         boolean liveOnOwn,
         int primeMeat,
         int primeTorches,
-        boolean primeFullIron
+        boolean primeFullIron,
+        boolean manners,
+        boolean recoverDrops,
+        boolean feedOwner,
+        boolean offerTools,
+        boolean partner,
+        boolean guardPerimeter,
+        boolean fightPlayers,
+        boolean huntDrops,
+        boolean liveTracking
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false
         );
     }
 
@@ -280,7 +299,10 @@ public record MineAgentConfig(
                 rawBehaviour.afkFarmLeftAlone, rawBehaviour.afkKeepBusy, rawBehaviour.huntForOrders, rawBehaviour.oreSightOnly,
                 rawBehaviour.readyCheck, clamp(rawBehaviour.readyFood, 0, 64), clamp(rawBehaviour.readyTorches, 0, 64),
                 rawBehaviour.sparePickaxe, rawBehaviour.escapeLavaFire, rawBehaviour.sleepWhenAway, rawBehaviour.liveOnOwn,
-                clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron);
+                clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
+                rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
+                rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
+                rawBehaviour.liveTracking);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

@@ -427,7 +427,8 @@ public final class GameKnowledge {
         BlockPos at = sp.blockPosition();
         // Closest source first (MA7.6): what lies on the ground near it counts as what it has; the job picks it up.
         for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(at).inflate(GROUND, 6, GROUND),
-                x -> x.isAlive() && !com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(), x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
+                x -> x.isAlive() && com.mineagent.engine.survival.Manners.mayTake(x, sp)
+                        && !com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(), x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
             carried.merge(id(e.getItem().getItem()), e.getItem().getCount(), Integer::sum);
         }
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-12, -4, -12), at.offset(12, 4, 12))) {

@@ -304,11 +304,24 @@ public class RangedAttackTask
     private void navigateToRange() {
         if (nav == null || target == null || !target.isAlive()) return;
         int targetRange = Math.max(5, (int) Math.floor(effectiveRange * 0.7));
-        nav.navigateNear(target.blockPosition().getX(), target.blockPosition().getY(),
-                target.blockPosition().getZ(), targetRange);
+        ServerPlayer sp = TaskContext.serverPlayer(player);
+        if (com.mineagent.engine.survival.Manners.crossesSomeone(sp, sp.getEyePosition(), target.getBoundingBox().getCenter(), target)) {
+            // Someone between it and the target: a few steps to the side for a clear line, not a shot past them.
+            var d = target.position().subtract(sp.position());
+            var side = new net.minecraft.world.phys.Vec3(-d.z, 0, d.x).normalize().scale(4 * sideStep);
+            if (++sidesTried % 3 == 0) sideStep = -sideStep;
+            var to = net.minecraft.core.BlockPos.containing(sp.position().add(side));
+            nav.navigateNear(to.getX(), to.getY(), to.getZ(), 1);
+        } else {
+            nav.navigateNear(target.blockPosition().getX(), target.blockPosition().getY(),
+                    target.blockPosition().getZ(), targetRange);
+        }
         repathTicks = 0;
         phase = Phase.NAVIGATE;
     }
+
+    /** Which side it steps to for a clear line, and how often it has tried. */
+    private int sideStep = 1, sidesTried;
 
     private boolean isInFiringRange(double distance) {
         // GoalNear expresses a disk (distance <= radius), not an annulus.
@@ -322,7 +335,10 @@ public class RangedAttackTask
 
     private boolean hasClearShot() {
         ServerPlayer sp = TaskContext.serverPlayer(player);
-        return target != null && target.isAlive() && sp.hasLineOfSight(target);
+        // Never a shot past a player who isn't the target (SMH plan 70, MA10.5): it moves for a clear line instead.
+        return target != null && target.isAlive() && sp.hasLineOfSight(target)
+                && !com.mineagent.engine.survival.Manners.crossesSomeone(sp, sp.getEyePosition(),
+                        target.getBoundingBox().getCenter(), target);
     }
 
     private void aimAtTarget() {
