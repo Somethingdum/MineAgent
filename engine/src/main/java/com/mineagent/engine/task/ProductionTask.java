@@ -1702,6 +1702,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (count(sp, net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) {
                 var ownTable = recipeFor(sp, "minecraft:crafting_table");
                 if (ownTable == null || !"ok".equals(craftOnce(sp, ownTable, 1))) {
+                    // No wood for one of its own (the eighth benchmark run, the trees near its base cut): another
+                    // table it can get to (its hut's), before giving up on the craft.
+                    BlockPos other = nearestTable(sp);
+                    if (other != null) {
+                        if (!walkSoftly(other, 1)) return "";
+                        if (inCraftRange(sp, other)) return "";
+                        tablesOutOfReach.add(other);
+                        return "";
+                    }
                     lastCraftError = "I can't get to the crafting table at " + table.toShortString() + " and can't make one";
                     return null;
                 }
