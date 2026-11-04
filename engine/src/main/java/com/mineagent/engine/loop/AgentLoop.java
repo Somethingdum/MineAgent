@@ -4978,7 +4978,7 @@ public class AgentLoop {
             afkKitAt = now;
             afkKitTries++;
             journal.record("afk", "a starter kit first: " + kit.replace(", then ", ", "), now);
-            queueOrders(kit, AFK_SELF);
+            queueOwn(kit, AFK_SELF);
         }
     }
 
@@ -5073,7 +5073,7 @@ public class AgentLoop {
             kitAt = now;
             kitTries++;
             journal.record("survive", "a starter kit first: " + kit.replace(", then ", ", "), now);
-            queueOrders(kit);
+            queueOwn(kit, "owner");
             return;
         }
         if (surviveAt == null && !surviveFailed) {
@@ -5189,14 +5189,14 @@ public class AgentLoop {
         String kit = starterKit(self);
         if (!kit.isEmpty()) {
             journal.record("survive", "keeping up: " + kit.replace(", then ", ", "), now);
-            queueOrders(kit);
+            queueOwn(kit, "owner");
             return;
         }
         var h = home(dim);
         if (h != null && !hutNear(dim, h) && now - hutAt >= 24_000) {
             hutAt = now;
             journal.record("survive", "no hut by home: building one", now);
-            queueOrders("build a home hut");
+            queueOwn("build a home hut", "owner");
         }
     }
 
@@ -6598,13 +6598,22 @@ public class AgentLoop {
      * meant now pinned down in the words, what it was doing after them. False when the line is one order.
      */
     private boolean queueOrders(String line) {
-        return queueOrders(line, "owner");
+        return queueOrders(line, "owner", false);
     }
 
-    /** As {@link #queueOrders(String)}, set by {@code setBy} ("owner", or {@link #AFK_SELF} for its own while they're away). */
-    private boolean queueOrders(String line, String setBy) {
+    /**
+     * Orders it gives itself (its starter kit, its hut built again): goals in its book even when there is only one, set
+     * by {@code setBy} ("owner", or {@link #AFK_SELF} for its own while they're away). A single order from chat is left
+     * to the command path; one of its own has no other way in.
+     */
+    private boolean queueOwn(String line, String setBy) {
+        return queueOrders(line, setBy, true);
+    }
+
+    private boolean queueOrders(String line, String setBy, boolean evenOne) {
         var orders = com.mineagent.engine.goal.Orders.split(line);
-        if (orders.size() < 2) {
+        if (orders.isEmpty() && evenOne) orders = List.of(com.mineagent.engine.goal.Orders.order(line));
+        if (orders.size() < 2 && !(evenOne && orders.size() == 1)) {
             // One order that stands ("make me 64 torches until I say stop"), when code runs it: a standing goal.
             var one = com.mineagent.engine.goal.Orders.order(line);
             if (!one.standing() || orderIn(one.text(), companion.companionName()).isEmpty()) return false;

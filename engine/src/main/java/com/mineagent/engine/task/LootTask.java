@@ -553,8 +553,11 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
         // From a spot in reach of it, never on it, on TNT, or on a block it is about to take.
         boolean onOne = standingOn(sp, target) || uncover.contains(sp.blockPosition().below()) && !level.getBlockState(sp.blockPosition().below()).isAir()
                 || level.getBlockState(sp.blockPosition().below()).is(Blocks.TNT);
-        if (target.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0 || onOne) {
+        // In reach as the game has it (4.5, a little under it), from a spot chosen well inside it (3.8 from the spot's
+        // middle), so standing a little off the middle still reaches.
+        if (target.distToCenterSqr(sp.getEyePosition()) > 4.3 * 4.3 || onOne) {
             if (standAt == null) standAt = standFor(level, sp, target);
+            if (standAt != null && sp.blockPosition().equals(standAt) && !onOne) standAt = null; // there and still short: looked for again
             BlockPos to = standAt != null ? standAt : target;
             if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(to.getX(), to.getY(), to.getZ(), standAt != null ? 0 : 2);
             nav.tick();
@@ -581,7 +584,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
             var ust = level.getBlockState(under);
             if (!com.mineagent.engine.pathing.util.BlockHelper.canStandOn(ust) || ust.is(Blocks.TNT) || uncover.contains(under) || tnt.contains(under)) continue;
             double eye = net.minecraft.world.phys.Vec3.atBottomCenterOf(p).add(0, 1.62, 0).distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(target));
-            if (eye > 4.0 * 4.0 || p.equals(target.above())) continue;
+            if (eye > 3.8 * 3.8 || p.equals(target.above())) continue;
             double d = p.distSqr(sp.blockPosition());
             if (d < bestD) {
                 bestD = d;

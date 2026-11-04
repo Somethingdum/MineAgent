@@ -96,7 +96,9 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     // librarian stays a long while): that spot is the cell, the cell turned to it, what is up kept.
                     BlockPos vAt = v.blockPosition();
                     if (!vAt.equals(at(layout.cell())) && layout.walls().contains(new VillagerCell.Pos(vAt.getX(), vAt.getY(), vAt.getZ()))) {
-                        if (++offCell > 100) {
+                        // Five seconds on such spots all told (it steps off and back as it works), or at once when its
+                        // spot is all that is left to build.
+                        if (++offCell > 100 || onlyItsSpotLeft) {
                             var turned = toward(level, at(layout.jobSite()), vAt);
                             if (turned != null) {
                                 layout = turned;
@@ -104,9 +106,10 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                             }
                             offCell = 0;
                         }
-                    } else {
-                        offCell = 0;
+                    } else if (offCell > 0) {
+                        offCell--;
                     }
+                    onlyItsSpotLeft = false;
                     boolean waiting = false, underMe = false;
                     for (var w : layout.walls()) {
                         BlockPos p = at(w);
@@ -148,7 +151,10 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         nav.tick();
                         return TaskState.RUNNING;
                     }
-                    if (waiting) return TaskState.RUNNING; // only spots the villager stands on, or that won't take yet, are left
+                    if (waiting) {
+                        onlyItsSpotLeft = true; // looked at next tick: turned to where it stands, if that is beside its job site
+                        return TaskState.RUNNING; // only spots the villager stands on, or that won't take yet, are left
+                    }
                     phase = Phase.WAIT;
                     ticks = 0;
                     return TaskState.RUNNING;
@@ -226,6 +232,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
 
     private BlockPos waitAt;
     private int offCell;
+    private boolean onlyItsSpotLeft;
 
     /**
      * The cell where the villager stands, when that is beside its job site at its height (the way in and the place to

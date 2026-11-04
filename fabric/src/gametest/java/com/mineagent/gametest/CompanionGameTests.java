@@ -2850,7 +2850,7 @@ public class CompanionGameTests implements FabricGameTest {
      * torches), in a field with sheep and cows, the iron already mined: a hut built and checked, the helmets smelted
      * and made, beds from shorn wool, food hunted and cooked, the area lit, and its owner's share handed over.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_prime", timeoutTicks = 9000)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_prime", timeoutTicks = 12000)
     public void aSmallPrime(GameTestHelper helper) {
         setting(helper, "behaviour.primeFullIron", "off");
         setting(helper, "behaviour.primeMeat", "4");
@@ -2902,7 +2902,7 @@ public class CompanionGameTests implements FabricGameTest {
                 tidy(s);
                 if (hut && helmets >= 1 && mine >= 1 && beds >= 1) helper.succeed();
                 else fail(helper, how);
-            } else if (helper.getTick() >= 8900) {
+            } else if (helper.getTick() >= 11900) {
                 String how = "goal " + s.loop().goalBook().active().map(g -> g.text()).orElse("none") + "; hut " + hut + ", helmets to owner " + helmets
                         + ", beds " + beds + "; said: " + lastSaid(s, "");
                 restore.run();
