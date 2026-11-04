@@ -3816,4 +3816,33 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA7.9, lava buckets as fuel: "make me 8 iron ingots" with no coal or wood, a bucket and a furnace, and a
+     * pool of lava in sight: the bucket filled at the edge, the furnace lit with it, the bucket taken back, 8 ingots out.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_lava_fuel", timeoutTicks = 3000)
+    public void ironSmeltedWithLavaFromThePool(GameTestHelper helper) {
+        Scene s = scene(helper, "Smelter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 9; x <= 11; x++) for (int z = 2; z <= 4; z++) helper.setBlock(x, 0, z, Blocks.LAVA);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.RAW_IRON, 8));
+        inv.setItem(2, new ItemStack(Items.BUCKET));
+        inv.setItem(3, new ItemStack(Items.FURNACE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 8 iron ingots"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "lava fuel");
+            String done = lastSaid(s, "Done");
+            String failed = lastSaid(s, "I can't");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2950) {
+                int ingots = inv.countItem(Items.IRON_INGOT), buckets = inv.countItem(Items.BUCKET);
+                String how = ingots + " ingots, " + buckets + " buckets back, health " + s.body().getHealth() + "; plan: " + lastSaid(s, "On it")
+                        + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (ingots >= 8 && buckets == 1 && lastSaid(s, "On it").contains("lava")) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

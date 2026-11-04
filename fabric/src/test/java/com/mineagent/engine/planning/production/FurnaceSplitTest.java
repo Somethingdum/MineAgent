@@ -41,4 +41,20 @@ final class FurnaceSplitTest {
         assertEquals(1, s.furnaces());
         assertEquals(1, s.fuelTotal());
     }
+
+    @Test void lavaLightsEveryFurnaceABucketEach() {
+        var s = FurnaceSplit.split(200, 13, 200, 20_000, true);
+        assertEquals(13, s.furnaces(), "lava is filled again at the pool: every furnace lit");
+        assertEquals(13, s.fuelTotal());
+        int sum = 0;
+        for (int i = 0; i < s.items().length; i++) {
+            sum += s.items()[i];
+            assertEquals(1, s.fuel()[i]);
+        }
+        assertEquals(200, sum);
+        assertEquals(16L * 200, s.ticks());
+        var thrifty = FurnaceSplit.split(200, 13, 200, 20_000);
+        assertEquals(2, thrifty.furnaces(), "not freely: no more furnaces than pieces of fuel");
+        assertEquals(2, FurnaceSplit.split(150, 1, 200, 20_000, true).fuelTotal(), "more than a bucket burns in one: two");
+    }
 }

@@ -32,6 +32,13 @@ public final class Production {
     }
 
     /** A source that is shearing an animal, which it leaves: "shear:minecraft:sheep:white". */
+    /** A source that is a fluid scooped up in a bucket: "fluid:minecraft:lava" (a lava pool, for fuel; MA7.9). */
+    public static final String FLUID = "fluid:";
+
+    public static boolean fluid(String block) {
+        return block != null && block.startsWith(FLUID);
+    }
+
     public static final String SHEAR = "shear:";
 
     public static boolean shearing(String block) {
@@ -75,12 +82,13 @@ public final class Production {
      * (placed nearby or carried), whether a crafting table is at hand, and where each mineable block is.
      */
     /**
-     * What it has and knows. {@code animals}: for an animal or shearing source it can see, how many it may take (the herd
-     * less the two of a kind it leaves; the sheep ready to shear); one not in it is not counted (seen before, elsewhere).
+     * What it has and knows. {@code limited}: for a source there is only so much of near it, how many it may take (a herd
+     * less the two of a kind it leaves; the sheep ready to shear; the lava pools in sight); one not in it is not counted
+     * (seen before, elsewhere).
      */
     public record Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
                        boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance, int smokers,
-                       int blastFurnaces, Map<String, Integer> animals) {
+                       int blastFurnaces, Map<String, Integer> limited) {
         public Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
                     boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance) {
             this(carried, stored, tools, furnaces, table, blocks, knownDistance, 0, 0, Map.of());

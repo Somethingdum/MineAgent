@@ -60,8 +60,8 @@ public final class ProductionPlanner {
     private int furnaces;
     private boolean table;
     private final Map<String, Double> memo = new HashMap<>();
-    /** Animals it may still take (and sheep still to shear) for this job, by source: none left, none more. */
-    private final Map<String, Integer> animalsLeft = new HashMap<>();
+    /** What it may still take of a source there is only so much of (animals, sheep to shear, lava pools), for this job. */
+    private final Map<String, Integer> limitedLeft = new HashMap<>();
 
     /** The job, in order. */
     private final List<Step> steps = new ArrayList<>();
@@ -98,7 +98,9 @@ public final class ProductionPlanner {
             for (Step s : steps) {
                 switch (s.action()) {
                     case FETCH -> parts.add(String.format(Locale.ROOT, "%,d %s from my chests", s.count(), plural(s.item(), s.count())));
-                    case MINE -> parts.add(String.format(Locale.ROOT, "mine %,d %s", s.blocks(), plural(s.block(), s.blocks())));
+                    case MINE -> parts.add(Production.fluid(s.block())
+                            ? String.format(Locale.ROOT, "fill %,d %s with %s", s.blocks(), s.blocks() == 1 ? "bucket" : "buckets", name(s.block()))
+                            : String.format(Locale.ROOT, "mine %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case HUNT -> parts.add(String.format(Locale.ROOT, "hunt %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case SHEAR -> parts.add(String.format(Locale.ROOT, "shear %,d %s", s.blocks(), plural(s.block(), s.blocks())));
                     case HARVEST -> parts.add(String.format(Locale.ROOT, "harvest %,d ripe %s", s.blocks(), name(s.block())));
@@ -129,7 +131,7 @@ public final class ProductionPlanner {
         this.without = without;
         carried.putAll(have.carried());
         stored.putAll(have.stored());
-        if (have.animals() != null) animalsLeft.putAll(have.animals());
+        if (have.limited() != null) limitedLeft.putAll(have.limited());
         tools.addAll(have.tools());
         furnaces = have.furnaces();
         smokers = have.smokers();
@@ -237,11 +239,12 @@ public final class ProductionPlanner {
     private double mineUnit(Source s, Set<String> path) {
         if (s.perBlock() <= 0 || (s.silkTouch() && noSilk.contains(s.item())) || without.contains(s.block())
                 || Production.animal(s.block()) && without.contains(Production.ENTITY + "*")) return Double.POSITIVE_INFINITY;
-        if (animalsLeft.containsKey(s.block()) && animalsLeft.get(s.block()) <= 0) return Double.POSITIVE_INFINITY; // all taken
+        if (limitedLeft.containsKey(s.block()) && limitedLeft.get(s.block()) <= 0) return Double.POSITIVE_INFINITY; // all taken
         double wear = toolWear(s, path);
         if (Double.isInfinite(wear)) return wear;
         Where where = have.where(s.block());
         if (where == Where.UNKNOWN && (seenOnly || without.contains(Production.UNSEEN))) return Double.POSITIVE_INFINITY;
+        if (Production.fluid(s.block()) && where != Where.KNOWN) return Double.POSITIVE_INFINITY; // lava in sight only: never gone looking for
         double reach = where == Where.COMMON ? 0 : where == Where.KNOWN
                 ? WALK_PER_BLOCK * have.knownDistance().getOrDefault(s.block(), 32) / 64.0 : UNSEEN;
         return (s.breakTicks() + MINE_WALK + wear + reach) / s.perBlock();
@@ -379,18 +382,18 @@ public final class ProductionPlanner {
                 return;
             }
         }
-        if (bestSource != null && animalsLeft.containsKey(bestSource.block())) {
-            // So many animals there (or sheep to shear): what they give, and the rest another way.
-            int can = animalsLeft.get(bestSource.block());
+        if (bestSource != null && limitedLeft.containsKey(bestSource.block())) {
+            // So many animals there (or sheep to shear, or lava): what they give, and the rest another way.
+            int can = limitedLeft.get(bestSource.block());
             int need = (int) Math.ceil(left / bestSource.perBlock());
             if (need > can) {
                 int got = Math.min(left, (int) Math.floor(can * bestSource.perBlock()));
                 if (got > 0) mine(bestSource, got, depth, p);
-                animalsLeft.put(bestSource.block(), 0);
+                limitedLeft.put(bestSource.block(), 0);
                 make(item, left - got, depth, path);
                 return;
             }
-            animalsLeft.put(bestSource.block(), can - need);
+            limitedLeft.put(bestSource.block(), can - need);
         }
         if (bestSource != null) mine(bestSource, left, depth, p);
         else craft(bestRecipe, left, depth, p);
@@ -399,8 +402,11 @@ public final class ProductionPlanner {
     /** When the animals near are all spoken for: "not enough cows near for 6 more beef (I leave two of a kind)". */
     private String tooFew(String item, int left) {
         for (Source s : book.sources(item)) {
-            if (!animalsLeft.containsKey(s.block()) || animalsLeft.get(s.block()) > 0) continue;
+            if (!limitedLeft.containsKey(s.block()) || limitedLeft.get(s.block()) > 0) continue;
             String b = s.block();
+            if (Production.fluid(b)) {
+                return String.format(Locale.ROOT, "there isn't enough %s near for %d more %s", name(b), left, plural(item, left));
+            }
             String who = Production.shearing(b)
                     ? b.substring(b.lastIndexOf(':') + 1).replace('_', ' ') + " sheep ready to shear"
                     : b.substring(b.lastIndexOf(':') + 1).replace('_', ' ') + "s";
@@ -619,13 +625,15 @@ public final class ProductionPlanner {
             memo.clear();
             double errand = Double.isInfinite(seenUnit) && !Double.isInfinite(fuelUnit) ? SEARCH_TICKS : ERRAND_TICKS;
             int haveFuel = available(e.getKey());
+            boolean freely = freely(e.getKey());
+            int most = limitedMost(e.getKey());
             for (int f = 1; f <= Math.max(mostStations, haveStations); f++) {
-                var sp = FurnaceSplit.split(items, f, r.cookTicks(), burn);
+                var sp = FurnaceSplit.split(items, f, r.cookTicks(), burn, freely);
                 int extra = Math.max(0, sp.furnaces() - haveStations);
                 double build = extra == 0 ? 0 : !furnace ? Double.POSITIVE_INFINITY
                         : buildCost.computeIfAbsent(extra, n -> furnacesCost(n, path));
                 int buy = Math.max(0, sp.fuelTotal() - haveFuel);
-                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) ? Double.POSITIVE_INFINITY : buy * fuelUnit + errand;
+                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) || buy > most ? Double.POSITIVE_INFINITY : buy * fuelUnit + errand;
                 double total = sp.ticks() + build + fuelCost + sp.furnaces() * TEND_TICKS;
                 if (best == null || total < best.total() - 1e-9
                         || (Math.abs(total - best.total()) < 1e-9 && sp.furnaces() < best.split().furnaces())) {
@@ -635,6 +643,26 @@ public final class ProductionPlanner {
             }
         }
         return best == null || Double.isInfinite(best.total()) ? null : best;
+    }
+
+    /** A fuel cheap to have more of than it burns: a bucket of lava (MA7.9). The task splits by the same rule. */
+    public static boolean freely(String fuel) {
+        return "minecraft:lava_bucket".equals(fuel);
+    }
+
+    /**
+     * The most of an item it can get when all its sources are ones there is only so much of (the lava pools in sight);
+     * unbounded otherwise.
+     */
+    private int limitedMost(String item) {
+        long most = 0;
+        for (Source s : book.sources(item)) {
+            Integer left = limitedLeft.get(s.block());
+            if (left == null) return Integer.MAX_VALUE;
+            most += (long) Math.floor(left * s.perBlock());
+        }
+        if (!book.recipes(item).isEmpty()) return Integer.MAX_VALUE;
+        return (int) Math.min(Integer.MAX_VALUE, most);
     }
 
     private void stationsNotItems(String station, int stations, String order) {
@@ -656,7 +684,7 @@ public final class ProductionPlanner {
             return n * unit("minecraft:furnace", new HashSet<>(path));
         }
         Have now = new Have(new HashMap<>(carried), new HashMap<>(stored), new ArrayList<>(tools), furnaces, table,
-                have.blocks(), have.knownDistance(), smokers, blasts, new HashMap<>(animalsLeft));
+                have.blocks(), have.knownDistance(), smokers, blasts, new HashMap<>(limitedLeft));
         ProductionPlanner sub = new ProductionPlanner(book, now, without);
         sub.nesting = nesting + 1;
         sub.make("minecraft:furnace", n, 0, new HashSet<>(path));

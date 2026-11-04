@@ -116,6 +116,8 @@ public final class GameKnowledge {
             ItemStack stack = new ItemStack(item);
             if (stack.getMaxDamage() > 0 && kindOf(stack) != null) durability.put(id(item), stack.getMaxDamage());
         }
+        // A bucket is a tool that never wears: scooping lava with it (MA7.9).
+        if (com.mineagent.engine.settings.Switches.lavaFuel()) durability.put("minecraft:bucket", BUCKET_USES);
         return new Book(recipes, sources, fuel, durability);
     }
 
@@ -138,6 +140,9 @@ public final class GameKnowledge {
     }
 
     /** "pickaxe", "axe", "shovel", "hoe" for a tool, else null. */
+    /** A bucket's "uses": it doesn't wear out. */
+    static final int BUCKET_USES = 10_000;
+
     static String kindOf(ItemStack stack) {
         if (stack.is(ItemTags.PICKAXES)) return "pickaxe";
         if (stack.is(ItemTags.AXES)) return "axe";
@@ -170,6 +175,11 @@ public final class GameKnowledge {
                 new Probe(new ItemStack(Items.SHEARS), "shears", 0, false));
         Map<String, List<Source>> out = new HashMap<>();
         BlockPos at = sp.blockPosition();
+        if (com.mineagent.engine.settings.Switches.lavaFuel()) {
+            // Lava for fuel (MA7.9): a bucket filled at a pool, 100 smelts a bucket; the bucket comes back when it burns.
+            out.computeIfAbsent("minecraft:lava_bucket", k -> new ArrayList<>()).add(new Source("minecraft:lava_bucket",
+                    Production.FLUID + "minecraft:lava", "bucket", 0, false, 1.0, 20));
+        }
         if (com.mineagent.engine.settings.Switches.pickBerries()) {
             // Berries picked by hand, the plant left to grow more (MA8.5): a ripe bush gives 2 to 3, a vine 1.
             out.computeIfAbsent("minecraft:sweet_berries", k -> new ArrayList<>()).add(new Source("minecraft:sweet_berries",
@@ -414,7 +424,7 @@ public final class GameKnowledge {
                 ? Reserves.afterFloors(h.carried(), foods().keySet(), keepFood, keepTorches) : h.carried();
         Map<String, Integer> stored = loop != null && job != null ? loop.itemReservations().free(h.stored(), job) : h.stored();
         return new Have(carried, stored, h.tools(), h.furnaces(), h.table(), h.blocks(), h.knownDistance(), h.smokers(), h.blastFurnaces(),
-                h.animals());
+                h.limited());
     }
 
     private static Have haveAll(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except) {
@@ -439,6 +449,7 @@ public final class GameKnowledge {
                 tools.add(new Tool(kind, ProductionPlanner.tierOf(id(s.getItem())),
                         EnchantmentHelper.getItemEnchantmentLevel(silk, s) > 0, Math.max(0, s.getMaxDamage() - s.getDamageValue() - 1)));
             }
+            if (s.is(Items.BUCKET) && com.mineagent.engine.settings.Switches.lavaFuel()) tools.add(new Tool("bucket", 0, false, BUCKET_USES));
             if (s.is(Items.FURNACE)) furnaces += s.getCount();
             if (s.is(Items.SMOKER)) smokers += s.getCount();
             if (s.is(Items.BLAST_FURNACE)) blasts += s.getCount();
@@ -470,9 +481,17 @@ public final class GameKnowledge {
         for (String b : COMMON) where.put(b, Where.COMMON);
         Map<String, Integer> distance = new HashMap<>();
         // Trees it can see from here: logs are where trees are, not everywhere (a desert, a cave, a test field).
+        boolean lavaFuel = com.mineagent.engine.settings.Switches.lavaFuel();
+        int lava = 0, lavaAt = Integer.MAX_VALUE;
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 12, 24))) {
             if (!level.isLoaded(p)) continue;
             var st = level.getBlockState(p);
+            if (lavaFuel && st.is(net.minecraft.world.level.block.Blocks.LAVA) && st.getFluidState().isSource()) {
+                lava++;
+                int d = (int) Math.sqrt(p.distSqr(at));
+                if (d < lavaAt) lavaAt = d;
+                continue;
+            }
             String berry = com.mineagent.engine.task.ProductionTask.ripeBerries(st);
             if (berry != null || st.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(st)) {
                 String key = Production.CROP + (berry != null ? berry : id(st.getBlock()));
@@ -500,11 +519,18 @@ public final class GameKnowledge {
             herdAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);
         }
         // Sheep ready to shear, by colour: shearing leaves them, so there is no two to leave.
-        Map<String, Integer> animals = new HashMap<>();
+        Map<String, Integer> limited = new HashMap<>();
+        if (lava > 0) {
+            // The lava pools in sight: so many buckets, and no more (MA7.9).
+            String key = Production.FLUID + "minecraft:lava";
+            where.put(key, Where.KNOWN);
+            distance.put(key, lavaAt);
+            limited.put(key, lava);
+        }
         for (var sheep : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, new net.minecraft.world.phys.AABB(at).inflate(48),
                 sh -> sh.isAlive() && sh.readyForShearing())) {
             String key = Production.SHEAR + "minecraft:sheep:" + sheep.getColor().getName();
-            animals.merge(key, 1, Integer::sum);
+            limited.merge(key, 1, Integer::sum);
             int d = (int) Math.sqrt(sheep.blockPosition().distSqr(at));
             if (!distance.containsKey(key) || d < distance.get(key)) {
                 where.put(key, Where.KNOWN);
@@ -515,7 +541,7 @@ public final class GameKnowledge {
             if (n > LEAVE) {
                 where.put(key, Where.KNOWN);
                 distance.put(key, herdAt.get(key));
-                animals.put(key, n - LEAVE); // how many it may take: the rest of the herd stays to breed
+                limited.put(key, n - LEAVE); // how many it may take: the rest of the herd stays to breed
             }
         });
         if (loop != null) {
@@ -544,6 +570,6 @@ public final class GameKnowledge {
                 }
             }
         }
-        return new Have(carried, stored, tools, furnaces, table, where, distance, smokers, blasts, animals);
+        return new Have(carried, stored, tools, furnaces, table, where, distance, smokers, blasts, limited);
     }
 }

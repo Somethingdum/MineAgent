@@ -18,10 +18,19 @@ public final class FurnaceSplit {
 
     /** {@code items} to smelt at {@code cookTicks} each, in at most {@code furnaces} furnaces, burning fuel of {@code fuelTicks}. */
     public static Split split(int items, int furnaces, int cookTicks, int fuelTicks) {
+        return split(items, furnaces, cookTicks, fuelTicks, false);
+    }
+
+    /**
+     * As {@link #split(int, int, int, int)}; {@code freely}: a fuel cheap to have more of than it burns (a bucket of
+     * lava, filled again at the pool), so every furnace asked for is lit, each with a piece, part of it left unburnt.
+     */
+    public static Split split(int items, int furnaces, int cookTicks, int fuelTicks, boolean freely) {
         int cook = Math.max(1, cookTicks);
         int burn = Math.max(1, fuelTicks);
         // Items a piece of fuel smelts in full (a coal 8; a plank, 300 ticks, one and a half: 1 in full).
         int per = Math.max(1, burn / cook);
+        if (freely) per = Math.max(1, Math.min(per, (int) Math.ceil(items / (double) Math.max(1, Math.min(furnaces, items)))));
         int units = (int) Math.ceil(items / (double) per);
         int lit = Math.max(1, Math.min(Math.max(1, furnaces), Math.max(1, units)));
         int[] each = new int[lit];

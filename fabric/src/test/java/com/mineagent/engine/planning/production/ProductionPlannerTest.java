@@ -312,6 +312,57 @@ final class ProductionPlannerTest {
         assertTrue(p.problems().toString().contains("enough cows near for 6 more beef"), p.problems().toString());
     }
 
+    // ── Lava for fuel (MA7.9) ───────────────────────────────────────
+
+    static final String LAVA = "fluid:minecraft:lava";
+
+    static Book withLava() {
+        Book b = vanilla();
+        Map<String, List<Source>> s = new HashMap<>(b.sourcesByItem());
+        s.put(m("lava_bucket"), List.of(new Source(m("lava_bucket"), LAVA, "bucket", 0, false, 1.0, 20)));
+        Map<String, Integer> fuel = new HashMap<>(b.fuelTicks());
+        fuel.put(m("lava_bucket"), 20_000);
+        Map<String, Integer> uses = new HashMap<>(b.durability());
+        uses.put(m("bucket"), 10_000);
+        return new Book(b.recipesByOutput(), s, fuel, uses);
+    }
+
+    static Have lavaHave(int pools, boolean seen, Map<String, Integer> carried) {
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, m("oak_log"), Where.COMMON));
+        if (seen) w.put(LAVA, Where.KNOWN);
+        return new Have(carried, Map.of(), List.of(new Tool("pickaxe", 1, false, 131), new Tool("bucket", 0, false, 10_000)), 2, true,
+                w, Map.of(LAVA, 6), 0, 0, seen ? Map.of(LAVA, pools) : Map.of());
+    }
+
+    @Test void aBigSmeltBurnsLavaFromThePoolInSight() {
+        var p = ProductionPlanner.plan(withLava(), lavaHave(16, true, Map.of(m("cobblestone"), 200)), m("stone"), 200);
+        assertTrue(p.possible(), p.problems().toString());
+        var smelt = only(p, Action.SMELT, m("stone"));
+        assertEquals(m("lava_bucket"), smelt.fuel(), p.summary());
+        assertEquals(smelt.furnaces(), smelt.fuelCount(), "a bucket a furnace: " + p.summary());
+        assertTrue(smelt.furnaces() > 2, "lava doesn't hold it to two furnaces for 200: " + p.summary());
+        assertEquals(smelt.fuelCount(), only(p, Action.MINE, m("lava_bucket")).blocks(), p.summary());
+        assertTrue(p.summary().contains("with lava"), p.summary());
+    }
+
+    @Test void noMoreBucketsOfLavaThanThePoolsInSight() {
+        var p = ProductionPlanner.plan(withLava(), lavaHave(3, true, Map.of(m("cobblestone"), 200)), m("stone"), 200);
+        assertTrue(p.possible(), p.problems().toString());
+        var smelt = only(p, Action.SMELT, m("stone"));
+        if (smelt.fuel().equals(m("lava_bucket"))) assertTrue(smelt.fuelCount() <= 3, p.summary());
+    }
+
+    @Test void noLavaInSightIsNeverGoneLookingFor() {
+        var p = ProductionPlanner.plan(withLava(), lavaHave(0, false, Map.of(m("cobblestone"), 200)), m("stone"), 200);
+        assertTrue(p.steps().stream().noneMatch(s -> s.action() == Action.MINE && s.item().equals(m("lava_bucket"))), p.summary());
+    }
+
+    @Test void coalItCarriesBeatsLava() {
+        var p = ProductionPlanner.plan(withLava(), lavaHave(4, true, Map.of(m("cobblestone"), 16, m("coal"), 4)), m("stone"), 16);
+        assertTrue(p.possible(), p.problems().toString());
+        assertEquals(m("coal"), only(p, Action.SMELT, m("stone")).fuel(), p.summary());
+    }
+
     @Test void noShearsItMakesThemFirst() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("oak_planks"), 3, m("iron_ingot"), 2), List.of(), 0, 0, 0,
                 Map.of(WHITE_SHEEP, Where.KNOWN), Map.of(WHITE_SHEEP, 12)), m("white_bed"), 1);

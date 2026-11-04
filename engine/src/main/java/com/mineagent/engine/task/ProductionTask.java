@@ -532,7 +532,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         TaskState s = switch (step.action()) {
             case FETCH -> fetch();
-            case MINE -> mine();
+            case MINE -> Production.fluid(step.block()) ? scoop() : mine();
             case HUNT -> hunt();
             case SHEAR -> shear();
             case HARVEST -> harvest();
@@ -1127,6 +1127,29 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     private String lastCraftError = "";
+    /** Crafting tables it couldn't get to in this job (walled in, behind a fence): it puts one of its own down instead. */
+    private final java.util.Set<BlockPos> tablesOutOfReach = new java.util.HashSet<>();
+
+    /**
+     * Toward {@code p}, to within {@code radius}: false on the way, true when there or when there is no way (the caller
+     * looks which), never failing the job.
+     */
+    private boolean walkSoftly(BlockPos p, int radius) {
+        if (walkingTo == null || !walkingTo.equals(p)) {
+            walkingTo = p.immutable();
+            arrived = false;
+            navFailed = false;
+            nav.navigateNear(p.getX(), p.getY(), p.getZ(), radius);
+            return false;
+        }
+        if (navFailed || arrived && !nav.isNavigating()) {
+            walkingTo = null;
+            navFailed = false;
+            return true;
+        }
+        nav.tick();
+        return false;
+    }
     /** Times a craft found an input short and it planned again. */
     private int craftReplans;
 
@@ -1167,8 +1190,25 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         String error = o.has("error") ? o.get("error").getAsString() : reply[0] == null ? "no reply" : reply[0];
         if (code.equals("crafting_table_out_of_reach") && o.has("nearest_table")) {
             var t = o.getAsJsonObject("nearest_table");
-            walkTo(new BlockPos(t.get("x").getAsInt(), t.get("y").getAsInt(), t.get("z").getAsInt()));
-            return "";
+            BlockPos table = new BlockPos(t.get("x").getAsInt(), t.get("y").getAsInt(), t.get("z").getAsInt());
+            if (!tablesOutOfReach.contains(table)) {
+                if (!walkSoftly(table, 2)) return "";
+                if (sp.canInteractWithBlock(table, 1.0)) return "";
+                tablesOutOfReach.add(table); // walled in, behind a fence: one of its own, put down here, instead
+            }
+            if (count(sp, net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) {
+                var ownTable = recipeFor(sp, "minecraft:crafting_table");
+                if (ownTable == null || !"ok".equals(craftOnce(sp, ownTable, 1))) {
+                    lastCraftError = "I can't get to the crafting table at " + table.toShortString() + " and can't make one";
+                    return null;
+                }
+            }
+            if (placeNear(sp, Blocks.CRAFTING_TABLE.defaultBlockState(), 1)) {
+                wait = 2;
+                return "";
+            }
+            lastCraftError = "I can't get to the crafting table at " + table.toShortString() + " and have nowhere to put one";
+            return null;
         }
         if (error.contains("No crafting table")) {
             if (placeNear(sp, Blocks.CRAFTING_TABLE.defaultBlockState(), 1)) {
@@ -1194,22 +1234,35 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         ServerPlayer sp = sp();
         ServerLevel level = sp.serverLevel();
         Item out = item(step.item()), in = item(step.input()), fuel = item(step.fuel());
+        boolean lavaFuel = fuel == net.minecraft.world.item.Items.LAVA_BUCKET;
+        if (refilling) {
+            // Its bucket came back from a furnace: filled again for the next one.
+            if (count(sp, fuel) > 0 || count(sp, net.minecraft.world.item.Items.BUCKET) == 0) {
+                refilling = false;
+            } else if (fillAtLava(sp) == TaskState.FAILED) {
+                refilling = false;
+                lavaGone = true;
+            }
+            return TaskState.RUNNING;
+        }
         if (smeltStage == 0) {
             // Where it works: here, the first time; back here after.
             if (workSpot == null) workSpot = standing(sp);
             if (!standing(sp).equals(workSpot)) return walkTo(workSpot, 0);
             var station = station(sp);
-            furnaces.removeIf(f -> !level.getBlockState(f).is(station));
+            furnaces.removeIf(f -> !level.getBlockState(f).is(station) || furnacesOutOfReach.contains(f));
             for (BlockPos p : ring(workSpot, 2)) {
                 if (furnaces.size() >= step.furnaces()) break;
-                if (furnaces.contains(p) || !level.getBlockState(p).is(station)) continue;
+                if (furnaces.contains(p) || !level.getBlockState(p).is(station) || furnacesOutOfReach.contains(p)) continue;
                 furnaces.add(p.immutable());
             }
             // Then ones already standing near (the plan counted them), nearest first.
             if (furnaces.size() < step.furnaces()) {
                 List<BlockPos> near = new ArrayList<>();
                 for (BlockPos p : BlockPos.betweenClosed(workSpot.offset(-12, -4, -12), workSpot.offset(12, 4, 12))) {
-                    if (level.isLoaded(p) && level.getBlockState(p).is(station) && !furnaces.contains(p)) near.add(p.immutable());
+                    if (level.isLoaded(p) && level.getBlockState(p).is(station) && !furnaces.contains(p) && !furnacesOutOfReach.contains(p)) {
+                        near.add(p.immutable());
+                    }
                 }
                 near.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(workSpot)));
                 for (BlockPos p : near) {
@@ -1231,7 +1284,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (furnaces.isEmpty()) return fail("I have no furnace to smelt " + ProductionPlanner.name(step.input()) + " in");
             // Each furnace's share, in whole pieces of fuel's worth, and the fuel for it: as the plan priced it.
             int fuelTicks = fuelTicks(sp); // a smoker or blast furnace burns it twice as fast
-            var split = com.mineagent.engine.planning.production.FurnaceSplit.split(step.count(), furnaces.size(), cookTicks(sp), fuelTicks);
+            var split = com.mineagent.engine.planning.production.FurnaceSplit.split(step.count(), furnaces.size(), cookTicks(sp), fuelTicks,
+                    ProductionPlanner.freely(step.fuel()));
             while (furnaces.size() > split.furnaces()) furnaces.remove(furnaces.size() - 1);
             share = split.items().clone();
             loaded = new int[share.length];
@@ -1241,13 +1295,27 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             return TaskState.RUNNING;
         }
         // Each pass: take what is done, top up each furnace's input to its share, and its fuel to what that burns.
-        boolean anyBusy = false, shortOfFuel = false, anyLit = false;
+        boolean anyBusy = false, shortOfFuel = false, anyLit = false, needLava = false;
         int fuelTicks = fuelTicks(sp); // a smoker or blast furnace burns it twice as fast
         int cook = cookTicks(sp);
         for (int i = 0; i < furnaces.size(); i++) {
             BlockPos f = furnaces.get(i);
             if (!(level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace)) continue;
-            if (!sp.canInteractWithBlock(f, 0.0)) return walkTo(f, 1);
+            if (!sp.canInteractWithBlock(f, 0.0)) {
+                if (!walkSoftly(f, 1)) return TaskState.RUNNING;
+                if (!sp.canInteractWithBlock(f, 1.0)) {
+                    if (loaded[i] > 0 || fuelled[i] > 0 || furnaces.size() == 1) return fail("I can't get to the furnace at " + f.toShortString());
+                    // Walled in, behind a fence: its share goes to the others, what they hold already left as it is.
+                    furnacesOutOfReach.add(f);
+                    int moved = share[i];
+                    furnaces.remove(i);
+                    share = without(share, i);
+                    loaded = without(loaded, i);
+                    fuelled = without(fuelled, i);
+                    for (int k = 0; moved > 0; k = (k + 1) % share.length, moved--) share[k]++;
+                    return TaskState.RUNNING;
+                }
+            }
             ItemStack result = furnace.getItem(2);
             if (!result.isEmpty()) {
                 ItemStack taken = furnace.removeItem(2, result.getCount());
@@ -1262,9 +1330,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 insert(sp, furnace, in, add, Direction.UP);
                 loaded[i] += before - count(sp, in);
             }
+            if (lavaFuel) bucketsBack(sp, furnace, false);
             int fuelFor = (int) Math.ceil(loaded[i] * (double) cook / fuelTicks);
             int addFuel = fuelFor - fuelled[i];
-            if (addFuel > 0 && count(sp, fuel) == 0 && furnace.getItem(1).isEmpty()) shortOfFuel = true;
+            if (addFuel > 0 && count(sp, fuel) == 0 && furnace.getItem(1).isEmpty()) {
+                // Lava: its bucket filled again (back from a furnace, or soon: one lights at once); none near, short.
+                if (lavaFuel && !lavaGone) needLava = true;
+                else shortOfFuel = true;
+            }
             var lit = level.getBlockState(f);
             if (lit.hasProperty(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT) && lit.getValue(net.minecraft.world.level.block.AbstractFurnaceBlock.LIT)) anyLit = true;
             if (addFuel > 0 && count(sp, fuel) > 0) {
@@ -1278,7 +1351,22 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         TaskContext.syncInventory(sp);
         int made = count(sp, out) - itemBefore;
-        if (made >= step.count() || (!anyBusy && count(sp, in) == 0)) return TaskState.SUCCESS;
+        if (made >= step.count() || (!anyBusy && count(sp, in) == 0)) {
+            if (lavaFuel) {
+                // Its buckets back, and lava it never lit: nothing of its left in the furnaces.
+                for (BlockPos f : furnaces) {
+                    if (level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace && sp.canInteractWithBlock(f, 1.0)) bucketsBack(sp, furnace, true);
+                }
+                TaskContext.syncInventory(sp);
+            }
+            return TaskState.SUCCESS;
+        }
+        if (needLava) {
+            if (count(sp, net.minecraft.world.item.Items.BUCKET) > 0) refilling = true;
+            else if (level.getGameTime() > smeltDeadline) return fail("my bucket never came back from the furnace");
+            else wait = 10; // its bucket is in a furnace still: back when that one lights
+            return TaskState.RUNNING;
+        }
         if (shortOfFuel && !anyLit) {
             // The fuel ran short (fewer sheep or trees than it counted on): the input comes back out, so it is counted, and
             // the rest is planned again with the fuel there is to get, instead of waiting on cold furnaces.
@@ -1304,6 +1392,104 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Times the fuel ran short in this job and it planned again. */
     private int fuelReplans;
+    private static int[] without(int[] a, int i) {
+        int[] out = new int[a.length - 1];
+        System.arraycopy(a, 0, out, 0, i);
+        System.arraycopy(a, i + 1, out, i, a.length - i - 1);
+        return out;
+    }
+
+    /** Furnaces it couldn't get to in this job. */
+    private final java.util.Set<BlockPos> furnacesOutOfReach = new java.util.HashSet<>();
+
+    // ── Lava for fuel (MA7.9) ───────────────────────────────────────
+
+    /** The lava it is going to fill its bucket at, and pools it couldn't get to. */
+    private BlockPos lavaAt;
+    private final java.util.Set<BlockPos> lavaMissed = new java.util.HashSet<>();
+    /** In the middle of smelting: off to fill its bucket again for the next furnace. */
+    private boolean refilling;
+    /** No lava left near that it can reach: the fuel is short. */
+    private boolean lavaGone;
+
+    /**
+     * Its buckets filled at lava near, as a player fills one: from the edge, never stepping in. With fewer buckets than
+     * the plan's lava, it fills what it has; the rest is filled while smelting, as each bucket comes back from a furnace.
+     */
+    private TaskState scoop() {
+        ServerPlayer sp = sp();
+        int got = count(sp, net.minecraft.world.item.Items.LAVA_BUCKET) - itemBefore;
+        if (got >= step.count()) return TaskState.SUCCESS;
+        if (count(sp, net.minecraft.world.item.Items.BUCKET) == 0) {
+            if (got > 0 || count(sp, net.minecraft.world.item.Items.LAVA_BUCKET) > 0) return TaskState.SUCCESS;
+            return fail("I have no bucket for the lava");
+        }
+        TaskState t = fillAtLava(sp);
+        if (t == TaskState.FAILED) return got > 0 ? TaskState.SUCCESS : outOf(step.block());
+        return TaskState.RUNNING;
+    }
+
+    /** One bucket filled at the nearest lava it can reach: RUNNING on the way and while filling, FAILED with none near. */
+    private TaskState fillAtLava(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        if (lavaAt == null || !lavaSource(level, lavaAt)) lavaAt = nearestLava(sp);
+        if (lavaAt == null) return TaskState.FAILED;
+        if (lavaAt.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
+            chase(lavaAt, 3);
+            if (navFailed) {
+                navFailed = false;
+                lavaMissed.add(lavaAt);
+                lavaAt = null;
+            }
+            return TaskState.RUNNING;
+        }
+        nav.cancel();
+        chasing = null;
+        TaskContext.inputDriver(player).clear();
+        if (!TaskContext.selectInventoryItemForHand(player, "minecraft:bucket", net.minecraft.world.InteractionHand.MAIN_HAND)) return TaskState.RUNNING;
+        sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, net.minecraft.world.phys.Vec3.atCenterOf(lavaAt).add(0, 0.4, 0));
+        int before = count(sp, net.minecraft.world.item.Items.LAVA_BUCKET);
+        com.mineagent.engine.act.Interaction.useItem(sp, net.minecraft.world.InteractionHand.MAIN_HAND);
+        TaskContext.syncInventory(sp);
+        if (count(sp, net.minecraft.world.item.Items.LAVA_BUCKET) <= before) {
+            lavaMissed.add(lavaAt); // the bucket didn't take from there (out of sight from here): the next pool
+        }
+        lavaAt = null;
+        wait = 4;
+        return TaskState.RUNNING;
+    }
+
+    private static boolean lavaSource(ServerLevel level, BlockPos p) {
+        var f = level.getFluidState(p);
+        return f.is(net.minecraft.tags.FluidTags.LAVA) && f.isSource();
+    }
+
+    /** The nearest lava source with open air over it (a bucket reaches it from the side, at the edge), within 24. */
+    private BlockPos nearestLava(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        BlockPos at = sp.blockPosition();
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 6, 24))) {
+            if (!lavaSource(level, p) || !level.getBlockState(p.above()).isAir() || lavaMissed.contains(p)) continue;
+            double d = p.distSqr(at) + Math.abs(p.getY() - at.getY()) * 4.0;
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
+    /** The empty bucket a lit furnace gave back from its fuel slot, and any lava it never lit, taken back. */
+    private static void bucketsBack(ServerPlayer sp, AbstractFurnaceBlockEntity furnace, boolean unlitToo) {
+        ItemStack f = furnace.getItem(1);
+        if (f.is(net.minecraft.world.item.Items.BUCKET) || unlitToo && f.is(net.minecraft.world.item.Items.LAVA_BUCKET)) {
+            ItemStack back = furnace.removeItem(1, f.getCount());
+            if (!sp.getInventory().add(back)) sp.drop(back, false);
+            furnace.setChanged();
+        }
+    }
 
     private int fuelTicks(ServerPlayer sp) {
         int t = Math.max(1, GameKnowledge.book(sp).fuelTicks().getOrDefault(step.fuel(), 1_600));
