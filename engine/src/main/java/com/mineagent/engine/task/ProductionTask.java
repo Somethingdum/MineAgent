@@ -598,6 +598,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         } else if (now - progressAt > GETTING_NOWHERE) {
             progressSig = null;
             String doing = snapshot().stage();
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                System.out.println("[MineAgent] production: getting nowhere " + doing + " at " + sp().blockPosition().toShortString() + ", step "
+                        + step.action() + " " + step.block() + " x" + step.count() + ", stalls " + stalls + ", branch mining " + branchMining
+                        + ", sub " + (sub == null ? "none" : sub.getClass().getSimpleName()) + ", nav " + (nav == null ? "none" : nav.core().lastFailureDetail()));
+            }
             return fail("I was getting nowhere " + (doing == null ? "at it" : doing) + " for three minutes");
         }
         TaskState s = switch (step.action()) {

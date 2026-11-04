@@ -87,7 +87,14 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             feet = sp.blockPosition();
             start = feet.immutable();
             int need = open(sp.serverLevel(), feet).size();
-            phase = Placement.supportBlockCount(sp) >= need ? Phase.BUILD : canDig(sp) ? Phase.DIG : Phase.BUILD;
+            int have = Placement.supportBlockCount(sp);
+            phase = have >= need ? Phase.BUILD : canDig(sp) ? Phase.DIG : Phase.BUILD;
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                var level = sp.serverLevel();
+                System.out.println("[MineAgent] shelter: at " + feet.toShortString() + ", " + need + " cells open, " + have + " blocks: "
+                        + phase + (phase == Phase.BUILD && have < need ? " (no dig: under it " + level.getBlockState(feet.below()).getBlock()
+                        + ", " + level.getBlockState(feet.below(2)).getBlock() + ", " + level.getBlockState(feet.below(3)).getBlock() + ")" : ""));
+            }
         }
         TaskContext.inputDriver(player).clear();
     }

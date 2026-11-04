@@ -33,7 +33,8 @@ def read():
     said = [l.split("[STDOUT]: ", 1)[-1] for l in lines
             if "[MineAgent][" in l and "Lesson failed" not in l and "LLM call" not in l]
     # Its work traced (what it is stuck on and why), the noise left out.
-    noise = ("Lesson failed", "LLM call", "saved companion", "Saved ", "Loaded ", "transport failure", "[MineAgent][")
+    noise = ("Lesson failed", "LLM call", "saved companion", "Saved ", "Loaded ", "transport failure", "[MineAgent][",
+             "paused for survival chain", "LLM retries", "Stale request", "Trimmed history", "food to make")
     traced = [l.split("[STDOUT]: ", 1)[-1] for l in lines
               if "[MineAgent] " in l and not any(n in l for n in noise)]
     finished = [l for l in bench if "[BENCH] done" in l]
