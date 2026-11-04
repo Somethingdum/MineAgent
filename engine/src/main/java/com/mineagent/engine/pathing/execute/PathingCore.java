@@ -212,7 +212,7 @@ public class PathingCore {
 
         // On the first tick of a SEARCH, initialize the sliced search.
         if (!searchInitialized) {
-            var pos = TaskContext.serverPlayer(player).blockPosition();
+            var pos = com.mineagent.engine.pathing.util.BlockHelper.bodyCell(TaskContext.serverPlayer(player));
             ChunkLoadedTest chunkTest = caches.loadedChunks()::isChunkLoaded;
             CalculationContext ctx = new CalculationContext(
                     caches.level(), caches.worldView(), chunkTest,
@@ -341,7 +341,7 @@ public class PathingCore {
         if (executor.isFinished()) {
             // Path completed — check if we reached the goal
             if (currentGoal != null) {
-                var pos = TaskContext.serverPlayer(player).blockPosition();
+                var pos = com.mineagent.engine.pathing.util.BlockHelper.bodyCell(TaskContext.serverPlayer(player));
                 if (currentGoal.isInGoal(pos.getX(), pos.getY(), pos.getZ())) {
                     state = State.IDLE;
                     return;

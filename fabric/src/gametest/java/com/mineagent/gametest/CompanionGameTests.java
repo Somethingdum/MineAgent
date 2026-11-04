@@ -4062,7 +4062,9 @@ public class CompanionGameTests implements FabricGameTest {
                         new int[] {corner.getX(), corner.getZ(), 4, corner.getY()}), r -> { }));
         helper.onEachTick(() -> {
             if (helper.getTick() % 200 == 0) trace(helper, s, "room");
-            String done = lastSaid(s, "the room is dug out");
+            String done = lastSaid(s, "No ore found");
+            if (done.isEmpty()) done = lastSaid(s, "Mined");
+            if (!done.contains("the room is dug out")) done = "";
             if (!done.isEmpty() || helper.getTick() >= 2300) {
                 int open = 0, roof = 0;
                 for (int x = 7; x <= 10; x++) for (int z = 7; z <= 10; z++) {

@@ -37,6 +37,16 @@ public final class BlockHelper {
      * Check if a block can be stood on (has a solid top surface).
      */
     @SuppressWarnings("deprecation")
+    /**
+     * The cell a body stands in: its block position, or the cell over it when that block is less than a block high and
+     * the body stands on top of it (farmland, a path, soul sand, mud), where the game puts its position in the block.
+     */
+    public static net.minecraft.core.BlockPos bodyCell(net.minecraft.world.entity.Entity e) {
+        net.minecraft.core.BlockPos p = e.blockPosition();
+        if (e.getY() - p.getY() > 0.5 && !isPassable(e.level().getBlockState(p))) return p.above();
+        return p;
+    }
+
     public static boolean canStandOn(BlockState state) {
         return state != null && !isHazardous(state) && !tall(state)
                 && (state.isSolid() || state.is(Blocks.SCAFFOLDING));

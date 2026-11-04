@@ -249,7 +249,7 @@ public abstract class Movement {
      * Check if the companion is roughly at the destination block position.
      */
     protected boolean isAtDestination(AgentPlayer player) {
-        var pos = TaskContext.serverPlayer(player).blockPosition();
+        var pos = com.mineagent.engine.pathing.util.BlockHelper.bodyCell(TaskContext.serverPlayer(player));
         return pos.getX() == dstX && pos.getY() == dstY && pos.getZ() == dstZ;
     }
 

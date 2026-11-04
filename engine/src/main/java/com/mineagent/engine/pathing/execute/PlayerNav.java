@@ -146,7 +146,7 @@ public class PlayerNav {
             if (prevState != PathingCore.State.IDLE && newState == PathingCore.State.IDLE) {
                 // Navigation ended
                 if (core.currentGoal() != null) {
-                    var pos = TaskContext.serverPlayer(player).blockPosition();
+                    var pos = com.mineagent.engine.pathing.util.BlockHelper.bodyCell(TaskContext.serverPlayer(player));
                     if (core.currentGoal().isInGoal(pos.getX(), pos.getY(), pos.getZ())) {
                         listener.onGoalReached();
                     } else {
@@ -176,7 +176,7 @@ public class PlayerNav {
     public boolean isAtGoal() {
         Goal goal = core.currentGoal();
         if (goal == null) return false;
-        var pos = TaskContext.serverPlayer(player).blockPosition();
+        var pos = com.mineagent.engine.pathing.util.BlockHelper.bodyCell(TaskContext.serverPlayer(player));
         return goal.isInGoal(pos.getX(), pos.getY(), pos.getZ());
     }
 
