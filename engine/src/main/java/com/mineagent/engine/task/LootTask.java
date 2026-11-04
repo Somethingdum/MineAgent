@@ -58,7 +58,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
 
     private PlayerNav nav;
     private Phase phase = Phase.FIND;
-    private BlockPos site;
+    private BlockPos site, triedAt;
     private final List<BlockPos> chests = new ArrayList<>();
     private int index, ticks, opened, skipped;
     private final Map<String, Integer> got = new LinkedHashMap<>();
@@ -143,8 +143,18 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         ticks = 0;
                         return TaskState.RUNNING;
                     }
-                    if (!(level.getBlockEntity(c) instanceof RandomizableContainerBlockEntity rc) || rc.getLootTable() == null) {
-                        // Opened since by someone else, or gone.
+                    if (!(level.getBlockEntity(c) instanceof RandomizableContainerBlockEntity rc)) {
+                        index++; // gone
+                        ticks = 0;
+                        return TaskState.RUNNING;
+                    }
+                    if (rc.getLootTable() == null) {
+                        // Opened by it (its loot made as it opened, the screen shut again at once): taken from the chest
+                        // itself. Else someone else opened it since.
+                        if (c.equals(triedAt)) {
+                            takeFrom(sp, rc);
+                            opened++;
+                        }
                         index++;
                         ticks = 0;
                         return TaskState.RUNNING;
@@ -161,7 +171,17 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     }
                     nav.cancel();
                     TaskContext.inputDriver(player).clear();
-                    if (!com.mineagent.engine.act.Interaction.openContainer(sp, c) && ++ticks > 60) {
+                    triedAt = c;
+                    boolean open = com.mineagent.engine.act.Interaction.openContainer(sp, c);
+                    if (sp.containerMenu != sp.inventoryMenu) { // open: all of it into the pack, as it stands open
+                        takeAll(sp, sp.containerMenu);
+                        sp.closeContainer();
+                        opened++;
+                        index++;
+                        ticks = 0;
+                        return TaskState.RUNNING;
+                    }
+                    if (!open && ++ticks > 60) {
                         index++;
                         ticks = 0;
                     }
@@ -188,6 +208,23 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
             int left = menu.getSlot(i).getItem().getCount();
             if (n - left > 0) got.merge(id, n - left, Integer::sum);
         }
+        TaskContext.syncInventory(sp);
+    }
+
+    /** Everything in a chest it opened, into its pack, as far as it fits. */
+    private void takeFrom(ServerPlayer sp, RandomizableContainerBlockEntity chest) {
+        for (int i = 0; i < chest.getContainerSize(); i++) {
+            ItemStack st = chest.getItem(i);
+            if (st.isEmpty()) continue;
+            String id = BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            ItemStack moving = st.copy();
+            sp.getInventory().add(moving); // what doesn't fit stays in the copy
+            int taken = st.getCount() - moving.getCount();
+            if (taken <= 0) continue;
+            chest.removeItem(i, taken);
+            got.merge(id, taken, Integer::sum);
+        }
+        chest.setChanged();
         TaskContext.syncInventory(sp);
     }
 
