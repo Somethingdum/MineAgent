@@ -314,7 +314,7 @@ public class DugoutTask extends CompanionTask<DugoutTask.DugoutRecord> {
 
     // ── Fittings ────────────────────────────────────────────────────
 
-    /** Its crafting table and furnace in the back corners if it carries them; a torch on the floor by the door. */
+    /** A spare crafting table and its furnace in the back corners if it carries them; a torch on the floor by the door. */
     private TaskState fit(ServerPlayer sp, ServerLevel level) {
         var inv = sp.getInventory();
         if (floor.size() >= 9 && fitIndex < 3) {
@@ -325,7 +325,8 @@ public class DugoutTask extends CompanionTask<DugoutTask.DugoutRecord> {
                 default -> front;
             };
             var what = switch (fitIndex) {
-                case 0 -> inv.countItem(Items.CRAFTING_TABLE) > 0 ? Blocks.CRAFTING_TABLE.defaultBlockState() : null;
+                // One table kept on it (its kit carries one: crafting wherever it is), a spare one put down here.
+                case 0 -> inv.countItem(Items.CRAFTING_TABLE) > 1 ? Blocks.CRAFTING_TABLE.defaultBlockState() : null;
                 case 1 -> inv.countItem(Items.FURNACE) > 0 ? Blocks.FURNACE.defaultBlockState() : null;
                 default -> inv.countItem(Items.TORCH) > 0 ? Blocks.TORCH.defaultBlockState() : null;
             };

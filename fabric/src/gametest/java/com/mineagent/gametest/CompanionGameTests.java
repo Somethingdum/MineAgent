@@ -3030,6 +3030,231 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * A dirt hut five across at x 8 to 12, z 2 to 6: walls two high round three by three inside, a roof, a doorway two
+     * high in the middle of its south wall and no door in it; kept as its hut, as one it built is.
+     */
+    private static void dirtHut(GameTestHelper helper, Scene s) {
+        for (int x = 8; x <= 12; x++) {
+            for (int z = 2; z <= 6; z++) {
+                helper.setBlock(x, 3, z, Blocks.DIRT);
+                boolean wall = x == 8 || x == 12 || z == 2 || z == 6;
+                for (int y = 1; y <= 2; y++) helper.setBlock(x, y, z, wall && !(x == 10 && z == 6) ? Blocks.DIRT : Blocks.AIR);
+            }
+        }
+        BlockPos c = helper.absolutePos(new BlockPos(8, 1, 2));
+        s.loop().placeKeeper().memory().name("build", "hut_home|dirt|none",
+                new com.mineagent.engine.world.RouteMemory.Point(helper.getLevel().dimension().location().toString(), c.getX(), c.getY(), c.getZ()),
+                helper.getLevel().getGameTime());
+    }
+
+    /** It is inside the dirt hut, on its floor. */
+    private static boolean inTheHut(GameTestHelper helper, Scene s) {
+        BlockPos at = rel(helper, s.body().blockPosition());
+        return at.getY() == 1 && at.getX() >= 9 && at.getX() <= 11 && at.getZ() >= 3 && at.getZ() <= 5;
+    }
+
+    /** The open cells round it that a mob could come in by (none: closed in). */
+    private static int waysIn(GameTestHelper helper, Scene s) {
+        var room = com.mineagent.engine.task.Enclosure.around(helper.getLevel(), s.body().blockPosition());
+        return room == null ? 99 : room.openings().size();
+    }
+
+    /**
+     * SMH plan 70, its owner: "The main goals are a tool kit and a shabby hut ... If it cannot achieve a bed, waiting
+     * motionless until all of the mobs have burned is equally acceptable." A dirt hut it made, its owner away, the
+     * evening: it goes home before dusk, into the hut, and closes its doorway (dirt in its pack); in the morning the
+     * doorway is opened again and its day goes on; the hut's own walls untouched.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_home_night", timeoutTicks = 2000)
+    public void homeForTheNightItGoesInAndClosesItsDoorway(GameTestHelper helper) {
+        Scene s = scene(helper, "Homebody");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        dirtHut(helper, s);
+        s.body().getInventory().setItem(3, new ItemStack(Items.DIRT, 8));
+        var level = helper.getLevel();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(20, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 10_990L)); // evening
+        long[] closedAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "home night");
+            String control = MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone");
+            if (closedAt[0] < 0 && inTheHut(helper, s) && waysIn(helper, s) == 0 && control.contains("ShelterTask")) {
+                closedAt[0] = helper.getTick();
+            }
+            if (closedAt[0] > 0 && helper.getTick() == closedAt[0] + 100) {
+                if (!inTheHut(helper, s) || waysIn(helper, s) != 0) {
+                    tidy(s);
+                    fail(helper, "closed in, then out of it in the night: at " + rel(helper, s.body().blockPosition()).toShortString());
+                    return;
+                }
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L); // the next morning
+            }
+            boolean open = is(helper, 10, 1, 7, Blocks.AIR) && is(helper, 10, 2, 7, Blocks.AIR) && is(helper, 10, 1, 6, Blocks.AIR)
+                    && is(helper, 10, 2, 6, Blocks.AIR);
+            boolean walls = is(helper, 8, 1, 4, Blocks.DIRT) && is(helper, 12, 2, 4, Blocks.DIRT) && is(helper, 10, 3, 4, Blocks.DIRT)
+                    && is(helper, 9, 1, 6, Blocks.DIRT) && is(helper, 11, 2, 6, Blocks.DIRT);
+            if (closedAt[0] > 0 && helper.getTick() > closedAt[0] + 140 && open && !control.contains("ShelterTask")) {
+                tidy(s);
+                boolean said = !lastSaid(s, "Home for the night").isEmpty() || !lastSaid(s, "In for the night").isEmpty();
+                if (walls && said) helper.succeed();
+                else fail(helper, "the hut's walls whole " + walls + "; said: " + lastSaid(s, ""));
+            } else if (helper.getTick() >= 1900) {
+                String how = "closed in at " + closedAt[0] + ", in the hut " + inTheHut(helper, s) + ", ways in " + waysIn(helper, s)
+                        + ", doorway open " + open + ", at " + rel(helper, s.body().blockPosition()).toShortString() + ", " + control
+                        + ", day time " + level.getDayTime() % 24_000L + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, its owner: "A bed if possible.": the same hut and evening, a bed in its pack. Closed in at home, its
+     * bed goes down on the hut's floor (not in the doorway) and it sleeps in it at nightfall; in the morning it is up,
+     * the doorway open, and the bed left where it is, its bed at home.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_home_bed", timeoutTicks = 2400)
+    public void withABedAtHomeItSleepsThere(GameTestHelper helper) {
+        Scene s = scene(helper, "Sleepyhead");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        dirtHut(helper, s);
+        var inv = s.body().getInventory();
+        inv.setItem(3, new ItemStack(Items.DIRT, 8));
+        inv.setItem(4, new ItemStack(Items.WHITE_BED));
+        var level = helper.getLevel();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(20, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 10_990L));
+        long[] closedAt = {-1}, sleptAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "home bed");
+            if (closedAt[0] < 0 && inTheHut(helper, s) && waysIn(helper, s) == 0) {
+                closedAt[0] = helper.getTick();
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L); // nightfall
+            }
+            if (sleptAt[0] < 0 && s.body().isSleeping()) {
+                sleptAt[0] = helper.getTick();
+                helper.runAfterDelay(60, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L));
+            }
+            int beds = 0;
+            boolean bedInDoorway = false;
+            for (int x = 9; x <= 11; x++) {
+                for (int z = 3; z <= 6; z++) {
+                    if (helper.getBlockState(new BlockPos(x, 1, z)).getBlock() instanceof net.minecraft.world.level.block.BedBlock) {
+                        beds++;
+                        if (z == 6) bedInDoorway = true;
+                    }
+                }
+            }
+            String control = MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone");
+            boolean open = is(helper, 10, 1, 7, Blocks.AIR) && is(helper, 10, 2, 7, Blocks.AIR);
+            if (sleptAt[0] > 0 && helper.getTick() > sleptAt[0] + 100 && !s.body().isSleeping() && open && !control.contains("ShelterTask")) {
+                tidy(s);
+                if (beds == 2 && !bedInDoorway) helper.succeed();
+                else fail(helper, "up and out, but the bed: " + beds + " halves in the hut, in the doorway " + bedInDoorway);
+            } else if (helper.getTick() >= 2300) {
+                String how = "closed in at " + closedAt[0] + ", slept at " + sleptAt[0] + ", bed halves in the hut " + beds + ", beds carried "
+                        + inv.countItem(Items.WHITE_BED) + ", ways in " + waysIn(helper, s) + ", " + control + ", day time "
+                        + level.getDayTime() % 24_000L + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * What the three-world benchmark found (dead in the night, its pack gone: "Walled in as far as my blocks go (10 gaps
+     * left)", on a snowy grass field with no blocks and no tools): night, nothing in its pack, snow on the grass where it
+     * stands. It clears the snow, digs in by hand, roofs the hole with the earth it dug, and in the morning climbs out.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_night_snow", timeoutTicks = 2400)
+    public void onSnowyGrassWithNothingItDigsInByHand(GameTestHelper helper) {
+        Scene s = scene(helper, "Snowbound");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = -2; x <= 10; x++) {
+            for (int z = -2; z <= 10; z++) {
+                helper.setBlock(x, 0, z, Blocks.GRASS_BLOCK.defaultBlockState().setValue(net.minecraft.world.level.block.SnowyDirtBlock.SNOWY, true));
+                helper.setBlock(x, 1, z, Blocks.SNOW);
+            }
+        }
+        var level = helper.getLevel();
+        int[] groundY = {Integer.MIN_VALUE};
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(10, () -> {
+            groundY[0] = s.body().getBlockY();
+            level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L);
+        });
+        long[] inAt = {-1};
+        BlockPos[] hole = {null};
+        helper.onEachTick(() -> {
+            trace(helper, s, "night snow");
+            if (groundY[0] == Integer.MIN_VALUE) return;
+            var body = s.body();
+            boolean roofed = !level.canSeeSky(body.blockPosition().above());
+            if (inAt[0] < 0 && body.getBlockY() <= groundY[0] - 2 && roofed) {
+                inAt[0] = helper.getTick();
+                hole[0] = body.blockPosition().immutable();
+            }
+            if (inAt[0] > 0 && helper.getTick() == inAt[0] + 100) {
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L); // the next morning
+            }
+            if (inAt[0] > 0 && helper.getTick() > inAt[0] + 120 && body.getBlockY() >= groundY[0] - 1 && body.onGround()
+                    && level.canSeeSky(body.blockPosition().above())) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                String how = "in at " + inAt[0] + ", ground y " + groundY[0] + ", now y " + body.getBlockY() + ", roofed " + roofed
+                        + ", blocks " + com.mineagent.engine.act.Placement.supportBlockCount(body) + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70: its home dug into the hillside, then the evening (its owner away): it closes the doorway of the room
+     * it dug from inside and waits there; in the morning the doorway is open again.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_dugout_night", timeoutTicks = 4000)
+    public void aHomeDugIntoTheHillsideIsItsNight(GameTestHelper helper) {
+        Scene s = scene(helper, "Mole");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 7; x <= 13; x++) for (int z = -1; z <= 8; z++) for (int y = 1; y <= 6; y++) helper.setBlock(x, y, z, Blocks.STONE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        var level = helper.getLevel();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a home hut"));
+        long[] builtAt = {-1}, closedAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "dugout night");
+            if (builtAt[0] < 0 && !lastSaid(s, "Built the hut at ").isEmpty()) {
+                builtAt[0] = helper.getTick();
+                MineAgentEngine.onPlayerChat(s.owner(), "going afk");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 10_990L); // the evening
+            }
+            String control = MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone");
+            if (builtAt[0] > 0 && closedAt[0] < 0 && waysIn(helper, s) == 0 && control.contains("ShelterTask")) {
+                closedAt[0] = helper.getTick();
+                helper.runAfterDelay(100, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L));
+            }
+            if (closedAt[0] > 0 && helper.getTick() > closedAt[0] + 140 && !control.contains("ShelterTask") && waysIn(helper, s) > 0) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 3900) {
+                String how = "built at " + builtAt[0] + ", closed in at " + closedAt[0] + ", ways in " + waysIn(helper, s) + ", at "
+                        + rel(helper, s.body().blockPosition()).toShortString() + ", " + control + ", day time " + level.getDayTime() % 24_000L
+                        + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4: "light up the area": torches down until no spot within 8 blocks a mob could stand on is dark. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_light", timeoutTicks = 1600)
     public void anAreaLitUntilNoSpotIsDark(GameTestHelper helper) {

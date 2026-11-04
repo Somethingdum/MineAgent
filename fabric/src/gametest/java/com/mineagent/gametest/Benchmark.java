@@ -29,8 +29,9 @@ import java.util.Map;
  * server.properties), a fresh companion with nothing is told "go survive on your own" and the game sprints through
  * {@code -Dmineagent.benchmark} ticks (72,000 for three days). Its owner is a stand-in player, out of the way in a sealed
  * box over the spawn. No model: what it does is its own code. Every game minute a line of how it is doing; at the end,
- * the minimum checked (a hut built, a furnace and a crafting table put down or carried, 8 food, 4 coal or charcoal, a
- * stone pickaxe, axe, sword and shovel or better) and how the run went (deaths, watchdog, what it holds), written to
+ * the minimum checked (a hut built, a furnace and a crafting table put down or carried, food enough for a night (its
+ * owner: "It just needs ENOUGH food to survive until morning"), 4 coal or charcoal, a stone pickaxe, axe, sword and
+ * shovel or better; a bed is reported, not needed: "A bed if possible") and how the run went (deaths, watchdog, what it holds), written to
  * {@code -Dmineagent.benchmark.report}, and the server stopped. Only when the property is set; never in the jar.
  */
 public final class Benchmark implements ModInitializer {
@@ -179,12 +180,27 @@ public final class Benchmark implements ModInitializer {
                 for (int i = 0; i < c.getContainerSize(); i++) add(has, c.getItem(i));
             }
         }
-        int food = 0;
+        // Food: its owner, "It just needs ENOUGH food to survive until morning": what it carries worth three shanks or
+        // more (a cooked steak, two breads, three berries' worth twice), or a near-full hunger bar and something to eat.
+        int food = 0, foodPoints = 0;
         for (var e : has.entrySet()) {
             var item = BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(e.getKey()));
             var st = new ItemStack(item);
-            if (st.get(net.minecraft.core.component.DataComponents.FOOD) != null && !st.is(Items.ROTTEN_FLESH) && !st.is(Items.SPIDER_EYE)
-                    && !st.is(Items.POISONOUS_POTATO)) food += e.getValue();
+            var props = st.get(net.minecraft.core.component.DataComponents.FOOD);
+            if (props != null && !st.is(Items.ROTTEN_FLESH) && !st.is(Items.SPIDER_EYE) && !st.is(Items.POISONOUS_POTATO)) {
+                food += e.getValue();
+                foodPoints += props.nutrition() * e.getValue();
+            }
+        }
+        int hunger = sp.getFoodData().getFoodLevel();
+        boolean fed = foodPoints >= 6 || hunger >= 16 && food > 0;
+        boolean bed = false;
+        for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).getItem() instanceof net.minecraft.world.item.BedItem) bed = true;
+        if (!bed) for (var p : BlockPos.betweenClosed(centre.offset(-8, -4, -8), centre.offset(8, 4, 8))) {
+            if (over.isLoaded(p) && over.getBlockState(p).getBlock() instanceof net.minecraft.world.level.block.BedBlock) {
+                bed = true;
+                break;
+            }
         }
         int fuel = has.getOrDefault("minecraft:coal", 0) + has.getOrDefault("minecraft:charcoal", 0) + 9 * has.getOrDefault("minecraft:coal_block", 0);
         Map<String, Integer> tools = new LinkedHashMap<>();
@@ -213,12 +229,16 @@ public final class Benchmark implements ModInitializer {
             if (e.text().startsWith("came back")) comeBack++;
             else deaths++;
         }
-        boolean minimum = hut && furnace && table && food >= 8 && fuel >= 4 && stoneTools;
+        boolean minimum = hut && furnace && table && fed && fuel >= 4 && stoneTools;
         out.put("minimum", minimum);
         out.put("hut", hut);
         out.put("furnace", furnace);
         out.put("craftingTable", table);
         out.put("food", food);
+        out.put("foodPoints", foodPoints);
+        out.put("hunger", hunger);
+        out.put("fed", fed);
+        out.put("bed", bed);
         out.put("fuel", fuel);
         out.put("tools", tools);
         out.put("stoneTools", stoneTools);
@@ -231,7 +251,7 @@ public final class Benchmark implements ModInitializer {
         out.put("doing", loop.doing());
         out.put("hutKind", hutKind);
         out.put("summary", (minimum ? "MINIMUM MET" : "not yet") + " | hut " + hut + (hutKind.isEmpty() ? "" : " (" + hutKind + ")") + ", furnace " + furnace + ", table " + table + ", food " + food
-                + ", fuel " + fuel + ", tools " + tools + " | " + dim + " " + sp.blockPosition().toShortString() + ", health "
+                + " (" + foodPoints + " points, hunger " + hunger + (fed ? ", fed" : ", not fed") + "), bed " + bed + ", fuel " + fuel + ", tools " + tools + " | " + dim + " " + sp.blockPosition().toShortString() + ", health "
                 + String.format("%.0f", sp.getHealth()) + ", deaths " + deaths + ", doing: " + loop.doing());
         return out;
     }

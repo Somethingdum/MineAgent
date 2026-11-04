@@ -40,6 +40,8 @@ public final class SleepChain implements TaskChain {
     static final int SEARCH_EVERY = 100;
     /** After a walk to the bed ends short of it, how long before it tries again, in ticks. */
     static final int RETRY_WALK_AFTER = 40;
+    /** Closed in at home: a bed this near is in there with it. */
+    static final int HOME_REACH = 4;
 
     private final AgentPlayer companion;
     private final CompanionBodyLog bodyLog;
@@ -92,6 +94,10 @@ public final class SleepChain implements TaskChain {
         var loop = com.mineagent.engine.task.TaskContext.agentLoop(companion);
         if (loop == null) return false;
         if (level.getDayTime() % 24_000L < 12_542L) return false; // beds take it from dusk
+        // On its way home for the night it sleeps at home, not out on the way; closed in there, it lies down (its
+        // owner: "A bed if possible").
+        if (com.mineagent.engine.task.ShelterTask.goingHome(sp.getUUID())) return false;
+        if (com.mineagent.engine.task.ShelterTask.sealedAtHome(sp.getUUID())) return true;
         // On its own, always at some job of its own: two days without lying down and phantoms come every night, so it
         // lies down then, busy or not (that is rest enough for the game), and is back up at its work (SMH plan 70: runs
         // for weeks).
@@ -100,7 +106,7 @@ public final class SleepChain implements TaskChain {
     }
 
     /** Two game days or more since it last lay down (the game's own count, the one phantoms come by). */
-    static boolean restless(ServerPlayer sp) {
+    public static boolean restless(ServerPlayer sp) {
         try {
             return sp.getStats().getValue(net.minecraft.stats.Stats.CUSTOM.get(net.minecraft.stats.Stats.TIME_SINCE_REST)) >= 48_000;
         } catch (RuntimeException e) {
@@ -151,10 +157,13 @@ public final class SleepChain implements TaskChain {
             }
             ServerLevel level = sp.serverLevel();
             long now = level.getGameTime();
+            boolean home = com.mineagent.engine.task.ShelterTask.sealedAtHome(sp.getUUID());
+            if (home && bed != null && !bed.closerThan(sp.blockPosition(), HOME_REACH)) bed = null;
             if (bed == null || !freeBed(level, bed) || now - lastSearch > SEARCH_EVERY) {
                 lastSearch = now;
-                bed = findBed(sp);
-                if (bed == null) bed = placeCarriedBed(sp);
+                // Closed in at home, only a bed in there with it: one outside is past its own walls.
+                bed = home ? nearestBed(sp, HOME_REACH) : findBed(sp);
+                if (bed == null) bed = home ? putBedDown(sp) : placeCarriedBed(sp);
                 if (bed == null) {
                     tellOnce(level, "No bed for me to sleep in, so the night can't pass yet.");
                     return;
@@ -275,6 +284,40 @@ public final class SleepChain implements TaskChain {
 
     /** Put down the bed it carries, beside it, on firm ground with room for both halves; where it went, or null. */
     private BlockPos placeCarriedBed(ServerPlayer sp) {
+        BlockPos put = putBedDown(sp);
+        if (put != null) {
+            placedBed = put;
+            bodyLog.report("put my bed down for the night");
+        }
+        return put;
+    }
+
+    /** The nearest free bed within {@code reach} of it. */
+    private static BlockPos nearestBed(ServerPlayer sp, int reach) {
+        ServerLevel level = sp.serverLevel();
+        BlockPos at = sp.blockPosition(), best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-reach, -2, -reach), at.offset(reach, 2, reach))) {
+            if (!freeBed(level, p)) continue;
+            double d = p.distSqr(at);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
+    /**
+     * The bed it carries, put down beside it (foot and head on open floor), or null. Its home's bed (put down in its hut
+     * for the night) is left there: its bed at home, where it wakes after a death.
+     */
+    public static BlockPos putBedDown(ServerPlayer sp) {
+        return putBedDown(sp, p -> true);
+    }
+
+    /** As {@link #putBedDown(ServerPlayer)}, both halves on cells {@code allowed} takes (in its hut, off its doorway). */
+    public static BlockPos putBedDown(ServerPlayer sp, java.util.function.Predicate<BlockPos> allowed) {
         var inventory = sp.getInventory();
         int slot = -1;
         for (int i = 0; i < 9; i++) {
@@ -299,19 +342,27 @@ public final class SleepChain implements TaskChain {
         inventory.selected = slot;
         ServerLevel level = sp.serverLevel();
         BlockPos at = sp.blockPosition();
-        for (Direction dir : Direction.Plane.HORIZONTAL) {
-            BlockPos foot = at.relative(dir);
-            BlockPos head = foot.relative(dir);
-            if (!roomForBed(level, foot) || !roomForBed(level, head)) continue;
+        // Straight out from it first, then any cell round it with the head along the floor any way (from the middle of
+        // a hut three across, straight out runs into the wall).
+        java.util.List<BlockPos[]> ways = new java.util.ArrayList<>();
+        for (Direction dir : Direction.Plane.HORIZONTAL) ways.add(new BlockPos[] {at.relative(dir), at.relative(dir).relative(dir)});
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                BlockPos foot = at.offset(dx, 0, dz);
+                for (Direction dir : Direction.Plane.HORIZONTAL) ways.add(new BlockPos[] {foot, foot.relative(dir)});
+            }
+        }
+        for (BlockPos[] w : ways) {
+            BlockPos foot = w[0], head = w[1];
+            if (head.equals(at) || !allowed.test(foot) || !allowed.test(head) || !roomForBed(level, foot) || !roomForBed(level, head)) continue;
+            Direction dir = head.getX() > foot.getX() ? Direction.EAST : head.getX() < foot.getX() ? Direction.WEST
+                    : head.getZ() > foot.getZ() ? Direction.SOUTH : Direction.NORTH;
             sp.setYRot(dir.toYRot());
             var attempt = Placement.placeHeldBlock(sp, foot, InteractionHand.MAIN_HAND);
             BlockPos placed = level.getBlockState(foot).getBlock() instanceof BedBlock ? foot
                     : level.getBlockState(head).getBlock() instanceof BedBlock ? head : null;
-            if (attempt.placed() && placed != null) {
-                placedBed = placed;
-                bodyLog.report("put my bed down for the night");
-                return placed;
-            }
+            if (attempt.placed() && placed != null) return placed;
         }
         return null;
     }

@@ -974,6 +974,7 @@ public class AgentLoop {
         // A terminal task no longer owns the body. Keep its outcome as compact
         // evidence, but publish a null task id so the next decision sees an
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
+        if (taskId != null && taskId.equals(nightTaskId)) nightTaskId = null;
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
@@ -5090,7 +5091,7 @@ public class AgentLoop {
         // From nothing: a starter kit first (stone tools, a little fuel, food for the road), only what it lacks. It
         // survives the walk, and has what a base needs from the start. Tried three times, two minutes apart, at most;
         // then on without what it couldn't get.
-        String kit = starterKit(self);
+        String kit = com.mineagent.engine.settings.Switches.homeAtNight() ? coreKit(self) : starterKit(self);
         if (!kit.isEmpty() && kitTries < 3) {
             if (now - kitAt < 2_400) return;
             kitAt = now;
@@ -5109,12 +5110,25 @@ public class AgentLoop {
             if (top > baseY + 1) baseY = top;
         }
         idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), baseY, self.getBlockZ());
+        // The hut its kit made (its first night's home), when there is one near: its base is there.
+        var hut = homeForTheNight(self);
+        if (hut != null && hut.distSqr(self.blockPosition()) <= 64 * 64) {
+            idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, hut.getX(), hut.getY(), hut.getZ());
+            baseY = hut.getY();
+        }
         idleRadius = 48;
-        journal.record("survive", "made my first base here", now, dim, self.getBlockX(), baseY, self.getBlockZ());
+        journal.record("survive", "made my first base here", now, dim, idleHome.x(), baseY, idleHome.z());
         speakToOwner("Made my first base here: a hut, then iron gear. Once I'm in iron I'll find a swamp for my main base and start hoarding.");
         saveMemoryNow();
-        // Its own prime: nothing handed over (its owner isn't here; what's yours is had on asking).
-        queueOrders(primeOrders(false));
+        // Its own prime: nothing handed over (its owner isn't here; what's yours is had on asking). Its hut first, before
+        // its first night, then the rest of its kit, then the climb to iron.
+        String prime = primeOrders(false);
+        String rest = starterKit(self);
+        if (com.mineagent.engine.settings.Switches.homeAtNight() && !rest.isEmpty()) {
+            String hutFirst = "build a home hut";
+            prime = prime.startsWith(hutFirst) ? hutFirst + ", then " + rest + prime.substring(hutFirst.length()) : rest + ", then " + prime;
+        }
+        queueOrders(prime);
     }
 
     /**
@@ -5307,7 +5321,10 @@ public class AgentLoop {
         if (kit.isEmpty()) return false;
         String on = com.mineagent.engine.goal.Orders.withoutMark(active.get().text());
         for (String part : kit.split(", then ")) if (on.equals(part)) return false; // at it already
-        if (on.equals("explore") || com.mineagent.engine.learning.DeathNote.recoveryAt(on) != null) return false;
+        // Nor ahead of its hut (its first night's home), nor when its kit is queued next already (after the hut).
+        if (on.equals("explore") || on.equals("build a home hut") || com.mineagent.engine.learning.DeathNote.recoveryAt(on) != null) return false;
+        var next = goalBook.upcoming().stream().map(g -> com.mineagent.engine.goal.Orders.withoutMark(g.text())).toList();
+        if (next.containsAll(List.of(kit.split(", then ")))) return false;
         kitJumpedAt = now;
         boolean again = kit.equals(lastKit);
         lastKit = kit;
@@ -5380,19 +5397,83 @@ public class AgentLoop {
     private String starterKit(net.minecraft.server.level.ServerPlayer self) {
         List<String> o = new ArrayList<>();
         var inv = self.getInventory();
-        for (String kind : List.of("pickaxe", "axe", "sword", "shovel")) {
-            if (!hasTool(self, kind, 2)) o.add("make me a stone " + kind);
-            // A crafting table on it, made while the trees are near (the benchmark: the one it put down left up the hill
-            // from its mine, and the craft given up "can't get to the crafting table and can't make one").
-            if ("pickaxe".equals(kind) && inv.countItem(net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) o.add("make me 1 crafting table");
-        }
+        // Its owner: "The main goals are a tool kit and a shabby hut. A bed if possible." And "It just needs ENOUGH food
+        // to survive until morning." So: a stone pickaxe and a crafting table (carried: the benchmark found the one it
+        // put down left up the hill from its mine; living on its own, its hut goes up after these, see coreKit), the
+        // rest of its tools, a furnace, a night's food, fuel, and a bed when there is wool to be had here.
+        o.add(coreKit(self));
+        o.removeIf(String::isEmpty);
+        for (String kind : List.of("sword", "axe", "shovel")) if (!hasTool(self, kind, 2)) o.add("make me a stone " + kind);
+        if (inv.countItem(net.minecraft.world.item.Items.FURNACE) == 0 && !furnaceAtHome(self)) o.add("make me 1 furnace");
+        if (foodOn(self) < KIT_FOOD) o.add("make me " + KIT_FOOD + " food");
         // Coal mined (it is in the stone it digs anyway; charcoal wants wood, which near a base runs out), else charcoal.
         if (inv.countItem(net.minecraft.world.item.Items.COAL) + inv.countItem(net.minecraft.world.item.Items.CHARCOAL) < 8) {
             o.add(kitTries + keptUpTries > 1 && (kitTries + keptUpTries) % 2 == 0 ? "make me 8 charcoal" : "make me 8 coal");
         }
-        if (foodOn(self) < 16) o.add("make me 16 food");
+        String bed = bedToMake(self);
+        if (bed != null) o.add("make me 1 " + bed);
         return String.join(", then ", o);
     }
+
+    /**
+     * The start of its kit: a stone pickaxe and a crafting table on it. Living on its own it makes its first base once
+     * it has these, and its hut is its first job there, before the rest of its kit and its first night
+     * ({@code behaviour.homeAtNight}).
+     */
+    private String coreKit(net.minecraft.server.level.ServerPlayer self) {
+        List<String> o = new ArrayList<>();
+        if (!hasTool(self, "pickaxe", 2)) o.add("make me a stone pickaxe");
+        if (self.getInventory().countItem(net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) o.add("make me 1 crafting table");
+        return String.join(", then ", o);
+    }
+
+    /** A night's food in its kit (its owner: "ENOUGH food to survive until morning"); more is made once it has a home. */
+    static final int KIT_FOOD = 6;
+
+    /** A furnace put down by its hut (one of its own fittings), so its kit makes none to carry. */
+    private boolean furnaceAtHome(net.minecraft.server.level.ServerPlayer self) {
+        var home = homeForTheNight(self);
+        if (home == null) return false;
+        var level = self.serverLevel();
+        for (var p : net.minecraft.core.BlockPos.betweenClosed(home.offset(-6, -3, -6), home.offset(6, 3, 6))) {
+            if (level.isLoaded(p) && level.getBlockState(p).is(net.minecraft.world.level.block.Blocks.FURNACE)) return true;
+        }
+        return false;
+    }
+
+    /** The bed its kit makes when it has none and one can be made from what is here (wool carried, sheep seen), or null. */
+    private String bedToMake(net.minecraft.server.level.ServerPlayer self) {
+        long now = currentGameTickSafe();
+        if (now - bedLookedAt < 1_200) return bedLooked;
+        bedLookedAt = now;
+        bedLooked = null;
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).getItem() instanceof net.minecraft.world.item.BedItem) return null;
+        var home = homeForTheNight(self);
+        if (home != null) {
+            var level = self.serverLevel();
+            for (var p : net.minecraft.core.BlockPos.betweenClosed(home.offset(-4, -2, -4), home.offset(4, 2, 4))) {
+                if (level.isLoaded(p) && level.getBlockState(p).getBlock() instanceof net.minecraft.world.level.block.BedBlock) return null;
+            }
+        }
+        try {
+            var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+            var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+            var none = java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
+            for (String b : com.mineagent.engine.planning.production.GameKnowledge.family("any:bed")) {
+                if (com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, b, 1, none).possible()) {
+                    bedLooked = b.replace("minecraft:", "").replace('_', ' ');
+                    break;
+                }
+            }
+        } catch (RuntimeException e) {
+            bedLooked = null;
+        }
+        return bedLooked;
+    }
+
+    private long bedLookedAt = Long.MIN_VALUE / 2;
+    private String bedLooked;
 
     /** A tool of the kind ("axe") at {@code tier} or better (GodGear tiers: 2 stone) in its pack or hands. */
     private static boolean hasTool(net.minecraft.server.level.ServerPlayer self, String kind, int tier) {
@@ -6885,11 +6966,89 @@ public class AgentLoop {
         if (afkOrder.guardMe() || afkOrder.shelter()
                 || MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return false;
         var level = player.serverLevel();
-        if (level.isDay() || !level.canSeeSky(player.blockPosition().above())) return false;
+        if (!nightNow(level) || !level.canSeeSky(player.blockPosition().above())) return false;
         if (ironGeared(player)) return false;
         LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null && body.taskId().startsWith("build-") && level.getDayTime() % 24_000L < 13_000L
+                && goalBook.active().map(g -> g.text().contains("home hut")).orElse(false)) return false; // its home, nearly up
         return body == null || body.taskId() == null || !(body.taskId().startsWith("night-") || body.taskId().startsWith("shelter-"));
     }
+
+    /** Night for its work out in the open: from sunset, before the first of them come, until dawn; or a dark sky. */
+    static boolean nightNow(net.minecraft.server.level.ServerLevel level) {
+        long t = level.getDayTime() % 24_000L;
+        return t >= 12_000L && t < 23_000L || !level.isDay();
+    }
+
+    /** Its home for the night: the nearest hut it made here, within this many blocks. */
+    static final double HOME_FOR_NIGHT_REACH = 160.0;
+
+    /** The nearest hut it made in this world within reach of a walk before dusk, or null. */
+    net.minecraft.core.BlockPos homeForTheNight(net.minecraft.server.level.ServerPlayer player) {
+        String dim = player.serverLevel().dimension().location().toString();
+        net.minecraft.core.BlockPos at = player.blockPosition(), best = null;
+        double bestDistance = HOME_FOR_NIGHT_REACH * HOME_FOR_NIGHT_REACH;
+        for (var p : placeKeeper.memory().places()) {
+            if (!"build".equals(p.kind()) || p.name() == null || !p.name().startsWith("hut") || !p.at().dim().equals(dim)) continue;
+            var c = new net.minecraft.core.BlockPos(p.at().x(), p.at().y(), p.at().z());
+            double d = c.distSqr(at);
+            if (d <= bestDistance) {
+                bestDistance = d;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Home for the night ({@code behaviour.homeAtNight}; its owner: "The main goals are a tool kit and a shabby hut. A bed
+     * if possible. If it cannot achieve a bed, waiting motionless until all of the mobs have burned is equally
+     * acceptable."): on its own or its owner away, before dusk by the length of the way, its work stops and it goes
+     * into its hut, closes it, and sleeps there or waits; its work goes on in the morning. True when it set out.
+     */
+    private boolean homeForNight(net.minecraft.server.level.ServerPlayer player, long day) {
+        // Again after a death in the night (its pack gone, maybe its bed at home its way back), three goes a night at most.
+        if (!com.mineagent.engine.settings.Switches.homeAtNight() || nightStops >= 3 || player.isSleeping()) return false;
+        if (afkOrder.guardMe() || afkOrder.shelter()
+                || MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return false;
+        if (ironGeared(player)) return false;
+        var home = homeForTheNight(player);
+        if (home == null) return false;
+        var level = player.serverLevel();
+        long t = level.getDayTime() % 24_000L;
+        double dist = Math.sqrt(home.distSqr(player.blockPosition()));
+        // About three blocks a second over the ground with its turns and climbs, and the closing up after.
+        long leaveAt = Math.max(com.mineagent.engine.task.ShelterTask.EVENING, com.mineagent.engine.task.ShelterTask.DUSK - (long) (dist * 6.5));
+        if (t < leaveAt || t >= 23_000L) return false;
+        LiveBodyState body = liveBodyState.get();
+        boolean task = body != null && body.taskId() != null;
+        if (task && body.taskId().equals(nightTaskId)) nightTaskSeen = true;
+        if (task && (body.taskId().startsWith("night-") || body.taskId().startsWith("shelter-"))) return false;
+        // Its night's shelter under way, its body only lent to a fight or a meal for now: not sent home again (one never
+        // taken up, the body busy just then, is sent again after ten seconds).
+        if (nightTaskId != null && (nightTaskSeen || currentGameTickSafe() - nightTaskAt < 200)) return false;
+        shelteredNight = day;
+        nightStops++;
+        journal.record("night", "home for the night to the hut at " + home.toShortString() + (task ? ", my work after" : ""), currentGameTickSafe());
+        if (task) {
+            // Cancelled, not failed: the order it was on runs again in the morning.
+            var stop = new com.google.gson.JsonObject();
+            stop.addProperty("task_id", body.taskId());
+            runDirect("task_stop", stop);
+        }
+        say(dist > 6 ? "Home for the night." : "In for the night.");
+        nightTaskId = "night-" + UUID.randomUUID();
+        nightTaskAt = currentGameTickSafe();
+        nightTaskSeen = false;
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                new com.mineagent.engine.task.ShelterTask.ShelterRecord(nightTaskId, true, home), reply -> { });
+        return true;
+    }
+
+    /** Its night's shelter, sent and not yet finished; when it was sent (game ticks); seen at work since. */
+    private volatile String nightTaskId;
+    private volatile long nightTaskAt;
+    private volatile boolean nightTaskSeen;
 
     /**
      * Night with its owner away and no bed (MA8.3): an emergency shelter until morning (two down or walled in, as the
@@ -6923,9 +7082,10 @@ public class AgentLoop {
             nightStopsDay = day;
             nightStops = 0;
         }
+        if (homeForNight(player, day)) return;
         // Three tries a night at most (a shelter that couldn't be made, or a job that took the body back first). With a
         // bed to hand and nothing ordered, the bed is its night (the sleep chain), not a shelter.
-        if (busy && !level.isDay() && nightStops < 3 && !(hasBed && !busyWithOrder()) && nightStopsWork(player)) {
+        if (busy && nightNow(level) && nightStops < 3 && !(hasBed && !busyWithOrder()) && nightStopsWork(player)) {
             shelteredNight = day;
             nightStops++;
             journal.record("night", "out in the open at night without iron gear: digging in till morning, my work after", currentGameTickSafe());
@@ -6940,9 +7100,13 @@ public class AgentLoop {
             return;
         }
         if (busy) return;
-        if (!level.isDay()) {
-            if (hasBed || shelteredNight == day || !level.canSeeSky(player.blockPosition().above())) return;
+        if (nightNow(level)) {
+            // A bed is its night when the sleep chain will lie it down (its owner away, or on its own and due for rest);
+            // else, out under the sky, it shelters: again after a death in the night, three goes a night at most.
+            boolean bedNight = hasBed && (!onItsOwn || com.mineagent.engine.survival.SleepChain.restless(player));
+            if (bedNight || nightStops >= 3 || !level.canSeeSky(player.blockPosition().above())) return;
             shelteredNight = day;
+            nightStops++;
             journal.record("night", "no bed: sheltering until morning", currentGameTickSafe());
             com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
                     new com.mineagent.engine.task.ShelterTask.ShelterRecord("night-" + UUID.randomUUID(), true), reply -> { });
@@ -7219,8 +7383,11 @@ public class AgentLoop {
             iron -= have.count("minecraft:raw_iron") + have.count("minecraft:iron_ingot");
         }
         List<String> o = new ArrayList<>();
-        // On its own, its home: the hut with a crafting table and a furnace in it, as a player's first base has.
-        o.add(giveShare ? "build a hut" : "build a home hut");
+        // On its own, its home: the hut with a crafting table and a furnace in it, as a player's first base has (none
+        // more by the one its kit made).
+        if (giveShare || self == null || !hutNear(self.serverLevel().dimension().location().toString(), self.blockPosition())) {
+            o.add(giveShare ? "build a hut" : "build a home hut");
+        }
         if (iron > 0) o.add("mine " + iron + " iron");
         if (full) {
             for (String piece : List.of("iron helmets", "iron chestplates", "iron leggings", "iron boots", "iron swords", "iron pickaxes")) {
