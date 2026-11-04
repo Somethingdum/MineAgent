@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -128,6 +128,8 @@ public final class CommandParser {
     /** "Trade for emeralds", "sell your wheat for emeralds", "buy bread from the villager" (MA11.3). */
     private static final Pattern TRADE = Pattern.compile("^(?:trade (?:with (?:the |a )?villagers? )?for|get (?:me |us )?some|buy(?: some)?|sell (?:your |the |some )?[a-z ]{3,20}? for)"
             + " (emeralds?|bread|[a-z ]{3,20}?)(?: from (?:the |a )?villagers?)?$");
+    /** "Go fishing", "catch me 3 fish" (MA8.5): the rod cast at open water near it. */
+    private static final Pattern FISH = Pattern.compile("^(?:go fishing|fish for a bit|catch (?:me |us )?" + HOW_MANY + " fish(?:es)?)$");
     /** "Add a patrol point here", "patrol here"; "clear the patrol" (MA10.1): points a guard walks between. */
     private static final Pattern PATROL_ADD = Pattern.compile("^(?:add (?:a )?patrol point(?: here)?|patrol point here|patrol here too|and patrol here)$");
     private static final Pattern PATROL_CLEAR = Pattern.compile("^(?:clear|forget|drop|stop) (?:the |your )?patrol(?: points| route)?$");
@@ -186,6 +188,8 @@ public final class CommandParser {
         if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
         if (BUILD.matcher(t).matches()) return Optional.of(new Command(Kind.BUILD, "hut", null));
         if (PORTAL.matcher(t).matches()) return Optional.of(new Command(Kind.PORTAL, null, null));
+        var fish = FISH.matcher(t);
+        if (fish.matches()) return Optional.of(new Command(Kind.FISH, null, fish.group(1) == null ? 4 : howMany(fish.group(1))));
         if (PATROL_ADD.matcher(t).matches()) return Optional.of(new Command(Kind.PATROL, "add", null));
         if (PATROL_CLEAR.matcher(t).matches()) return Optional.of(new Command(Kind.PATROL, "clear", null));
         var breed = BREED.matcher(t);

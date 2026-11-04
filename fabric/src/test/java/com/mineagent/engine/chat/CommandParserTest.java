@@ -214,6 +214,10 @@ final class CommandParserTest {
         assertEquals("oak logs", get.value());
         assertEquals(3, get.count().intValue());
         assertEquals(CommandParser.Kind.PRODUCE, CommandParser.parse("gather 64 cobblestone", "Pal").orElseThrow().kind());
+        assertEquals(4, CommandParser.parse("go fishing", "Pal").orElseThrow().count().intValue());
+        var fish = CommandParser.parse("catch me 2 fish", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.FISH, fish.kind());
+        assertEquals(2, fish.count().intValue());
         assertEquals("add", CommandParser.parse("add a patrol point here", "Pal").orElseThrow().value());
         assertEquals("clear", CommandParser.parse("clear the patrol", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.GUARD_HERE, CommandParser.parse("guard that", "Pal").orElseThrow().kind());

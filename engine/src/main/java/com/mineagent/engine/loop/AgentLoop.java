@@ -957,7 +957,8 @@ public class AgentLoop {
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
-                || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-"))) {
+                || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
+                || taskId.startsWith("fish-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1434,6 +1435,14 @@ public class AgentLoop {
                 orderGoal("trade for " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
+                return true;
+            }
+            case FISH -> {
+                int n = c.count() == null || c.count() < 1 ? 4 : c.count();
+                journal.record("order", "catch " + n + " fish", currentGameTickSafe());
+                orderGoal("catch me " + n + " fish");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.FishTask.FishRecord(
+                        "fish-" + UUID.randomUUID(), n), reply -> { });
                 return true;
             }
             case PATROL -> {
@@ -3753,7 +3762,7 @@ public class AgentLoop {
                 || k == com.mineagent.engine.chat.CommandParser.Kind.HUNT_PLAYER || k == com.mineagent.engine.chat.CommandParser.Kind.LIGHT
                 || k == com.mineagent.engine.chat.CommandParser.Kind.PORTAL || k == com.mineagent.engine.chat.CommandParser.Kind.ENCHANT
                 || k == com.mineagent.engine.chat.CommandParser.Kind.TRADE || k == com.mineagent.engine.chat.CommandParser.Kind.BREW
-                || k == com.mineagent.engine.chat.CommandParser.Kind.BREED
+                || k == com.mineagent.engine.chat.CommandParser.Kind.BREED || k == com.mineagent.engine.chat.CommandParser.Kind.FISH
                 ? c : java.util.Optional.empty();
     }
 

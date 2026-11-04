@@ -3713,4 +3713,32 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA8.5, food that renews: "catch me 1 fish" by a pool: the rod cast, reeled in on a bite, a fish caught. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fish", timeoutTicks = 3000)
+    public void aFishCaughtAtAPool(GameTestHelper helper) {
+        Scene s = scene(helper, "Angler");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 8; x <= 14; x++) for (int z = 2; z <= 8; z++) {
+            helper.setBlock(x, 0, z, Blocks.WATER);
+            helper.setBlock(x, -1, z, Blocks.WATER);
+        }
+        s.body().getInventory().setItem(1, new ItemStack(Items.FISHING_ROD));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "catch me 1 fish"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "fish");
+            String done = lastSaid(s, "Caught");
+            String failed = lastSaid(s, "I couldn't fish");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2950) {
+                var inv = s.body().getInventory();
+                int fish = inv.countItem(Items.COD) + inv.countItem(Items.SALMON) + inv.countItem(Items.TROPICAL_FISH) + inv.countItem(Items.PUFFERFISH);
+                // A rod also brings up junk or treasure now and then; any catch shows the cast and the bite.
+                boolean anyCatch = fish > 0 || !done.isEmpty();
+                String how = fish + " fish; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (anyCatch && failed.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

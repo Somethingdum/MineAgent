@@ -93,6 +93,12 @@ public final class TaskRegistration {
                 BrewTask::new
         );
 
+        // Fishing (SMH plan 70, MA8.5)
+        CompanionTaskFactory.register(
+                FishTask.FishRecord.class,
+                FishTask::new
+        );
+
         // Breeding two grown animals by hand (SMH plan 70, MA8.5)
         CompanionTaskFactory.register(
                 BreedTask.BreedRecord.class,
