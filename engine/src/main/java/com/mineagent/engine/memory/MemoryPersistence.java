@@ -253,6 +253,9 @@ public class MemoryPersistence {
             data.addProperty("speedrun", loop.speedrun());
             data.addProperty("onItsOwn", loop.onItsOwn());
             data.add("looted", GSON.toJsonTree(new java.util.ArrayList<>(loop.lootedPlaces())));
+            // Who owes it for what they took from its chests, and its owner's word on thieves (SMH plan 70).
+            data.add("debts", GSON.toJsonTree(new java.util.LinkedHashMap<>(loop.debts().all())));
+            if (loop.revengeWord() != null) data.addProperty("revenge", loop.revengeWord());
         }
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
@@ -292,6 +295,15 @@ public class MemoryPersistence {
             if (loop != null && data.has("protectOwner")) loop.protectOwner(data.get("protectOwner").getAsBoolean());
             if (loop != null && data.has("speedrun")) loop.speedrun(data.get("speedrun").getAsBoolean());
             if (loop != null && data.has("onItsOwn")) loop.onItsOwn(data.get("onItsOwn").getAsBoolean());
+            if (loop != null && (data.has("debts") || data.has("revenge"))) {
+                java.util.Map<String, com.mineagent.engine.gear.Debts.Debt> saved = null;
+                if (data.has("debts") && data.get("debts").isJsonObject()) {
+                    saved = GSON.fromJson(data.get("debts"),
+                            new com.google.gson.reflect.TypeToken<java.util.Map<String, com.mineagent.engine.gear.Debts.Debt>>() {}.getType());
+                }
+                Boolean word = data.has("revenge") && data.get("revenge").isJsonPrimitive() ? data.get("revenge").getAsBoolean() : null;
+                loop.debtsLoaded(saved, word);
+            }
             if (loop != null && data.has("looted") && data.get("looted").isJsonArray()) {
                 java.util.List<String> keys = new java.util.ArrayList<>();
                 for (var e : data.getAsJsonArray("looted")) if (e.isJsonPrimitive()) keys.add(e.getAsString());

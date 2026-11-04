@@ -344,6 +344,19 @@ public final class MineAgentEngine {
             }
             return;
         }
+        // One of a companion's own chests broken by someone else: what it held is theirs to give back (SMH plan 70).
+        if (!placed && state.hasBlockEntity()) {
+            String dim = level.dimension().location().toString();
+            for (CompanionState s : List.copyOf(COMPANIONS.values())) {
+                try {
+                    if (!s.loop.ownsChest(dim, pos.getX(), pos.getY(), pos.getZ()) || s.loop.mayTakeFromMyChests(player.getUUID())) continue;
+                    var held = s.loop.remembered(dim, pos);
+                    if (!held.isEmpty()) s.loop.stolen(player.getUUID(), player.getGameProfile().getName(), held, dim, pos.immutable(), true);
+                } catch (RuntimeException ignored) {
+                    // a courtesy
+                }
+            }
+        }
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
         long tick = level.getGameTime();
         for (CompanionState s : getCompanionsByOwner(player.getUUID())) {
@@ -367,6 +380,21 @@ public final class MineAgentEngine {
         }
     }
 
+    /** A companion picked up something a player threw down: given back, if that player owes it (SMH plan 70). */
+    public static void onCompanionPickedUp(ServerPlayer companionBody, UUID thrower, String item, int count) {
+        if (companionBody == null || thrower == null || item == null || count <= 0) return;
+        for (CompanionState st : List.copyOf(COMPANIONS.values())) {
+            try {
+                var sp = st.companion.serverPlayer();
+                if (sp == null || !sp.getUUID().equals(companionBody.getUUID())) continue;
+                st.loop.givenBack(thrower, null, java.util.Map.of(item, count));
+                return;
+            } catch (RuntimeException ignored) {
+                // a courtesy
+            }
+        }
+    }
+
     public static void onBlockGone(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos,
                                    net.minecraft.world.level.block.state.BlockState old) {
         if (level == null || pos == null || old == null) return;
@@ -376,7 +404,10 @@ public final class MineAgentEngine {
                 var sp = state.companion.serverPlayer();
                 if (sp == null || sp.serverLevel() != level) continue;
                 com.mineagent.engine.world.SightRecorder.broken(state.loop.placeKeeper().sightings(), dim, pos, old);
-                if (old.hasBlockEntity()) state.loop.chestMemory().gone(dim, pos.getX(), pos.getY(), pos.getZ());
+                if (old.hasBlockEntity()) {
+                    state.loop.chestMemory().gone(dim, pos.getX(), pos.getY(), pos.getZ());
+                    state.loop.forgetOwnChest(dim, pos.getX(), pos.getY(), pos.getZ()); // gone: no longer one of its own
+                }
             } catch (RuntimeException ignored) {
                 // Remembering is a courtesy.
             }
@@ -1253,6 +1284,14 @@ public final class MineAgentEngine {
      * pending tasks. Also handles companion death revival and night skipping.
      */
     public static void onServerTick(net.minecraft.server.MinecraftServer server) {
+        // Who opens a companion's own chests, and what they take (SMH plan 70: thieves confronted).
+        try {
+            java.util.List<AgentLoop> loops = new java.util.ArrayList<>();
+            for (CompanionState st : COMPANIONS.values()) loops.add(st.loop);
+            if (!loops.isEmpty()) com.mineagent.engine.world.ChestWatch.tick(server, loops);
+        } catch (RuntimeException e) {
+            System.err.println("[MineAgent] Chest watch failed: " + e.getMessage());
+        }
         // Drain pending tasks
         for (var pending : CompanionTickDispatcher.drain()) {
             var state = COMPANIONS.get(pending.player().companionId());
@@ -1460,6 +1499,16 @@ public final class MineAgentEngine {
      * Teleports their companion to the player's respawn point.
      */
     public static void onOwnerDeath(ServerPlayer deadPlayer) {
+        // One who owed a companion for what they took, killed by it: square (SMH plan 70, revenge).
+        if (deadPlayer != null && !isCompanionPlayer(deadPlayer.getUUID())) {
+            for (CompanionState st : List.copyOf(COMPANIONS.values())) {
+                try {
+                    st.loop.playerDied(deadPlayer);
+                } catch (RuntimeException ignored) {
+                    // a courtesy
+                }
+            }
+        }
         List<UUID> companionIds = getCompanionIdsByOwner(deadPlayer.getUUID());
         if (companionIds.isEmpty()) return;
 

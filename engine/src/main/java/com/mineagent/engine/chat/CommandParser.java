@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE, DRAGON, END_PORTAL, DUMP_JUNK, GRIND_XP }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE, DRAGON, END_PORTAL, DUMP_JUNK, GRIND_XP, FORGIVE, REVENGE }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -198,6 +198,13 @@ public final class CommandParser {
             + "(?: some| more| a few| a bunch of| lots of)? (?:xp|exp|experience|levels|a level)(?: points)?(?: up)?(?: for (?:enchanting|the anvil|enchantments|me))?$"
             + "|^(?:go )?level(?: yourself)? up$");
     private static final Pattern XP_LEVELS = Pattern.compile("^(?:go |go and )?(?:get|grind|earn|gain|farm|reach)(?: me| us| yourself)?(?: to| up to)? (?:level )?(\\d{1,3})(?: more)?(?: xp| exp)?(?: levels?)?$");
+    /** "Forgive Sam", "let Sam off": whatever Sam took from its chests, forgotten (SMH plan 70). */
+    private static final Pattern FORGIVE = Pattern.compile("^(?:forgive ([a-z0-9_]{3,16})|let ([a-z0-9_]{3,16}) off(?: the hook)?)$");
+    /** "Kill thieves on sight" (revenge) and "just ask for your stuff back" (not), for who takes from its chests. */
+    private static final Pattern REVENGE_ON = Pattern.compile("^(?:kill (?:thieves|anyone who steals(?: from you)?|whoever steals(?: from you)?)(?: on sight)?"
+            + "|revenge (?:mode|on|style)|thieves die|go revenge mode)$");
+    private static final Pattern REVENGE_OFF = Pattern.compile("^(?:(?:just )?ask (?:for (?:your|the) (?:stuff|things|items) back|them to give it back)"
+            + "|don'?t kill thieves|no (?:more )?revenge|revenge off)$");
     private static final Pattern DUMP = Pattern.compile("^(?:dump|throw (?:out|away)|toss|get rid of|bin|burn|trash)(?: all)? (?:your |the |that |all the |all your )?(?:junk|trash|garbage|rubbish|useless stuff|extra cobble(?:stone)?)$"
             + "|^(?:clean|clear|sort|tidy) (?:out |up )?your (?:inventory|pack|bag)$");
     /** "Cure the zombie villager", "cure that zombie", "cure zombie villagers". */
@@ -290,6 +297,10 @@ public final class CommandParser {
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
         if (DUMP.matcher(t).matches()) return Optional.of(new Command(Kind.DUMP_JUNK, null, null));
+        var forgive = FORGIVE.matcher(t);
+        if (forgive.matches()) return Optional.of(new Command(Kind.FORGIVE, forgive.group(1) != null ? forgive.group(1) : forgive.group(2), null));
+        if (REVENGE_ON.matcher(t).matches()) return Optional.of(new Command(Kind.REVENGE, "on", null));
+        if (REVENGE_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.REVENGE, "off", null));
         var xpN = XP_LEVELS.matcher(t);
         if (xpN.matches() && (t.contains("level") || t.contains("xp") || t.contains("exp"))) {
             // "Get 30 levels" is to 30; "get 5 more levels", five more.

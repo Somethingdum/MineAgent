@@ -4142,6 +4142,98 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /** A chest of the companion's own by it, holding {@code n} diamonds, as it would know it. */
+    private static net.minecraft.world.level.block.entity.ChestBlockEntity ownChest(GameTestHelper helper, Scene s, BlockPos at, int n) {
+        helper.setBlock(at, Blocks.CHEST);
+        BlockPos abs = helper.absolutePos(at);
+        var chest = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(abs);
+        chest.setItem(0, new ItemStack(Items.DIAMOND, n));
+        String dim = helper.getLevel().dimension().location().toString();
+        s.loop().noteOwnChest(dim, abs.getX(), abs.getY(), abs.getZ());
+        s.loop().noteChest(dim, abs.getX(), abs.getY(), abs.getZ(), java.util.Map.of("minecraft:diamond", n), helper.getLevel().getGameTime());
+        return chest;
+    }
+
+    /**
+     * SMH plan 70, thieves ("the agent should confront the other player and demand it's items back"): Sam, not trusted,
+     * opens its chest and takes its 12 diamonds. Its owner is told, it walks up to Sam and tells them to give them back,
+     * and when Sam throws them to it, it picks them up and they are square.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_theft", timeoutTicks = 1400)
+    public void aThiefIsToldToGiveItBack(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        Scene s = scene(helper, "Stasher");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var chest = ownChest(helper, s, new BlockPos(9, 1, 4), 12);
+        ServerPlayer sam = player(helper, "Sam", new BlockPos(9, 1, 6));
+        helper.runAfterDelay(10, () -> sam.openMenu(chest));
+        helper.runAfterDelay(20, () -> sam.getInventory().add(chest.removeItem(0, 12)));
+        helper.runAfterDelay(30, sam::closeContainer);
+        boolean[] thrown = {false};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "theft");
+            String told = lastSaid(s, "Sam took");
+            String asked = lastSaid(s, "to Sam: Sam, you took");
+            // Once it has come up and asked: Sam throws the diamonds to it.
+            if (!thrown[0] && !asked.isEmpty() && s.body().distanceTo(sam) <= 4.5) {
+                thrown[0] = true;
+                sam.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, s.body().position());
+                int slot = sam.getInventory().findSlotMatchingItem(new ItemStack(Items.DIAMOND));
+                if (slot >= 0) sam.drop(sam.getInventory().removeItem(slot, 12), false, true);
+            }
+            String square = lastSaid(s, "Sam gave back");
+            if (!square.isEmpty() || helper.getTick() >= 1300) {
+                int has = s.body().getInventory().countItem(Items.DIAMOND);
+                boolean owes = s.loop().debts().of(sam.getUUID().toString()).isPresent();
+                String how = "owner told: " + (told.isEmpty() ? "nothing" : told) + "; asked Sam: " + (asked.isEmpty() ? "no" : "yes")
+                        + "; thrown " + thrown[0] + "; it has " + has + " diamonds; Sam owes still " + owes + "; said: " + lastSaid(s, "");
+                boolean ok = !told.isEmpty() && !asked.isEmpty() && !square.isEmpty() && has == 12 && !owes;
+                server.getPlayerList().remove(sam);
+                tidy(s);
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, revenge ("Kill that player on sight next time they see them"): with "kill thieves on sight" said and PvP
+     * on, Sam takes from its chest; it goes after Sam, kills them, and they are square.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_revenge", timeoutTicks = 1400)
+    public void aThiefIsKilledOnSightWithRevengeOn(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        boolean pvp = server.isPvpAllowed();
+        server.setPvpAllowed(true);
+        Scene s = scene(helper, "Avenger");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        s.body().setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        s.body().setItemSlot(EquipmentSlot.FEET, new ItemStack(Items.IRON_BOOTS));
+        var chest = ownChest(helper, s, new BlockPos(9, 1, 4), 5);
+        ServerPlayer sam = player(helper, "Sam", new BlockPos(9, 1, 6));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "kill thieves on sight"));
+        helper.runAfterDelay(15, () -> sam.openMenu(chest));
+        helper.runAfterDelay(20, () -> sam.getInventory().add(chest.removeItem(0, 5)));
+        helper.runAfterDelay(25, sam::closeContainer);
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "revenge");
+            String paid = lastSaid(s, "Sam paid");
+            if (!paid.isEmpty() || helper.getTick() >= 1300) {
+                boolean owes = s.loop().debts().of(sam.getUUID().toString()).isPresent();
+                boolean onList = s.loop().getAgentSettings().isAllowedTarget(sam.getUUID());
+                String how = "Sam " + (sam.isDeadOrDying() ? "dead" : "alive, health " + sam.getHealth()) + "; owes still " + owes
+                        + "; on its list " + onList + "; told: " + lastSaid(s, "Sam took") + "; said: " + lastSaid(s, "");
+                boolean ok = !paid.isEmpty() && sam.isDeadOrDying() && !owes && !onList;
+                server.getPlayerList().remove(sam);
+                tidy(s);
+                server.setPvpAllowed(pvp);
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {

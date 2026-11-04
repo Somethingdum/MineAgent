@@ -68,6 +68,14 @@ public record AgentSettings(List<String> trusted, String persona, boolean curric
         return new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode, next);
     }
 
+    /** One player off its list of players to fight. */
+    public AgentSettings withoutTarget(UUID player) {
+        if (player == null || !isAllowedTarget(player)) return this;
+        List<String> next = new ArrayList<>(allowedTargets);
+        next.removeIf(k -> k.equalsIgnoreCase(player.toString()));
+        return new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode, next);
+    }
+
     public AgentSettings withoutTargets() {
         return allowedTargets.isEmpty() ? this : new AgentSettings(trusted, persona, curriculum, experiments, callRate, mode, List.of());
     }

@@ -33,6 +33,15 @@ public final class Manners {
 
     /** What it handed to someone (the item on the ground), to the game tick it is left alone until: theirs now. */
     private static final Map<UUID, Long> HANDED = new ConcurrentHashMap<>();
+    /** By companion, the players who took from its chests and owe it: what they throw down is its own coming back. */
+    private static final Map<UUID, java.util.Set<UUID>> OWED = new ConcurrentHashMap<>();
+
+    /** Who owes this companion now (loop/AgentLoop's debts). */
+    public static void owedBy(UUID self, java.util.Set<UUID> debtors) {
+        if (self == null) return;
+        if (debtors == null || debtors.isEmpty()) OWED.remove(self);
+        else OWED.put(self, java.util.Set.copyOf(debtors));
+    }
 
     /** It threw this to someone: it leaves it for them (five minutes), unless asked to pick things up. */
     public static void handedOver(ItemEntity item, ServerPlayer self) {
@@ -57,6 +66,8 @@ public final class Manners {
         if (thrower == null || thrower.getUUID().equals(self.getUUID())) return true;
         if (!(thrower instanceof Player)) return true;
         if (asked) return true;
+        var owing = OWED.get(self.getUUID());
+        if (owing != null && owing.contains(thrower.getUUID())) return true; // its own, given back
         return handedTo(thrower, self);
     }
 

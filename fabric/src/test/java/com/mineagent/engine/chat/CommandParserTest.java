@@ -322,4 +322,14 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.GRIND, CommandParser.parse("grind the enchantments off my sword", "Pal").orElseThrow().kind(),
                 "the grindstone is still the grindstone");
     }
+
+    @Test void thievesForgivenOrPaidBack() {
+        assertEquals("sam", CommandParser.parse("forgive Sam", "Pal").orElseThrow().value());
+        assertEquals(CommandParser.Kind.FORGIVE, CommandParser.parse("let sam off", "Pal").orElseThrow().kind());
+        assertEquals("on", CommandParser.parse("kill thieves on sight", "Pal").orElseThrow().value());
+        assertEquals("on", CommandParser.parse("revenge mode", "Pal").orElseThrow().value());
+        assertEquals("off", CommandParser.parse("just ask for your stuff back", "Pal").orElseThrow().value());
+        assertEquals("off", CommandParser.parse("don't kill thieves", "Pal").orElseThrow().value());
+        assertTrue(CommandParser.parse("let me know", "Pal").map(c -> c.kind() != CommandParser.Kind.FORGIVE).orElse(true), "not a forgiving");
+    }
 }

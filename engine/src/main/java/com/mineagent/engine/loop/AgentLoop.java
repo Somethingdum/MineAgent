@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-") || taskId.startsWith("confront-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1613,6 +1613,36 @@ public class AgentLoop {
                 journal.record("order", "dump the junk", currentGameTickSafe());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DumpJunkTask.DumpRecord(
                         "junk-" + UUID.randomUUID(), hoardKeeps()), reply -> { });
+                return true;
+            }
+            case FORGIVE -> {
+                if (!fromOwner) return false;
+                String key = debts.byName(c.value());
+                if (key == null) {
+                    speakToOwner(c.value() + " doesn't owe me anything.");
+                    return true;
+                }
+                String name = debts.of(key).map(com.mineagent.engine.gear.Debts.Debt::name).orElse(c.value());
+                debts.forgive(key);
+                try {
+                    untarget(UUID.fromString(key));
+                } catch (IllegalArgumentException ignored) {
+                    // not a player
+                }
+                tellManners();
+                journal.record("theft", "forgave " + name, currentGameTickSafe());
+                saveMemoryNow();
+                speakToOwner("Forgiven: " + name + " is square with me.");
+                return true;
+            }
+            case REVENGE -> {
+                if (!fromOwner) return false;
+                boolean on = "on".equals(c.value());
+                revengeWord = on;
+                saveMemoryNow();
+                speakToOwner(on ? "Anyone who takes from my chests dies the next time I see them, and I take back what they drop."
+                        + (com.mineagent.engine.settings.Switches.fightPlayers() ? "" : " (Fighting players is switched off, behaviour.fightPlayers: I'll ask instead.)")
+                        : "Anyone who takes from my chests gets asked to give it back, every time I see them, till they do.");
                 return true;
             }
             case GRIND_XP -> {
@@ -3181,6 +3211,7 @@ public class AgentLoop {
             if (ownTime && gameTick % 600L == 450L) dumpJunk(player);
             if (ownTime && gameTick % 600L == 150L) xpGoal(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
+            if (gameTick % 100L == 50L) watchDebtors(player);
             for (Runnable afterRun; (afterRun = afterReady.poll()) != null; ) afterRun.run();
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
                 journal.record("assumed", st.key() + ": " + (st.yes() ? "yes" : "no"), gameTick);
@@ -4388,6 +4419,247 @@ public class AgentLoop {
         synchronized (ownChests) {
             return java.util.Set.copyOf(ownChests);
         }
+    }
+
+    /** A chest of its own that is gone (broken, blown up): no longer one of its own. */
+    public void forgetOwnChest(String dim, int x, int y, int z) {
+        ownChests.remove(dim + "|" + x + "|" + y + "|" + z);
+    }
+
+    // ── Its chests, and who takes from them (SMH plan 70, its owner: "If something is stolen, the agent should confront
+    // the other player and demand it's items back. Or, optionally. Kill that player on sight next time they see them.") ──
+
+    private final com.mineagent.engine.gear.Debts debts = new com.mineagent.engine.gear.Debts();
+    /** When it last told each one who owes it to give back, by player. */
+    private final Map<UUID, Long> lastDemand = new ConcurrentHashMap<>();
+    /** Its owner's word on thieves: true, killed on sight; false, asked to give back; null, as behaviour.revengeThieves says. */
+    private volatile Boolean revengeWord;
+
+    public com.mineagent.engine.gear.Debts debts() {
+        return debts;
+    }
+
+    public Boolean revengeWord() {
+        return revengeWord;
+    }
+
+    public void revengeWord(Boolean word) {
+        revengeWord = word;
+    }
+
+    private boolean revenge() {
+        Boolean w = revengeWord;
+        return w != null ? w : com.mineagent.engine.settings.Switches.revengeThieves();
+    }
+
+    /** Whether this player may take from its chests: its owner, a player its owner trusts, a companion, itself. */
+    public boolean mayTakeFromMyChests(UUID player) {
+        if (player == null || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self)) return true;
+        if (player.equals(self.ownerUuid()) || MineAgentEngine.isCompanionPlayer(player)) return true;
+        return agentSettings.trusted().contains(player.toString().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** The chest of its own that this open container is, within 12 blocks of {@code near}; null if none. */
+    public net.minecraft.core.BlockPos ownChestFor(net.minecraft.world.Container c, net.minecraft.server.level.ServerLevel level,
+                                                  net.minecraft.core.BlockPos near) {
+        String dim = level.dimension().location().toString();
+        for (String k : ownChests()) {
+            String[] f = k.split("\\|");
+            if (f.length != 4 || !f[0].equals(dim)) continue;
+            try {
+                var p = new net.minecraft.core.BlockPos(Integer.parseInt(f[1]), Integer.parseInt(f[2]), Integer.parseInt(f[3]));
+                if (p.distSqr(near) > 12 * 12 || !level.isLoaded(p)) continue;
+                var be = level.getBlockEntity(p);
+                if (be == c || c instanceof net.minecraft.world.CompoundContainer cc && be instanceof net.minecraft.world.Container bc && cc.contains(bc)) return p;
+            } catch (NumberFormatException ignored) {
+                // a key from elsewhere
+            }
+        }
+        return null;
+    }
+
+    /** What one of its chests holds, as someone else left it: its chest memory set right, no journal line for it. */
+    public void chestSeen(String dim, net.minecraft.core.BlockPos at, java.util.Map<String, Integer> items) {
+        chests.looked(dim, at.getX(), at.getY(), at.getZ(), items, currentGameTickSafe());
+    }
+
+    /** What it remembers one of its chests holding. */
+    public java.util.Map<String, Integer> remembered(String dim, net.minecraft.core.BlockPos at) {
+        for (var c : chestMemory().near(dim, at.getX(), at.getY(), at.getZ(), 0.5)) {
+            if (c.x() == at.getX() && c.y() == at.getY() && c.z() == at.getZ()) {
+                java.util.Map<String, Integer> out = new java.util.LinkedHashMap<>();
+                c.items().forEach((k, n) -> out.put(k.contains(":") ? k : "minecraft:" + k, n));
+                return out;
+            }
+        }
+        return java.util.Map.of();
+    }
+
+    /**
+     * A player took these from a chest of its own ({@code broke}: they broke the chest, and what was in it is theirs to
+     * give back): owed, its owner told, and on sight they are told to give it back, or with revenge on, killed for it.
+     */
+    public void stolen(UUID player, String name, java.util.Map<String, Integer> taken, String dim, net.minecraft.core.BlockPos at, boolean broke) {
+        if (player == null || taken == null || taken.isEmpty() || !com.mineagent.engine.settings.Switches.watchChests()) return;
+        if (mayTakeFromMyChests(player)) return;
+        long now = currentGameTickSafe();
+        boolean rev = revenge();
+        debts.took(player.toString(), name, taken, now, rev);
+        tellManners();
+        String what = com.mineagent.engine.gear.Debts.describe(taken);
+        String where = at.getX() + ", " + at.getY() + ", " + at.getZ();
+        journal.record("theft", name + (broke ? " broke my chest at " + where + " and took what was in it: " + what
+                : " took " + what + " from my chest at " + where), now, dim, at.getX(), at.getY(), at.getZ());
+        speakToOwner((broke ? name + " broke my chest at " + where + " and took what was in it: " + what + "."
+                : name + " took " + what + " from my chest at " + where + ".")
+                + (rev ? " Next time I see them, they die for it." : " I'll make them give it back."));
+        lastDemand.remove(player);
+        saveMemoryNow();
+    }
+
+    /** A player who owes it gave these back (handed over, or put back in its chest): what they owed of them comes off. */
+    public void givenBack(UUID player, String name, java.util.Map<String, Integer> given) {
+        if (player == null || given == null || given.isEmpty()) return;
+        String key = player.toString();
+        var was = debts.of(key);
+        if (was.isEmpty()) return;
+        var off = debts.gave(key, given);
+        if (off.isEmpty()) return;
+        String who = name != null ? name : was.get().name();
+        var p = playerById(player);
+        var left = debts.of(key);
+        long now = currentGameTickSafe();
+        if (left.isEmpty()) {
+            sayTo(p, "Thanks. We're square.");
+            speakToOwner(who + " gave back what they took (" + com.mineagent.engine.gear.Debts.describe(off) + "). We're square.");
+            journal.record("theft", who + " gave back " + com.mineagent.engine.gear.Debts.describe(off) + ": square", now);
+            untarget(player);
+        } else {
+            sayTo(p, "That's " + com.mineagent.engine.gear.Debts.describe(off) + ". You still owe me "
+                    + com.mineagent.engine.gear.Debts.describe(left.get().owed()) + ".");
+            journal.record("theft", who + " gave back " + com.mineagent.engine.gear.Debts.describe(off) + "; still owes "
+                    + com.mineagent.engine.gear.Debts.describe(left.get().owed()), now);
+        }
+        tellManners();
+        saveMemoryNow();
+    }
+
+    /** A player died: one who owed it and that it killed for it is square (revenge). */
+    public void playerDied(net.minecraft.server.level.ServerPlayer dead) {
+        if (dead == null || !(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return;
+        String key = dead.getUUID().toString();
+        var d = debts.of(key);
+        if (d.isEmpty()) return;
+        var me = self.serverPlayer();
+        boolean mine = dead.getKillCredit() == me || dead.getLastHurtByMob() == me;
+        if (!mine) return;
+        debts.forgive(key);
+        untarget(dead.getUUID());
+        tellManners();
+        journal.record("theft", d.get().name() + " paid for taking " + com.mineagent.engine.gear.Debts.describe(d.get().owed()) + ": killed",
+                currentGameTickSafe());
+        speakToOwner(d.get().name() + " paid for taking my things. I'm picking up what they dropped.");
+        saveMemoryNow();
+    }
+
+    /**
+     * Every five seconds: anyone who owes it, in sight within 32 blocks. With revenge on, hunted (task/HuntTask, the target
+     * list: never if nobody can be hurt here); else told to give it back, every two minutes at most, walked up to first
+     * when it has nothing else on (task/ConfrontTask).
+     */
+    private void watchDebtors(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || debts.isEmpty() || !com.mineagent.engine.settings.Switches.watchChests()) return;
+        long now = currentGameTickSafe();
+        lastDemand.keySet().removeIf(id -> debts.of(id.toString()).isEmpty());
+        for (var e : debts.all().entrySet()) {
+            UUID id;
+            try {
+                id = UUID.fromString(e.getKey());
+            } catch (IllegalArgumentException bad) {
+                debts.forgive(e.getKey());
+                continue;
+            }
+            var p = playerById(id);
+            if (p == null || p.level() != self.level() || !p.isAlive() || p.isSpectator()) continue;
+            double d = p.distanceTo(self);
+            if (d > 32 || d > 8 && !self.hasLineOfSight(p)) continue;
+            String name = p.getGameProfile().getName();
+            Long last = lastDemand.get(id);
+            if ((e.getValue().revenge() || revenge()) && self.canHarmPlayer(p) && com.mineagent.engine.settings.Switches.fightPlayers()) {
+                if (last != null && now - last < 600) continue; // a hunt under way, or one just ended
+                lastDemand.put(id, now);
+                LiveBodyState body = liveBodyState.get();
+                if (body != null && body.taskId() != null && body.taskId().startsWith("hunt-")) continue;
+                journal.record("theft", "saw " + name + ", who took my things: going after them", now);
+                sayTo(p, "You took from my chest.");
+                huntCommand(name);
+                continue;
+            }
+            if (last != null && now - last < 2_400) continue;
+            lastDemand.put(id, now);
+            LiveBodyState body = liveBodyState.get();
+            boolean idle = (body == null || body.taskId() == null) && goalBook.active().isEmpty() && !guarding() && !skillRuntime.active();
+            if (idle && d > 4) {
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ConfrontTask.ConfrontRecord(
+                        "confront-" + UUID.randomUUID(), id, name), reply -> { });
+            } else {
+                sayTo(p, demand(name, e.getValue().owed()));
+            }
+        }
+    }
+
+    /** What it says to one who owes it. */
+    public static String demand(String name, java.util.Map<String, Integer> owed) {
+        return name + ", you took " + com.mineagent.engine.gear.Debts.describe(owed)
+                + " from my chest. Give it back: throw it to me, or put it back where you found it.";
+    }
+
+    /** Said to a player (not its owner): in their chat, with its name, as it speaks to its owner. */
+    public void sayTo(net.minecraft.server.level.ServerPlayer p, String text) {
+        if (p == null || text == null || text.isBlank()) return;
+        journal.record("said", "to " + p.getGameProfile().getName() + ": " + text, currentGameTickSafe());
+        Services.platform().scheduleOnServer(() -> {
+            try {
+                if (p.connection != null) p.sendSystemMessage(net.minecraft.network.chat.Component.literal("§b[" + companion.companionName() + "]§r " + text));
+            } catch (RuntimeException ignored) {
+                // they left
+            }
+        });
+    }
+
+    private net.minecraft.server.level.ServerPlayer playerById(UUID id) {
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return null;
+        var server = self.serverPlayer().getServer();
+        return server == null ? null : server.getPlayerList().getPlayer(id);
+    }
+
+    /** Off its list of players to fight (it was there for what they took). */
+    private void untarget(UUID id) {
+        if (id != null && agentSettings.isAllowedTarget(id)) {
+            setAgentSettings(agentSettings.withoutTarget(id));
+            MineAgentEngine.persistCompanionNow(companion.companionId());
+        }
+    }
+
+    /** What it may pick up: what those who owe it throw down is its own coming back (survival/Manners). */
+    private void tellManners() {
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return;
+        java.util.Set<UUID> owing = new java.util.HashSet<>();
+        for (String k : debts.all().keySet()) {
+            try {
+                owing.add(UUID.fromString(k));
+            } catch (IllegalArgumentException ignored) {
+                // not a player
+            }
+        }
+        com.mineagent.engine.survival.Manners.owedBy(self.serverPlayer().getUUID(), owing);
+    }
+
+    /** Back from the save: who owes it, and its owner's word on thieves. */
+    public void debtsLoaded(java.util.Map<String, com.mineagent.engine.gear.Debts.Debt> saved, Boolean word) {
+        debts.load(saved);
+        revengeWord = word;
+        tellManners();
     }
 
     public void ownChests(java.util.Collection<String> keys) {

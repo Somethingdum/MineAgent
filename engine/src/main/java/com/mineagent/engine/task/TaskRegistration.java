@@ -121,6 +121,12 @@ public final class TaskRegistration {
                 DumpJunkTask::new
         );
 
+        // One who took from its chest told to give it back to its face (SMH plan 70)
+        CompanionTaskFactory.register(
+                ConfrontTask.ConfrontRecord.class,
+                ConfrontTask::new
+        );
+
         // Mobs hunted for levels once it is doing well (SMH plan 70: "It should start seeking beef with mobs. Of any kind.")
         CompanionTaskFactory.register(
                 XpHuntTask.XpRecord.class,
