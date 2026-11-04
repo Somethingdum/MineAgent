@@ -28,8 +28,13 @@ public abstract class ServerLevelMixin {
             if (event == GameEvent.BLOCK_PLACE) {
                 if (context.sourceEntity() instanceof Player player) {
                     PlacedBlocks.placedBy(player, level, BlockPos.containing(pos), context.affectedState());
+                    // What its owner is building, for a companion taking the other half of the job (MA10.4).
+                    com.mineagent.engine.MineAgentEngine.onPlayerBlock(player, level, BlockPos.containing(pos), context.affectedState(), true);
                 }
             } else if (event == GameEvent.BLOCK_DESTROY) {
+                if (context.sourceEntity() instanceof Player player) {
+                    com.mineagent.engine.MineAgentEngine.onPlayerBlock(player, level, BlockPos.containing(pos), context.affectedState(), false);
+                }
                 PlacedBlocks.broken(level, BlockPos.containing(pos));
                 // Ore mined out, a spawner broken, a chest gone: struck off what companions remember (MA5.7).
                 com.mineagent.engine.MineAgentEngine.onBlockGone(level, BlockPos.containing(pos), context.affectedState());

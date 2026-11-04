@@ -3370,4 +3370,87 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA10.4: its owner digs along a stone wall with a pickaxe; the companion, with nothing else to do and
+     * torches on it, lights the tunnel behind them.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_partner_mine", timeoutTicks = 900)
+    public void aMinersTunnelIsLitBehindThem(GameTestHelper helper) {
+        ServerPlayer miner = player(helper, "Miner", new BlockPos(3, 1, 5));
+        Scene s = scene(helper, "Lantern", false, miner);
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(2, new ItemStack(Items.TORCH, 16));
+        miner.getInventory().setItem(0, new ItemStack(Items.IRON_PICKAXE));
+        for (int x = 2; x <= 12; x++) for (int y = 1; y <= 3; y++) helper.setBlock(x, y, 6, Blocks.STONE);
+        // Two blocks a column, a column every 20 ticks, along the wall.
+        for (int i = 0; i < 8; i++) {
+            final int x = 3 + i;
+            helper.runAfterDelay(20 + i * 20L, () -> {
+                BlockPos at = helper.absolutePos(new BlockPos(x, 1, 5));
+                miner.teleportTo(helper.getLevel(), at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 0.0f, 0.0f);
+                miner.gameMode.destroyBlock(helper.absolutePos(new BlockPos(x, 1, 6)));
+                miner.gameMode.destroyBlock(helper.absolutePos(new BlockPos(x, 2, 6)));
+            });
+        }
+        helper.onEachTick(() -> {
+            trace(helper, s, "partner-mine");
+            int torches = 0;
+            for (BlockPos p : BlockPos.betweenClosed(helper.absolutePos(new BlockPos(-3, 0, 0)), helper.absolutePos(new BlockPos(16, 3, 12)))) {
+                var st = helper.getLevel().getBlockState(p);
+                if (st.is(Blocks.TORCH) || st.is(Blocks.WALL_TORCH)) torches++;
+            }
+            if (torches > 0 && helper.getTick() > 100) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 880) {
+                String how = "no torch placed; it has " + s.body().getInventory().countItem(Items.TORCH) + "; said: " + lastSaid(s, "")
+                        + "; doing " + s.loop().ownerWork().doing(helper.getLevel().getGameTime());
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA10.4: its owner lays oak planks, down to 14 of them; the companion, carrying 40, brings them more before
+     * they run out.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_partner_build", timeoutTicks = 700)
+    public void aBuilderIsBroughtTheBlocksTheyArePlacing(GameTestHelper helper) {
+        ServerPlayer builder = player(helper, "Mason", new BlockPos(3, 1, 3));
+        Scene s = scene(helper, "Hod", false, builder);
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(4, new ItemStack(Items.OAK_PLANKS, 40));
+        builder.getInventory().selected = 0;
+        builder.getInventory().setItem(0, new ItemStack(Items.OAK_PLANKS, 20));
+        BlockPos far = helper.absolutePos(new BlockPos(10, 1, 3));
+        s.body().teleportTo(helper.getLevel(), far.getX() + 0.5, far.getY(), far.getZ() + 0.5, 0.0f, 0.0f);
+        // A plank every 10 ticks, along a line in front of them, as a player places them (on the floor's top face).
+        for (int i = 0; i < 6; i++) {
+            final int x = 1 + i;
+            helper.runAfterDelay(20 + i * 10L, () -> {
+                BlockPos floor = helper.absolutePos(new BlockPos(x, 0, 5));
+                var hit = new net.minecraft.world.phys.BlockHitResult(Vec3.atCenterOf(floor).add(0, 0.5, 0),
+                        net.minecraft.core.Direction.UP, floor, false);
+                builder.gameMode.useItemOn(builder, helper.getLevel(), builder.getMainHandItem(),
+                        net.minecraft.world.InteractionHand.MAIN_HAND, hit);
+            });
+        }
+        helper.onEachTick(() -> {
+            trace(helper, s, "partner-build");
+            int theirs = builder.getInventory().countItem(Items.OAK_PLANKS);
+            for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    builder.getBoundingBox().inflate(4.0), e -> e.getItem().is(Items.OAK_PLANKS))) theirs += e.getItem().getCount();
+            if (helper.getTick() > 100 && theirs >= 30) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 680) {
+                String how = "they have " + theirs + " planks; it has " + s.body().getInventory().countItem(Items.OAK_PLANKS)
+                        + "; doing " + s.loop().ownerWork().doing(helper.getLevel().getGameTime()) + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
 }

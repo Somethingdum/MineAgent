@@ -1054,6 +1054,20 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         args.addProperty("recipe_id", recipeId);
         args.addProperty("count", Math.max(1, Math.min(64, batches)));
         args.addProperty("bypass_reuse_check", true);
+        // The total wanted after this craft is what it carries of the result plus this batch: without it the tool
+        // counts against one batch, and one already carried (a bed, the second of two) looks like the order done.
+        try {
+            var holder = sp.server.getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.tryParse(recipeId));
+            if (holder.isPresent()) {
+                ItemStack out = holder.get().value().getResultItem(sp.server.registryAccess());
+                if (!out.isEmpty()) {
+                    int want = count(sp, out.getItem()) + Math.max(1, Math.min(64, batches)) * Math.max(1, out.getCount());
+                    args.addProperty("desired_total", Math.max(1, Math.min(4096, want)));
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // the tool's own default, as before
+        }
         args.addProperty("purpose", "production order");
         String[] reply = {null};
         new com.mineagent.tools.crafting.CraftTool().onServerCall(record.toolCallId() + ":craft", args, player, r -> reply[0] = r);

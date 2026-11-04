@@ -323,6 +323,21 @@ public final class MineAgentEngine {
      * A block was destroyed (any player, explosion, the companion): a companion that remembered it as ore or a
      * notable block strikes it off, and forgets a chest that was there (SMH plan 70, MA5.7).
      */
+    /**
+     * A player placed ({@code placed}) or broke a block: their companions note it, to guess what they are doing (SMH
+     * plan 70, MA10.4). Companions' own blocks are not counted.
+     */
+    public static void onPlayerBlock(net.minecraft.world.entity.player.Player player, net.minecraft.server.level.ServerLevel level,
+                                     net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState state, boolean placed) {
+        if (player == null || state == null || isCompanionPlayer(player.getUUID())) return;
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        long tick = level.getGameTime();
+        for (CompanionState s : getCompanionsByOwner(player.getUUID())) {
+            if (placed) s.loop.ownerWork().placed(id, pos.getX(), pos.getY(), pos.getZ(), tick);
+            else s.loop.ownerWork().broke(id, pos.getX(), pos.getY(), pos.getZ(), tick);
+        }
+    }
+
     public static void onBlockGone(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos,
                                    net.minecraft.world.level.block.state.BlockState old) {
         if (level == null || pos == null || old == null) return;

@@ -941,9 +941,12 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-"))) {
             lastOrderState = state;
+            if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
+            else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
             var note = message == null ? null : java.util.regex.Pattern.compile("\"note\":\"([^\"]*)\"").matcher(message);
             lastOrderNote = note != null && note.find() ? note.group(1) : message == null ? "" : message;
         }
+        progress.action(taskName == null ? "task" : taskName, gameTick);
         liveBodyState.set(new LiveBodyState(null, "idle", null, null,
                 "last_task=" + taskName + " state=" + state
                         + (message == null || message.isBlank()
@@ -1329,6 +1332,7 @@ public class AgentLoop {
                 changeWorkMode(c.value());
             }
             case STATUS -> speakToOwner(statusLine());
+            case PROGRESS -> speakToOwner(progress.summary(currentGameTickSafe()));
             case WHATS_NEXT -> speakToOwner(whatsNext());
             case FOOD_BOTH -> {
                 if (!fromOwner) return false;
@@ -2287,7 +2291,10 @@ public class AgentLoop {
             return;
         }
         double flee = MineAgentEngine.getConfig().survival().healthFlee();
-        if (player.getHealth() <= flee) closeCall = true;
+        if (player.getHealth() <= flee) {
+            if (!closeCall) progress.closeCall(currentGameTickSafe());
+            closeCall = true;
+        }
         else if (closeCall && player.getHealth() >= player.getMaxHealth() * 0.75) {
             closeCall = false;
             sayMilestone(com.mineagent.engine.chat.MilestoneTalk.Kind.RECOVERED, "you were nearly killed a moment ago and have healed back up");
@@ -2370,6 +2377,7 @@ public class AgentLoop {
         if (body == null) return;
         try {
             long tick = currentGameTickSafe();
+            progress.died(tick);
             String cause = body.getCombatTracker().getDeathMessage().getString();
             var source = body.getLastDamageSource();
             String type = source == null ? "" : source.typeHolder().unwrapKey().map(k -> k.location().toString()).orElse("");
@@ -2564,6 +2572,7 @@ public class AgentLoop {
         if (p == null) return null;
         // Through SMH (smh/auto: stateless chat completions, queued by role there) no session needs guarding, so a
         // side call never waits for the loop's own turn to finish on this side.
+        progress.modelCall(currentGameTickSafe());
         if (com.mineagent.engine.llm.RoleRouting.AUTO.equals(model)) return p.complete(request);
         synchronized (p) {
             var before = p.sessionState(model);
@@ -2603,6 +2612,8 @@ public class AgentLoop {
             if (gameTick % 20L == 0L) lookAfterOwner(player);
             if (gameTick % 20L == 0L) notePlayers(player);
             if (gameTick % 100L == 0L) guardWatch(player);
+            if (gameTick % 40L == 0L) partner(player);
+            if (gameTick % 200L == 0L) watchProgress(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -2955,6 +2966,128 @@ public class AgentLoop {
         litNight = -1;
         guardBlocks = null;
         visitorsSaid.clear();
+    }
+
+    // ── The progress record (SMH plan 70, MA10.3) ──
+
+    private final com.mineagent.engine.learning.ProgressRecord progress = new com.mineagent.engine.learning.ProgressRecord();
+    /** What it carried and where it stood at the last look, for items gained and ground covered. */
+    private Map<String, Integer> carriedBefore;
+    private net.minecraft.core.BlockPos stoodBefore;
+
+    public com.mineagent.engine.learning.ProgressRecord progress() {
+        return progress;
+    }
+
+    /**
+     * Every ten seconds: what it gained since the last look, how far it got, and the stall alarm, once, when it has
+     * an order in hand and nothing has moved for five minutes.
+     */
+    private void watchProgress(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null) return;
+        long now = currentGameTickSafe();
+        Map<String, Integer> carried = new java.util.HashMap<>();
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty()) carried.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
+        }
+        if (carriedBefore != null) {
+            for (var e : carried.entrySet()) progress.gained(e.getKey(), e.getValue() - carriedBefore.getOrDefault(e.getKey(), 0), now);
+        }
+        carriedBefore = carried;
+        var here = self.blockPosition();
+        if (stoodBefore != null && stoodBefore.distSqr(here) > 64) progress.moved(now);
+        stoodBefore = here;
+        boolean busy = busyWithOrder();
+        if (progress.stalled(busy, now)) {
+            String what = goalBook.active().map(g -> com.mineagent.engine.goal.Orders.withoutMark(g.text())).orElse("what you asked");
+            journal.record("stall", "nothing moved for 5 minutes on " + what, now);
+            speakToOwner("Nothing has moved on \"" + what + "\" for five minutes; I may be stuck. Say \"why\" for what's in the way.");
+        }
+    }
+
+    // ── Taking the other half of the job (SMH plan 70, MA10.4) ──
+
+    private final com.mineagent.engine.partner.OwnerWork ownerWork = new com.mineagent.engine.partner.OwnerWork();
+    /** When it last lit a miner's trail, and last brought a builder each block (game ticks). */
+    private long partnerLitAt = Long.MIN_VALUE / 2;
+    private final Map<String, Long> partnerBrought = new java.util.HashMap<>();
+
+    public com.mineagent.engine.partner.OwnerWork ownerWork() {
+        return ownerWork;
+    }
+
+    /**
+     * With nothing of its own to do ({@code behaviour.partner}), the other half of its owner's job: a miner's tunnel lit
+     * behind them; a builder brought more of the block they are placing before they run out. Their orders always come
+     * first: only when it has no task, goal or guard duty.
+     */
+    private void partner(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !com.mineagent.engine.settings.Switches.partner()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var owner = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayerOwner() : null;
+        if (owner == null || !owner.isAlive() || owner.serverLevel() != self.serverLevel() || ownerActivity.afk()) return;
+        if (owner.distanceTo(self) > 32) return;
+        long now = currentGameTickSafe();
+        var level = self.serverLevel();
+        switch (ownerWork.doing(now)) {
+            case MINING -> {
+                if (now - partnerLitAt < 400) return;
+                if (self.getInventory().countItem(net.minecraft.world.item.Items.TORCH) == 0) return;
+                // The trail behind them: a dark spot a mob could stand on near where they have dug.
+                var trail = ownerWork.trail(now);
+                net.minecraft.core.BlockPos dark = null;
+                for (int[] t : trail) {
+                    var at = new net.minecraft.core.BlockPos(t[0], t[1], t[2]);
+                    for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-2, -1, -2), at.offset(2, 1, 2))) {
+                        if (com.mineagent.engine.task.LightTask.spawnable(level, p)
+                                && level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, p) == 0) {
+                            dark = at;
+                            break;
+                        }
+                    }
+                    if (dark != null) break;
+                }
+                if (dark == null) return;
+                partnerLitAt = now;
+                journal.record("partner", "lighting the tunnel behind you", now);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LightTask.LightRecord(
+                        "partner-light-" + UUID.randomUUID(), dark, 5), reply -> { });
+            }
+            case BUILDING -> {
+                String block = ownerWork.placing(now);
+                if (block == null) return;
+                var item = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                        net.minecraft.resources.ResourceLocation.tryParse(block)).asItem();
+                if (item == net.minecraft.world.item.Items.AIR) return;
+                String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString();
+                if (owner.getInventory().countItem(item) >= 16) return;
+                if (now - partnerBrought.getOrDefault(itemId, Long.MIN_VALUE / 2) < 1_200) return;
+                int mine = self.getInventory().countItem(item);
+                partnerBrought.put(itemId, now);
+                String name = com.mineagent.engine.planning.production.ProductionPlanner.plural(itemId, 2);
+                if (mine >= 8) {
+                    journal.record("partner", "bringing you " + name, now);
+                    speakToOwner("More " + name + " for you.");
+                    com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.GiveTask.GiveRecord(
+                            "partner-give-" + UUID.randomUUID(), itemId, Math.min(mine, 32)), reply -> { });
+                    return;
+                }
+                var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+                var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+                if (com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, itemId, 32,
+                        java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN)).possible()) {
+                    journal.record("partner", "making you " + name, now);
+                    partnerBrought.put(itemId, now - 1_200 + 200); // brought once they're made
+                    com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                            "partner-make-" + UUID.randomUUID(), itemId, 32, null, false, true), reply -> { });
+                }
+            }
+            default -> { }
+        }
     }
 
     // ── A better guard (SMH plan 70, MA10.1) ──
@@ -5296,6 +5429,7 @@ public class AgentLoop {
                     // Built-in transports are companion-owned. A legacy extension
                     // may still return its registry singleton; retain its monitor
                     // while independent built-in sessions can proceed concurrently.
+                    progress.modelCall(currentGameTickSafe());
                     synchronized (provider) {
                         provider.restoreSessionState(providerStateBefore);
                         response = provider.complete(new LLMRequest(
