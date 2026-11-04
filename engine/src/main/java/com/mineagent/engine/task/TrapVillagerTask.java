@@ -243,6 +243,11 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     if (inCell && clear) {
                         // In: the door, from where it can reach it (it waits close by for this).
                         boolean put = door.distToCenterSqr(sp.getEyePosition()) <= 4.5 * 4.5 && Placement.placeAnySupportBlock(sp, door);
+                        // On its spot and the door won't go in from it (no face in sight): the next spot by the door.
+                        if (!put && sp.blockPosition().equals(waitAt) && doorSpots != null && !doorSpots.isEmpty() && ++refusedAt > 10) {
+                            waitAt = doorSpots.get(++waitIndex % doorSpots.size());
+                            refusedAt = 0;
+                        }
                         if (!put && Boolean.getBoolean("mineagent.traceWork") && ticks % 100 == 0) {
                             System.out.println("[MineAgent] cell: the villager is in, no door yet: "
                                     + Placement.whyNot(sp, door, net.minecraft.world.level.block.Blocks.COBBLESTONE.defaultBlockState())
@@ -274,8 +279,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     if (doorSpots == null) doorSpots = doorSpots(level);
                     if (waitAt == null) waitAt = doorSpots.isEmpty() ? waitSpot(level, layout) : doorSpots.get(0);
                     // Not got to in ten seconds: the next spot by the door.
-                    boolean away = sp.blockPosition().distSqr(waitAt) > 2 || sp.blockPosition().equals(door) || sp.blockPosition().equals(cell)
-                            || sp.blockPosition().equals(way);
+                    boolean away = !sp.blockPosition().equals(waitAt);
                     if (away && ++blockingTicks > 200 && !doorSpots.isEmpty()) {
                         waitAt = doorSpots.get(++waitIndex % doorSpots.size());
                         blockingTicks = 0;
@@ -284,8 +288,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     }
                     BlockPos waitAt = this.waitAt;
                     // On its spot, or by it; never in the way in or the cell, whatever is near.
-                    boolean onSpot = sp.blockPosition().distSqr(waitAt) <= 2 && !sp.blockPosition().equals(door) && !sp.blockPosition().equals(cell)
-                            && !sp.blockPosition().equals(way);
+                    // On it, exactly: a step off it may be behind a wall from the door.
+                    boolean onSpot = sp.blockPosition().equals(waitAt);
                     if (!onSpot) {
                         if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(waitAt.getX(), waitAt.getY(), waitAt.getZ(), 0);
                         nav.tick();
@@ -340,7 +344,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
-    private int offCell, traceAt, jumpTicks, blockingTicks, edgeTicks, nudging, waitIndex, groundY = Integer.MIN_VALUE;
+    private int offCell, traceAt, jumpTicks, blockingTicks, edgeTicks, nudging, waitIndex, refusedAt, groundY = Integer.MIN_VALUE;
     /** Where it may wait for the villager: by the door and in reach of it, never the way in or the cell. */
     private java.util.List<BlockPos> doorSpots;
 
