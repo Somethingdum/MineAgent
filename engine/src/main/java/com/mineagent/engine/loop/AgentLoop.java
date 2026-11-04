@@ -5265,6 +5265,23 @@ public class AgentLoop {
         return null;
     }
 
+    /**
+     * Quarry its hunts gave up on lately (sources "entity:..."), with when: left out of its plans for half a game day.
+     * The run on 49e4e02 planned a village's iron golem for every iron order after the first failed ("no more iron
+     * golems near here"), and never mined the iron.
+     */
+    private final Map<String, Long> givenUp = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void gaveUp(String source) {
+        if (source != null && source.startsWith(com.mineagent.engine.planning.production.Production.ENTITY)) givenUp.put(source, currentGameTickSafe());
+    }
+
+    public java.util.Set<String> givenUpLately() {
+        long now = currentGameTickSafe();
+        givenUp.values().removeIf(t -> now - t > 12_000L);
+        return java.util.Set.copyOf(givenUp.keySet());
+    }
+
     /** When digging a home last failed here (no hillside, ground that won't take a stairway): a built hut instead for a while. */
     private volatile long dugoutFailedAt = Long.MIN_VALUE / 2;
 

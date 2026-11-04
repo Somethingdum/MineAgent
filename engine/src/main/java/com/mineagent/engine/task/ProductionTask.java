@@ -197,6 +197,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (!begun) {
             begun = true;
             startedAt = sp.level().getGameTime();
+            // Quarry a hunt here gave up on lately (a village's golem it couldn't take, a herd it couldn't reach): not
+            // counted on again for a while, or every order planned it and failed the same way.
+            var given = TaskContext.agentLoop(player);
+            if (given != null) without.addAll(given.givenUpLately());
             record.extendDeadlineTo(Math.max(record.deadline(), startedAt + LONGEST));
         }
         if (sub != null) sub.resume();
@@ -805,6 +809,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         TaskContext.inputDriver(player).clear();
         without.add(source);
         without.add(Production.UNSEEN); // it looked round and found none: what it has never seen isn't near either
+        var loop = TaskContext.agentLoop(player);
+        if (loop != null) loop.gaveUp(source);
         todo.clear();
         step = null;
         prey = null;
