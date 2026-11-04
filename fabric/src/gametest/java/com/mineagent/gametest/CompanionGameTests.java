@@ -3525,7 +3525,7 @@ public class CompanionGameTests implements FabricGameTest {
      * Plan 70, MA11.1: "build a nether portal" with 10 obsidian, cobblestone and flint and steel: the frame goes up (the
      * corners of cobblestone, the top reached from a pillar it takes down after), and the portal is lit.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_portal", timeoutTicks = 1600)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_portal_build", timeoutTicks = 1600)
     public void aPortalFromTheObsidianItWasGivenAndLit(GameTestHelper helper) {
         Scene s = scene(helper, "Gatewright");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
@@ -3535,7 +3535,7 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(3, new ItemStack(Items.FLINT_AND_STEEL));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a nether portal"));
         helper.onEachTick(() -> {
-            trace(helper, s, "portal");
+            trace(helper, s, "portal-build");
             String lit = lastSaid(s, "The portal is lit");
             String failed = lastSaid(s, "I couldn't build the portal");
             if (!lit.isEmpty() || !failed.isEmpty()) {
@@ -3548,6 +3548,115 @@ public class CompanionGameTests implements FabricGameTest {
                 else fail(helper, portal + " portal blocks; said: " + (lit.isEmpty() ? failed : lit));
             } else if (helper.getTick() >= 1550) {
                 String how = "said: " + lastSaid(s, "") + "; obsidian left " + inv.countItem(Items.OBSIDIAN);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA11.2: "enchant your pickaxe" with a table, 15 bookshelves, lapis and 30 levels: the ring goes down, the pickaxe is enchanted. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_enchant", timeoutTicks = 900)
+    public void aPickaxeEnchantedAtATableWithItsShelves(GameTestHelper helper) {
+        Scene s = scene(helper, "Enchanter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos spot = helper.absolutePos(new BlockPos(10, 1, 10));
+        s.body().teleportTo(helper.getLevel(), spot.getX() + 0.5, spot.getY(), spot.getZ() + 0.5, 0.0f, 0.0f);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.ENCHANTING_TABLE));
+        inv.setItem(2, new ItemStack(Items.BOOKSHELF, 15));
+        inv.setItem(3, new ItemStack(Items.LAPIS_LAZULI, 3));
+        inv.setItem(4, new ItemStack(Items.IRON_PICKAXE));
+        s.body().giveExperienceLevels(30);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "enchant your pickaxe"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "enchant");
+            String done = lastSaid(s, "Enchanted my");
+            String failed = lastSaid(s, "I couldn't enchant");
+            if (!done.isEmpty() || !failed.isEmpty()) {
+                boolean enchanted = false;
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    if (inv.getItem(i).is(Items.IRON_PICKAXE) && inv.getItem(i).isEnchanted()) enchanted = true;
+                }
+                int shelves = 0;
+                for (BlockPos p : BlockPos.betweenClosed(spot.offset(-6, -1, -6), spot.offset(6, 2, 6))) {
+                    if (helper.getLevel().getBlockState(p).is(Blocks.BOOKSHELF)) shelves++;
+                }
+                tidy(s);
+                if (enchanted && shelves >= 15) helper.succeed();
+                else fail(helper, "enchanted " + enchanted + ", " + shelves + " shelves; said: " + (done.isEmpty() ? failed : done));
+            } else if (helper.getTick() >= 880) {
+                String how = "said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA11.3: "trade for emeralds" with a farmer placed beside it and crops to sell: emeralds, by the trading menu. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trade", timeoutTicks = 600)
+    public void anEmeraldTradeWithAPlacedVillager(GameTestHelper helper) {
+        Scene s = scene(helper, "Trader");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.WHEAT, 64));
+        inv.setItem(2, new ItemStack(Items.POTATO, 64));
+        inv.setItem(3, new ItemStack(Items.CARROT, 64));
+        inv.setItem(4, new ItemStack(Items.BEETROOT, 64));
+        var villager = EntityType.VILLAGER.create(helper.getLevel());
+        BlockPos vAt = helper.absolutePos(new BlockPos(7, 1, 3));
+        villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
+        villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FARMER).setLevel(1));
+        villager.setNoAi(true);
+        helper.getLevel().addFreshEntity(villager);
+        float health = villager.getHealth();
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "trade for emeralds"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "trade");
+            int emeralds = inv.countItem(Items.EMERALD);
+            String done = lastSaid(s, "Traded");
+            String failed = lastSaid(s, "I couldn't trade");
+            if (!done.isEmpty() || !failed.isEmpty()) {
+                boolean unhurt = villager.isAlive() && villager.getHealth() >= health;
+                tidy(s);
+                villager.discard();
+                if (emeralds >= 1 && unhurt) helper.succeed();
+                else fail(helper, emeralds + " emeralds, villager unhurt " + unhurt + "; said: " + (done.isEmpty() ? failed : done));
+            } else if (helper.getTick() >= 580) {
+                String how = emeralds + " emeralds; said: " + lastSaid(s, "");
+                tidy(s);
+                villager.discard();
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA11.4: "brew a potion of fire resistance" from given ingredients: three potions of fire resistance. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_brew", timeoutTicks = 1600)
+    public void aPotionOfFireResistanceBrewed(GameTestHelper helper) {
+        Scene s = scene(helper, "Brewer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.BREWING_STAND));
+        inv.setItem(2, new ItemStack(Items.BLAZE_POWDER));
+        for (int i = 3; i <= 5; i++) inv.setItem(i, com.mineagent.engine.task.BrewTask.waterBottle());
+        inv.setItem(6, new ItemStack(Items.NETHER_WART));
+        inv.setItem(7, new ItemStack(Items.MAGMA_CREAM));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "brew a potion of fire resistance"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "brew");
+            String done = lastSaid(s, "Brewed");
+            String failed = lastSaid(s, "I couldn't brew");
+            if (!done.isEmpty() || !failed.isEmpty()) {
+                int potions = 0;
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    var c = inv.getItem(i).get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+                    if (inv.getItem(i).is(Items.POTION) && c != null && c.is(net.minecraft.world.item.alchemy.Potions.FIRE_RESISTANCE)) potions++;
+                }
+                tidy(s);
+                if (potions >= 1) helper.succeed();
+                else fail(helper, potions + " potions of fire resistance; said: " + (done.isEmpty() ? failed : done));
+            } else if (helper.getTick() >= 1550) {
+                String how = "said: " + lastSaid(s, "");
                 tidy(s);
                 fail(helper, how);
             }

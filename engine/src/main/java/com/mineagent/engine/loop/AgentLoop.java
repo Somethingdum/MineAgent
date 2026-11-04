@@ -1417,6 +1417,27 @@ public class AgentLoop {
                 if (!fromOwner) return false;
                 return protectCommand(c);
             }
+            case ENCHANT -> {
+                journal.record("order", "enchant " + c.value(), currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.EnchantTask.EnchantRecord(
+                        "enchant-" + UUID.randomUUID(), c.value()), reply -> { });
+                return true;
+            }
+            case TRADE -> {
+                String want = "emerald".equals(c.value()) ? "minecraft:emerald"
+                        : com.mineagent.engine.planning.production.GameKnowledge.itemFor(c.value());
+                if (want == null || want.startsWith(com.mineagent.engine.planning.production.GameKnowledge.ANY)) return false;
+                journal.record("order", "trade for " + c.value(), currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
+                        "trade-" + UUID.randomUUID(), want, 8), reply -> { });
+                return true;
+            }
+            case BREW -> {
+                journal.record("order", "brew " + c.value().replace('_', ' '), currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BrewTask.BrewRecord(
+                        "brew-" + UUID.randomUUID(), c.value()), reply -> { });
+                return true;
+            }
             case PORTAL -> {
                 journal.record("order", "build a nether portal", currentGameTickSafe());
                 speakToOwner("On it: a nether portal.");

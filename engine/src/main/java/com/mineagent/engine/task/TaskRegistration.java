@@ -79,6 +79,20 @@ public final class TaskRegistration {
                 GiveTask::new
         );
 
+        // Enchanting, trading and brewing (SMH plan 70, MA11.2 to MA11.4)
+        CompanionTaskFactory.register(
+                EnchantTask.EnchantRecord.class,
+                EnchantTask::new
+        );
+        CompanionTaskFactory.register(
+                TradeTask.TradeRecord.class,
+                TradeTask::new
+        );
+        CompanionTaskFactory.register(
+                BrewTask.BrewRecord.class,
+                BrewTask::new
+        );
+
         // A nether portal from the obsidian it carries (SMH plan 70, MA11.1)
         CompanionTaskFactory.register(
                 PortalTask.PortalRecord.class,

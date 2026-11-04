@@ -191,6 +191,19 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.PROGRESS, CommandParser.parse("progress report", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.PORTAL, CommandParser.parse("build a nether portal", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.PORTAL, CommandParser.parse("make us a portal here", "Pal").orElseThrow().kind());
+        var ench = CommandParser.parse("enchant your pickaxe", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.ENCHANT, ench.kind());
+        assertEquals("pickaxe", ench.value());
+        assertEquals("gear", CommandParser.parse("enchant your gear", "Pal").orElseThrow().value());
+        var trade = CommandParser.parse("trade for emeralds", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.TRADE, trade.kind());
+        assertEquals("emerald", trade.value());
+        assertEquals(CommandParser.Kind.TRADE, CommandParser.parse("sell your wheat for emeralds", "Pal").orElseThrow().kind());
+        assertEquals("bread", CommandParser.parse("buy bread from the villager", "Pal").orElseThrow().value());
+        var brew = CommandParser.parse("brew a potion of fire resistance", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.BREW, brew.kind());
+        assertEquals("fire_resistance", brew.value());
+        assertEquals("swiftness", CommandParser.parse("brew speed potions", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.GUARD_HERE, CommandParser.parse("guard that", "Pal").orElseThrow().kind());
         assertEquals("that", CommandParser.parse("guard that horse", "Pal").orElseThrow().value());
     }
