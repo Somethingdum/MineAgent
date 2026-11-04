@@ -114,6 +114,7 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
                     bowInHand(sp);
                     var shotState = BowShot.tick(sp, crystal);
                     if (crystalTicks % 100 == 0) System.out.println("[MineAgent] crystal shot: " + shotState);
+                    if (sidestep(sp, shotState, crystal)) return TaskState.RUNNING;
                     if (++crystalTicks > 1_600) { // shot and shot and still there: the next
                         caged++;
                         crystalsGivenUp.add(crystal.getUUID());
@@ -148,7 +149,7 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
                         nav.cancel();
                         TaskContext.inputDriver(player).clear();
                         bowInHand(sp);
-                        BowShot.tick(sp, dragon);
+                        sidestep(sp, BowShot.tick(sp, dragon), dragon);
                         return TaskState.RUNNING;
                     }
                     BlockPos portal = level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, BlockPos.ZERO);
@@ -167,6 +168,40 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
             return end(false, "something went wrong: " + e.getMessage());
         }
     }
+
+    /** Shots held back in a row (someone in the line of fire), and a step aside when it is three. */
+    private int heldBack;
+    private BlockPos aside;
+
+    /**
+     * Held back three times running (its owner, or another player, in the way): three blocks to the side, across the line
+     * of fire, for a clear one. True while it steps.
+     */
+    private boolean sidestep(ServerPlayer sp, BowShot.State st, Entity target) {
+        if (aside != null) {
+            if (sp.blockPosition().distSqr(aside) <= 2 || ++asideTicks > 100) {
+                aside = null;
+                asideTicks = 0;
+                return false;
+            }
+            nav.tick();
+            return true;
+        }
+        if (st != BowShot.State.HELD_BACK) {
+            if (st == BowShot.State.LOOSED) heldBack = 0;
+            return false;
+        }
+        if (++heldBack < 3) return false;
+        heldBack = 0;
+        var to = target.position().subtract(sp.position());
+        double len = Math.max(0.01, Math.sqrt(to.x * to.x + to.z * to.z));
+        int side = (sidesTried++ % 2 == 0) ? 1 : -1;
+        aside = BlockPos.containing(sp.getX() - to.z / len * 3 * side, sp.getY(), sp.getZ() + to.x / len * 3 * side);
+        nav.navigateNear(aside.getX(), aside.getY(), aside.getZ(), 1);
+        return true;
+    }
+
+    private int asideTicks, sidesTried;
 
     /** The bow into its main hand (the shot draws only a bow held there). */
     private void bowInHand(ServerPlayer sp) {

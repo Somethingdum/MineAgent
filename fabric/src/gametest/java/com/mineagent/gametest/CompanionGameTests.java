@@ -3954,6 +3954,9 @@ public class CompanionGameTests implements FabricGameTest {
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         BlockPos stand = helper.absolutePos(new BlockPos(2, 1, 2));
         s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        // Its owner behind it, out of the line of fire (it never shoots past them).
+        BlockPos behind = helper.absolutePos(new BlockPos(0, 1, 8));
+        s.owner().teleportTo(helper.getLevel(), behind.getX() + 0.5, behind.getY(), behind.getZ() + 0.5, 0.0f, 0.0f);
         java.util.List<net.minecraft.world.entity.boss.enderdragon.EndCrystal> crystals = new java.util.ArrayList<>();
         for (int[] c : new int[][] {{16, 4, 16}, {18, 5, 4}}) {
             for (int y = 1; y <= c[1]; y++) helper.setBlock(c[0], y, c[2], Blocks.OBSIDIAN);

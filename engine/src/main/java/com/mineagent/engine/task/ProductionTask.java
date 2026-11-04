@@ -1895,6 +1895,19 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             System.out.println("[MineAgent] furnaces at the deadline, it at " + sp.blockPosition().toShortString() + ":" + what);
             return fail("the furnaces stopped before the " + ProductionPlanner.name(step.item()) + " was done");
         }
+        if (level.getGameTime() % 400 < 20) {
+            StringBuilder what = new StringBuilder();
+            for (int i = 0; i < furnaces.size(); i++) {
+                BlockPos f = furnaces.get(i);
+                if (level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace) {
+                    what.append(' ').append(f.toShortString()).append(": in ").append(furnace.getItem(0)).append(", fuel ").append(furnace.getItem(1))
+                            .append(", out ").append(furnace.getItem(2)).append(", loaded ").append(loaded[i]).append('/').append(share[i])
+                            .append(", reach ").append(sp.canInteractWithBlock(f, 0.0)).append(';');
+                }
+            }
+            System.out.println("[MineAgent] smelting " + step.input() + ": made " + made + "/" + step.count() + ", carrying " + count(sp, in)
+                    + ", busy " + anyBusy + ", lit " + anyLit + ", deadline in " + (smeltDeadline - level.getGameTime()) + ":" + what);
+        }
         wait = 20; // a look every second
         return TaskState.RUNNING;
     }
