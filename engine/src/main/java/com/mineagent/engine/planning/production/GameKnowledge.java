@@ -51,7 +51,53 @@ public final class GameKnowledge {
     private GameKnowledge() {}
 
     /** The book for this server, made the first time it is asked for (about a second, on the server thread). */
+    /**
+     * The game's recipes and drops, with the trades the villagers near offer now (SMH plan 70: a fletcher's arrows for
+     * emeralds, its emeralds for sticks), each priced, with its uses left, in {@link #have}.
+     */
     public static Book book(ServerPlayer sp) {
+        Book b = recipesAndDrops(sp);
+        return com.mineagent.engine.settings.Switches.tradesInPlans() ? b.with(trades(sp).recipes()) : b;
+    }
+
+    /** The trades of the villagers near: recipes, their uses left and the walk to each, by recipe id. */
+    public record Trades(List<Recipe> recipes, Map<String, Integer> usesLeft, Map<String, Integer> distance) {}
+
+    /** How far it looks for villagers to trade with, as a player looks round a village. */
+    static final int TRADE_RANGE = 48;
+
+    public static Trades trades(ServerPlayer sp) {
+        List<Recipe> out = new ArrayList<>();
+        Map<String, Integer> uses = new HashMap<>(), distance = new HashMap<>();
+        ServerLevel level = sp.serverLevel();
+        BlockPos at = sp.blockPosition();
+        for (var v : level.getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class,
+                new net.minecraft.world.phys.AABB(at).inflate(TRADE_RANGE, 16, TRADE_RANGE), v -> v.isAlive() && !v.isBaby())) {
+            var prof = v.getVillagerData().getProfession();
+            if (prof == net.minecraft.world.entity.npc.VillagerProfession.NONE || prof == net.minecraft.world.entity.npc.VillagerProfession.NITWIT) continue;
+            String who = BuiltInRegistries.VILLAGER_PROFESSION.getKey(prof).getPath();
+            var offers = v.getOffers();
+            for (int i = 0; i < offers.size(); i++) {
+                var o = offers.get(i);
+                if (o.isOutOfStock()) continue;
+                ItemStack result = o.getResult();
+                // Only plain things: an enchanted book, a map or a tipped arrow is not just its item.
+                if (result.isEmpty() || !ItemStack.isSameItemSameComponents(result, new ItemStack(result.getItem(), result.getCount()))) continue;
+                List<Need> needs = new ArrayList<>();
+                ItemStack a = o.getCostA(), b = o.getCostB();
+                if (a.isEmpty()) continue;
+                needs.add(new Need(List.of(id(a.getItem())), a.getCount()));
+                if (!b.isEmpty()) needs.add(new Need(List.of(id(b.getItem())), b.getCount()));
+                String rid = Production.TRADE + who + ":" + v.getUUID() + ":" + i;
+                out.add(new Recipe(rid, Kind.TRADE, id(result.getItem()), result.getCount(), needs, false, 0));
+                uses.put(rid, Math.max(0, o.getMaxUses() - o.getUses()));
+                distance.put(rid, (int) Math.sqrt(v.blockPosition().distSqr(at)));
+            }
+        }
+        return new Trades(out, uses, distance);
+    }
+
+    private static Book recipesAndDrops(ServerPlayer sp) {
         Object server = sp.getServer();
         Book b = cached;
         if (b != null && cachedFor == server) return b;
@@ -620,6 +666,12 @@ public final class GameKnowledge {
                     distance.put(bid, (int) near.get(0).distance());
                 }
             }
+        }
+        if (com.mineagent.engine.settings.Switches.tradesInPlans()) {
+            // The villagers' offers: so many uses each before they restock, and the walk to each villager.
+            var t = trades(sp);
+            limited.putAll(t.usesLeft());
+            distance.putAll(t.distance());
         }
         return new Have(carried, stored, tools, furnaces, table, where, distance, smokers, blasts, limited);
     }

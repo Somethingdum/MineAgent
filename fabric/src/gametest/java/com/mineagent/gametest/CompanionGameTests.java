@@ -4080,6 +4080,44 @@ public class CompanionGameTests implements FabricGameTest {
         return villager;
     }
 
+    /**
+     * SMH plan 70, "Get us 128 arrows" (here 32): a novice fletcher near with the game's two novice offers (32 sticks for
+     * an emerald, an emerald for 16 arrows), the companion with logs and no flint or feathers: it plans the trades as
+     * the cheapest way, makes sticks, sells them for emeralds and buys the arrows.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_arrows_trade", timeoutTicks = 2400)
+    public void arrowsBoughtFromAFletcherForSticks(GameTestHelper helper) {
+        Scene s = scene(helper, "Bowyer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.OAK_LOG, 8));
+        var villager = EntityType.VILLAGER.create(helper.getLevel());
+        BlockPos vAt = helper.absolutePos(new BlockPos(10, 1, 8));
+        villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
+        villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FLETCHER).setLevel(1));
+        villager.setNoAi(true);
+        var offers = new net.minecraft.world.item.trading.MerchantOffers();
+        offers.add(new net.minecraft.world.item.trading.MerchantOffer(new net.minecraft.world.item.trading.ItemCost(Items.STICK, 32),
+                new ItemStack(Items.EMERALD), 16, 2, 0.05f));
+        offers.add(new net.minecraft.world.item.trading.MerchantOffer(new net.minecraft.world.item.trading.ItemCost(Items.EMERALD, 1),
+                new ItemStack(Items.ARROW, 16), 12, 1, 0.05f));
+        villager.setOffers(offers);
+        helper.getLevel().addFreshEntity(villager);
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "get us 32 arrows"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "arrows");
+            int arrows = s.body().getInventory().countItem(Items.ARROW) + s.owner().getInventory().countItem(Items.ARROW);
+            String plan = lastSaid(s, "On it");
+            String failed = lastSaid(s, "I couldn't");
+            if (arrows >= 32 || !failed.isEmpty() || helper.getTick() >= 2350) {
+                String how = arrows + " arrows; plan: " + plan + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                tidy(s);
+                villager.discard();
+                if (arrows >= 32 && plan.contains("fletcher")) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA11.3, villages from memory: no villager within reach, one it remembers 36 blocks off: there, and the trade. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trade_memory", timeoutTicks = 1400)
     public void aRememberedVillagerIsGoneToForTheTrade(GameTestHelper helper) {

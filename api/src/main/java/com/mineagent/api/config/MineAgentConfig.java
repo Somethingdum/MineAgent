@@ -164,6 +164,7 @@ public record MineAgentConfig(
      * @param kitGoal with nothing else to do it makes a shield and golden apples to keep on it
      * @param readChestLabels signs and item frames on chests say what goes in them, as its owner's sorting system has it
      * @param fillCraters the holes creepers blow in the ground near home are filled with what the ground there is mostly made of
+     * @param tradesInPlans the villagers near are traded with when that is the cheapest way to what it is making (a fletcher's arrows, emeralds for sticks)
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -216,11 +217,12 @@ public record MineAgentConfig(
         boolean bowAtRange,
         boolean kitGoal,
         boolean readChestLabels,
-        boolean fillCraters
+        boolean fillCraters,
+        boolean tradesInPlans
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true
         );
     }
 
@@ -328,7 +330,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

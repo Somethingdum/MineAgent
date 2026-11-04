@@ -458,4 +458,60 @@ final class ProductionPlannerTest {
         }
         return -1;
     }
+
+    // ── Trades (SMH plan 70: "Get us 128 arrows") ──
+
+    static final String ARROWS16 = "trade:fletcher:u1:0", STICKS32 = "trade:fletcher:u1:1";
+
+    /** The vanilla book with arrows and feathers, and a novice fletcher's two trades as the game prices them. */
+    static Book withFletcher(boolean fletcher) {
+        Book b = vanilla();
+        Map<String, List<Recipe>> r = new HashMap<>(b.recipesByOutput());
+        r.put(m("arrow"), List.of(new Recipe(m("arrow"), Kind.CRAFT, m("arrow"), 4,
+                List.of(new Need(List.of(m("flint")), 1), new Need(List.of(m("stick")), 1), new Need(List.of(m("feather")), 1)), true, 0)));
+        Map<String, List<Source>> s = new HashMap<>(b.sourcesByItem());
+        s.put(m("feather"), List.of(new Source(m("feather"), "entity:minecraft:chicken", "", 0, false, 1.0, 40)));
+        Book out = new Book(r, s, b.fuelTicks(), b.durability());
+        if (!fletcher) return out;
+        return out.with(List.of(
+                new Recipe(ARROWS16, Kind.TRADE, m("arrow"), 16, List.of(new Need(List.of(m("emerald")), 1)), false, 0),
+                new Recipe(STICKS32, Kind.TRADE, m("emerald"), 1, List.of(new Need(List.of(m("stick")), 32)), false, 0)));
+    }
+
+    static Have fletcherHave(int arrowUses, int stickUses) {
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, m("oak_log"), Where.COMMON, m("gravel"), Where.KNOWN,
+                "entity:minecraft:chicken", Where.KNOWN));
+        Map<String, Integer> d = new HashMap<>(Map.of(ARROWS16, 20, STICKS32, 20, m("gravel"), 30, "entity:minecraft:chicken", 30));
+        return new Have(Map.of(), Map.of(), List.of(), 0, true, w, d, 0, 0, Map.of(ARROWS16, arrowUses, STICKS32, stickUses));
+    }
+
+    @Test void a128ArrowsFromAFletcherForSticks() {
+        Plan p = ProductionPlanner.plan(withFletcher(true), fletcherHave(12, 16), m("arrow"), 128);
+        assertTrue(p.possible(), p.summary());
+        Step buy = only(p, Action.TRADE, m("arrow"));
+        assertEquals(128, buy.count());
+        assertEquals(8, buy.batches());
+        Step sell = only(p, Action.TRADE, m("emerald"));
+        assertEquals(8, sell.count());
+        assertEquals(256, sell.fuelCount(), "32 sticks an emerald");
+        assertTrue(p.summary().contains("buy 128 arrows from a fletcher for 8 emeralds"), p.summary());
+        assertTrue(p.summary().contains("sell 256 sticks to a fletcher for 8 emeralds"), p.summary());
+        assertTrue(p.steps().stream().noneMatch(st -> st.action() == Action.MINE && m("gravel").equals(st.block())),
+                "no gravel dug for flint: " + p.summary());
+    }
+
+    @Test void withoutAFletcherTheyAreCrafted() {
+        Plan p = ProductionPlanner.plan(withFletcher(false), fletcherHave(0, 0), m("arrow"), 128);
+        assertTrue(p.possible(), p.summary());
+        Step craft = only(p, Action.CRAFT, m("arrow"));
+        assertEquals(32, craft.batches());
+        assertTrue(p.summary().contains("gravel"), p.summary());
+    }
+
+    @Test void aSoldOutOfferIsUsedUpThenTheRestAnotherWay() {
+        Plan p = ProductionPlanner.plan(withFletcher(true), fletcherHave(3, 16), m("arrow"), 128);
+        assertTrue(p.possible(), p.summary());
+        assertEquals(48, only(p, Action.TRADE, m("arrow")).count(), "three uses left: 48 arrows");
+        assertEquals(80, only(p, Action.CRAFT, m("arrow")).count(), "the other 80 crafted");
+    }
 }

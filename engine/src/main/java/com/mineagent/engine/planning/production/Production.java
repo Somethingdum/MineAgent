@@ -46,7 +46,21 @@ public final class Production {
     }
 
     /** How a recipe is made: a crafting grid (2 by 2 in the inventory, 3 by 3 at a table), a furnace kind, a cutter. */
-    public enum Kind { CRAFT, SMELT, BLAST, SMOKE, CAMPFIRE, STONECUT }
+    /**
+     * TRADE: a villager's offer, "trade:&lt;profession&gt;:&lt;villager&gt;:&lt;offer&gt;", its price the needs, its uses left in
+     * {@link Have#limited()} and the walk to it in {@link Have#knownDistance()}, both by the recipe's id.
+     */
+    public enum Kind { CRAFT, SMELT, BLAST, SMOKE, CAMPFIRE, STONECUT, TRADE }
+
+    /** A trade's recipe id: "trade:fletcher:&lt;uuid&gt;:0". */
+    public static final String TRADE = "trade:";
+
+    /** The profession in a trade's id ("fletcher"), or null for another recipe. */
+    public static String tradeWith(String recipeId) {
+        if (recipeId == null || !recipeId.startsWith(TRADE)) return null;
+        String[] p = recipeId.split(":");
+        return p.length > 1 ? p[1] : null;
+    }
 
     /**
      * One ingredient of a recipe: {@code count} of any one of {@code anyOf} (a tag such as any planks is several).
@@ -111,6 +125,18 @@ public final class Production {
     /** The game's facts it plans with. */
     public record Book(Map<String, List<Recipe>> recipesByOutput, Map<String, List<Source>> sourcesByItem,
                        Map<String, Integer> fuelTicks, Map<String, Integer> durability) {
+        /** The book with these recipes as well (the trades the villagers near offer now). */
+        public Book with(List<Recipe> more) {
+            if (more == null || more.isEmpty()) return this;
+            Map<String, List<Recipe>> all = new java.util.HashMap<>(recipesByOutput);
+            for (Recipe r : more) {
+                List<Recipe> list = new java.util.ArrayList<>(all.getOrDefault(r.output(), List.of()));
+                list.add(r);
+                all.put(r.output(), list);
+            }
+            return new Book(all, sourcesByItem, fuelTicks, durability);
+        }
+
         public List<Recipe> recipes(String item) {
             return recipesByOutput.getOrDefault(item, List.of());
         }

@@ -547,6 +547,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case HARVEST -> harvest();
             case CRAFT -> craft();
             case SMELT -> smelt();
+            case TRADE -> trade();
         };
         if (s == TaskState.SUCCESS) {
             step = null;
@@ -731,6 +732,42 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      * When none are near, it goes to where it last saw some; when there are none there either, the round is planned
      * again without them.
      */
+    /** The trading under way for a TRADE step, and the times it has tried. */
+    private TradeTask tradeSub;
+    private int tradeTries;
+
+    /**
+     * A villager's offer, as the plan has it (SMH plan 70: "get us 128 arrows" from a fletcher): to the villager, the
+     * menu opened, the trades made with what the plan pays (the sticks for the emeralds, the emeralds for the arrows).
+     */
+    private TaskState trade() {
+        ServerPlayer sp = sp();
+        int got = count(sp, item(step.item())) - itemBefore;
+        if (got >= step.count() && tradeSub == null) {
+            tradeTries = 0;
+            return TaskState.SUCCESS;
+        }
+        if (tradeSub == null) {
+            int per = Math.max(1, step.count() / Math.max(1, step.batches()));
+            int times = (int) Math.ceil((step.count() - got) / (double) per);
+            tradeSub = new TradeTask(player, new TradeTask.TradeRecord(record.toolCallId() + ":trade", step.item(), times, step.input()));
+            tradeSub.start();
+        }
+        TaskState st = tradeSub.tick();
+        if (st == TaskState.RUNNING) return TaskState.RUNNING;
+        tradeSub = null;
+        if (count(sp, item(step.item())) - itemBefore >= step.count()) {
+            tradeTries = 0;
+            return TaskState.SUCCESS;
+        }
+        if (++tradeTries >= 3) {
+            String who = com.mineagent.engine.planning.production.Production.tradeWith(step.recipe());
+            return fail("the " + (who == null ? "villager" : who.replace('_', ' ')) + " wouldn't trade me "
+                    + ProductionPlanner.plural(step.item(), step.count()));
+        }
+        return TaskState.RUNNING;
+    }
+
     /** How near it has got to its prey, and the ticks since it last got nearer. */
     private double preyClosest = Double.MAX_VALUE;
     private int preyStill;
@@ -1873,6 +1910,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     @Override
     protected void onInterrupt() {
         if (sub != null) sub.interrupt();
+        if (tradeSub != null) {
+            tradeSub.interrupt(); // the menu closed; the trading starts again when it carries on
+            tradeSub = null;
+        }
         if (nav != null) nav.cancel();
         // The walk it was on is gone: made again from where it stands when it carries on (a fight, then back to it).
         walkingTo = null;
@@ -1893,6 +1934,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             case HARVEST -> "harvesting " + ProductionPlanner.name(step.block());
             case CRAFT -> "crafting " + ProductionPlanner.plural(step.item(), step.count());
             case SMELT -> "smelting " + ProductionPlanner.plural(step.input(), step.count());
+            case TRADE -> "trading for " + ProductionPlanner.plural(step.item(), step.count());
         };
         String summary = String.format(java.util.Locale.ROOT, "making %s%s: %s, %,d of %,d in", what,
                 chestPos != null ? " for the chest at " + chestPos.toShortString() : "", doing, delivered, Math.max(target, 0));

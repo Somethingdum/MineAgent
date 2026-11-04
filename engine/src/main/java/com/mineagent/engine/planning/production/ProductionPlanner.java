@@ -44,6 +44,8 @@ public final class ProductionPlanner {
     /** Ticks a craft takes (a player's click), and fetching one stack from a chest it knows. */
     static final double CRAFT_TICKS = 4.0;
     static final double FETCH_PER_STACK = 20.0;
+    /** A trade in the villager's menu: about half a second each. */
+    static final double TRADE_TICKS = 10.0;
     /** Furnaces it runs at once at most, and the planning guess of how many share a big smelt. */
     public static final int MAX_FURNACES = 16;
     static final double TYPICAL_FURNACES = 8.0;
@@ -71,14 +73,15 @@ public final class ProductionPlanner {
     private final Set<String> without;
     private int smokers, blasts;
 
-    public enum Action { FETCH, MINE, HUNT, SHEAR, HARVEST, CRAFT, SMELT }
+    public enum Action { FETCH, MINE, HUNT, SHEAR, HARVEST, CRAFT, SMELT, TRADE }
 
     /**
      * One step of the job: FETCH {@code count} of {@code item} from its chests; MINE {@code blocks} of {@code block}
      * for {@code count} of {@code item} with {@code tool}; HUNT {@code blocks} animals ({@code block},
      * "entity:minecraft:cow") for {@code count} of what they drop; CRAFT {@code batches} of {@code recipe} for {@code count}
      * of {@code item}; SMELT {@code count} of {@code input} into {@code item} in {@code furnaces} furnaces burning
-     * {@code fuelCount} {@code fuel}.
+     * {@code fuelCount} {@code fuel}; TRADE {@code batches} times the villager's offer {@code recipe} for {@code count} of
+     * {@code item}, paying {@code fuelCount} {@code input} in all.
      */
     public record Step(Action action, String item, int count, String recipe, int batches, String block, int blocks,
                        String tool, String input, String fuel, int fuelCount, int furnaces, boolean table) {}
@@ -114,6 +117,14 @@ public final class ProductionPlanner {
                     }
                     case CRAFT -> {
                         if (!s.item().equals(item)) parts.add(String.format(Locale.ROOT, "craft %,d %s", s.count(), plural(s.item(), s.count())));
+                    }
+                    case TRADE -> {
+                        String who = String.valueOf(Production.tradeWith(s.recipe())).replace('_', ' ');
+                        parts.add(s.item().equals("minecraft:emerald")
+                                ? String.format(Locale.ROOT, "sell %,d %s to %s %s for %,d %s", s.fuelCount(), plural(s.input(), s.fuelCount()),
+                                        who.matches("^[aeiou].*") ? "an" : "a", who, s.count(), plural(s.item(), s.count()))
+                                : String.format(Locale.ROOT, "buy %,d %s from %s %s for %,d %s", s.count(), plural(s.item(), s.count()),
+                                        who.matches("^[aeiou].*") ? "an" : "a", who, s.fuelCount(), plural(s.input(), s.fuelCount())));
                     }
                 }
             }
@@ -182,6 +193,7 @@ public final class ProductionPlanner {
         List<Step> merged = merge(steps);
         Map<String, Integer> mined = new LinkedHashMap<>();
         Map<String, Integer> fuel = new LinkedHashMap<>();
+        Set<String> visited = new HashSet<>();
         double ticks = 0;
         int built = 0;
         for (Step s : merged) {
@@ -195,6 +207,11 @@ public final class ProductionPlanner {
                 case CRAFT -> {
                     ticks += s.batches() * CRAFT_TICKS;
                     if (s.item().equals("minecraft:furnace")) built += s.count();
+                }
+                case TRADE -> {
+                    String villager = s.recipe().substring(0, s.recipe().lastIndexOf(':'));
+                    if (visited.add(villager)) ticks += 2.0 * WALK_PER_BLOCK * have.knownDistance().getOrDefault(s.recipe(), 32);
+                    ticks += s.batches() * TRADE_TICKS;
                 }
                 case SMELT -> {
                     fuel.merge(s.fuel(), s.fuelCount(), Integer::sum);
@@ -278,6 +295,7 @@ public final class ProductionPlanner {
      */
     private double recipeUnit(Recipe r, Set<String> path, int batches) {
         if (r.kind() == Kind.STONECUT || r.kind() == Kind.CAMPFIRE) return Double.POSITIVE_INFINITY; // stations it doesn't run yet
+        if (r.kind() == Kind.TRADE && limitedLeft.getOrDefault(r.id(), 1) <= 0) return Double.POSITIVE_INFINITY; // sold out
         // A smoker or blast furnace when it has one (twice as quick for food or ore); it doesn't build them.
         if (r.kind() == Kind.BLAST && blasts == 0 || r.kind() == Kind.SMOKE && smokers == 0) return Double.POSITIVE_INFINITY;
         double in = 0;
@@ -290,7 +308,9 @@ public final class ProductionPlanner {
             if (Double.isInfinite(in)) return in;
         }
         double stations = r.kind() == Kind.SMELT ? TYPICAL_FURNACES : Math.max(1, r.kind() == Kind.SMOKE ? smokers : blasts);
-        double work = r.cooked() ? r.cookTicks() / stations + fuelPerSmelt(path) * r.cookTicks() / SMELT_TICKS : CRAFT_TICKS;
+        // A trade: the menu, and its share of the walk to the villager (over the trades it makes there).
+        double work = r.kind() == Kind.TRADE ? TRADE_TICKS + WALK_PER_BLOCK * have.knownDistance().getOrDefault(r.id(), 32) / 8.0
+                : r.cooked() ? r.cookTicks() / stations + fuelPerSmelt(path) * r.cookTicks() / SMELT_TICKS : CRAFT_TICKS;
         return (in + work) / Math.max(1, r.outputCount());
     }
 
@@ -409,6 +429,20 @@ public final class ProductionPlanner {
             }
             limitedLeft.put(bestSource.block(), can - need);
         }
+        if (bestRecipe != null && bestRecipe.kind() == Kind.TRADE && limitedLeft.containsKey(bestRecipe.id())) {
+            // A villager's offer has so many uses before it restocks: what they give, and the rest another way.
+            int can = limitedLeft.get(bestRecipe.id());
+            int per = Math.max(1, bestRecipe.outputCount());
+            int need = (int) Math.ceil(left / (double) per);
+            if (need > can) {
+                int got = Math.min(left, can * per);
+                limitedLeft.put(bestRecipe.id(), 0);
+                if (got > 0) craft(bestRecipe, got, depth, p);
+                make(item, left - got, depth, path);
+                return;
+            }
+            limitedLeft.put(bestRecipe.id(), can - need);
+        }
         if (bestSource != null) mine(bestSource, left, depth, p);
         else craft(bestRecipe, left, depth, p);
     }
@@ -438,7 +472,7 @@ public final class ProductionPlanner {
         String best = null;
         int fewest = Integer.MAX_VALUE;
         for (Recipe r : book.recipes(item)) {
-            if (r.kind() == Kind.STONECUT || r.kind() == Kind.CAMPFIRE) continue;
+            if (r.kind() == Kind.STONECUT || r.kind() == Kind.CAMPFIRE || r.kind() == Kind.TRADE) continue;
             List<String> lacking = new ArrayList<>();
             for (Need n : r.needs()) {
                 boolean any = false;
@@ -599,6 +633,18 @@ public final class ProductionPlanner {
         int made = batches * Math.max(1, r.outputCount());
         if (r.cooked()) {
             smelt(r, batches, depth, path);
+        } else if (r.kind() == Kind.TRADE) {
+            String paid = null;
+            int paying = 0;
+            for (Need n : r.needs()) {
+                String alt = pick(n, n.count() * batches, path);
+                make(alt, n.count() * batches, depth + 1, path);
+                if (paid == null) {
+                    paid = alt;
+                    paying = n.count() * batches;
+                }
+            }
+            steps.add(new Step(Action.TRADE, r.output(), made, r.id(), batches, null, 0, null, paid, null, paying, 0, false));
         } else {
             for (Need n : r.needs()) make(pick(n, n.count() * batches, path), n.count() * batches, depth + 1, path);
             boolean wantTable = r.needsTable() && !table;

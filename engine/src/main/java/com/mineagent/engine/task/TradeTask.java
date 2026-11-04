@@ -33,11 +33,18 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
         public final String want;
         /** How many trades at most. */
         public final int times;
+        /** What it pays with ("minecraft:stick" for a fletcher's emerald), or null for anything it can. */
+        public final String pay;
 
         public TradeRecord(String toolCallId, String want, int times) {
+            this(toolCallId, want, times, null);
+        }
+
+        public TradeRecord(String toolCallId, String want, int times, String pay) {
             super(toolCallId);
             this.want = want;
             this.times = Math.max(1, Math.min(64, times));
+            this.pay = pay;
         }
     }
 
@@ -174,6 +181,7 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
             if (!bookHas(o.getResult(), record.want.substring(hash + 1))) return false;
         } else if (!record.want.equals(result)) return false;
         ItemStack a = o.getCostA(), b = o.getCostB();
+        if (record.pay != null && !record.pay.equals(BuiltInRegistries.ITEM.getKey(a.getItem()).toString())) return false;
         if (ProductionTask.count(sp, a.getItem()) < a.getCount()) return false;
         return b.isEmpty() || ProductionTask.count(sp, b.getItem()) >= b.getCount() + (b.is(a.getItem()) ? a.getCount() : 0);
     }
