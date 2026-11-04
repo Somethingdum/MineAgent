@@ -90,9 +90,22 @@ public final class SleepChain implements TaskChain {
         ServerLevel level = sp.serverLevel();
         if (!level.dimensionType().bedWorks() || level.isDay()) return false;
         var loop = com.mineagent.engine.task.TaskContext.agentLoop(companion);
-        if (loop == null || !loop.ownerAfk() || loop.busyWithOrder()) return false;
+        if (loop == null) return false;
         if (level.getDayTime() % 24_000L < 12_542L) return false; // beds take it from dusk
-        return true;
+        // On its own, always at some job of its own: two days without lying down and phantoms come every night, so it
+        // lies down then, busy or not (that is rest enough for the game), and is back up at its work (SMH plan 70: runs
+        // for weeks).
+        if (loop.onItsOwn() && restless(sp)) return true;
+        return loop.ownerAfk() && !loop.busyWithOrder();
+    }
+
+    /** Two game days or more since it last lay down (the game's own count, the one phantoms come by). */
+    static boolean restless(ServerPlayer sp) {
+        try {
+            return sp.getStats().getValue(net.minecraft.stats.Stats.CUSTOM.get(net.minecraft.stats.Stats.TIME_SINCE_REST)) >= 48_000;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** A bed in its pack, or a free one near (looked for now and then, not every tick). */

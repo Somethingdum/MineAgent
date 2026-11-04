@@ -67,6 +67,9 @@ public final class Benchmark implements ModInitializer {
             server.halt(false);
             return;
         }
+        // Its own from the start (never following its owner up into the box), and told so while they stand by it.
+        MineAgentEngine.setCompanionMode(companion.companionId(), MineAgentEngine.CompanionMode.FREE);
+        MineAgentEngine.onPlayerChat(owner, "go survive on your own");
         // Its owner out of the way: a sealed box of barrier high over the spawn, the chunks round the spawn kept loaded.
         int by = Math.min(level.getMaxBuildHeight() - 6, Math.max(y + 60, 200));
         for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int dy = 0; dy <= 3; dy++) {
@@ -76,7 +79,6 @@ public final class Benchmark implements ModInitializer {
         owner.teleportTo(level, spawn.getX() + 0.5, by + 1, spawn.getZ() + 0.5, 0.0f, 0.0f);
         owner.getAbilities().invulnerable = true;
         owner.onUpdateAbilities();
-        MineAgentEngine.onPlayerChat(owner, "go survive on your own");
         startedAt = level.getGameTime();
         server.tickRateManager().requestGameToSprint((int) Math.min(Integer.MAX_VALUE, total));
         System.out.println("[BENCH] started at the spawn " + spawn.toShortString() + " on seed " + level.getSeed() + ", " + total + " ticks");
@@ -143,7 +145,7 @@ public final class Benchmark implements ModInitializer {
         boolean furnace = has.containsKey("minecraft:furnace") || placedNear(over, centre, Blocks.FURNACE)
                 || placedNear(over, centre, Blocks.BLAST_FURNACE) || placedNear(over, centre, Blocks.SMOKER);
         boolean table = has.containsKey("minecraft:crafting_table") || placedNear(over, centre, Blocks.CRAFTING_TABLE);
-        boolean hut = !loop.journal().search("built the hut", null, 3).isEmpty();
+        boolean hut = home != null && loop.hutNear("minecraft:overworld", home) || !loop.journal().search("built the hut", null, 3).isEmpty();
         int deaths = 0, comeBack = 0;
         for (var e : loop.journal().search("", "death", 2_000)) {
             if (e.text().startsWith("came back")) comeBack++;

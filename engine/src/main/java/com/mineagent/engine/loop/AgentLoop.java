@@ -4942,12 +4942,20 @@ public class AgentLoop {
         var level = self.serverLevel();
         String dim = level.dimension().location().toString();
         if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD) return;
-        if (idleHome != null && idleHome.dim().equals(dim)) return; // its base is made
+        long now = currentGameTickSafe();
+        if (idleHome != null && idleHome.dim().equals(dim)) {
+            keepBaseUp(self, dim, now); // its base is made: kept up
+            return;
+        }
         // From nothing: a starter kit first (stone tools, a little fuel, food for the road), only what it lacks. It
-        // survives the walk, and has what a base needs from the start.
+        // survives the walk, and has what a base needs from the start. Tried three times, two minutes apart, at most;
+        // then on without what it couldn't get.
         String kit = starterKit(self);
-        if (!kit.isEmpty()) {
-            journal.record("survive", "a starter kit first: " + kit.replace(", then ", ", "), currentGameTickSafe());
+        if (!kit.isEmpty() && kitTries < 3) {
+            if (now - kitAt < 2_400) return;
+            kitAt = now;
+            kitTries++;
+            journal.record("survive", "a starter kit first: " + kit.replace(", then ", ", "), now);
             queueOrders(kit);
             return;
         }
@@ -4987,6 +4995,43 @@ public class AgentLoop {
 
     /** How far it goes for a swamp to make its base in. */
     static final int SWAMP_REACH = 600;
+
+    /** Its starter kit's tries, and when the last was (game ticks); when it last kept its base up. */
+    private volatile int kitTries;
+    private volatile long kitAt = Long.MIN_VALUE / 2, keptUpAt = Long.MIN_VALUE / 2, hutAt = Long.MIN_VALUE / 2;
+
+    /**
+     * Its base kept up while it lives on its own (SMH plan 70, its owner: "It should EASILY handle lost progression in any
+     * area. And bounce back from it fast."): what its starter kit lacks (lost in a death, worn out, burnt) made again,
+     * every ten minutes at most; the hut built again if none stands by home (a creeper, a griefer), a game day apart at
+     * most.
+     */
+    private void keepBaseUp(net.minecraft.server.level.ServerPlayer self, String dim, long now) {
+        if (now - keptUpAt < 12_000) return;
+        keptUpAt = now;
+        String kit = starterKit(self);
+        if (!kit.isEmpty()) {
+            journal.record("survive", "keeping up: " + kit.replace(", then ", ", "), now);
+            queueOrders(kit);
+            return;
+        }
+        var h = home(dim);
+        if (h != null && !hutNear(dim, h) && now - hutAt >= 24_000) {
+            hutAt = now;
+            journal.record("survive", "no hut by home: building one", now);
+            queueOrders("build a hut");
+        }
+    }
+
+    /** A hut it built (kept with the world as a build) within 64 blocks of {@code at}. */
+    public boolean hutNear(String dim, net.minecraft.core.BlockPos at) {
+        var point = new com.mineagent.engine.world.RouteMemory.Point(dim, at.getX(), at.getY(), at.getZ());
+        for (var p : placeKeeper.memory().places()) {
+            if (!"build".equals(p.kind()) || !p.name().startsWith("hut") || !p.at().dim().equals(dim)) continue;
+            if (p.at().distance(point) <= 64.0) return true;
+        }
+        return false;
+    }
 
     /**
      * The starter kit, as orders for what it lacks of it: stone tools or better (pickaxe, axe, sword, shovel), 8 coal or
