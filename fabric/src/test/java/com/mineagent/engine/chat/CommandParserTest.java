@@ -167,6 +167,10 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.FOOD_BOTH, CommandParser.parse("get food for both of us", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.BUILD, CommandParser.parse("build us a shelter here", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.BUILD, CommandParser.parse("build a hut", "Pal").orElseThrow().kind());
+        assertEquals("hut", CommandParser.parse("build a hut", "Pal").orElseThrow().value());
+        // Its home on its own: the hut with a crafting table and a furnace in it.
+        assertEquals("hut_home", CommandParser.parse("build a home hut", "Pal").orElseThrow().value());
+        assertEquals("hut_home", CommandParser.parse("build a hut with a furnace and a crafting table", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.LIGHT, CommandParser.parse("light up the area", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.LIGHT, CommandParser.parse("put some torches around", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.PRIME, CommandParser.parse("prime the world", "Pal").orElseThrow().kind());

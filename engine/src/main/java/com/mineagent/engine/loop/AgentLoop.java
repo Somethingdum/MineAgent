@@ -1427,7 +1427,8 @@ public class AgentLoop {
                         planks.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
                     }
                 }
-                String wall = planks.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("minecraft:oak_planks");
+                String wall = planks.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey)
+                        .orElseGet(() -> woodHere(ce.serverPlayer()));
                 String door = wall.replace("_planks", "_door");
                 if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(net.minecraft.resources.ResourceLocation.tryParse(door))) {
                     door = "minecraft:oak_door";
@@ -1444,6 +1445,7 @@ public class AgentLoop {
                 String said = switch (print) {
                     case "dirt_shelter" -> "build a dirt shelter";
                     case "small_wood_house" -> "build a small wood house";
+                    case "hut_home" -> "build a home hut";
                     default -> "build a hut";
                 };
                 journal.record("order", said, currentGameTickSafe());
@@ -3268,15 +3270,18 @@ public class AgentLoop {
                 if (afterTaskAlways.size() > 64) afterTaskAlways.clear();
                 if (godGearJobs.size() > 64) godGearJobs.clear();
             }
-            boolean ownTime = freeTime(gameTick);
+            // Its starter kit before the rest of its own pursuits, on its own or working on itself while its owner is
+            // away: order of operations.
+            boolean ownTime = gameTick % 50L == 0L && freeTime(gameTick) && !kitFirst(player); // its pursuits' ticks are all on 50s
             if (ownTime && gameTick % 1200L == 600L) gearGoal(player);
             if (ownTime && gameTick % 1200L == 900L) kitGoal(player);
             if (ownTime && gameTick % 1200L == 1100L) godGearGoal(player);
             if (ownTime && gameTick % 2400L == 1500L) masterTrading(player);
-            if (ownTime && gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
+            if (ownTime && gameTick % (onItsOwn || afkImproving() ? 600L : 2400L) == 300L) hoard(player);
             if (ownTime && gameTick % 600L == 450L) dumpJunk(player);
             if (ownTime && gameTick % 600L == 150L) xpGoal(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
+            if (gameTick % 200L == 100L) improveWhileAway(player);
             if (gameTick % 100L == 50L) watchDebtors(player);
             for (Runnable afterRun; (afterRun = afterReady.poll()) != null; ) afterRun.run();
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
@@ -3723,7 +3728,8 @@ public class AgentLoop {
         for (var p : placeKeeper.memory().places()) {
             if (!"build".equals(p.kind()) || !p.at().dim().equals(me.dim())) continue;
             String name = p.name() == null ? "" : p.name();
-            if (!name.startsWith(print + "|") && !("hut".equals(print) && name.startsWith("dirt_shelter|") && w.contains("shelter"))) continue;
+            if (!name.startsWith(print + "|") && !("hut".equals(print) && name.startsWith("hut_home|"))
+                    && !("hut".equals(print) && name.startsWith("dirt_shelter|") && w.contains("shelter"))) continue;
             if (best == null || p.at().distance(me) < best.at().distance(me)) best = p;
         }
         if (best == null) return false;
@@ -4922,6 +4928,117 @@ public class AgentLoop {
         onItsOwn = on;
     }
 
+    /**
+     * Whether it works on itself while its owner is away (SMH plan 70, its owner: "When i go AFK, it should finish the
+     * tasks that I gave it. Then go to upgrading itself as it does when it's surviving alone. Collecting resources,
+     * building an arsenal, food store, etc. By order of operations. And it will keep improving itself until I return."):
+     * they are AFK, the switch is on ({@code behaviour.afkImprove}), and it isn't parked, keeping them safe ("make sure I
+     * don't die"), walled in with them, or guarding.
+     */
+    boolean afkImproving() {
+        var o = afkOrder;
+        return com.mineagent.engine.settings.Switches.afkImprove() && ownerActivity.afk() && !onItsOwn
+                && agentSettings.workMode() != com.mineagent.engine.settings.WorkMode.PARKED
+                && !o.guardMe() && !o.shelter() && !guarding();
+    }
+
+    /**
+     * While its owner is away, with what they asked done: the life it lives on its own, where it is (no new base far
+     * off). Free of following them till they're back; its starter kit first (stone tools, fuel, food), as orders of its
+     * own; then its own pursuits as on its own (its gear, the god-tier ladder, its stockpile and food store by home or
+     * their bed, levels), each when the one before has what it needs.
+     */
+    private void improveWhileAway(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !afkImproving()) return;
+        long now = currentGameTickSafe();
+        if (now - afkSinceTick < AFK_SETTLE) return; // a minute away first: not off on a long job for a moment's break
+        var me = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+        var owner = me == null ? null : me.serverPlayerOwner();
+        var mode = MineAgentEngine.getCompanionMode(companion.companionId());
+        // Them first: out in the open at night, or with monsters about, it is back by them (following, it guards them);
+        // its own work again once that has passed.
+        if (owner != null && afkNeedsGuard(owner, self)) {
+            if (afkFollowed && mode != MineAgentEngine.CompanionMode.FOLLOW) {
+                MineAgentEngine.setCompanionMode(companion.companionId(), MineAgentEngine.CompanionMode.FOLLOW);
+                journal.record("afk", "back by you: you're out in the open, with the night or monsters about", now);
+            }
+            return;
+        }
+        LiveBodyState body = liveBodyState.get();
+        // Theirs first: their orders, and whatever it is doing for them, finished.
+        if (body != null && body.taskId() != null && !freeJobs.containsKey(body.taskId()) || goalBook.active().isPresent()
+                || skillRuntime.active()) return;
+        if (afkFollowed && mode == MineAgentEngine.CompanionMode.FOLLOW) {
+            MineAgentEngine.setCompanionMode(companion.companionId(), MineAgentEngine.CompanionMode.FREE);
+            journal.record("afk", "your orders done: working on myself till you're back", now);
+        }
+        if (body != null && body.taskId() != null) return; // a job of its own under way
+        String kit = starterKit(self);
+        if (!kit.isEmpty() && afkKitTries < 3 && now - afkKitAt >= 2_400) {
+            afkKitAt = now;
+            afkKitTries++;
+            journal.record("afk", "a starter kit first: " + kit.replace(", then ", ", "), now);
+            queueOrders(kit, AFK_SELF);
+        }
+    }
+
+    /**
+     * They're back: what it queued for itself dropped (what it is in the middle of for itself stopped), and back to
+     * following them if it was.
+     */
+    private void backFromAway() {
+        boolean stop = false;
+        for (var g : goalBook.list()) {
+            if (!AFK_SELF.equals(g.setBy())) continue;
+            if (g.status() == com.mineagent.engine.planning.GoalBook.Status.ACTIVE) stop = true;
+            if (g.status() != com.mineagent.engine.planning.GoalBook.Status.DONE) goalBook.drop(g.id());
+        }
+        LiveBodyState body = liveBodyState.get();
+        if (afkFollowed && body != null && body.taskId() != null && freeJobs.containsKey(body.taskId())) stop = true;
+        if (stop && afkFollowed) haltNow();
+        if (afkFollowed) MineAgentEngine.setCompanionMode(companion.companionId(), MineAgentEngine.CompanionMode.FOLLOW);
+        afkFollowed = false;
+        afkKitTries = 0;
+        saveMemoryNow();
+    }
+
+    /**
+     * Its AFK owner needs it by them ({@code behaviour.afkGuard}): out under the sky at night, or with a monster within
+     * 16 blocks. By day, or under a roof at night with none about, it may work on itself.
+     */
+    private boolean afkNeedsGuard(net.minecraft.server.level.ServerPlayer owner, net.minecraft.server.level.ServerPlayer self) {
+        if (!com.mineagent.engine.settings.Switches.afkGuard() || !owner.isAlive()) return false;
+        var level = owner.serverLevel();
+        if (!level.isDay() && level.canSeeSky(owner.blockPosition().above())) return true;
+        return !level.getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, owner.getBoundingBox().inflate(16.0),
+                net.minecraft.world.entity.Entity::isAlive).isEmpty();
+    }
+
+    /** Its owner's bed in that dimension, or null: where it keeps its stockpile while they're away, with no home of its own. */
+    private net.minecraft.core.BlockPos ownerBed(String dim) {
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+        var owner = self == null ? null : self.serverPlayerOwner();
+        if (owner == null || owner.getRespawnPosition() == null) return null;
+        if (!owner.getRespawnDimension().location().toString().equals(dim)) return null;
+        return owner.getRespawnPosition();
+    }
+
+    /** Its starter kit still to make while it lives on its own or works on itself: the rest of its own pursuits wait. */
+    private boolean kitFirst(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null) return false;
+        if (onItsOwn) return kitTries < 3 && !starterKit(self).isEmpty();
+        return afkImproving() && afkKitTries < 3 && !starterKit(self).isEmpty();
+    }
+
+    /** Who set the orders it gave itself while its owner was away (dropped when they come back). */
+    static final String AFK_SELF = "self-afk";
+    /** It was following its owner when they went AFK: following again by them, or when they're back. */
+    private volatile boolean afkFollowed;
+    /** How long they are away before it goes off to work on itself (game ticks). */
+    static final long AFK_SETTLE = 1_200L;
+    private volatile int afkKitTries;
+    private volatile long afkKitAt = Long.MIN_VALUE / 2;
+
     /** On its own: the swamp it is going to for its base, once found (dimension, x, z). */
     private volatile com.mineagent.engine.world.RouteMemory.Point surviveAt;
     private volatile boolean surviveFailed;
@@ -4971,6 +5088,9 @@ public class AgentLoop {
                 var p = found.getFirst();
                 int y = level.isLoaded(p) ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getX(), p.getZ()) : self.getBlockY();
                 surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, p.getX(), y, p.getZ());
+                swampSince = now;
+                swampTries = 0;
+                swampBest = Double.MAX_VALUE;
                 int far = (int) Math.sqrt(self.blockPosition().distSqr(p));
                 speakToOwner("There's a swamp " + far + " blocks off, at " + p.getX() + ", " + p.getZ() + ": I'm going to make my base there.");
                 journal.record("survive", "going to the swamp at " + p.getX() + ", " + p.getZ(), currentGameTickSafe(), dim, p.getX(), y, p.getZ());
@@ -4980,6 +5100,22 @@ public class AgentLoop {
         if (to == null) return;
         double dx = self.getX() - to.x(), dz = self.getZ() - to.z();
         if (dx * dx + dz * dz > 24.0 * 24.0) {
+            // Each walk that gets it no nearer counts; eight of them (water all round, cliffs, no way it can find), or
+            // half a game day on the road, and its base is made where it is: never walking at a swamp for ever.
+            double d = Math.sqrt(dx * dx + dz * dz);
+            if (d < swampBest - 16) {
+                swampBest = d;
+                swampTries = 0;
+            } else {
+                swampTries++;
+            }
+            if (swampTries > SWAMP_TRIES || now - swampSince > SWAMP_WALK) {
+                surviveFailed = true;
+                surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+                journal.record("survive", "couldn't get to the swamp (" + (int) d + " blocks off): making my base here", now);
+                speakToOwner("I couldn't get to the swamp: I'll make my base here instead.");
+                return;
+            }
             goTo(to, List.of(), false);
             return;
         }
@@ -4993,8 +5129,49 @@ public class AgentLoop {
         queueOrders(primeOrders(false) + ", then make a farm, then make a slime farm");
     }
 
+    /**
+     * The planks to build with when it carries none: of the logs it carries most of, else of the trees round it (a
+     * mangrove swamp has no oak, a taiga only spruce), else oak.
+     */
+    static String woodHere(net.minecraft.server.level.ServerPlayer sp) {
+        Map<String, Integer> logs = new java.util.HashMap<>();
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.is(net.minecraft.tags.ItemTags.LOGS)) continue;
+            String planks = planksOf(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+            if (planks != null) logs.merge(planks, st.getCount(), Integer::sum);
+        }
+        if (logs.isEmpty()) {
+            var level = sp.serverLevel();
+            net.minecraft.core.BlockPos at = sp.blockPosition();
+            for (net.minecraft.core.BlockPos p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-24, -8, -24), at.offset(24, 16, 24))) {
+                if (!level.isLoaded(p)) continue;
+                var st = level.getBlockState(p);
+                if (!st.is(net.minecraft.tags.BlockTags.LOGS)) continue;
+                String planks = planksOf(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString());
+                if (planks != null) logs.merge(planks, 1, Integer::sum);
+            }
+        }
+        return logs.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("minecraft:oak_planks");
+    }
+
+    /** The planks a log or stem is made into ("minecraft:spruce_log": "minecraft:spruce_planks"); null for a stripped or odd one. */
+    static String planksOf(String log) {
+        if (log == null || log.contains("stripped_")) return null;
+        String planks = log.replaceFirst("_(?:log|wood|stem|hyphae)$", "_planks");
+        if (planks.equals(log)) return null;
+        var id = net.minecraft.resources.ResourceLocation.tryParse(planks);
+        return id != null && net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(id) ? planks : null;
+    }
+
     /** How far it goes for a swamp to make its base in. */
     static final int SWAMP_REACH = 600;
+    /** Walks to the swamp that get it no nearer, and the longest on the road there (game ticks), before it settles. */
+    static final int SWAMP_TRIES = 8, SWAMP_WALK = 12_000;
+    private volatile long swampSince;
+    private volatile int swampTries;
+    private volatile double swampBest = Double.MAX_VALUE;
 
     /** Its starter kit's tries, and when the last was (game ticks); when it last kept its base up. */
     private volatile int kitTries;
@@ -5019,7 +5196,7 @@ public class AgentLoop {
         if (h != null && !hutNear(dim, h) && now - hutAt >= 24_000) {
             hutAt = now;
             journal.record("survive", "no hut by home: building one", now);
-            queueOrders("build a hut");
+            queueOrders("build a home hut");
         }
     }
 
@@ -5350,13 +5527,15 @@ public class AgentLoop {
     private void hoard(net.minecraft.server.level.ServerPlayer self) {
         if (self == null || suspended || speedrun || !com.mineagent.engine.settings.Switches.hoard()) return;
         if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
-        // Following its owner: it stays with them (its stockpile waits till it is free).
+        // Following its owner: it stays with them (its stockpile waits till it is free, as it is working on itself while
+        // they're away).
         if (!onItsOwn && MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return;
         LiveBodyState body = liveBodyState.get();
         if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
         var level = self.serverLevel();
         String dim = level.dimension().location().toString();
         var home = home(dim);
+        if (home == null && afkImproving()) home = ownerBed(dim); // working on itself while they're away: by their bed
         if (home == null) return; // no base yet: nowhere to keep a stockpile
         var stash = stash(level, dim, home);
         if (stash == null) {
@@ -6419,6 +6598,11 @@ public class AgentLoop {
      * meant now pinned down in the words, what it was doing after them. False when the line is one order.
      */
     private boolean queueOrders(String line) {
+        return queueOrders(line, "owner");
+    }
+
+    /** As {@link #queueOrders(String)}, set by {@code setBy} ("owner", or {@link #AFK_SELF} for its own while they're away). */
+    private boolean queueOrders(String line, String setBy) {
         var orders = com.mineagent.engine.goal.Orders.split(line);
         if (orders.size() < 2) {
             // One order that stands ("make me 64 torches until I say stop"), when code runs it: a standing goal.
@@ -6434,7 +6618,7 @@ public class AgentLoop {
         for (var o : orders) texts.add(pinned(o.text()) + (o.standing() ? com.mineagent.engine.goal.Orders.STANDS : ""));
         List<com.mineagent.engine.planning.GoalBook.Goal> made;
         try {
-            made = goalBook.chain(texts, "owner", currentGameTickSafe());
+            made = goalBook.chain(texts, setBy, currentGameTickSafe());
         } catch (RuntimeException full) {
             return false;
         }
@@ -6778,7 +6962,8 @@ public class AgentLoop {
             iron -= have.count("minecraft:raw_iron") + have.count("minecraft:iron_ingot");
         }
         List<String> o = new ArrayList<>();
-        o.add("build a hut");
+        // On its own, its home: the hut with a crafting table and a furnace in it, as a player's first base has.
+        o.add(giveShare ? "build a hut" : "build a home hut");
         if (iron > 0) o.add("mine " + iron + " iron");
         if (full) {
             for (String piece : List.of("iron helmets", "iron chestplates", "iron leggings", "iron boots", "iron swords", "iron pickaxes")) {
@@ -6968,12 +7153,15 @@ public class AgentLoop {
         var change = ownerActivity.update(now, owner.getLastActionTime(), com.mineagent.engine.settings.Switches.afkAfterMillis());
         if (change == OwnerActivity.Change.CAME_BACK) {
             clearAfkFarm();
+            backFromAway();
             endAfkOrder();
             String line = ownerActivity.welcomeBack(now, whileAway());
             journal.record("back", "you came back to the keys", currentGameTickSafe());
             speakToOwner(line);
         } else if (change == OwnerActivity.Change.WENT_AFK) {
             afkSinceTick = currentGameTickSafe();
+            afkKitTries = 0;
+            afkFollowed = MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW;
             journal.record("afk", "you went AFK", currentGameTickSafe());
             int within = com.mineagent.engine.settings.Switches.afkStayWithin();
             onBodyLog("[AFK] The owner is away from the keys. Carry on with your jobs as usual"

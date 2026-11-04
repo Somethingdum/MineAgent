@@ -86,6 +86,7 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             print = switch (record.name == null ? "hut" : record.name) {
                 case "dirt_shelter" -> com.mineagent.engine.planning.building.MindcraftBlueprints.dirtShelter();
                 case "small_wood_house" -> com.mineagent.engine.planning.building.MindcraftBlueprints.smallWoodHouse(record.wall, record.door);
+                case "hut_home" -> Blueprint.homeHut(record.wall, record.door);
                 default -> Blueprint.hut(record.wall, record.door);
             };
         }
@@ -153,7 +154,7 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             if (best == null) return fail("there is no flat, clear ground for it within 12 blocks");
             corner = best;
         }
-        say("Building a " + record.name.replace('_', ' ') + " at " + corner.toShortString() + ": " + materialsLine() + ".");
+        say("Building a " + shown() + " at " + corner.toShortString() + ": " + materialsLine() + ".");
         phase = Phase.MATERIALS;
         return TaskState.RUNNING;
     }
@@ -339,6 +340,11 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
         spotTried = 0;
     }
 
+    /** Its name as said: the home hut is a hut ("Built the hut at ..."). */
+    private String shown() {
+        return "hut_home".equals(record.name) ? "hut" : record.name.replace('_', ' ');
+    }
+
     /** A place as an offset from the corner, for the report. */
     private String rel(BlockPos p) {
         BlockPos d = p.subtract(corner);
@@ -384,8 +390,8 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             where.add(ProductionPlanner.name(b.id()) + " at " + b.x() + "," + b.y() + "," + b.z());
         }
         String line = missing.isEmpty()
-                ? "Built the " + record.name.replace('_', ' ') + " at " + corner.toShortString() + ": " + materialsLine() + "; every block checked."
-                : "Built the " + record.name.replace('_', ' ') + " at " + corner.toShortString() + ", but " + missing.size()
+                ? "Built the " + shown() + " at " + corner.toShortString() + ": " + materialsLine() + "; every block checked."
+                : "Built the " + shown() + " at " + corner.toShortString() + ", but " + missing.size()
                         + " blocks are missing; I couldn't place them (" + String.join("; ", where) + ").";
         say(line);
         var loop = TaskContext.agentLoop(player);

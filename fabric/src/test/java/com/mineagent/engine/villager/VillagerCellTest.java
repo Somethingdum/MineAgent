@@ -48,6 +48,26 @@ class VillagerCellTest {
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) if (x != 0 || z != 0) round.add(new VillagerCell.Pos(j.x() + x, j.y(), j.z() + z));
         round.remove(l.cell());
         for (var p : round) assertTrue(l.walls().contains(p), "no other spot by its job site: " + p);
-        assertEquals(17, l.walls().size(), "seven cells walled two high, three roofs");
+        assertEquals(18, l.walls().size(), "seven cells walled two high, three roofs and the block they hang from");
+    }
+
+    @Test void eachBlockGoesAgainstOneAlreadyThere() {
+        // The game puts a block down only against another (the ground, the job site, a wall before it): in the order
+        // given, every one can go in.
+        for (int[] d : VillagerCell.DIRECTIONS) {
+            var l = VillagerCell.plan(0, 64, 0, d[0], d[1]);
+            Set<VillagerCell.Pos> there = new HashSet<>();
+            there.add(l.jobSite());
+            for (var p : l.walls()) {
+                boolean against = p.y() == 64; // the ground under it
+                for (int[] f : new int[][] {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}}) {
+                    if (there.contains(new VillagerCell.Pos(p.x() + f[0], p.y() + f[1], p.z() + f[2]))) against = true;
+                }
+                assertTrue(against, "nothing to go against at " + p + " going " + d[0] + "," + d[1]);
+                there.add(p);
+            }
+            // The door too, once the walls are up.
+            assertTrue(l.door().y() == 64);
+        }
     }
 }

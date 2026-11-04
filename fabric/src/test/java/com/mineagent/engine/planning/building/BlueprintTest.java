@@ -50,4 +50,30 @@ final class BlueprintTest {
         assertEquals(1, bad.unsupported().size());
         assertEquals(3, bad.unsupported().get(0).y());
     }
+
+    @Test void theHomeHutHasATableAndAFurnace() {
+        var home = Blueprint.homeHut("minecraft:spruce_planks", "minecraft:spruce_door");
+        var m = home.materials();
+        assertEquals("hut_home", home.name());
+        assertEquals(55, m.get("minecraft:spruce_planks").intValue(), "the hut's walls and roof");
+        assertEquals(1, m.get("minecraft:crafting_table").intValue());
+        assertEquals(1, m.get("minecraft:furnace").intValue());
+        assertTrue(home.unsupported().isEmpty(), "each goes against the ground: " + home.unsupported());
+        // In the back corners, inside, after the roof: the middle and the spots beside it (where it stands to build and
+        // sleeps) left clear, and the door still last, from outside.
+        int roofEnd = -1, table = -1, furnace = -1;
+        for (int i = 0; i < home.blocks().size(); i++) {
+            var b = home.blocks().get(i);
+            if (b.y() == 3) roofEnd = i;
+            if (b.id().equals("minecraft:crafting_table")) table = i;
+            if (b.id().equals("minecraft:furnace")) furnace = i;
+        }
+        assertTrue(table > roofEnd && furnace > roofEnd);
+        for (var b : home.blocks()) {
+            if (!b.id().equals("minecraft:crafting_table") && !b.id().equals("minecraft:furnace")) continue;
+            assertTrue(b.y() == 1 && (b.x() == 1 || b.x() == 3) && b.z() == 3, "a back corner inside: " + b);
+        }
+        assertTrue(home.blocks().get(home.blocks().size() - 1).fromOutside());
+        assertEquals(Blueprint.hut("minecraft:spruce_planks", "minecraft:spruce_door").blocks().size() + 2, home.blocks().size());
+    }
 }

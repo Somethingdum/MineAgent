@@ -83,6 +83,20 @@ public record Blueprint(String name, int width, int depth, int height, List<Bloc
         return new Blueprint("hut", 5, 5, 3, List.copyOf(b), 2, 2, 2, 0);
     }
 
+    /**
+     * The hut as a home (SMH plan 70: its base when it lives on its own): the same, with a crafting table and a furnace in
+     * its two back corners inside, put down after the roof; the middle and the spots beside it, where it stands to build
+     * and to sleep, left clear.
+     */
+    public static Blueprint homeHut(String wall, String door) {
+        Blueprint hut = hut(wall, door);
+        List<Block> b = new ArrayList<>(hut.blocks());
+        int torch = b.indexOf(new Block(1, 1, 1, "minecraft:torch", false));
+        b.add(torch, new Block(3, 1, 3, "minecraft:furnace", false));
+        b.add(torch, new Block(1, 1, 3, "minecraft:crafting_table", false));
+        return new Blueprint("hut_home", hut.width(), hut.depth(), hut.height(), List.copyOf(b), hut.insideX(), hut.insideZ(), hut.doorX(), hut.doorZ());
+    }
+
     /** A corner of the 5 by 5 hut. */
     private static boolean corner(Block r) {
         return (r.x() == 0 || r.x() == 4) && (r.z() == 0 || r.z() == 4);

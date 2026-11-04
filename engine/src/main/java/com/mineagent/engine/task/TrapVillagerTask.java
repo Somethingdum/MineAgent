@@ -118,8 +118,11 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         }
                         nav.cancel();
                         TaskContext.inputDriver(player).clear();
-                        if (Placement.placeAnySupportBlock(sp, p)) placed++;
-                        return TaskState.RUNNING; // one a tick, as a player puts them down
+                        if (Placement.placeAnySupportBlock(sp, p)) {
+                            placed++;
+                            return TaskState.RUNNING; // one a tick, as a player puts them down
+                        }
+                        waiting = true; // it won't go in yet: the next, and this one again after
                     }
                     if (underMe) {
                         // Only spots it stands on (and any the villager does) left: off them, to the way in (no wall).
@@ -128,7 +131,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         nav.tick();
                         return TaskState.RUNNING;
                     }
-                    if (waiting) return TaskState.RUNNING; // only spots the villager stands on are left
+                    if (waiting) return TaskState.RUNNING; // only spots the villager stands on, or that won't take yet, are left
                     phase = Phase.WAIT;
                     ticks = 0;
                     return TaskState.RUNNING;

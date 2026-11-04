@@ -1853,6 +1853,61 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, its owner: "When i go AFK, it should finish the tasks that I gave it. Then go to upgrading itself as it
+     * does when it's surviving alone ... And it will keep improving itself until I return." Following its owner, with its
+     * starter kit but for a stone shovel: they go AFK; a minute on, it stops following and makes the shovel, an order of
+     * its own; they come back: it follows them again, nothing it set itself left open.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_afk_improve", timeoutTicks = 3200)
+    public void whileTheyAreAwayItWorksOnItselfTillTheyAreBack(GameTestHelper helper) {
+        Scene s = scene(helper, "Improver");
+        var id = s.companion().companionId();
+        MineAgentEngine.setCompanionMode(id, MineAgentEngine.CompanionMode.FOLLOW);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.STONE_AXE));
+        inv.setItem(2, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(3, new ItemStack(Items.COAL, 8));
+        inv.setItem(4, new ItemStack(Items.BREAD, 16));
+        inv.setItem(5, new ItemStack(Items.COBBLESTONE, 4));
+        inv.setItem(6, new ItemStack(Items.STICK, 4));
+        inv.setItem(7, new ItemStack(Items.CRAFTING_TABLE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
+        boolean[] back = {false};
+        boolean[] freed = {false};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "afk improve");
+            var mode = MineAgentEngine.getCompanionMode(id);
+            if (!back[0]) {
+                if (mode == MineAgentEngine.CompanionMode.FREE) freed[0] = true;
+                boolean shovel = inv.countItem(Items.STONE_SHOVEL) > 0;
+                if (shovel && freed[0]) {
+                    back[0] = true;
+                    s.owner().resetLastActionTime(); // they're back at the keys
+                    return;
+                }
+                if (helper.getTick() >= 2600) {
+                    String how = "a stone shovel " + shovel + ", stopped following " + freed[0] + ", owner AFK " + s.loop().ownerAfk()
+                            + "; said: " + lastSaid(s, "");
+                    tidy(s);
+                    fail(helper, how);
+                }
+                return;
+            }
+            boolean open = s.loop().goalBook().list().stream().anyMatch(g -> "self-afk".equals(g.setBy())
+                    && (g.status() == com.mineagent.engine.planning.GoalBook.Status.ACTIVE || g.status() == com.mineagent.engine.planning.GoalBook.Status.PAUSED));
+            if (!s.loop().ownerAfk() && mode == MineAgentEngine.CompanionMode.FOLLOW && !open) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 3100) {
+                String how = "back: owner AFK " + s.loop().ownerAfk() + ", mode " + mode + ", its own orders open " + open;
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** What it last said to its owner, from its journal (empty if nothing yet). */
     private static String lastSaid(Scene s, String startingWith) {
         var said = s.loop().journal().recent(40).stream()
@@ -4693,10 +4748,10 @@ public class CompanionGameTests implements FabricGameTest {
     /**
      * SMH plan 70, temple traps ("Temple traps should be programmed"): two chests the world made (ruined portal loot, never
      * opened); in front of the second, a stone pressure plate over nine TNT, as a desert temple's floor. "Loot the chests
-     * here": the plate is broken from beside it (never stepped on), the TNT all still there, both chests emptied into its
-     * pack.
+     * here": the plate is broken from beside it (never stepped on), then the TNT taken (its owner: "it should also collect
+     * the TNT afterwards"), none of it set off, all nine in its pack; both chests emptied into its pack.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot", timeoutTicks = 1400)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_loot", timeoutTicks = 2400)
     public void aDesertTrapIsTakenApartAndBothChestsLooted(GameTestHelper helper) {
         Scene s = scene(helper, "Looter");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
@@ -4714,7 +4769,7 @@ public class CompanionGameTests implements FabricGameTest {
             if (helper.getTick() % 200 == 0) trace(helper, s, "loot");
             String done = lastSaid(s, "Looted");
             String none = lastSaid(s, "No loot");
-            if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 1300) {
+            if (!done.isEmpty() || !none.isEmpty() || helper.getTick() >= 2300) {
                 var a = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(loot));
                 var b = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(helper.absolutePos(guarded));
                 // Asked before their slots are read: reading them makes the loot, as opening does.
@@ -4726,10 +4781,11 @@ public class CompanionGameTests implements FabricGameTest {
                 boolean plateGone = !helper.getLevel().getBlockState(helper.absolutePos(plate)).is(Blocks.STONE_PRESSURE_PLATE);
                 int carried = 0;
                 for (int i = 0; i < 36; i++) carried += s.body().getInventory().getItem(i).getCount();
+                int tntCarried = s.body().getInventory().countItem(Items.TNT);
                 String how = "first chest opened " + aOpened + ", the guarded one " + bOpened + "; plate gone " + plateGone + ", TNT left " + tnt
-                        + " of 9; carried " + carried + "; alive " + s.body().isAlive() + "; said: "
+                        + " of 9, carried " + tntCarried + "; carried " + carried + "; alive " + s.body().isAlive() + "; said: "
                         + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
-                boolean ok = aOpened && bOpened && plateGone && tnt == 9 && carried > 0 && s.body().isAlive();
+                boolean ok = aOpened && bOpened && plateGone && tnt == 0 && tntCarried >= 9 && carried > 0 && s.body().isAlive();
                 tidy(s);
                 if (ok) helper.succeed();
                 else fail(helper, how);
@@ -5969,7 +6025,7 @@ public class CompanionGameTests implements FabricGameTest {
     /** Plan 70, MA9.1, repair from a saved blueprint: the hut built, three of its blocks knocked out, "repair the hut": put back. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_repair_hut", timeoutTicks = 3600)
     public void aDamagedHutIsRepairedFromItsBlueprint(GameTestHelper helper) {
-        Scene s = scene(helper, "Mender");
+        Scene s = scene(helper, "Repairer");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         var inv = s.body().getInventory();
         inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));

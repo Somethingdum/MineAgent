@@ -387,6 +387,34 @@ public final class ProductionPlanner {
             problems.add("the chain for " + name(item) + " is too long");
             return;
         }
+        // A recipe that copies what it is made of (a smithing template: one, seven diamonds and a netherrack make two):
+        // one carried is its seed, spent and made again with each copy; as many copies as make up the rest.
+        int held = Math.max(0, carried.getOrDefault(item, 0));
+        Recipe copy = held > 0 && count > held ? copyRecipe(item) : null;
+        if (copy != null) {
+            int self = 0;
+            for (Need n : copy.needs()) if (n.anyOf().contains(item)) self += n.count();
+            int gain = copy.outputCount() - self;
+            if (self <= held && gain > 0) {
+                int batches = (int) Math.ceil((count - held) / (double) gain);
+                carried.put(item, 0);
+                Set<String> p = new HashSet<>(path);
+                p.add(item);
+                for (Need n : copy.needs()) {
+                    if (n.anyOf().contains(item)) continue;
+                    make(pick(n, n.count() * batches, p), n.count() * batches, depth + 1, p);
+                }
+                if (copy.needsTable() && !table) {
+                    table = true;
+                    make("minecraft:crafting_table", 1, depth + 1, p);
+                }
+                steps.add(new Step(Action.CRAFT, item, batches * copy.outputCount(), copy.id(), batches, null, 0, null, null, null, 0, 0,
+                        copy.needsTable()));
+                int over = held + batches * gain - count;
+                if (over > 0) carried.merge(item, over, Integer::sum);
+                return;
+            }
+        }
         // What it carries first, then what is in its chests (a fetch), then made.
         int fromCarried = Math.min(count, Math.max(0, carried.getOrDefault(item, 0)));
         if (fromCarried > 0) carried.merge(item, -fromCarried, Integer::sum);
@@ -472,6 +500,15 @@ public final class ProductionPlanner {
         }
         if (bestSource != null) mine(bestSource, left, depth, p);
         else craft(bestRecipe, left, depth, p);
+    }
+
+    /** A crafting recipe for the item that has the item among what it is made of (a template copied), or null. */
+    private Recipe copyRecipe(String item) {
+        for (Recipe r : book.recipes(item)) {
+            if (r.kind() != Kind.CRAFT) continue;
+            for (Need n : r.needs()) if (n.anyOf().contains(item)) return r;
+        }
+        return null;
     }
 
     /** When the animals near are all spoken for: "not enough cows near for 6 more beef (I leave two of a kind)". */

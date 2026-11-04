@@ -68,7 +68,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
     /** Sites under the ground: gone to at their own depth, not the surface over them. */
     static final java.util.Set<String> UNDERGROUND = java.util.Set.of("minecraft:mineshaft", "minecraft:mineshaft_mesa");
 
-    private enum Phase { FIND, TRAVEL, SCAN, DISARM, OPEN, CARTS, DONE }
+    private enum Phase { FIND, TRAVEL, SCAN, DISARM, TNT, OPEN, CARTS, DONE }
 
     private PlayerNav nav;
     private Phase phase = Phase.FIND;
@@ -178,7 +178,21 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                             skipped += before - chests.size();
                         }
                         if (disarmed > 0) say("Traps taken apart: " + disarmed + (disarmed == 1 ? " part." : " parts."));
-                        phase = Phase.OPEN;
+                        // The TNT under the plates it broke, taken (never under one still there).
+                        tnt.clear();
+                        if (com.mineagent.engine.settings.Switches.takeTrapTnt()) {
+                            for (BlockPos q : parts) {
+                                if (!gone.contains(q) || stuckParts.contains(q)) continue;
+                                for (BlockPos t : BlockPos.betweenClosed(q.offset(-1, -3, -1), q.offset(1, -1, 1))) {
+                                    if (level.getBlockState(t).is(Blocks.TNT) && !tnt.contains(t)) tnt.add(t.immutable());
+                                }
+                            }
+                            // From the top down, nearest first: each one under the last is uncovered by taking it.
+                            tnt.sort(java.util.Comparator.comparingInt((BlockPos t) -> -t.getY()).thenComparingDouble(t -> t.distSqr(sp.blockPosition())));
+                        }
+                        phase = tnt.isEmpty() ? Phase.OPEN : Phase.TNT;
+                        tntIndex = 0;
+                        tntBefore = sp.getInventory().countItem(net.minecraft.world.item.Items.TNT);
                         index = 0;
                         ticks = 0;
                         return TaskState.RUNNING;
@@ -219,6 +233,9 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     }
                     if (ticks > partLimit) later(q);
                     return TaskState.RUNNING;
+                }
+                case TNT -> {
+                    return takeTnt(sp, level);
                 }
                 case CARTS -> {
                     while (index < carts.size() && (!carts.get(index).isAlive() || carts.get(index).getLootTable() == null && carts.get(index) != triedCart)) index++;
@@ -458,6 +475,114 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
         BlockPos at = sp.blockPosition();
         return at.equals(p) || at.below().equals(p);
     }
+
+    /** The TNT of the traps it took apart, to take; which it is on; how much it picked up. */
+    private final List<BlockPos> tnt = new ArrayList<>();
+    private int tntIndex, tntTaken, pickTicks;
+
+    /**
+     * A trap's TNT, once its plate is gone (SMH plan 70, its owner: "When it breaks the trap in a temple, it should also
+     * collect the TNT afterwards. Since it could be very useful"; {@code behaviour.takeTrapTnt}). Broken by hand TNT
+     * doesn't go off. Each is uncovered first (the floor over a desert temple's: a plain block, never a chest or anything
+     * with something in it), broken from beside the hole, never from on it, and the TNT dropped is walked over and picked up.
+     * Then on to the chests.
+     */
+    private TaskState takeTnt(ServerPlayer sp, ServerLevel level) {
+        // Uncovered first, all of it: what lies on each (plain, nothing kept in it), so every top is in sight from the
+        // edge; then the TNT.
+        if (uncover.isEmpty() && tntIndex == 0 && ticks == 1) {
+            for (BlockPos t : tnt) {
+                BlockPos over = t.above();
+                var st = level.getBlockState(over);
+                float hard = st.getDestroySpeed(level, over);
+                if (!st.isAir() && !st.canBeReplaced() && !st.is(Blocks.TNT) && level.getBlockEntity(over) == null && hard >= 0 && hard < 10
+                        && !tnt.contains(over)) uncover.add(over.immutable());
+            }
+        }
+        List<BlockPos> list = tntIndex < uncover.size() ? uncover : tnt;
+        int i = tntIndex < uncover.size() ? tntIndex : tntIndex - uncover.size();
+        while (i < list.size() && (list == tnt ? !level.getBlockState(list.get(i)).is(Blocks.TNT) : level.getBlockState(list.get(i)).isAir())) {
+            tntIndex++;
+            i++;
+            ticks = 0;
+            standAt = null;
+        }
+        if (list == uncover && i >= uncover.size()) return TaskState.RUNNING; // on to the TNT next tick
+        if (list == tnt && i >= tnt.size()) {
+            // Picked up: the TNT lying round where it was, walked over, for half a minute at most.
+            BlockPos at = tnt.get(0);
+            var drops = level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                    new net.minecraft.world.phys.AABB(at).inflate(5, 4, 5), e -> e.isAlive() && e.getItem().is(net.minecraft.world.item.Items.TNT));
+            if (drops.isEmpty() || ++pickTicks > 600 || full(sp)) {
+                nav.cancel();
+                TaskContext.inputDriver(player).clear();
+                tntTaken = Math.max(0, sp.getInventory().countItem(net.minecraft.world.item.Items.TNT) - tntBefore);
+                if (tntTaken > 0) {
+                    got.merge("minecraft:tnt", tntTaken, Integer::sum);
+                    say("Took the trap's TNT: " + tntTaken + ".");
+                }
+                phase = Phase.OPEN;
+                index = 0;
+                ticks = 0;
+                return TaskState.RUNNING;
+            }
+            var near = drops.get(0);
+            for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
+            if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(near.getBlockX(), near.getBlockY(), near.getBlockZ(), 0);
+            nav.tick();
+            return TaskState.RUNNING;
+        }
+        BlockPos target = list.get(i);
+        if (ticks > 600) {
+            // It can't get at this one: the next.
+            tntIndex++;
+            ticks = 0;
+            standAt = null;
+            return TaskState.RUNNING;
+        }
+        // From a spot in reach of it, never on it, on TNT, or on a block it is about to take.
+        boolean onOne = standingOn(sp, target) || uncover.contains(sp.blockPosition().below()) && !level.getBlockState(sp.blockPosition().below()).isAir()
+                || level.getBlockState(sp.blockPosition().below()).is(Blocks.TNT);
+        if (target.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0 || onOne) {
+            if (standAt == null) standAt = standFor(level, sp, target);
+            BlockPos to = standAt != null ? standAt : target;
+            if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(to.getX(), to.getY(), to.getZ(), standAt != null ? 0 : 2);
+            nav.tick();
+            return TaskState.RUNNING;
+        }
+        nav.cancel();
+        TaskContext.inputDriver(player).clear();
+        if (!BlockDigger.breaking(sp, target) && ticks % 20 == 1) BlockDigger.startBreakingDetailed(sp, target);
+        return TaskState.RUNNING;
+    }
+
+    /**
+     * Where it stands to take one: open two high on firm ground that is neither TNT nor a block to be taken, its eyes
+     * within reach (4) and not on top of it; the nearest to it. Null when there is none.
+     */
+    private BlockPos standFor(ServerLevel level, ServerPlayer sp, BlockPos target) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(target.offset(-3, -1, -3), target.offset(3, 3, 3))) {
+            if (!com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p))
+                    || !com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p.above()))
+                    || !level.getFluidState(p).isEmpty()) continue;
+            BlockPos under = p.below();
+            var ust = level.getBlockState(under);
+            if (!com.mineagent.engine.pathing.util.BlockHelper.canStandOn(ust) || ust.is(Blocks.TNT) || uncover.contains(under) || tnt.contains(under)) continue;
+            double eye = net.minecraft.world.phys.Vec3.atBottomCenterOf(p).add(0, 1.62, 0).distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(target));
+            if (eye > 4.0 * 4.0 || p.equals(target.above())) continue;
+            double d = p.distSqr(sp.blockPosition());
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+    private final List<BlockPos> uncover = new ArrayList<>();
+    private BlockPos standAt;
+    private int tntBefore;
 
     private net.minecraft.world.entity.vehicle.MinecartChest triedCart;
     private final Map<BlockPos, Integer> partTries = new java.util.HashMap<>();

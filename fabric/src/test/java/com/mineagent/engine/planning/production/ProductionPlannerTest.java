@@ -557,4 +557,28 @@ final class ProductionPlannerTest {
         Plan milked = ProductionPlanner.plan(withFills(), new Have(Map.of(m("bucket"), 1), Map.of(), List.of(), 0, true, cows, Map.of()), m("milk_bucket"), 1);
         assertTrue(milked.summary().contains("milk a cow into 1 bucket"), milked.summary());
     }
+
+    @Test void aTemplateIsCopiedFromTheOneItHolds() {
+        // One template, seven diamonds and a netherrack make two: "make me 2" with one held is one copy, its seed spent
+        // and made again; "make me 3" two copies; none held, no way (it is found, not made).
+        String t = m("netherite_upgrade_smithing_template");
+        var b = new Book(Map.of(t, List.of(new Recipe(t, Kind.CRAFT, t, 2,
+                List.of(new Need(List.of(m("diamond")), 7), new Need(List.of(t), 1), new Need(List.of(m("netherrack")), 1)), true, 0))),
+                Map.of(), Map.of(), Map.of());
+        java.util.function.Function<Integer, Have> holding = n -> new Have(Map.of(t, n, m("diamond"), 14, m("netherrack"), 2), Map.of(),
+                List.of(), 0, true, Map.of(), Map.of());
+        var two = ProductionPlanner.plan(b, holding.apply(1), t, 2);
+        assertTrue(two.possible(), two.problems().toString());
+        var craft = two.steps().stream().filter(s -> s.action() == Action.CRAFT).findFirst().orElseThrow();
+        assertEquals(1, craft.batches());
+        var three = ProductionPlanner.plan(b, holding.apply(1), t, 3);
+        assertTrue(three.possible(), three.problems().toString());
+        assertEquals(2, three.steps().stream().filter(s -> s.action() == Action.CRAFT).mapToInt(Step::batches).sum());
+        assertFalse(ProductionPlanner.plan(b, holding.apply(1), t, 4).possible(), "two copies' diamonds and netherrack at most");
+        var none = ProductionPlanner.plan(b, new Have(Map.of(m("diamond"), 14, m("netherrack"), 2), Map.of(), List.of(), 0, true, Map.of(),
+                Map.of()), t, 1);
+        assertFalse(none.possible());
+        // Held already: nothing to make.
+        assertTrue(ProductionPlanner.plan(b, holding.apply(2), t, 2).steps().stream().noneMatch(s -> s.action() == Action.CRAFT));
+    }
 }

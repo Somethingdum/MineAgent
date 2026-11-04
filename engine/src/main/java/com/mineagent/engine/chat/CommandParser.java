@@ -73,7 +73,7 @@ public final class CommandParser {
     private static final Pattern HUNT_PLAYER = Pattern.compile("^(?:go )?(?:kill|hunt(?: down)?|take out|murder|find and kill|go after)"
             + "(?: the player)? ([a-z0-9_]{3,16})$");
     private static final Pattern BUILD = Pattern.compile("^build (?:me |us )?(?:a |an )?(?:small |little )?(dirt shelter|dirt hut|wood house|wooden house|wood cabin"
-            + "|hut|house|shelter|base|home|cabin)(?: here| for us)?$");
+            + "|home hut|hut with a (?:furnace and a crafting table|crafting table and a furnace)|hut|house|shelter|base|home|cabin)(?: here| for us)?$");
     /** "Light up the area", "light this place up", "put torches around": no dark spot left (MA9.4). */
     private static final Pattern LIGHT = Pattern.compile("^(?:light (?:up )?(?:the |this )?(?:area|place|base|here|it)(?: up)?|light it up|light this place up"
             + "|put (?:some )?torches (?:around|down|up)(?: here)?|torch (?:the |this )?(?:area|place) up)$");
@@ -346,7 +346,8 @@ public final class CommandParser {
         var build = BUILD.matcher(t);
         if (build.matches()) {
             String what = build.group(1);
-            String print = what.startsWith("dirt") ? "dirt_shelter" : what.startsWith("wood") ? "small_wood_house" : "hut";
+            String print = what.startsWith("dirt") ? "dirt_shelter" : what.startsWith("wood") ? "small_wood_house"
+                    : what.startsWith("home hut") || what.startsWith("hut with") ? "hut_home" : "hut";
             return Optional.of(new Command(Kind.BUILD, print, null));
         }
         if (PORTAL.matcher(t).matches()) return Optional.of(new Command(Kind.PORTAL, null, null));
