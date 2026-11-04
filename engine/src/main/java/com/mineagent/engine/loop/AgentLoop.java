@@ -1444,7 +1444,22 @@ public class AgentLoop {
                 String print = c.value() == null ? "hut" : c.value();
                 // The home hut is stone: cobblestone (its pickaxe digs it anywhere, a creeper does it less harm; wood near
                 // a base runs out, the three-day benchmark found: 27 planks of the 55). Its door of the wood about.
-                if ("hut_home".equals(print)) wall = homeHutWall();
+                if ("hut_home".equals(print)) {
+                    // Its own home, several ways (its owner: "It has many options. It doesn't need to make an elaborate
+                    // hut. Even a dirt hut works."): a hut of a plain block it carries enough of; else dug into a
+                    // hillside or down a stairway, the ground its walls (no materials); else a hut of cobblestone it
+                    // mines, or dirt.
+                    String carried = carriedHutWall();
+                    long tick = currentGameTickSafe();
+                    if (carried == null && com.mineagent.engine.settings.Switches.dugoutHomes() && tick - dugoutFailedAt >= 12_000) {
+                        journal.record("order", "build a home hut", tick);
+                        orderGoal("build a home hut");
+                        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DugoutTask.DugoutRecord(
+                                "build-" + UUID.randomUUID()), reply -> { });
+                        return true;
+                    }
+                    wall = carried == null ? "minecraft:cobblestone" : carried;
+                }
                 String said = switch (print) {
                     case "dirt_shelter" -> "build a dirt shelter";
                     case "small_wood_house" -> "build a small wood house";
@@ -5236,18 +5251,25 @@ public class AgentLoop {
             "minecraft:mangrove_planks", "minecraft:cherry_planks");
 
     /**
-     * Its home hut's walls (55 blocks): what it carries enough of already, the plainest first (the tenth benchmark run
-     * carried 94 blocks and still went to mine stone for its walls, the build stalled); else cobblestone, mined.
+     * Its home hut's walls (55 blocks) from what it carries enough of already, the plainest first (the tenth benchmark
+     * run carried 94 blocks and still went to mine stone for its walls, the build stalled); null when it carries none.
      */
-    private String homeHutWall() {
+    private String carriedHutWall() {
         var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayer() : null;
-        if (self == null) return "minecraft:cobblestone";
+        if (self == null) return null;
         var inv = self.getInventory();
         for (String id : HUT_WALLS) {
             var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));
             if (inv.countItem(item) >= 55) return id;
         }
-        return "minecraft:cobblestone";
+        return null;
+    }
+
+    /** When digging a home last failed here (no hillside, ground that won't take a stairway): a built hut instead for a while. */
+    private volatile long dugoutFailedAt = Long.MIN_VALUE / 2;
+
+    public void dugoutFailed() {
+        dugoutFailedAt = currentGameTickSafe();
     }
 
     /** When its starter kit last jumped the queue. */    /** When its starter kit last jumped the queue. */

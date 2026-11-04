@@ -2999,6 +2999,37 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, its owner: "For huts. It can dig into a mountain or hill ... It has many options ... Even a dirt hut
+     * works.": a stone hill beside it, a pickaxe and no blocks to build with, "build a home hut": a room three by three
+     * and two high dug into the hillside from a doorway in its face, kept as its hut; nothing outside the room dug.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_dugout", timeoutTicks = 2400)
+    public void aHomeDugIntoTheHillside(GameTestHelper helper) {
+        Scene s = scene(helper, "Delver");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 7; x <= 13; x++) for (int z = -1; z <= 8; z++) for (int y = 1; y <= 6; y++) helper.setBlock(x, y, z, Blocks.STONE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a home hut"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "dugout");
+            String built = lastSaid(s, "Built the hut at ");
+            if (!built.isEmpty()) {
+                String dim = helper.getLevel().dimension().location().toString();
+                boolean kept = s.loop().hutNear(dim, s.body().blockPosition());
+                // The hill's top and far side left standing: nothing dug through it.
+                boolean whole = is(helper, 13, 3, 3, Blocks.STONE) && is(helper, 10, 6, 3, Blocks.STONE);
+                tidy(s);
+                if (built.contains("dug into the hillside") && kept && whole) helper.succeed();
+                else fail(helper, "kept as its hut " + kept + ", the hill whole " + whole + "; said: " + built);
+            } else if (helper.getTick() >= 2300) {
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4: "light up the area": torches down until no spot within 8 blocks a mob could stand on is dark. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_light", timeoutTicks = 1600)
     public void anAreaLitUntilNoSpotIsDark(GameTestHelper helper) {

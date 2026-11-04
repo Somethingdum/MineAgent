@@ -91,6 +91,7 @@ public final class Switches {
     public static boolean takeTrapTnt() { return b().takeTrapTnt(); }
     public static boolean nightStopsWork() { return b().nightStopsWork(); }
     public static boolean wayOutOfHoles() { return b().wayOutOfHoles(); }
+    public static boolean dugoutHomes() { return b().dugoutHomes(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

@@ -73,6 +73,12 @@ public final class TaskRegistration {
                 BlueprintTask::new
         );
 
+        // A home dug into a hillside or down a stairway (SMH plan 70: "It has many options")
+        CompanionTaskFactory.register(
+                DugoutTask.DugoutRecord.class,
+                DugoutTask::new
+        );
+
         // Handing its owner what they asked for (SMH plan 70, MA8.5)
         CompanionTaskFactory.register(
                 GiveTask.GiveRecord.class,
