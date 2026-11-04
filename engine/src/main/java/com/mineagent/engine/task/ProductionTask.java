@@ -1607,6 +1607,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return false;
     }
 
+    /** Within the craft tool's range of a table: four blocks from its feet to the table's middle. */
+    static boolean inCraftRange(ServerPlayer sp, BlockPos table) {
+        return table.distToCenterSqr(sp.position()) <= 4.0 * 4.0;
+    }
+
     /** Ticks on the current soft walk. */
     private int softTicks;
     /** Furnaces of this smelting it walked to and couldn't get within reach of. */
@@ -1659,9 +1664,12 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             var t = o.getAsJsonObject("nearest_table");
             BlockPos table = new BlockPos(t.get("x").getAsInt(), t.get("y").getAsInt(), t.get("z").getAsInt());
             if (!tablesOutOfReach.contains(table)) {
-                if (!walkSoftly(table, 2)) return "";
-                if (sp.canInteractWithBlock(table, 1.0)) return "";
-                tablesOutOfReach.add(table); // walled in, behind a fence: one of its own, put down here, instead
+                if (!walkSoftly(table, 1)) return "";
+                // In crafting range as the craft tool has it (four blocks from its feet), or it tries again; else
+                // walled in, behind a fence, up out of a hole it dug: one of its own, put down here, instead. (A wider
+                // "in reach" here than the tool's had it walking to a table it was already by, for ever.)
+                if (inCraftRange(sp, table)) return "";
+                tablesOutOfReach.add(table);
             }
             if (count(sp, net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) {
                 var ownTable = recipeFor(sp, "minecraft:crafting_table");
@@ -1683,8 +1691,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (count(sp, net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) {
                 BlockPos known = nearestTable(sp);
                 if (known != null) {
-                    if (!walkSoftly(known, 2)) return "";
-                    if (sp.canInteractWithBlock(known, 1.0)) return "";
+                    if (!walkSoftly(known, 1)) return "";
+                    if (inCraftRange(sp, known)) return "";
                     tablesOutOfReach.add(known);
                     return "";
                 }

@@ -32,11 +32,16 @@ def read():
     bench = [l.split("[STDOUT]: ", 1)[-1] for l in lines if "[BENCH]" in l]
     said = [l.split("[STDOUT]: ", 1)[-1] for l in lines
             if "[MineAgent][" in l and "Lesson failed" not in l and "LLM call" not in l]
+    # Its work traced (what it is stuck on and why), the noise left out.
+    noise = ("Lesson failed", "LLM call", "saved companion", "Saved ", "Loaded ", "transport failure", "[MineAgent][")
+    traced = [l.split("[STDOUT]: ", 1)[-1] for l in lines
+              if "[MineAgent] " in l and not any(n in l for n in noise)]
     finished = [l for l in bench if "[BENCH] done" in l]
     done = bool(finished)
     shown = [l for l in bench if l.strip() != "[BENCH] report"]
     title = (finished[-1] if finished else shown[-1] if shown else "[BENCH] Starting").replace("[BENCH] ", "", 1)
-    summary = "\n".join(["Status:"] + shown[-12:] + ["", "What it said lately:"] + said[-40:])
+    summary = "\n".join(["Status:"] + shown[-12:] + ["", "What it said lately:"] + said[-40:]
+                        + ["", "Its work, traced:"] + [t[:400] for t in traced[-40:]])
     return title[:250], summary[:60000], done
 
 

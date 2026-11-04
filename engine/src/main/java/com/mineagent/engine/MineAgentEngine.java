@@ -1491,19 +1491,29 @@ public final class MineAgentEngine {
      * Back on its feet as a player comes back (SMH plan 70, its owner: "I will run this near constantly"): five seconds
      * after it died, at its bed or charged anchor if it still has one, else the world spawn (never where it died, which may
      * be lava); following its owner, by them. Never in Hardcore. Three deaths in a row, each within two minutes of coming
-     * back, and it waits for /mineagent respawn, its owner told.
+     * back: five minutes before it comes back (its owner told once; the place it kept dying at it keeps away from), and
+     * then on as before; /mineagent respawn brings it back at once. (It waited for the command, and left alone it stayed
+     * dead: the three-day benchmark found it so.)
      */
+    /** After three quick deaths, how long it waits before it comes back by itself (game ticks): five minutes. */
+    static final long QUICK_DEATHS_WAIT = 6_000;
+
     private static void autoRespawn(CompanionState state, ServerPlayer sp) {
         var lc = state.lifecycle;
-        if (state.companion.hardcoreDeathLocked() || state.companion.gameMode().isHardcore() || lc.autoRespawnHeld()) return;
+        if (state.companion.hardcoreDeathLocked() || state.companion.gameMode().isHardcore()) return;
         long now = sp.level().getGameTime();
         if (lc.diedAt() < 0 || now - lc.diedAt() < 100) return;
         if (lc.quickDeaths() >= 3) {
-            lc.holdAutoRespawn();
-            var owner = state.companion.serverPlayerOwner();
-            if (owner != null) owner.sendSystemMessage(Component.literal("§c[MineAgent] " + state.companion.companionName()
-                    + " keeps dying right after coming back, so it waits for /mineagent respawn."));
-            return;
+            if (now - lc.diedAt() < QUICK_DEATHS_WAIT) {
+                if (!lc.autoRespawnHeld()) {
+                    lc.holdAutoRespawn();
+                    var owner = state.companion.serverPlayerOwner();
+                    if (owner != null) owner.sendSystemMessage(Component.literal("§c[MineAgent] " + state.companion.companionName()
+                            + " keeps dying right after coming back, so it waits five minutes before it comes back (or /mineagent respawn)."));
+                }
+                return;
+            }
+            lc.clearAutoRespawnHold();
         }
         var server = sp.getServer();
         if (server == null) return;

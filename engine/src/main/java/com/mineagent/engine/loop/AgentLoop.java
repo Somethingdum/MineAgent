@@ -5061,7 +5061,12 @@ public class AgentLoop {
         if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD) return;
         long now = currentGameTickSafe();
         if (idleHome != null && idleHome.dim().equals(dim)) {
-            keepBaseUp(self, dim, now); // its base is made: kept up
+            // Its first base made: up to iron there. Then, in iron, its main base in a swamp (once), where it hoards.
+            if (!mainBase && ironGeared(self)) {
+                toMainBase(self, level, dim, now);
+                return;
+            }
+            keepBaseUp(self, dim, now); // kept up
             return;
         }
         // From nothing: a starter kit first (stone tools, a little fuel, food for the road), only what it lacks. It
@@ -5076,32 +5081,47 @@ public class AgentLoop {
             queueOwn(kit, "owner");
             return;
         }
+        // Its first base, where it stands (SMH plan 70, its owner: "It shouldn't wait to build a hut until it finds a
+        // swamp ... The first hut is for it's progression up to iron level. After that, it'll go find a swamp and begin
+        // it's hoarding. It can make it's first hut anywhere it wants."): a home hut, then the climb to iron from it.
+        idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        idleRadius = 48;
+        journal.record("survive", "made my first base here", now, dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        speakToOwner("Made my first base here: a hut, then iron gear. Once I'm in iron I'll find a swamp for my main base and start hoarding.");
+        saveMemoryNow();
+        // Its own prime: nothing handed over (its owner isn't here; what's yours is had on asking).
+        queueOrders(primeOrders(false));
+    }
+
+    /**
+     * In iron: its main base, once. The nearest swamp or mangrove swamp within 600 blocks (slimes spawn in both), found as
+     * a seed map finds it, walked to (eight walks that get it no nearer, or half a game day on the road, and it stays),
+     * and its main base made there: a home hut, a farm, a slime farm, then the stockpile. No swamp, or none it can get
+     * to: its first base is its main base, and it hoards there.
+     */
+    private void toMainBase(net.minecraft.server.level.ServerPlayer self, net.minecraft.server.level.ServerLevel level, String dim, long now) {
         if (surviveAt == null && !surviveFailed) {
-            // The nearest swamp within 600 blocks: a walk it makes; further, the base is made where it is.
             var found = level.findClosestBiome3d(b -> b.is(net.minecraft.world.level.biome.Biomes.SWAMP) || b.is(net.minecraft.world.level.biome.Biomes.MANGROVE_SWAMP),
                     self.blockPosition(), SWAMP_REACH, 32, 64);
             if (found == null) {
                 surviveFailed = true;
-                speakToOwner("I found no swamp within " + SWAMP_REACH + " blocks: I'll make my base here instead.");
-                surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
-            } else {
-                var p = found.getFirst();
-                int y = level.isLoaded(p) ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getX(), p.getZ()) : self.getBlockY();
-                surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, p.getX(), y, p.getZ());
-                swampSince = now;
-                swampTries = 0;
-                swampBest = Double.MAX_VALUE;
-                int far = (int) Math.sqrt(self.blockPosition().distSqr(p));
-                speakToOwner("There's a swamp " + far + " blocks off, at " + p.getX() + ", " + p.getZ() + ": I'm going to make my base there.");
-                journal.record("survive", "going to the swamp at " + p.getX() + ", " + p.getZ(), currentGameTickSafe(), dim, p.getX(), y, p.getZ());
+                settleHere("I'm in iron, and there's no swamp within " + SWAMP_REACH + " blocks: this is my main base. Hoarding here now.", now);
+                return;
             }
+            var p = found.getFirst();
+            int y = level.isLoaded(p) ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, p.getX(), p.getZ()) : self.getBlockY();
+            surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, p.getX(), y, p.getZ());
+            swampSince = now;
+            swampTries = 0;
+            swampBest = Double.MAX_VALUE;
+            int far = (int) Math.sqrt(self.blockPosition().distSqr(p));
+            speakToOwner("I'm in iron. There's a swamp " + far + " blocks off, at " + p.getX() + ", " + p.getZ() + ": I'm going there for my main base.");
+            journal.record("survive", "going to the swamp at " + p.getX() + ", " + p.getZ(), now, dim, p.getX(), y, p.getZ());
         }
         var to = surviveAt;
         if (to == null) return;
         double dx = self.getX() - to.x(), dz = self.getZ() - to.z();
         if (dx * dx + dz * dz > 24.0 * 24.0) {
-            // Each walk that gets it no nearer counts; eight of them (water all round, cliffs, no way it can find), or
-            // half a game day on the road, and its base is made where it is: never walking at a swamp for ever.
             double d = Math.sqrt(dx * dx + dz * dz);
             if (d < swampBest - 16) {
                 swampBest = d;
@@ -5111,22 +5131,48 @@ public class AgentLoop {
             }
             if (swampTries > SWAMP_TRIES || now - swampSince > SWAMP_WALK) {
                 surviveFailed = true;
-                surviveAt = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
-                journal.record("survive", "couldn't get to the swamp (" + (int) d + " blocks off): making my base here", now);
-                speakToOwner("I couldn't get to the swamp: I'll make my base here instead.");
+                journal.record("survive", "couldn't get to the swamp (" + (int) d + " blocks off): my first base is my main base", now);
+                settleHere("I couldn't get to the swamp: my first base is my main base. Hoarding here now.", now);
                 return;
             }
             goTo(to, List.of(), false);
             return;
         }
-        // There: its base, its home, then the world primed.
+        // There: its main base.
         idleHome = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
         idleRadius = 48;
-        journal.record("survive", "made my base here", currentGameTickSafe(), dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
-        speakToOwner("Made my base here. Priming it first: a hut, beds, food and light; then a farm and a slime farm, then the stockpile.");
+        mainBase = true;
+        journal.record("survive", "made my main base here, in the swamp", now, dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        speakToOwner("Made my main base here, in the swamp: a hut, then a farm, a slime farm and the stockpile.");
         saveMemoryNow();
-        // Its own prime: nothing handed over (its owner isn't here; what's yours is had on asking).
-        queueOrders(primeOrders(false) + ", then make a farm, then make a slime farm");
+        queueOrders("build a home hut, then make a farm, then make a slime farm");
+    }
+
+    /** Its first base, its main base for good: a farm and a slime farm there, then the stockpile. */
+    private void settleHere(String line, long now) {
+        mainBase = true;
+        speakToOwner(line);
+        saveMemoryNow();
+        queueOrders("make a farm, then make a slime farm");
+    }
+
+    /** Its main base made (in a swamp, or its first base kept for good): saved with it. */
+    private volatile boolean mainBase;
+
+    public boolean mainBaseSettled() {
+        return mainBase;
+    }
+
+    public void mainBaseSettled(boolean settled) {
+        mainBase = settled;
+    }
+
+    /** In iron or better all over (helmet, chestplate, leggings, boots), with an iron sword and an iron pickaxe or better. */
+    private static boolean ironGeared(net.minecraft.server.level.ServerPlayer self) {
+        for (String kind : List.of("helmet", "chestplate", "leggings", "boots", "sword", "pickaxe")) {
+            if (!hasTool(self, kind, 3)) return false;
+        }
+        return true;
     }
 
     /**
@@ -5180,11 +5226,13 @@ public class AgentLoop {
     /**
      * Its base kept up while it lives on its own (SMH plan 70, its owner: "It should EASILY handle lost progression in any
      * area. And bounce back from it fast."): what its starter kit lacks (lost in a death, worn out, burnt) made again,
-     * every ten minutes at most; the hut built again if none stands by home (a creeper, a griefer), a game day apart at
+     * every two minutes at most; the hut built again if none stands by home (a creeper, a griefer), a game day apart at
      * most.
      */
     private void keepBaseUp(net.minecraft.server.level.ServerPlayer self, String dim, long now) {
-        if (now - keptUpAt < 12_000) return;
+        // Every two minutes at most (it was ten, and after a death it stood about without its tools for a third of a
+        // day: the three-day benchmark found it so).
+        if (now - keptUpAt < 2_400) return;
         keptUpAt = now;
         String kit = starterKit(self);
         if (!kit.isEmpty()) {
@@ -6962,8 +7010,10 @@ public class AgentLoop {
     String primeOrders(boolean giveShare) {
         boolean full = com.mineagent.engine.settings.Switches.primeFullIron();
         int meat = com.mineagent.engine.settings.Switches.primeMeat(), torches = com.mineagent.engine.settings.Switches.primeTorches();
-        // Iron each: a helmet 5; a full set 24, a sword 2, a pickaxe 3; and the shears for wool, 2.
-        int iron = 2 * (full ? 29 : 5) + 2;
+        // Iron each: a helmet 5; a full set 24, a sword 2, a pickaxe 3; and the shears for wool, 2. Two of each with its
+        // owner's share; one, on its own.
+        int each = giveShare ? 2 : 1;
+        int iron = each * (full ? 29 : 5) + 2;
         // Only what it is short of: raw iron and ingots it carries or has in chests it knows count.
         var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayer() : null;
         if (self != null) {
@@ -6976,14 +7026,14 @@ public class AgentLoop {
         if (iron > 0) o.add("mine " + iron + " iron");
         if (full) {
             for (String piece : List.of("iron helmets", "iron chestplates", "iron leggings", "iron boots", "iron swords", "iron pickaxes")) {
-                o.add("make me 2 " + piece);
+                o.add("make me " + each + " " + piece);
             }
         } else {
-            o.add("make me 2 iron helmets");
+            o.add("make me " + each + " iron helmets");
         }
-        o.add("make me 2 white beds");
-        if (meat > 0) o.add("make me " + (2 * meat) + " food");
-        if (torches > 0) o.add("make me " + (2 * torches) + " torches");
+        o.add("make me " + each + " white beds");
+        if (meat > 0) o.add("make me " + (each * meat) + " food");
+        if (torches > 0) o.add("make me " + (each * torches) + " torches");
         o.add("light up the area");
         if (!giveShare) return String.join(", then ", o);
         // Yours: into your hands (or kept for you while you're away).

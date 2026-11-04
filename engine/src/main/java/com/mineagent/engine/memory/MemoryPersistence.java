@@ -253,6 +253,7 @@ public class MemoryPersistence {
             data.add("trapped", GSON.toJsonTree(new java.util.ArrayList<>(loop.trappedVillagers())));
             data.addProperty("speedrun", loop.speedrun());
             data.addProperty("onItsOwn", loop.onItsOwn());
+            data.addProperty("mainBase", loop.mainBaseSettled());
             data.add("looted", GSON.toJsonTree(new java.util.ArrayList<>(loop.lootedPlaces())));
             // Who owes it for what they took from its chests, and its owner's word on thieves (SMH plan 70).
             data.add("debts", GSON.toJsonTree(new java.util.LinkedHashMap<>(loop.debts().all())));
@@ -296,6 +297,7 @@ public class MemoryPersistence {
             if (loop != null && data.has("protectOwner")) loop.protectOwner(data.get("protectOwner").getAsBoolean());
             if (loop != null && data.has("speedrun")) loop.speedrun(data.get("speedrun").getAsBoolean());
             if (loop != null && data.has("onItsOwn")) loop.onItsOwn(data.get("onItsOwn").getAsBoolean());
+            if (loop != null && data.has("mainBase")) loop.mainBaseSettled(data.get("mainBase").getAsBoolean());
             if (loop != null && (data.has("debts") || data.has("revenge"))) {
                 java.util.Map<String, com.mineagent.engine.gear.Debts.Debt> saved = null;
                 if (data.has("debts") && data.get("debts").isJsonObject()) {

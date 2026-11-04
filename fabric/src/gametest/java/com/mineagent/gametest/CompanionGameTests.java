@@ -4006,8 +4006,9 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * SMH plan 70, "go survive on your own": in the test world (one flat biome, no swamp in it), it says so and makes its
-     * base where it stands, its home from then on.
+     * SMH plan 70, "go survive on your own" (its owner: "It shouldn't wait to build a hut until it finds a swamp ... It
+     * can make it's first hut anywhere it wants."): its starter kit on it, it makes its first base where it stands, its
+     * home from then on, and starts on its home hut; no swamp looked for till it is in iron.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_on_its_own", timeoutTicks = 900)
     public void onItsOwnWithNoSwampItMakesItsBaseHere(GameTestHelper helper) {
@@ -4024,16 +4025,16 @@ public class CompanionGameTests implements FabricGameTest {
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
         helper.onEachTick(() -> {
             if (helper.getTick() % 100 == 0) trace(helper, s, "on its own");
-            String noSwamp = lastSaid(s, "I found no swamp");
             String swamp = lastSaid(s, "There's a swamp");
-            String base = lastSaid(s, "Made my base here");
-            if (!base.isEmpty() || !swamp.isEmpty() || helper.getTick() >= 850) {
+            String base = lastSaid(s, "Made my first base here");
+            String hut = lastSaid(s, "Got it: build a home hut");
+            if (!base.isEmpty() && !hut.isEmpty() || !swamp.isEmpty() || helper.getTick() >= 850) {
                 boolean homeHere = s.loop().homeIn(helper.getLevel().dimension().location().toString()) != null;
-                String how = "no swamp said " + !noSwamp.isEmpty() + ", base said " + !base.isEmpty() + ", home " + homeHere + ", on its own " + s.loop().onItsOwn()
-                        + "; said: " + (swamp.isEmpty() ? lastSaid(s, "") : swamp);
+                String how = "first base said " + !base.isEmpty() + ", the hut asked " + !hut.isEmpty() + ", a swamp looked for " + !swamp.isEmpty()
+                        + ", home " + homeHere + ", on its own " + s.loop().onItsOwn() + "; said: " + lastSaid(s, "");
                 s.loop().onItsOwn(false);
                 tidy(s);
-                if (!noSwamp.isEmpty() && !base.isEmpty() && homeHere) helper.succeed();
+                if (!base.isEmpty() && !hut.isEmpty() && swamp.isEmpty() && homeHere) helper.succeed();
                 else fail(helper, how);
             }
         });
