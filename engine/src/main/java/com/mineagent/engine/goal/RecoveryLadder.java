@@ -23,7 +23,27 @@ public final class RecoveryLadder {
 
     /** The failure in a task's words ("I can't get to 3, 4, 5", "the furnaces stopped", "I have no shears"). */
     public static Failure classify(String said) {
-        String s = said == null ? "" : said.toLowerCase(Locale.ROOT);
+        return classify(said, null);
+    }
+
+    /**
+     * The failure of that order. What it couldn't make is the order, not the reason ("I couldn't make any stone pickaxe:
+     * no more oak logs near here" is no tool missing); and an order to make a pickaxe or shears that failed for want of
+     * one is no tool to make first (that is the order itself, and would go round for ever).
+     */
+    public static Failure classify(String said, String order) {
+        String all = said == null ? "" : said.toLowerCase(Locale.ROOT);
+        String s = all.replaceFirst("^.*?couldn't make (any |all )?[^:]*: ", "");
+        Failure f = kind(s);
+        if (f == Failure.UNKNOWN && !s.equals(all)) return Failure.NO_SOURCE;
+        if (f == Failure.NO_TOOL && order != null) {
+            String o = order.toLowerCase(Locale.ROOT);
+            if (o.contains("pickaxe") && !s.contains("shears") || o.contains("shears") && s.contains("shears")) return Failure.NO_SOURCE;
+        }
+        return f;
+    }
+
+    private static Failure kind(String s) {
         if (s.contains("can't get to") || s.contains("cannot reach") || s.contains("no path")) return Failure.NO_PATH;
         if (s.contains("stopped before") || s.contains("timed out") || s.contains("out of time")) return Failure.STALLED;
         if (s.contains("pickaxe") || s.contains("shears") || s.contains("worn out") || s.contains("no tool")) return Failure.NO_TOOL;

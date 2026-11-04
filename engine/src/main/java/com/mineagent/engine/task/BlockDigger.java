@@ -94,6 +94,16 @@ public final class BlockDigger {
         return assessment;
     }
 
+    /**
+     * Already breaking that block: a break started on it and running on, as a held mouse button does. A fresh start
+     * sets it back to nothing, so a timer that starts it again must ask this first (a block that takes longer than the
+     * timer would never break).
+     */
+    public static boolean breaking(ServerPlayer player, BlockPos pos) {
+        return player != null && pos != null && player.gameMode instanceof
+                com.mineagent.engine.entity.fakeplayer.FakePlayerGameMode fakeMode && fakeMode.isAutomaticallyDestroying(pos);
+    }
+
     /** Abort a progressive break so cancellation cannot damage a stale target. */
     public static void abortBreaking(ServerPlayer player, BlockPos pos) {
         if (player == null || pos == null) return;

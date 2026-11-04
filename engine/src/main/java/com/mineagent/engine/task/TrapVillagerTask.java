@@ -49,7 +49,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     private PlayerNav nav;
     private Phase phase = Phase.PLAN;
     private VillagerCell.Layout layout;
-    private int ticks, placed;
+    private int ticks, placed, walkTicks;
     private String outcome = "";
 
     public TrapVillagerTask(AgentPlayer player, TrapRecord record) {
@@ -90,18 +90,29 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                 case BUILD -> {
                     if (!Placement.hasSupportBlock(sp)) return end(false, "I have no blocks to build the cell with");
                     if (ticks > 2_400) return end(false, "I couldn't build the cell");
-                    boolean waiting = false;
+                    boolean waiting = false, underMe = false;
                     for (var w : layout.walls()) {
                         BlockPos p = at(w);
                         if (!level.getBlockState(p).canBeReplaced()) continue;
-                        // Never on the villager, nor on itself: that one later, the others first (it may stand by its
-                        // job site a long while).
-                        if (!level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, new net.minecraft.world.phys.AABB(p)).isEmpty()) {
+                        var box = new net.minecraft.world.phys.AABB(p);
+                        // Never on itself: it steps off once the rest is built.
+                        if (sp.getBoundingBox().intersects(box)) {
+                            underMe = true;
+                            continue;
+                        }
+                        // Never on the villager either: that one later, the others first (it may stand by its job site a
+                        // long while).
+                        if (!level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, box, e -> e != sp).isEmpty()) {
                             waiting = true;
                             continue;
                         }
                         if (p.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
-                            if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(p.getX(), p.getY(), p.getZ(), 2);
+                            // From the way in, every wall is in reach and none is underfoot; beside the wall if it can't
+                            // get there.
+                            BlockPos from = at(layout.way());
+                            boolean toWay = ++walkTicks < 400;
+                            BlockPos to = toWay ? from : p;
+                            if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(to.getX(), to.getY(), to.getZ(), toWay ? 0 : 2);
                             nav.tick();
                             return TaskState.RUNNING;
                         }
@@ -110,7 +121,14 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         if (Placement.placeAnySupportBlock(sp, p)) placed++;
                         return TaskState.RUNNING; // one a tick, as a player puts them down
                     }
-                    if (waiting) return TaskState.RUNNING; // only spots someone stands on are left
+                    if (underMe) {
+                        // Only spots it stands on (and any the villager does) left: off them, to the way in (no wall).
+                        BlockPos off = at(layout.way());
+                        if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(off.getX(), off.getY(), off.getZ(), 0);
+                        nav.tick();
+                        return TaskState.RUNNING;
+                    }
+                    if (waiting) return TaskState.RUNNING; // only spots the villager stands on are left
                     phase = Phase.WAIT;
                     ticks = 0;
                     return TaskState.RUNNING;

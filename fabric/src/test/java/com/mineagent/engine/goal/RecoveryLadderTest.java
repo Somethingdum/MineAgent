@@ -36,4 +36,21 @@ final class RecoveryLadderTest {
         // Past the end: give up.
         assertEquals(Rung.GIVE_UP, RecoveryLadder.next(Failure.UNKNOWN, 99, true, true));
     }
+
+    @Test void aToolItCouldntMakeIsNoToolToMakeFirst() {
+        // The thing it was making is the order, not why it failed: no pickaxe to make first, round and round.
+        assertEquals(Failure.NO_SOURCE, RecoveryLadder.classify("I couldn't make any stone pickaxe: no more oak logs near here."));
+        assertEquals(Failure.NO_SOURCE, RecoveryLadder.classify("I couldn't make any stone pickaxe: no more oak logs near here.",
+                "make me 1 stone pickaxe"));
+        assertNotEquals(Rung.FIX, RecoveryLadder.next(RecoveryLadder.classify("I couldn't make any stone pickaxe: no more oak logs near here."),
+                0, false, false));
+        // A pickaxe order that failed for want of a pickaxe: that is the order itself.
+        assertEquals(Failure.NO_SOURCE, RecoveryLadder.classify("I have no pickaxe to mine the stone", "make me 1 stone pickaxe"));
+        // Shears still made first for wool, and a pickaxe for ore.
+        assertEquals(Failure.NO_TOOL, RecoveryLadder.classify("I have no shears and can't make any", "make me 16 white wool"));
+        assertEquals(Failure.NO_TOOL, RecoveryLadder.classify("I couldn't make any iron ingot: I need a pickaxe for the ore", "make me 3 iron ingots"));
+        // The reason, whatever it was, read on its own.
+        assertEquals(Failure.STALLED, RecoveryLadder.classify("I couldn't make any charcoal: the furnaces stopped before it was done"));
+        assertEquals(Failure.NO_SOURCE, RecoveryLadder.classify("I couldn't make any bread: something odd"));
+    }
 }

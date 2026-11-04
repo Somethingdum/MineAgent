@@ -168,6 +168,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         if (gone.add(parts.get(part))) disarmed++; // a part tried twice is counted once
                         part++;
                         ticks = 0;
+                        partLimit = 400;
                     }
                     if (part >= parts.size()) {
                         // Chests by a part it couldn't take apart stay shut.
@@ -202,7 +203,13 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     var st = level.getBlockState(q);
                     // String cut with shears doesn't set it off (with its hooks gone first, nothing does).
                     if (st.is(Blocks.TRIPWIRE)) TaskContext.selectInventoryItem(player, "minecraft:shears");
-                    if (ticks % 20 == 1) {
+                    // Started once and left to run: a fresh start sets the break back to nothing (a plate by hand
+                    // takes 50 ticks, a dispenser far longer); started again only when it stopped.
+                    if (!BlockDigger.breaking(sp, q) && ticks % 20 == 1) {
+                        // As long as it takes with what it holds (a dispenser by hand: 350 ticks), and some.
+                        int expect = BlockDigger.expectedBreakTicks(sp, q);
+                        partLimit = Math.max(partLimit, Math.min(1_200, Math.max(400, expect == Integer.MAX_VALUE ? 0 : expect + 200)));
+                        if (st.is(Blocks.TRIPWIRE)) TaskContext.selectInventoryItem(player, "minecraft:shears");
                         var a = BlockDigger.startBreakingDetailed(sp, q);
                         if (Boolean.getBoolean("mineagent.traceWork") && ticks % 100 == 1) {
                             System.out.println("[MineAgent] loot: taking apart " + st.getBlock() + " at " + q.toShortString() + " from "
@@ -210,7 +217,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                                     + " off: " + a.status() + " " + a.detail());
                         }
                     }
-                    if (ticks > 400) later(q);
+                    if (ticks > partLimit) later(q);
                     return TaskState.RUNNING;
                 }
                 case CARTS -> {
@@ -461,6 +468,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
      * second time, it is given up on.
      */
     private void later(BlockPos q) {
+        partLimit = 400;
         int tries = partTries.merge(q, 1, Integer::sum);
         if (tries < 2) parts.add(q);
         else stuckParts.add(q);
@@ -468,6 +476,8 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
         ticks = 0;
     }
     private int clearTicks;
+    /** How long the part being taken apart may take. */
+    private int partLimit = 400;
 
     /** The nearest piglin within 16 of a block. */
     private static net.minecraft.world.entity.monster.piglin.AbstractPiglin nearestPiglin(ServerLevel level, BlockPos at) {

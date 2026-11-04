@@ -120,7 +120,7 @@ public class FarmTask extends CompanionTask<FarmTask.FarmRecord> {
                         return walk(center.offset(2, 0, 0), 1);
                     }
                     nav.cancel();
-                    if (ticks++ % 40 == 0) BlockDigger.startBreaking(sp, center);
+                    if (ticks++ % 40 == 0 && !BlockDigger.breaking(sp, center)) BlockDigger.startBreaking(sp, center);
                     if (ticks > 400) return end(false, "I couldn't dig out the middle for the water");
                     return TaskState.RUNNING;
                 }

@@ -6362,7 +6362,7 @@ public class AgentLoop {
      * queue moves on.
      */
     private boolean recover(com.mineagent.engine.planning.GoalBook.Goal g, String note) {
-        var f = com.mineagent.engine.goal.RecoveryLadder.classify(note);
+        var f = com.mineagent.engine.goal.RecoveryLadder.classify(note, g.text());
         int tried = orderRungs.getOrDefault(g.id(), 0);
         var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
         var owner = self == null ? null : self.serverPlayerOwner();

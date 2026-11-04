@@ -179,7 +179,7 @@ public class CureTask extends CompanionTask<CureTask.CureRecord> {
                     if (!sp.onGround()) return TaskState.RUNNING;
                     if (level.getBlockState(under).isAir()) return TaskState.RUNNING;
                     sp.setXRot(90.0f);
-                    if (ticks % 30 == 1) BlockDigger.startBreaking(sp, under);
+                    if (ticks % 30 == 1 && !BlockDigger.breaking(sp, under)) BlockDigger.startBreaking(sp, under);
                     if (level.getBlockState(under).isAir()) pillared--;
                     return TaskState.RUNNING;
                 }
