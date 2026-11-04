@@ -118,7 +118,11 @@ public final class ProductionPlanner {
                 }
             }
             String head = String.format(Locale.ROOT, "%,d %s", count, plural(item, count));
-            if (parts.isEmpty()) return head + ": I have " + (count == 1 ? "it" : "them") + " already.";
+            if (parts.isEmpty()) {
+                // Only the item itself to craft, from what it carries ("4 oak planks: from the logs I have"): not "already".
+                if (steps.stream().anyMatch(st -> st.action() == Action.CRAFT)) return head + ": made from what I have; under a minute.";
+                return head + ": I have " + (count == 1 ? "it" : "them") + " already.";
+            }
             long m = Math.round(ticks / 1_200.0);
             String minutes = ticks < 1_200 ? "under a minute" : m <= 1 ? "about a minute" : String.format(Locale.ROOT, "about %d minutes", m);
             return head + ": " + String.join(", ", parts) + "; " + minutes + ".";
@@ -762,7 +766,11 @@ public final class ProductionPlanner {
             if (c != null && (chosen == null || c.total() < chosen.total())) chosen = c;
         }
         if (chosen == null) {
-            problems.add("I have no fuel and know no way to get any");
+            // Which it lacks: a furnace (none near, none to be made) or the fuel.
+            boolean fuel = false;
+            for (var e : book.fuelTicks().entrySet()) if (e.getValue() >= SMELT_TICKS / 2 && available(e.getKey()) > 0) fuel = true;
+            problems.add(fuel && furnaces == 0 && r.kind() == Kind.SMELT ? "I have no furnace near and can't make one"
+                    : "I have no fuel and know no way to get any");
             return;
         }
         r = chosen.recipe();

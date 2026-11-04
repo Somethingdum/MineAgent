@@ -419,7 +419,16 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             navFailed = false;
             nav.navigateTo(p.getX(), p.getY(), p.getZ());
         }
-        if (navFailed && ++tries > 5) return fail("I couldn't get to " + p.toShortString());
+        if (navFailed && ++tries > 5) {
+            // No way in (or round to the front): it places what it can from where it stands, and the check says what
+            // is missing. A repair mostly goes from outside anyway: the holes are in the walls.
+            System.out.println("[MineAgent] build: no way to " + p.toShortString() + "; placing from where it stands");
+            nav.cancel();
+            walkingTo = null;
+            tries = 0;
+            phase = next;
+            return TaskState.RUNNING;
+        }
         nav.tick();
         return TaskState.RUNNING;
     }
