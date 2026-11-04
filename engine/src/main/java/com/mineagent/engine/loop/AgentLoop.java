@@ -1432,6 +1432,24 @@ public class AgentLoop {
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
                 return true;
             }
+            case BREED -> {
+                String w = c.value();
+                String animal = null;
+                if (!w.startsWith("animal")) {
+                    for (String one : new String[] {w, w.replaceAll("es$", ""), w.replaceAll("s$", "")}) {
+                        var key = net.minecraft.resources.ResourceLocation.tryParse("minecraft:" + one.strip().replace(' ', '_'));
+                        if (key != null && net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.containsKey(key)) {
+                            animal = key.toString();
+                            break;
+                        }
+                    }
+                    if (animal == null) return false;
+                }
+                journal.record("order", "breed " + w, currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BreedTask.BreedRecord(
+                        "breed-" + UUID.randomUUID(), animal, 1), reply -> { });
+                return true;
+            }
             case BREW -> {
                 journal.record("order", "brew " + c.value().replace('_', ' '), currentGameTickSafe());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BrewTask.BrewRecord(

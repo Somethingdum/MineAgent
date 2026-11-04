@@ -3662,4 +3662,55 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
+    public void twoCowsBredForACalf(GameTestHelper helper) {
+        Scene s = scene(helper, "Herder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(2, new ItemStack(Items.WHEAT, 8));
+        helper.spawn(EntityType.COW, new BlockPos(7, 1, 3));
+        helper.spawn(EntityType.COW, new BlockPos(8, 1, 4));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "breed the cows"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "breed");
+            String done = lastSaid(s, "Bred");
+            String failed = lastSaid(s, "I couldn't breed");
+            if (!done.isEmpty() || !failed.isEmpty()) {
+                int calves = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.animal.Cow.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(-10, 0, -10))).inflate(30), c -> c.isBaby()).size();
+                int wheat = s.body().getInventory().countItem(Items.WHEAT);
+                tidy(s);
+                if (calves >= 1 && wheat == 6) helper.succeed();
+                else fail(helper, calves + " calves, " + wheat + " wheat left; said: " + (done.isEmpty() ? failed : done));
+            } else if (helper.getTick() >= 880) {
+                String how = "said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA9.4, leaving no trace: it fells a small oak for logs, an oak sapling on it, and plants it where the trunk stood. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_replant", timeoutTicks = 900)
+    public void aFelledTreeIsReplanted(GameTestHelper helper) {
+        Scene s = scene(helper, "Forester");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(8, 0, 6, Blocks.DIRT);
+        for (int y = 1; y <= 3; y++) helper.setBlock(8, y, 6, Blocks.OAK_LOG);
+        s.body().getInventory().setItem(1, new ItemStack(Items.IRON_AXE));
+        s.body().getInventory().setItem(2, new ItemStack(Items.OAK_SAPLING, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "get me 3 oak logs"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "replant");
+            String done = lastSaid(s, "Done");
+            if (!done.isEmpty() || helper.getTick() >= 880) {
+                boolean planted = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(8, 1, 6))).is(Blocks.OAK_SAPLING);
+                int logs = s.body().getInventory().countItem(Items.OAK_LOG);
+                tidy(s);
+                if (planted && logs >= 3) helper.succeed();
+                else fail(helper, "sapling planted " + planted + ", " + logs + " logs; said: " + (done.isEmpty() ? lastSaid(s, "") : done));
+            }
+        });
+    }
 }

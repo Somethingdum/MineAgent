@@ -93,6 +93,12 @@ public final class TaskRegistration {
                 BrewTask::new
         );
 
+        // Breeding two grown animals by hand (SMH plan 70, MA8.5)
+        CompanionTaskFactory.register(
+                BreedTask.BreedRecord.class,
+                BreedTask::new
+        );
+
         // A nether portal from the obsidian it carries (SMH plan 70, MA11.1)
         CompanionTaskFactory.register(
                 PortalTask.PortalRecord.class,

@@ -204,6 +204,9 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.BREW, brew.kind());
         assertEquals("fire_resistance", brew.value());
         assertEquals("swiftness", CommandParser.parse("brew speed potions", "Pal").orElseThrow().value());
+        var breed = CommandParser.parse("breed the cows", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.BREED, breed.kind());
+        assertEquals("cows", breed.value());
         assertEquals(CommandParser.Kind.GUARD_HERE, CommandParser.parse("guard that", "Pal").orElseThrow().kind());
         assertEquals("that", CommandParser.parse("guard that horse", "Pal").orElseThrow().value());
     }

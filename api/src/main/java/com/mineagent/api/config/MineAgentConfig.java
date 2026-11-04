@@ -151,6 +151,7 @@ public record MineAgentConfig(
      * @param huntDrops        after hunting a named player, picks up what they dropped for its owner
      * @param liveTracking     a hunt may use the server's live position of the player it hunts (off: where it last
      *                         saw them)
+     * @param replantTrees     the foot of a tree it fells gets a sapling of its kind, when it carries one
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -190,11 +191,12 @@ public record MineAgentConfig(
         boolean guardPerimeter,
         boolean fightPlayers,
         boolean huntDrops,
-        boolean liveTracking
+        boolean liveTracking,
+        boolean replantTrees
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true
         );
     }
 
@@ -302,7 +304,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

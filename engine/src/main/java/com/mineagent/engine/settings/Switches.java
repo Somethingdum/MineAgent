@@ -61,6 +61,7 @@ public final class Switches {
     public static boolean fightPlayers() { return b().fightPlayers(); }
     public static boolean huntDrops() { return b().huntDrops(); }
     public static boolean liveTracking() { return b().liveTracking(); }
+    public static boolean replantTrees() { return b().replantTrees(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

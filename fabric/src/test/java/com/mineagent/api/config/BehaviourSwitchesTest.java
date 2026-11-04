@@ -71,6 +71,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.fightPlayers(), "only players you name, or who attack first");
         assertTrue(d.huntDrops());
         assertFalse(d.liveTracking(), "a hunt uses where it last saw them unless you allow the live position");
+        assertTrue(d.replantTrees(), "leaving no trace: a sapling where it felled a tree");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

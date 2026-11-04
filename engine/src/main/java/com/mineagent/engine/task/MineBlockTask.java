@@ -199,7 +199,10 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
 
         if (level.getBlockState(target).isAir()) {
             // Only count disappearance after this task owned the break target.
-            if (target.equals(activeBreakTarget)) minedCount++;
+            if (target.equals(activeBreakTarget)) {
+                minedCount++;
+                replant(sp, target);
+            }
             activeBreakTarget = null;
             invalidateWorldAsset(target);
             if (minedCount > 0) consecutiveTargetFailures = 0;
@@ -225,12 +228,14 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
             }
             digTimeoutTicks = BlockDigger.expectedBreakTicks(sp, target);
             activeBreakTarget = target;
+            breakingState = level.getBlockState(target);
             markProgress(level.getGameTime());
         }
 
         digTicks++;
         if (level.getBlockState(target).isAir()) {
             minedCount++;
+            replant(sp, target);
             consecutiveTargetFailures = 0;
             activeBreakTarget = null;
             invalidateWorldAsset(target);
@@ -274,6 +279,35 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
      * For a log two or more above the ground, the cell at the foot of its trunk (the logs under it gone, or still to cut,
      * down to solid ground) when it is free to stand in and the log is in reach from there; else null.
      */
+    /** What the block it is breaking was, for the replanting. */
+    private net.minecraft.world.level.block.state.BlockState breakingState;
+
+    /** The sapling for each log, for the trees it fells. */
+    private static final java.util.Map<net.minecraft.world.level.block.Block, net.minecraft.world.level.block.Block> SAPLINGS = java.util.Map.of(
+            net.minecraft.world.level.block.Blocks.OAK_LOG, net.minecraft.world.level.block.Blocks.OAK_SAPLING,
+            net.minecraft.world.level.block.Blocks.SPRUCE_LOG, net.minecraft.world.level.block.Blocks.SPRUCE_SAPLING,
+            net.minecraft.world.level.block.Blocks.BIRCH_LOG, net.minecraft.world.level.block.Blocks.BIRCH_SAPLING,
+            net.minecraft.world.level.block.Blocks.JUNGLE_LOG, net.minecraft.world.level.block.Blocks.JUNGLE_SAPLING,
+            net.minecraft.world.level.block.Blocks.ACACIA_LOG, net.minecraft.world.level.block.Blocks.ACACIA_SAPLING,
+            net.minecraft.world.level.block.Blocks.DARK_OAK_LOG, net.minecraft.world.level.block.Blocks.DARK_OAK_SAPLING,
+            net.minecraft.world.level.block.Blocks.CHERRY_LOG, net.minecraft.world.level.block.Blocks.CHERRY_SAPLING);
+
+    /**
+     * Leaving no trace (SMH plan 70, MA9.4; {@code behaviour.replantTrees}): the foot of a tree it felled, on earth,
+     * gets a sapling of its kind when it carries one.
+     */
+    private void replant(net.minecraft.server.level.ServerPlayer sp, BlockPos at) {
+        var was = breakingState;
+        breakingState = null;
+        if (was == null || !com.mineagent.engine.settings.Switches.replantTrees()) return;
+        var sapling = SAPLINGS.get(was.getBlock());
+        if (sapling == null) return;
+        var level = sp.serverLevel();
+        if (!level.getBlockState(at.below()).is(net.minecraft.tags.BlockTags.DIRT) || !level.getBlockState(at).isAir()) return;
+        if (ProductionTask.count(sp, sapling.asItem()) == 0) return;
+        com.mineagent.engine.act.Placement.placeBlock(sp, at, sapling.defaultBlockState());
+    }
+
     private BlockPos trunkBase(BlockPos log) {
         var level = TaskContext.serverPlayer(player).serverLevel();
         if (!level.getBlockState(log).is(net.minecraft.tags.BlockTags.LOGS)) return null;
