@@ -4279,4 +4279,52 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA9.1: Mindcraft's dirt shelter built from its blueprint, every block checked. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_dirt_shelter", timeoutTicks = 3000)
+    public void mindcraftsDirtShelterBuilt(GameTestHelper helper) {
+        Scene s = scene(helper, "Burrower");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.DIRT, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.CHEST));
+        inv.setItem(4, new ItemStack(Items.TORCH, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a dirt shelter"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "dirt shelter");
+            String done = lastSaid(s, "Built the dirt shelter");
+            String failed = lastSaid(s, "I couldn't build");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2950) {
+                String how = "said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (done.contains("every block checked")) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA11.5: "find the stronghold" with two eyes of ender: thrown and watched, or, where the world has no
+     * stronghold for an eye to find (a test world may have none), it says so plainly; never stuck or silent.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_eyes", timeoutTicks = 3000)
+    public void eyesOfEnderThrownForTheStronghold(GameTestHelper helper) {
+        Scene s = scene(helper, "Seeker");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.ENDER_EYE, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "find the stronghold"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "eyes");
+            String found = lastSaid(s, "The stronghold is about at");
+            String none = lastSaid(s, "I couldn't find the stronghold");
+            if (!found.isEmpty() || !none.isEmpty() || helper.getTick() >= 2950) {
+                String how = "said: " + (found.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : found);
+                System.out.println("[SCENE eyes] " + how);
+                tidy(s);
+                if (!found.isEmpty() || none.contains("no stronghold in this world")) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

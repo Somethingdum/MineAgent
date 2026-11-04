@@ -91,6 +91,8 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
     private BlockPos start;
     private BlockPos face;
     private final Deque<BlockPos> vein = new ArrayDeque<>();
+    /** Ticks digging, for the look at the walls it passes. */
+    private int passing;
     private final Set<BlockPos> veinSeen = new HashSet<>();
     private int sinceTorch;
     private BlockPos lastFeet;
@@ -445,7 +447,20 @@ public class MiningTask extends CompanionTask<MiningTask.MineRecord> {
             if (fill == null || !Placement.placeBlock(sp, feet.below(), fill.defaultBlockState())) return blocked(sp);
             return TaskState.RUNNING;
         }
-        if (!sp.blockPosition().equals(feet)) return walk(feet);
+        if (!sp.blockPosition().equals(feet)) {
+            // Walking a tunnel already open (its own from before, a cave): the ore in its walls is seen as it passes.
+            if (++passing % 10 == 0) {
+                BlockPos at = sp.blockPosition();
+                for (BlockPos cell : new BlockPos[] {at, at.above()}) {
+                    for (Direction d : Direction.values()) queueIfOre(level, cell.relative(d));
+                }
+                if (!vein.isEmpty()) {
+                    phase = Phase.VEIN;
+                    return TaskState.RUNNING;
+                }
+            }
+            return walk(feet);
+        }
         // Here: what it opened, and the light.
         turns = 0;
         face = feet;

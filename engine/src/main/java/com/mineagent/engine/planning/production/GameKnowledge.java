@@ -551,10 +551,13 @@ public final class GameKnowledge {
                 if (where.containsKey(ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type)) || herd.containsKey(ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type))) continue;
                 String what = BuiltInRegistries.ENTITY_TYPE.getKey(type).getPath();
                 var near = loop.placeKeeper().sightings().nearest(what, dim, at.getX(), at.getY(), at.getZ(), 1, 96);
-                if (!near.isEmpty() && near.get(0).sighting().kind() == com.mineagent.engine.memory.Sightings.Kind.ANIMAL) {
+                // A herd it remembers: as many as it saw there, less the two of a kind it leaves (one seen once: none).
+                if (!near.isEmpty() && near.get(0).sighting().kind() == com.mineagent.engine.memory.Sightings.Kind.ANIMAL
+                        && near.get(0).sighting().count() > LEAVE) {
                     String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type);
                     where.put(key, Where.KNOWN);
                     distance.put(key, (int) near.get(0).distance());
+                    limited.put(key, near.get(0).sighting().count() - LEAVE);
                 }
             }
         }

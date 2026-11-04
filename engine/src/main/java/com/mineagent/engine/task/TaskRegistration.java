@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 FillHolesTask::new
         );
 
+        // Finding the stronghold with eyes of ender (SMH plan 70, MA11.5)
+        CompanionTaskFactory.register(
+                EyeTask.EyeRecord.class,
+                EyeTask::new
+        );
+
         // Fishing (SMH plan 70, MA8.5)
         CompanionTaskFactory.register(
                 FishTask.FishRecord.class,

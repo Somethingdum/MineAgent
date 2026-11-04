@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -72,7 +72,8 @@ public final class CommandParser {
      */
     private static final Pattern HUNT_PLAYER = Pattern.compile("^(?:go )?(?:kill|hunt(?: down)?|take out|murder|find and kill|go after)"
             + "(?: the player)? ([a-z0-9_]{3,16})$");
-    private static final Pattern BUILD = Pattern.compile("^build (?:me |us )?(?:a |an )?(?:small |little )?(hut|house|shelter|base|home|cabin)(?: here| for us)?$");
+    private static final Pattern BUILD = Pattern.compile("^build (?:me |us )?(?:a |an )?(?:small |little )?(dirt shelter|dirt hut|wood house|wooden house|wood cabin"
+            + "|hut|house|shelter|base|home|cabin)(?: here| for us)?$");
     /** "Light up the area", "light this place up", "put torches around": no dark spot left (MA9.4). */
     private static final Pattern LIGHT = Pattern.compile("^(?:light (?:up )?(?:the |this )?(?:area|place|base|here|it)(?: up)?|light it up|light this place up"
             + "|put (?:some )?torches (?:around|down|up)(?: here)?|torch (?:the |this )?(?:area|place) up)$");
@@ -123,6 +124,8 @@ public final class CommandParser {
             + "|explore for|go and find|hunt for)(?: me| us)? (?:a |an |the |some |another )?([a-z][a-z ]{2,24})$");
     private static final Pattern EXPLORE = Pattern.compile("^(?:explore|go exploring|scout around|explore around|explore a bit)$");
     private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
+    /** "Find the stronghold", "throw an eye of ender" (MA11.5): eyes thrown and their lines crossed. */
+    private static final Pattern STRONGHOLD = Pattern.compile("^(?:find|locate|look for|where is|where's|triangulate)(?: me| us)? (?:the |a )?(?:stronghold|end portal)$");
     /** "Leave my chests alone", "use my chests" (MA10.5): whether it may take from its owner's chests. */
     private static final Pattern CHESTS_NO = Pattern.compile("^(?:leave|stay out of|keep out of|keep away from|don't (?:use|touch|take from|open)|do not (?:use|touch|take from|open))"
             + " (?:my|our|the) (?:chests|storage)(?: alone)?$");
@@ -207,7 +210,12 @@ public final class CommandParser {
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
         if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
-        if (BUILD.matcher(t).matches()) return Optional.of(new Command(Kind.BUILD, "hut", null));
+        var build = BUILD.matcher(t);
+        if (build.matches()) {
+            String what = build.group(1);
+            String print = what.startsWith("dirt") ? "dirt_shelter" : what.startsWith("wood") ? "small_wood_house" : "hut";
+            return Optional.of(new Command(Kind.BUILD, print, null));
+        }
         if (PORTAL.matcher(t).matches()) return Optional.of(new Command(Kind.PORTAL, null, null));
         var fish = FISH.matcher(t);
         if (fish.matches()) return Optional.of(new Command(Kind.FISH, null, fish.group(1) == null ? 4 : howMany(fish.group(1))));
@@ -276,6 +284,7 @@ public final class CommandParser {
         if (make.matches()) return Optional.of(new Command(Kind.PRODUCE, make.group(2).strip(), howMany(make.group(1))));
         if (t.isEmpty() || t.split(" ").length > 8) return Optional.empty();
         // "Don't touch my garden" is a standing order about a place, not "don't" as in stop.
+        if (STRONGHOLD.matcher(t).matches()) return Optional.of(new Command(Kind.FIND_STRONGHOLD, null, null));
         if (CHESTS_NO.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_NO, null, null));
         if (CHESTS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_OK, null, null));
         var keep = PROTECT.matcher(t);

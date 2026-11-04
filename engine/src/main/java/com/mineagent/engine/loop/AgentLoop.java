@@ -966,7 +966,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1402,10 +1402,16 @@ public class AgentLoop {
                 }
                 haltNow();
                 standDown();
-                journal.record("order", "build a hut", currentGameTickSafe());
-                orderGoal("build a hut");
+                String print = c.value() == null ? "hut" : c.value();
+                String said = switch (print) {
+                    case "dirt_shelter" -> "build a dirt shelter";
+                    case "small_wood_house" -> "build a small wood house";
+                    default -> "build a hut";
+                };
+                journal.record("order", said, currentGameTickSafe());
+                orderGoal(said);
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BlueprintTask.BlueprintRecord(
-                        "build-" + UUID.randomUUID(), "hut", wall, door, null), reply -> { });
+                        "build-" + UUID.randomUUID(), print, wall, door, null), reply -> { });
                 return true;
             }
             case GIVE -> {
@@ -1448,6 +1454,13 @@ public class AgentLoop {
                 orderGoal("trade for " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
+                return true;
+            }
+            case FIND_STRONGHOLD -> {
+                journal.record("order", "find the stronghold", currentGameTickSafe());
+                orderGoal("find the stronghold");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.EyeTask.EyeRecord(
+                        "eyes-" + UUID.randomUUID()), reply -> { });
                 return true;
             }
             case CHESTS_OK, CHESTS_NO -> {
@@ -1780,6 +1793,21 @@ public class AgentLoop {
     /** The spots beside a portal it tried to step out to on this crossing (block positions). */
     private final java.util.Set<Long> portalOutTried = new java.util.HashSet<>();
 
+    /** Where it stood during a crossing, and since when (game ticks). */
+    private long crossingStillAt = Long.MIN_VALUE, crossingStillSince;
+
+    private boolean stuckCrossing(net.minecraft.server.level.ServerPlayer me, long tick) {
+        long at = me.blockPosition().asLong();
+        if (at != crossingStillAt) {
+            crossingStillAt = at;
+            crossingStillSince = tick;
+            return false;
+        }
+        if (tick - crossingStillSince < 200) return false;
+        crossingStillSince = tick;
+        return true;
+    }
+
     /** Through the portal: on to the place; or it says it couldn't get through. */
     private void watchCrossing(net.minecraft.server.level.ServerPlayer me, long tick) {
         Crossing c = crossing;
@@ -1793,6 +1821,11 @@ public class AgentLoop {
         } else if (tick - c.since() > 3_000L) {
             crossing = null;
             say("I couldn't get through the portal.");
+        } else if (!inPortal && c.stage() == Crossing.Stage.IN && stuckCrossing(me, tick)) {
+            // On the same block for ten seconds on its way back in (a pit by the portal): the walk dropped, a new one.
+            haltNow();
+            goTo(c.portal(), java.util.List.of(), false, "xzy");
+            crossing = c.next(Crossing.Stage.IN, tick);
         } else if (c.stage() == Crossing.Stage.OUT && !inPortal) {
             crossing = c.next(Crossing.Stage.WAITING, tick);
         } else if (c.stage() == Crossing.Stage.OUT && tick - c.stageSince() >= PORTAL_RETRY) {
@@ -4269,7 +4302,7 @@ public class AgentLoop {
                 || k == com.mineagent.engine.chat.CommandParser.Kind.BREED || k == com.mineagent.engine.chat.CommandParser.Kind.FISH
                 || k == com.mineagent.engine.chat.CommandParser.Kind.REPAIR || k == com.mineagent.engine.chat.CommandParser.Kind.GRIND
                 || k == com.mineagent.engine.chat.CommandParser.Kind.BARTER || k == com.mineagent.engine.chat.CommandParser.Kind.PUT_AWAY
-                || k == com.mineagent.engine.chat.CommandParser.Kind.TIDY
+                || k == com.mineagent.engine.chat.CommandParser.Kind.TIDY || k == com.mineagent.engine.chat.CommandParser.Kind.FIND_STRONGHOLD
                 ? c : java.util.Optional.empty();
     }
 
