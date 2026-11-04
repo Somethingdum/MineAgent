@@ -121,6 +121,12 @@ public final class TaskRegistration {
                 DumpJunkTask::new
         );
 
+        // Mobs hunted for levels once it is doing well (SMH plan 70: "It should start seeking beef with mobs. Of any kind.")
+        CompanionTaskFactory.register(
+                XpHuntTask.XpRecord.class,
+                XpHuntTask::new
+        );
+
         // The End portal opened, and gone through when asked (SMH plan 70)
         CompanionTaskFactory.register(
                 EndPortalTask.PortalRecord.class,

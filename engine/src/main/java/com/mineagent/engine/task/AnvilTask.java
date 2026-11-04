@@ -215,6 +215,8 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
             var order = com.mineagent.engine.gear.GodGear.order(books, work);
             if (!order.possible()) return close(sp, false, "those books on my " + kind.replace('_', ' ') + " would be too expensive for an anvil in any order");
             if (sp.experienceLevel < order.steps().stream().mapToInt(com.mineagent.engine.gear.GodGear.Step::cost).max().orElse(0)) {
+                var loop = TaskContext.agentLoop(player);
+                if (loop != null) loop.levelsShortFor(order.total()); // what it goes after levels for (gear/XpSeeking)
                 return close(sp, false, "that takes " + order.total() + " levels all told, and I have " + sp.experienceLevel);
             }
             plan = order.steps();
@@ -240,7 +242,13 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         }
         back(sp, menu);
         TaskContext.syncInventory(sp);
-        if (!can) return close(sp, false, "a step cost " + cost + " levels and I have " + sp.experienceLevel);
+        if (!can) {
+            var loop = TaskContext.agentLoop(player);
+            // What the steps left take all told: what it goes after levels for.
+            int rest = plan.subList(stepAt, plan.size()).stream().mapToInt(com.mineagent.engine.gear.GodGear.Step::cost).sum();
+            if (loop != null && cost > sp.experienceLevel && cost < 40) loop.levelsShortFor(Math.max(cost, rest));
+            return close(sp, false, "a step cost " + cost + " levels and I have " + sp.experienceLevel);
+        }
         return TaskState.RUNNING;
     }
 
@@ -323,6 +331,10 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
 
     private TaskState finish(ServerPlayer sp) {
         if (done == 0) return close(sp, false, nothingTo());
+        if (bestMode()) {
+            var loop = TaskContext.agentLoop(player);
+            if (loop != null) loop.levelsShortFor(0); // paid for: nothing waits on levels
+        }
         String list = String.join(", ", worked);
         return close(sp, true, grind() ? "Ground the enchantments off my " + list + "."
                 : bestMode() ? "Enchanted my " + list + " in the best order: " + done + (done == 1 ? " step, " : " steps, ") + levelsSpent + (levelsSpent == 1 ? " level." : " levels.")

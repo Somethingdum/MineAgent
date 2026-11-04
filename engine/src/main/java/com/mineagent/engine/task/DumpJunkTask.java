@@ -24,7 +24,8 @@ import java.util.Map;
  * Its junk thrown away (SMH plan 70: "dumping junk items it doesn't need in lava, or the ocean"): the rock, dirt and mob
  * drops past what it keeps ({@link Junk}), never anything enchanted or named or that its stockpile keeps, thrown into
  * lava within 24 blocks from a spot two or three blocks back (never beside it), else into deep water; with neither near
- * it keeps carrying it and says so.
+ * it keeps carrying it and says so. Each toss is aimed as the game will move it ({@link com.mineagent.engine.act.TossAim}),
+ * at the middle of a pool where there is one.
  */
 public class DumpJunkTask extends CompanionTask<DumpJunkTask.DumpRecord> {
     public static final class DumpRecord extends TaskRecord {
@@ -107,8 +108,19 @@ public class DumpJunkTask extends CompanionTask<DumpJunkTask.DumpRecord> {
                         index++;
                         return TaskState.RUNNING;
                     }
-                    // Facing it, a little above, so the throw's arc lands in it.
-                    sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(target).add(0, 0.4, 0));
+                    // Facing it, at the pitch whose toss comes down in it (act/TossAim: as the game moves a tossed item).
+                    sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(target));
+                    double dx = target.getX() + 0.5 - sp.getX(), dz = target.getZ() + 0.5 - sp.getZ();
+                    double pitch = com.mineagent.engine.act.TossAim.pitchFor(Math.sqrt(dx * dx + dz * dz),
+                            sp.getEyeY() - com.mineagent.engine.act.TossAim.BELOW_EYES - (target.getY() + com.mineagent.engine.act.TossAim.FLUID_TOP));
+                    if (Double.isNaN(pitch)) {
+                        if (ticks > 60) return end(false, "I couldn't throw it that far from here");
+                        nav.navigateNear(stand.getX(), stand.getY(), stand.getZ(), 0); // back to its spot
+                        nav.tick();
+                        return TaskState.RUNNING;
+                    }
+                    sp.setYRot((float) Math.toDegrees(Math.atan2(-dx, dz)));
+                    sp.setXRot((float) pitch);
                     var inv = sp.getInventory();
                     for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
                         ItemStack st = inv.getItem(i);
@@ -135,37 +147,51 @@ public class DumpJunkTask extends CompanionTask<DumpJunkTask.DumpRecord> {
 
     /**
      * Lava (or deep water) within 24, and a spot two to three and a half blocks from it to throw from: ground to stand on,
-     * room for it, no lava beside the spot itself, and nothing between its eyes and the target. The nearest such.
+     * room for it, no lava beside the spot itself, and nothing between its eyes and the target. The middle of a pool
+     * before its edge (a toss that lands a little long or short still lands in it), then the nearest.
      */
     private boolean find(ServerLevel level, ServerPlayer sp, boolean wantLava) {
         BlockPos at = sp.blockPosition();
-        BlockPos bestT = null, bestS = null;
-        double bestD = Double.MAX_VALUE;
+        List<BlockPos> cells = new ArrayList<>();
+        Map<BlockPos, Double> score = new java.util.HashMap<>();
         for (BlockPos p : BlockPos.betweenClosed(at.offset(-24, -6, -24), at.offset(24, 6, 24))) {
-            var fluid = level.getFluidState(p);
-            if (wantLava ? !fluid.is(FluidTags.LAVA) : !(fluid.is(FluidTags.WATER) && fluid.isSource() && level.getFluidState(p.below()).is(FluidTags.WATER))) continue;
+            if (!fluid(level, p, wantLava)) continue;
             if (!level.getBlockState(p.above()).isAir()) continue; // open over it, so a throw can land in it
-            double d = p.distSqr(at);
-            if (d >= bestD) continue;
-            BlockPos s = standFor(level, sp, p);
-            if (s == null) continue;
-            bestD = d;
-            bestT = p.immutable();
-            bestS = s;
+            int round = 0;
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) if ((dx != 0 || dz != 0) && fluid(level, p.offset(dx, 0, dz), wantLava)) round++;
+            BlockPos q = p.immutable();
+            cells.add(q);
+            score.put(q, Math.sqrt(q.distSqr(at)) + (8 - round) * 4.0);
         }
-        if (bestT == null) return false;
-        target = bestT;
-        stand = bestS;
-        lava = wantLava;
-        return true;
+        cells.sort(java.util.Comparator.comparingDouble(score::get));
+        for (int i = 0; i < Math.min(64, cells.size()); i++) {
+            BlockPos s = standFor(level, sp, cells.get(i));
+            if (s == null) continue;
+            target = cells.get(i);
+            stand = s;
+            lava = wantLava;
+            return true;
+        }
+        return false;
     }
 
+    /** Lava, or a source of water with water under it (deep enough that what is thrown in sinks or floats off). */
+    private static boolean fluid(ServerLevel level, BlockPos p, boolean wantLava) {
+        var f = level.getFluidState(p);
+        return wantLava ? f.is(FluidTags.LAVA) : f.is(FluidTags.WATER) && f.isSource() && level.getFluidState(p.below()).is(FluidTags.WATER);
+    }
+
+    /** The best throw is from about this far: a level toss from a block above the surface comes down here. */
+    static final double THROW_FROM = 2.75;
+
     private static BlockPos standFor(ServerLevel level, ServerPlayer sp, BlockPos t) {
+        BlockPos best = null;
+        double bestOff = Double.MAX_VALUE;
         for (int dx = -3; dx <= 3; dx++) {
             for (int dz = -3; dz <= 3; dz++) {
                 double h = Math.sqrt(dx * dx + dz * dz);
-                if (h < 2.0 || h > 3.5) continue;
-                for (int dy = 0; dy <= 1; dy++) {
+                if (h < 2.0 || h > 3.5 || Math.abs(h - THROW_FROM) >= bestOff) continue;
+                for (int dy = 1; dy >= 0; dy--) {
                     BlockPos s = t.offset(dx, dy, dz);
                     if (!BlockHelper.isPassable(level.getBlockState(s)) || !BlockHelper.isPassable(level.getBlockState(s.above()))
                             || !BlockHelper.canStandOn(level.getBlockState(s.below())) || !level.getFluidState(s).isEmpty()) continue;
@@ -178,11 +204,13 @@ public class DumpJunkTask extends CompanionTask<DumpJunkTask.DumpRecord> {
                     var hit = level.clip(new net.minecraft.world.level.ClipContext(eye, Vec3.atCenterOf(t).add(0, 0.5, 0),
                             net.minecraft.world.level.ClipContext.Block.COLLIDER, net.minecraft.world.level.ClipContext.Fluid.NONE, sp));
                     if (hit.getType() != net.minecraft.world.phys.HitResult.Type.MISS && !hit.getBlockPos().equals(t)) continue;
-                    return s.immutable();
+                    best = s.immutable();
+                    bestOff = Math.abs(h - THROW_FROM);
+                    break;
                 }
             }
         }
-        return null;
+        return best;
     }
 
     private TaskState end(boolean ok, String why) {

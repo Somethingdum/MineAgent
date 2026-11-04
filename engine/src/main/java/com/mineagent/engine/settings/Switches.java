@@ -83,6 +83,7 @@ public final class Switches {
     public static boolean hoard() { return b().hoard(); }
     public static boolean godGear() { return b().godGear(); }
     public static boolean dumpJunk() { return b().dumpJunk(); }
+    public static boolean grindXp() { return b().grindXp(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

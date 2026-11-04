@@ -1215,20 +1215,29 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (lootAt == null) return false;
         var drops = sp.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
                 new net.minecraft.world.phys.AABB(lootAt).inflate(5, 3, 5), e -> e.isAlive() && com.mineagent.engine.survival.Manners.mayTake(e, sp));
+        // No way onto a drop (it landed on a fence or against a wall): got from beside it, a block off, before giving up.
+        if (navFailed && !drops.isEmpty() && !pickBeside) {
+            pickBeside = true;
+            navFailed = false;
+            chasing = null;
+        }
         if (drops.isEmpty() || --lootWait <= 0 || navFailed) {
             if (!drops.isEmpty()) System.out.println("[MineAgent] hunt: left " + drops.size() + " drops by " + lootAt.toShortString()
                     + (navFailed ? " (no way to them)" : " (out of time)"));
             lootAt = null;
             chasing = null;
+            pickBeside = false;
             nav.cancel();
             return false;
         }
         net.minecraft.world.entity.item.ItemEntity near = drops.get(0);
         for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
-        // Within a block of it picks it up: a drop that landed on a fence or against a wall is got from beside it.
-        chase(near.blockPosition(), 1);
+        chase(near.blockPosition(), pickBeside ? 1 : 0);
         return true;
     }
+
+    /** Drops it couldn't walk onto, got from a block off. */
+    private boolean pickBeside;
 
     /**
      * Wool by shearing (SMH plan 70, MA7.3): the nearest sheep of the colour with its wool grown, walked up to, shears

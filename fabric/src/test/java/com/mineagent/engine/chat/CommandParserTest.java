@@ -307,4 +307,19 @@ final class CommandParserTest {
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }
+
+    @Test void xpIsHuntedForOnAnOrder() {
+        for (String said : new String[] {"grind some xp", "go get levels", "farm xp", "get some experience", "level up", "grind xp for enchanting"}) {
+            var c = CommandParser.parse(said, "Pal").orElseThrow(() -> new AssertionError(said));
+            assertEquals(CommandParser.Kind.GRIND_XP, c.kind(), said);
+            assertNull(c.value(), said + ": to the levels it wants");
+        }
+        assertEquals("to|30", CommandParser.parse("get 30 levels", "Pal").orElseThrow().value(), "a number is the level to get to");
+        assertEquals("to|30", CommandParser.parse("reach level 30", "Pal").orElseThrow().value());
+        assertEquals("more|5", CommandParser.parse("get 5 more levels", "Pal").orElseThrow().value(), "more is that many more");
+        assertTrue(CommandParser.parse("get 64 cobblestone", "Pal").map(c -> c.kind() != CommandParser.Kind.GRIND_XP).orElse(true),
+                "a number of things isn't levels");
+        assertEquals(CommandParser.Kind.GRIND, CommandParser.parse("grind the enchantments off my sword", "Pal").orElseThrow().kind(),
+                "the grindstone is still the grindstone");
+    }
 }

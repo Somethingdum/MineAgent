@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-") || taskId.startsWith("endportal-") || taskId.startsWith("xp-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -991,7 +991,9 @@ public class AgentLoop {
             Runnable always = afterTaskAlways.remove(taskId);
             if (always != null) afterReady.add(always);
             String godKey = godGearJobs.remove(taskId);
-            if (godKey != null && state != TaskState.SUCCESS) godGearFailed.put(godKey, gameTick);
+            // A run of anvil steps short of levels isn't a failed try: it waits for the levels (it goes after them: xpGoal).
+            boolean shortOfLevels = levelsShort > 0 && message != null && message.contains(" levels");
+            if (godKey != null && state != TaskState.SUCCESS && !shortOfLevels) godGearFailed.put(godKey, gameTick);
         }
         liveBodyState.set(new LiveBodyState(null, "idle", null, null,
                 "last_task=" + taskName + " state=" + state
@@ -1611,6 +1613,25 @@ public class AgentLoop {
                 journal.record("order", "dump the junk", currentGameTickSafe());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DumpJunkTask.DumpRecord(
                         "junk-" + UUID.randomUUID(), hoardKeeps()), reply -> { });
+                return true;
+            }
+            case GRIND_XP -> {
+                var me = self.serverPlayer();
+                if (me == null) return false;
+                int now = me.experienceLevel, target;
+                String v = c.value();
+                if (v != null && v.startsWith("more|")) target = now + Math.max(1, Integer.parseInt(v.substring(5)));
+                else if (v != null && v.startsWith("to|")) target = Integer.parseInt(v.substring(3));
+                else target = now >= xpTarget() ? now + 5 : xpTarget();
+                if (target <= now) {
+                    speakToOwner("I'm already at " + now + (now == 1 ? " level." : " levels."));
+                    return true;
+                }
+                journal.record("order", "get XP to " + target + " levels", currentGameTickSafe());
+                String light = geared(me) ? "" : " My gear's light for it, so I'll pick my fights.";
+                speakToOwner("Going after XP: I'll hunt what's about till I'm at " + target + " levels (at " + now + " now)." + light);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.XpHuntTask.XpRecord(
+                        "xp-" + UUID.randomUUID(), target, false), reply -> { });
                 return true;
             }
             case END_PORTAL -> {
@@ -3158,6 +3179,7 @@ public class AgentLoop {
             if (ownTime && gameTick % 2400L == 1500L) masterTrading(player);
             if (ownTime && gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
             if (ownTime && gameTick % 600L == 450L) dumpJunk(player);
+            if (ownTime && gameTick % 600L == 150L) xpGoal(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
             for (Runnable afterRun; (afterRun = afterReady.poll()) != null; ) afterRun.run();
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
@@ -4072,7 +4094,7 @@ public class AgentLoop {
                         job, next.what(), 1, null, false, !onItsOwn), reply -> { });
             }
             case APPLY_BOOKS -> {
-                if (self.experienceLevel < 5) return; // not the levels for an anvil step yet
+                if (self.experienceLevel < Math.max(5, levelsShort)) return; // not the levels for its anvil steps yet
                 if (!intoPackForAnvil(self, next.kind())) return;
                 journal.record("gear", "toward god-tier gear: my books on my " + next.kind() + " in the best order", now);
                 afterTaskAlways.put(job, () -> com.mineagent.engine.survival.GearUp.run(self));
@@ -4436,11 +4458,35 @@ public class AgentLoop {
         return new com.mineagent.engine.combat.FightWeighing.Reasons(drops, wantsXp());
     }
 
-    /** It wants experience: a goal of its owner's asks for levels or an enchanting it can't yet pay for. */
+    /**
+     * It wants experience: it is out hunting for levels (task/XpHuntTask), or a goal of its owner's asks for levels or an
+     * enchanting it can't yet pay for.
+     */
     public boolean wantsXp() {
+        if (currentGameTickSafe() - xpHuntAt < 400) return true;
         String goal = goalBook.active().map(g -> g.text().toLowerCase(java.util.Locale.ROOT)).orElse("");
         return goal.contains(" xp") || goal.startsWith("xp") || goal.contains("experience") || goal.contains("levels")
                 || goal.contains("enchant");
+    }
+
+    /** The last tick of a hunt for levels: each fight near it is taken for its experience. */
+    private volatile long xpHuntAt = Long.MIN_VALUE / 2;
+    /** An anvil run it couldn't pay for, in levels all told (0: none waiting). */
+    private volatile int levelsShort;
+
+    /** Out hunting for levels now (task/XpHuntTask). */
+    public void noteXpHunt() {
+        xpHuntAt = currentGameTickSafe();
+    }
+
+    /** An anvil run took this many levels all told and it had too few (0 once it paid for one). */
+    public void levelsShortFor(int levels) {
+        levelsShort = Math.max(0, levels);
+    }
+
+    /** The levels it wants (gear/XpSeeking.target): 30, or an anvil run it couldn't pay for. */
+    public int xpTarget() {
+        return com.mineagent.engine.gear.XpSeeking.target(levelsShort);
     }
 
     /**
@@ -4635,6 +4681,82 @@ public class AgentLoop {
     }
 
     /**
+     * Levels once it is doing well (SMH plan 70, its owner: "It should want XP at some point, you need it for enchantments
+     * and anvil shit. So at some point, once its doing well in terms of materials, armor and weapons. It should start
+     * seeking beef with mobs. Of any kind."): in free time at night in the overworld, under the levels it wants
+     * ({@link #xpTarget}), in iron armour or better all over with an iron weapon and a shield, its stock of food, iron, coal
+     * and torches made up (gear/XpSeeking), and fit, it goes hunting (task/XpHuntTask) till it has them or till dawn. Not
+     * in a speedrun, nor while it follows its owner ({@code behaviour.grindXp}).
+     */
+    private void xpGoal(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || speedrun || !com.mineagent.engine.settings.Switches.grindXp()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        if (!onItsOwn && MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var level = self.serverLevel();
+        if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD || !com.mineagent.engine.gear.XpSeeking.night(level.getDayTime())) return;
+        int target = xpTarget();
+        if (self.experienceLevel >= target || !geared(self)) return;
+        String dim = level.dimension().location().toString();
+        if (!com.mineagent.engine.gear.XpSeeking.short_(ownStock(self, dim, home(dim))).isEmpty()) return;
+        if (!com.mineagent.engine.gear.XpSeeking.fit(self.getHealth(), self.getMaxHealth(), self.getFoodData().getFoodLevel(), foodOn(self))) return;
+        journal.record("xp", "out after levels for the night: " + self.experienceLevel + " of " + target, currentGameTickSafe());
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.XpHuntTask.XpRecord(
+                "xp-" + UUID.randomUUID(), target, true), reply -> { });
+    }
+
+    /** Doing well for armour and weapons (gear/XpSeeking.geared): iron or better worn all over, an iron weapon, a shield. */
+    private static boolean geared(net.minecraft.server.level.ServerPlayer self) {
+        int[] worn = new int[4];
+        var slots = new net.minecraft.world.entity.EquipmentSlot[] {net.minecraft.world.entity.EquipmentSlot.HEAD,
+                net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.entity.EquipmentSlot.LEGS, net.minecraft.world.entity.EquipmentSlot.FEET};
+        for (int i = 0; i < 4; i++) {
+            var st = self.getItemBySlot(slots[i]);
+            worn[i] = st.isEmpty() ? 0 : com.mineagent.engine.gear.GodGear.tier(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString());
+        }
+        int weapon = 0;
+        boolean shield = self.getOffhandItem().getItem() instanceof net.minecraft.world.item.ShieldItem;
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.isEmpty()) continue;
+            weapon = Math.max(weapon, com.mineagent.engine.survival.MobDefenseChain.weaponTier(st));
+            if (st.getItem() instanceof net.minecraft.world.item.ShieldItem) shield = true;
+        }
+        return com.mineagent.engine.gear.XpSeeking.geared(worn[0], worn[1], worn[2], worn[3], weapon, shield);
+    }
+
+    /** Food it carries (not rotten flesh, spider eyes or poisonous potatoes). */
+    private static int foodOn(net.minecraft.server.level.ServerPlayer self) {
+        int n = 0;
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.get(net.minecraft.core.component.DataComponents.FOOD) == null || st.is(net.minecraft.world.item.Items.ROTTEN_FLESH)
+                    || st.is(net.minecraft.world.item.Items.SPIDER_EYE) || st.is(net.minecraft.world.item.Items.POISONOUS_POTATO)) continue;
+            n += st.getCount();
+        }
+        return n;
+    }
+
+    /** What it holds of its own: its pack, and its own chests within 64 of home (none without a home). */
+    private java.util.Map<String, Integer> ownStock(net.minecraft.server.level.ServerPlayer self, String dim, net.minecraft.core.BlockPos home) {
+        java.util.Map<String, Integer> has = new java.util.HashMap<>();
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty()) has.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
+        }
+        if (home == null) return has;
+        for (var c : chestMemory().near(dim, home.getX(), home.getY(), home.getZ(), 64.0)) {
+            if (!ownsChest(dim, c.x(), c.y(), c.z())) continue;
+            c.items().forEach((item, n) -> has.merge(item.contains(":") ? item : "minecraft:" + item, n, Integer::sum));
+        }
+        return has;
+    }
+
+    /**
      * In free time (SMH plan 70: "manage its inventory intelligently"): with a stack or more of junk in its pack (or a pack
      * nearly full and some junk in it), thrown into lava or deep water near ({@code behaviour.dumpJunk}).
      */
@@ -4744,16 +4866,7 @@ public class AgentLoop {
             }
         }
         // What it holds of its own: its pack and its own chests.
-        java.util.Map<String, Integer> has = new java.util.HashMap<>();
-        var inv = self.getInventory();
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            var st = inv.getItem(i);
-            if (!st.isEmpty()) has.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
-        }
-        for (var c : chestMemory().near(dim, home.getX(), home.getY(), home.getZ(), 64.0)) {
-            if (!ownsChest(dim, c.x(), c.y(), c.z())) continue;
-            c.items().forEach((item, n) -> has.merge(item.contains(":") ? item : "minecraft:" + item, n, Integer::sum));
-        }
+        java.util.Map<String, Integer> has = ownStock(self, dim, home);
         var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
         var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
         java.util.Set<String> without = onItsOwn ? java.util.Set.of() : java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);

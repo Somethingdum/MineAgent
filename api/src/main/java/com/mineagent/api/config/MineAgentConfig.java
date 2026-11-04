@@ -173,6 +173,7 @@ public record MineAgentConfig(
      * @param hoard with nothing to do and a home, it fills a chest of its own there toward its stockpile (food, torches, iron, golden carrots and apples, diamonds...), never from your chests
      * @param godGear in free time it climbs to god-tier gear (diamond, then the best books in the best anvil order); off with "speedrun"
      * @param dumpJunk in free time its junk (rock and dirt past what it keeps, useless mob drops) is thrown into lava or deep water
+     * @param grindXp in free time at night, once its armour, weapons and stock are doing well, it hunts mobs for the levels enchanting and anvils need (SMH plan 70)
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -234,11 +235,12 @@ public record MineAgentConfig(
         boolean wholeTrees,
         boolean hoard,
         boolean godGear,
-        boolean dumpJunk
+        boolean dumpJunk,
+        boolean grindXp
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true
         );
     }
 
@@ -346,7 +348,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery, rawBehaviour.wholeTrees, rawBehaviour.hoard, rawBehaviour.godGear, rawBehaviour.dumpJunk);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery, rawBehaviour.wholeTrees, rawBehaviour.hoard, rawBehaviour.godGear, rawBehaviour.dumpJunk, rawBehaviour.grindXp);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

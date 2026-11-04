@@ -4094,6 +4094,53 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, levels ("It should start seeking beef with mobs. Of any kind."): in iron with a sword and a shield, at
+     * no levels, "get 1 level" sends it after the two husks standing off (they don't come for it), and they are killed and
+     * their experience taken; the three cows by it are left be (one has a name, and the other two are the last of their
+     * kind about). It stops at the level and says what it got.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_xp", timeoutTicks = 1400)
+    public void huntsMobsForLevels(GameTestHelper helper) {
+        Scene s = scene(helper, "Grinder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        s.body().setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        s.body().setItemSlot(EquipmentSlot.FEET, new ItemStack(Items.IRON_BOOTS));
+        s.body().getInventory().setItem(1, new ItemStack(Items.COOKED_BEEF, 16));
+        Husk[] husks = new Husk[2];
+        for (int i = 0; i < 2; i++) {
+            husks[i] = helper.spawn(EntityType.HUSK, new BlockPos(14, 1, 3 + i * 4));
+            husks[i].setNoAi(true);
+        }
+        var cows = new java.util.ArrayList<net.minecraft.world.entity.animal.Cow>();
+        for (int i = 0; i < 3; i++) {
+            var cow = helper.spawn(EntityType.COW, new BlockPos(3 + i * 2, 1, 10));
+            cow.setNoAi(true);
+            cows.add(cow);
+        }
+        cows.get(0).setCustomName(net.minecraft.network.chat.Component.literal("Bessie"));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "get 1 level"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "xp");
+            String done = lastSaid(s, "Got");
+            if (done.isEmpty()) done = lastSaid(s, "No levels");
+            if (!done.isEmpty() || helper.getTick() >= 1300) {
+                int level = s.body().experienceLevel;
+                int husksDead = (husks[0].isAlive() ? 0 : 1) + (husks[1].isAlive() ? 0 : 1);
+                int cowsAlive = (int) cows.stream().filter(net.minecraft.world.entity.LivingEntity::isAlive).count();
+                String how = "level " + level + ", husks killed " + husksDead + ", cows alive " + cowsAlive + "; said: "
+                        + (done.isEmpty() ? lastSaid(s, "") : done);
+                boolean ok = level >= 1 && husksDead == 2 && cowsAlive == 3 && s.body().isAlive() && !done.isEmpty();
+                tidy(s);
+                for (var cow : cows) cow.discard();
+                for (var h : husks) if (h.isAlive()) h.discard();
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {
