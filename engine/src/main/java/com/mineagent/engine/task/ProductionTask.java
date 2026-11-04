@@ -1017,6 +1017,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         sp.setXRot(90.0f);
         TaskContext.inputDriver(player).clear();
+        if (!sp.onGround()) return true; // dropping onto the next block down: the next dig once it lands
         // A dig is started once and runs on, as a held mouse button does (starting it again each tick starts it over).
         if (!under.equals(digging) || ++digTicks > 400) {
             if (digging != null) com.mineagent.engine.task.BlockDigger.abortBreaking(sp, digging);
