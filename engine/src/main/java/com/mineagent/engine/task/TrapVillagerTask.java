@@ -105,6 +105,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                                 waitAt = null;
                                 stands = null;
                                 standIndex = 0;
+                                doorSpots = null;
                             }
                             offCell = 0;
                         }
@@ -203,11 +204,15 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                 }
                 case WAIT -> {
                     BlockPos cell = at(layout.cell()), door = at(layout.door());
-                    // Shoving it in: into the way in for a second, against it, then back out to its spot.
+                    // Shoving it in: to the way in (ten seconds at most), against it there a moment, then back to its
+                    // spot by the door.
                     if (nudging > 0) {
                         nudging--;
-                        if (nudging > 10) {
-                            if (nudging % 5 == 0 || !nav.isNavigating()) nav.navigateNear(cell.getX(), cell.getY(), cell.getZ(), 0);
+                        boolean there = sp.blockPosition().equals(door);
+                        if (there && nudging > 15) nudging = 15; // there: a moment's push, then back
+                        if (nudging > 0) {
+                            BlockPos to = nudging > 15 ? door : cell;
+                            if (nudging % 10 == 0 || !nav.isNavigating()) nav.navigateNear(to.getX(), to.getY(), to.getZ(), 0);
                             nav.tick();
                             return TaskState.RUNNING;
                         }
@@ -223,7 +228,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         // Two seconds at the edge: a shove in, as a player would give it (it can go no further than
                         // the job site), and the door put in behind it.
                         if (++edgeTicks > 40 && nudging == 0) {
-                            nudging = 30;
+                            nudging = 215;
                             edgeTicks = 0;
                         }
                     } else if (!inCell) {
@@ -260,13 +265,13 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     // Wait out of its way, by the door, where the door is in reach: outside it, a step off the line in.
                     // Never in the way in or the cell, the only way to its job site: if it can't get to its spot from
                     // there, another one.
-                    if (waitAt == null) waitAt = waitSpot(level, layout);
-                    boolean inTheWay = sp.blockPosition().equals(door) || sp.blockPosition().equals(cell);
-                    if (inTheWay && ++blockingTicks > 100) {
-                        BlockPos other = nextStand(level, sp);
-                        if (other != null && !other.equals(door) && !other.equals(cell)) this.waitAt = other;
+                    if (doorSpots == null) doorSpots = doorSpots(level);
+                    if (waitAt == null) waitAt = doorSpots.isEmpty() ? waitSpot(level, layout) : doorSpots.get(0);
+                    // Not got to in ten seconds: the next spot by the door.
+                    if (sp.blockPosition().distSqr(waitAt) > 2 && ++blockingTicks > 200 && !doorSpots.isEmpty()) {
+                        waitAt = doorSpots.get(++waitIndex % doorSpots.size());
                         blockingTicks = 0;
-                    } else if (!inTheWay) {
+                    } else if (sp.blockPosition().distSqr(waitAt) <= 2) {
                         blockingTicks = 0;
                     }
                     BlockPos waitAt = this.waitAt;
@@ -324,7 +329,23 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
-    private int offCell, traceAt, jumpTicks, blockingTicks, edgeTicks, nudging, groundY = Integer.MIN_VALUE;
+    private int offCell, traceAt, jumpTicks, blockingTicks, edgeTicks, nudging, waitIndex, groundY = Integer.MIN_VALUE;
+    /** Where it may wait for the villager: by the door and in reach of it, never the way in or the cell. */
+    private java.util.List<BlockPos> doorSpots;
+
+    /** Open spots on firm ground with the door in reach (3.8 from the middle), none a wall, the way in, the cell or the job site; nearest the door first. */
+    private java.util.List<BlockPos> doorSpots(ServerLevel level) {
+        BlockPos door = at(layout.door()), cell = at(layout.cell());
+        java.util.List<BlockPos> out = new java.util.ArrayList<>();
+        for (BlockPos p : BlockPos.betweenClosed(door.offset(-3, -1, -3), door.offset(3, 1, 3))) {
+            var pos = new VillagerCell.Pos(p.getX(), p.getY(), p.getZ());
+            if (p.equals(door) || p.equals(cell) || layout.walls().contains(pos) || pos.equals(layout.jobSite()) || !open(level, p)) continue;
+            double eye = net.minecraft.world.phys.Vec3.atBottomCenterOf(p).add(0, 1.62, 0).distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(door));
+            if (eye <= 3.8 * 3.8) out.add(p.immutable());
+        }
+        out.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(door)));
+        return out;
+    }
     /** The block over its eyes it is jumping to put in. */
     private BlockPos jumpFor;
     private boolean onlyItsSpotLeft;
