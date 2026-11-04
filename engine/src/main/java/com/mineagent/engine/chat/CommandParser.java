@@ -88,7 +88,7 @@ public final class CommandParser {
     private static final Pattern FILL_IT = Pattern.compile("^fill (?:it|this|that)(?: up)? (?:with|full of) (.{2,60})$");
     private static final Pattern CHEST_OF = Pattern.compile("^(?:i (?:want|need)|make me|get me|give me|i'?d like)\\s+(?:an? )?(?:(?:entire|full|whole) )?chest(?:ful)? of (.{2,60})$");
     private static final Pattern PUT_IN = Pattern.compile("^(?:put|make|craft|get)(?: me)? " + HOW_MANY + " (.{2,60}?) (?:in|into) (?:this|that|the|my|our) chest$");
-    private static final Pattern MAKE = Pattern.compile("^(?:make|craft)(?: me| us)? " + HOW_MANY + " (.{2,60})$");
+    private static final Pattern MAKE = Pattern.compile("^(?:make|craft|get|fetch|gather|collect|go get|go and get)(?: me| us)? " + HOW_MANY + " (.{2,60})$");
     private static final Pattern NEED = Pattern.compile("^i (?:need|want) " + HOW_MANY + " (.{2,60})$");
     private static final Pattern BACK = Pattern.compile("^(back|i'?m back|back now|i'?m here now|here now)$");
     // Places and the way back (SMH plan 70, MA5.6).

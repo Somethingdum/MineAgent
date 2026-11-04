@@ -64,7 +64,9 @@ final class CommandParserTest {
     }
 
     @Test void anythingElseGoesToTheModel() {
-        assertEquals("-", parsed("Steve, get me a diamond pickaxe"));
+        assertEquals("-", parsed("Steve, go see what's over that hill"));
+        // "Get me a diamond pickaxe" is an order code plans now, as "make me" is (MA7.1).
+        assertEquals("PRODUCE:diamond pickaxe", parsed("Steve, get me a diamond pickaxe"));
         assertEquals("-", parsed("build a house near the lake please"));
         assertEquals("-", parsed("drop all your stuff"));
         assertEquals("-", parsed("can you tell me what the weather is like in the nether today and why"));
@@ -207,6 +209,11 @@ final class CommandParserTest {
         var breed = CommandParser.parse("breed the cows", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BREED, breed.kind());
         assertEquals("cows", breed.value());
+        var get = CommandParser.parse("get me 3 oak logs", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.PRODUCE, get.kind());
+        assertEquals("oak logs", get.value());
+        assertEquals(3, get.count().intValue());
+        assertEquals(CommandParser.Kind.PRODUCE, CommandParser.parse("gather 64 cobblestone", "Pal").orElseThrow().kind());
         assertEquals("add", CommandParser.parse("add a patrol point here", "Pal").orElseThrow().value());
         assertEquals("clear", CommandParser.parse("clear the patrol", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.GUARD_HERE, CommandParser.parse("guard that", "Pal").orElseThrow().kind());
