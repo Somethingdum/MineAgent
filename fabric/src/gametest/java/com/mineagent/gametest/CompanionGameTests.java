@@ -4072,7 +4072,7 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(4, new ItemStack(Items.DIORITE, 40));
         inv.setItem(5, new ItemStack(Items.DIAMOND, 5));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "dump your junk"));
-        int[] doneAt = {-1};
+        long[] doneAt = {-1};
         helper.onEachTick(() -> {
             if (helper.getTick() % 100 == 0) trace(helper, s, "junk");
             String done = lastSaid(s, "Threw");
