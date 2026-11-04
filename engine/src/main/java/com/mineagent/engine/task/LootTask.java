@@ -165,8 +165,8 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                 case DISARM -> {
                     // Gone (broken by it, or never there): the next part.
                     while (part < parts.size() && !isTrapPart(level, parts.get(part))) {
+                        if (gone.add(parts.get(part))) disarmed++; // a part tried twice is counted once
                         part++;
-                        disarmed++;
                         ticks = 0;
                     }
                     if (part >= parts.size()) {
@@ -190,9 +190,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                                     + sp.blockPosition().toShortString() + ", navigating " + nav.isNavigating());
                         }
                         if (ticks > 900) {
-                            stuckParts.add(q);
-                            part++;
-                            ticks = 0;
+                            later(q);
                             return TaskState.RUNNING;
                         }
                         if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(q.getX(), q.getY(), q.getZ(), 2);
@@ -212,11 +210,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                                     + " off: " + a.status() + " " + a.detail());
                         }
                     }
-                    if (ticks > 400) {
-                        stuckParts.add(q);
-                        part++;
-                        ticks = 0;
-                    }
+                    if (ticks > 400) later(q);
                     return TaskState.RUNNING;
                 }
                 case CARTS -> {
@@ -459,6 +453,20 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
     }
 
     private net.minecraft.world.entity.vehicle.MinecartChest triedCart;
+    private final Map<BlockPos, Integer> partTries = new java.util.HashMap<>();
+    private final java.util.Set<BlockPos> gone = new java.util.HashSet<>();
+
+    /**
+     * A part it couldn't get at yet (one behind another, a hook behind its dispenser): tried again after the others; a
+     * second time, it is given up on.
+     */
+    private void later(BlockPos q) {
+        int tries = partTries.merge(q, 1, Integer::sum);
+        if (tries < 2) parts.add(q);
+        else stuckParts.add(q);
+        part++;
+        ticks = 0;
+    }
     private int clearTicks;
 
     /** The nearest piglin within 16 of a block. */
