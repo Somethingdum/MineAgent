@@ -168,6 +168,7 @@ public record MineAgentConfig(
      * @param branchForOre an ore it needs and finds none of near is got by a branch mine at its best height
      * @param golemIron a village's own iron golems are a way to iron, fought from a pillar three blocks high; never one a player built
      * @param weighFights a mob is fought only when there is a reason and it can afford it, or the danger is close and can't be got away from; its owner only when they could be seriously hurt
+     * @param tradingMastery near a village with nothing to do it rolls a librarian for Mending, buys one and walls the villager in with its lectern (asking first)
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -224,11 +225,12 @@ public record MineAgentConfig(
         boolean tradesInPlans,
         boolean branchForOre,
         boolean golemIron,
-        boolean weighFights
+        boolean weighFights,
+        boolean tradingMastery
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true
         );
     }
 
@@ -336,7 +338,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

@@ -103,6 +103,12 @@ public final class TaskRegistration {
                 BarterTask::new
         );
 
+        // A librarian rolled for a book, fixed and walled in (SMH plan 70, trading mastery)
+        CompanionTaskFactory.register(
+                LibrarianTask.RollRecord.class,
+                LibrarianTask::new
+        );
+
         // Putting things away by what each chest is for (SMH plan 70, MA9.2)
         CompanionTaskFactory.register(
                 PutAwayTask.PutAwayRecord.class,

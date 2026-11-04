@@ -2633,6 +2633,7 @@ public class CompanionGameTests implements FabricGameTest {
         String dim = helper.getLevel().dimension().location().toString();
         s.loop().noteChest(dim, chest.getX(), chest.getY(), chest.getZ(),
                 java.util.Map.of("minecraft:white_wool", 3, "minecraft:oak_log", 3), helper.getLevel().getGameTime());
+        s.loop().noteOwnChest(dim, chest.getX(), chest.getY(), chest.getZ()); // its own stockpile (its owner's would need their say)
         helper.getLevel().setDayTime(1_000);
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
         boolean[] night = {false};
@@ -4208,6 +4209,44 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, trading mastery: "roll a librarian for mending", a villager with no job in a small pen: a lectern put
+     * down by it, taken up (a librarian), its offers read, and while there's no Mending the lectern broken and put down
+     * again: ten rolls (Mending itself is about one roll in fifty, too long for a scene), or Mending if it comes.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_librarian", timeoutTicks = 9000)
+    public void aLibrarianIsRolledForMending(GameTestHelper helper) {
+        Scene s = scene(helper, "Scholar");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 7; x <= 11; x++) for (int z = 7; z <= 11; z++) {
+            if (x == 7 || x == 11 || z == 7 || z == 11) helper.setBlock(x, 1, z, Blocks.OAK_FENCE);
+        }
+        var villager = EntityType.VILLAGER.create(helper.getLevel());
+        BlockPos vAt = helper.absolutePos(new BlockPos(9, 1, 9));
+        villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
+        villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.NONE));
+        helper.getLevel().addFreshEntity(villager);
+        s.body().getInventory().setItem(1, new ItemStack(Items.LECTERN));
+        s.body().getInventory().setItem(2, new ItemStack(Items.EMERALD, 64));
+        s.body().getInventory().setItem(3, new ItemStack(Items.COBBLESTONE, 16));
+        BlockPos stand = helper.absolutePos(new BlockPos(9, 1, 6));
+        s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "roll a librarian for mending"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 400 == 0) trace(helper, s, "librarian");
+            String rolled = lastSaid(s, "Rolled the librarian 10 times");
+            String found = lastSaid(s, "Found it");
+            String failed = lastSaid(s, "I couldn't roll");
+            if (!rolled.isEmpty() || !found.isEmpty() || !failed.isEmpty() || helper.getTick() >= 8900) {
+                String how = "said: " + (failed.isEmpty() ? lastSaid(s, "") : failed) + "; villager " + villager.getVillagerData().getProfession();
+                tidy(s);
+                villager.discard();
+                if (failed.isEmpty() && (!rolled.isEmpty() || !found.isEmpty())) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA11.3, villages from memory: no villager within reach, one it remembers 36 blocks off: there, and the trade. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trade_memory", timeoutTicks = 1400)
     public void aRememberedVillagerIsGoneToForTheTrade(GameTestHelper helper) {
@@ -4377,9 +4416,9 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * Plan 70, MA10.5, asking before your chests: "make me 2 iron ingots" with ingots in a chest it knows: it says it will
-     * take them, and does; then "leave my chests", and "make me 4 iron ingots": the rest smelted from its raw iron, the
-     * chest left as it is.
+     * Plan 70, MA10.5, asking before your chests: told "use my chests", then "make me 2 iron ingots" with ingots in a chest
+     * it knows: it says it will take them, and does; then "leave my chests", and "make me 4 iron ingots": the rest
+     * smelted from its raw iron, the chest left as it is.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_chests_asked", timeoutTicks = 2400)
     public void itSaysBeforeTakingFromYourChestsAndStopsWhenTold(GameTestHelper helper) {
@@ -4396,6 +4435,8 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(1, new ItemStack(Items.RAW_IRON, 4));
         inv.setItem(2, new ItemStack(Items.COAL, 2));
         inv.setItem(3, new ItemStack(Items.FURNACE));
+        // Its owner's chests are its to use only once they say so (SMH plan 70: "don't have it rob me blind").
+        helper.runAfterDelay(3, () -> MineAgentEngine.onPlayerChat(s.owner(), "use my chests"));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 2 iron ingots"));
         boolean[] second = {false};
         helper.onEachTick(() -> {
@@ -4646,7 +4687,12 @@ public class CompanionGameTests implements FabricGameTest {
             for (BlockPos p : BlockPos.betweenClosed(at.offset(-4, -3, -4), at.offset(4, -1, 4))) { // the layers the scene lays
                 if (p.distSqr(at) > 16) continue;
                 var st = helper.getLevel().getBlockState(helper.absolutePos(p));
-                if (st.isAir()) open++;
+                // A hole that shows: air with air over it up to the old top (a pocket sealed under the fill doesn't).
+                boolean shows = st.isAir();
+                for (int up = p.getY() + 1; up <= 0 && shows; up++) {
+                    shows = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(p.getX(), up, p.getZ()))).isAir();
+                }
+                if (shows) open++;
                 if (p.getY() < 0 && st.is(Blocks.SAND)) sandBelow++;
             }
             if (open > 0 && !blown[0]) blown[0] = true;

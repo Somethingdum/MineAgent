@@ -976,7 +976,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1485,6 +1485,18 @@ public class AgentLoop {
                         "eyes-" + UUID.randomUUID()), reply -> { });
                 return true;
             }
+            case ROLL_LIBRARIAN -> {
+                String ench = enchantmentId(c.value());
+                if (ench == null) {
+                    speakToOwner("I don't know an enchantment called " + c.value() + ".");
+                    return true;
+                }
+                journal.record("order", "roll a librarian for " + c.value(), currentGameTickSafe());
+                orderGoal("roll a librarian for " + c.value());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LibrarianTask.RollRecord(
+                        "roll-" + UUID.randomUUID(), ench), reply -> { });
+                return true;
+            }
             case PROTECTION -> {
                 if (!fromOwner) return false; // its owner's own say only
                 protectOwner = "on".equals(c.value());
@@ -1503,6 +1515,7 @@ public class AgentLoop {
             case CHESTS_OK, CHESTS_NO -> {
                 if (!fromOwner) return false;
                 chestsAllowed = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.CHESTS_OK;
+                chestsDecided = true;
                 chestsTold = true;
                 journal.record("order", chestsAllowed ? "use my chests" : "leave my chests", currentGameTickSafe());
                 saveMemoryNow();
@@ -2888,6 +2901,7 @@ public class AgentLoop {
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
             if (gameTick % 1200L == 600L) gearGoal(player);
             if (gameTick % 1200L == 900L) kitGoal(player);
+            if (gameTick % 2400L == 1500L) masterTrading(player);
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
                 journal.record("assumed", st.key() + ": " + (st.yes() ? "yes" : "no"), gameTick);
                 speakToOwner("No answer, so I'm taking that as a " + (st.yes() ? "yes" : "no") + " for now.");
@@ -3863,6 +3877,13 @@ public class AgentLoop {
                 holes.filled(dim, h.x(), h.y(), h.z()); // filled already
                 continue;
             }
+            // A pocket sealed under filled ground (nothing round it open): out of sight, and nothing goes in: let be.
+            boolean sealed = true;
+            for (var d : net.minecraft.core.Direction.values()) if (level.getBlockState(p.relative(d)).canBeReplaced()) sealed = false;
+            if (sealed) {
+                holes.filled(dim, h.x(), h.y(), h.z());
+                continue;
+            }
             if (todo.size() < 48) todo.add(new int[] {h.x(), h.y(), h.z()});
         }
         if (todo.isEmpty()) return;
@@ -3894,8 +3915,48 @@ public class AgentLoop {
         }
     }
 
-    /** Whether it may take from its owner's chests (MA10.5): "leave my chests" says no, "use my chests" yes. Kept. */
-    private volatile boolean chestsAllowed = true;
+    /**
+     * Whether it may take from its owner's chests (MA10.5): only once told "use my chests" (its owner, SMH plan 70: "Don't
+     * have it rob me blind unless I say it can"); "leave my chests" says no again. Its own chests are always its to use.
+     * Kept, with whether its owner has said either.
+     */
+    private volatile boolean chestsAllowed = false;
+    private volatile boolean chestsDecided;
+    /** The chests that are its own stockpile ("dim|x|y|z"); kept with the world. */
+    private final java.util.Set<String> ownChests = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+    /** Whether it may take from this chest: one of its own, or any once its owner said it may. */
+    public boolean mayTakeFrom(String dim, int x, int y, int z) {
+        return chestsAllowed || ownChests.contains(dim + "|" + x + "|" + y + "|" + z);
+    }
+
+    public boolean ownsChest(String dim, int x, int y, int z) {
+        return ownChests.contains(dim + "|" + x + "|" + y + "|" + z);
+    }
+
+    /** A chest of its own, its stockpile. */
+    public void noteOwnChest(String dim, int x, int y, int z) {
+        if (ownChests.size() < 512) ownChests.add(dim + "|" + x + "|" + y + "|" + z);
+    }
+
+    public java.util.Set<String> ownChests() {
+        synchronized (ownChests) {
+            return java.util.Set.copyOf(ownChests);
+        }
+    }
+
+    public void ownChests(java.util.Collection<String> keys) {
+        ownChests.clear();
+        if (keys != null) for (String k : keys) if (k != null && k.split("\\|").length == 4 && ownChests.size() < 512) ownChests.add(k);
+    }
+
+    public boolean chestsDecided() {
+        return chestsDecided;
+    }
+
+    public void chestsDecided(boolean d) {
+        chestsDecided = d;
+    }
     /** Whether it has said, in this world, that it takes from the chests. Kept. */
     private volatile boolean chestsTold;
 
@@ -3957,6 +4018,60 @@ public class AgentLoop {
         String goal = goalBook.active().map(g -> g.text().toLowerCase(java.util.Locale.ROOT)).orElse("");
         return goal.contains(" xp") || goal.startsWith("xp") || goal.contains("experience") || goal.contains("levels")
                 || goal.contains("enchant");
+    }
+
+    // ── Trading mastery: the villagers it keeps (SMH plan 70) ──
+
+    /** Villagers it keeps (walled in, traded to master), by their ids; kept with the world. */
+    private final java.util.Set<String> keepers = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+    public void keepVillager(UUID id) {
+        if (id != null && keepers.size() < 256) keepers.add(id.toString());
+        saveMemoryNow();
+    }
+
+    public java.util.Set<String> keepers() {
+        synchronized (keepers) {
+            return java.util.Set.copyOf(keepers);
+        }
+    }
+
+    public void keepers(java.util.Collection<String> ids) {
+        keepers.clear();
+        if (ids != null) for (String s : ids) if (s != null && keepers.size() < 256) keepers.add(s);
+    }
+
+    /**
+     * With nothing to do, near a village and with no Mending librarian of its own yet: it asks once (taking a yes after
+     * a minute) and rolls one, fixes it and walls it in ({@code behaviour.tradingMastery}).
+     */
+    private void masterTrading(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !com.mineagent.engine.settings.Switches.tradingMastery()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var level = self.serverLevel();
+        boolean haveMending = false;
+        boolean candidate = false;
+        for (var v : level.getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class, self.getBoundingBox().inflate(48, 12, 48),
+                net.minecraft.world.entity.npc.Villager::isAlive)) {
+            if (keepers.contains(v.getUUID().toString())
+                    && com.mineagent.engine.villager.VillagerWorth.sells(com.mineagent.engine.task.LibrarianTask.offers(v), "minecraft:mending")) haveMending = true;
+            var prof = v.getVillagerData().getProfession();
+            if (!v.isBaby() && (prof == net.minecraft.world.entity.npc.VillagerProfession.NONE
+                    || prof == net.minecraft.world.entity.npc.VillagerProfession.LIBRARIAN && v.getVillagerXp() == 0)) candidate = true;
+        }
+        if (haveMending || !candidate) return;
+        var answer = answer("villagers");
+        if (answer.isEmpty()) {
+            ask("villagers", "There's a villager here I could make a Mending librarian: a lectern put down and rolled until it sells"
+                    + " Mending, one bought, and the villager walled in with it to trade from. Shall I?", true);
+            return;
+        }
+        if (!answer.get()) return;
+        journal.record("mastery", "rolling a librarian for Mending", currentGameTickSafe());
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LibrarianTask.RollRecord(
+                "mastery-" + UUID.randomUUID(), "minecraft:mending"), reply -> { });
     }
 
     /** Whether it steps in for its owner (unless told "don't protect me"). */

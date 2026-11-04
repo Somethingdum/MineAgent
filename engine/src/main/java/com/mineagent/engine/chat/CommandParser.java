@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -129,7 +129,9 @@ public final class CommandParser {
     /** "Leave my chests alone", "use my chests" (MA10.5): whether it may take from its owner's chests. */
     private static final Pattern CHESTS_NO = Pattern.compile("^(?:leave|stay out of|keep out of|keep away from|don't (?:use|touch|take from|open)|do not (?:use|touch|take from|open))"
             + " (?:my|our|the) (?:chests|storage)(?: alone)?$");
-    private static final Pattern CHESTS_OK = Pattern.compile("^(?:you (?:can|may) )?(?:use|take from|take what you need from|help yourself to) (?:my|our|the) (?:chests|storage)$");
+    private static final Pattern CHESTS_OK = Pattern.compile("^(?:(?:you (?:can|may) )?(?:use|take from|take what you need from|help yourself to)"
+            + " (?:my|our|the) (?:chests|storage|stuff|things|items)|you have access to (?:my|our) (?:chests|storage|stuff|things|items)"
+            + "|help yourself|take what you need|what'?s mine is yours)$");
     /** "This chest is for tools", "this is the food chest", "use this chest for spruce logs" (MA9.2). */
     private static final Pattern CHEST_PURPOSE = Pattern.compile("^(?:(?:this|that) (?:chest|barrel) is (?:for |the |my |our )?(.{2,40}?)(?: chest| barrel)?"
             + "|(?:this|that) is (?:the|my|a|our) (.{2,30}?) (?:chest|barrel)|use (?:this|that) (?:chest|barrel) for (.{2,40}))$");
@@ -172,6 +174,13 @@ public final class CommandParser {
             + "|let me fight (?:my own battles|alone|on my own)|(?:don'?t|do not) fight for me|stay out of my fights)$");
     private static final Pattern PROTECTION_ON = Pattern.compile("^(?:(?:you can|please) (?:protect|defend|look after) me(?: again)?|protect me again"
             + "|look out for me(?: again)?|have my back(?: again)?)$");
+    /**
+     * "Get me a mending villager", "roll a librarian for unbreaking", "find us a librarian selling efficiency": a
+     * librarian rolled for that book (mending when none is named).
+     */
+    private static final Pattern ROLL = Pattern.compile("^(?:(?:get|find|make) (?:me |us )?an? ([a-z ]{3,24}?) (?:villager|librarian)"
+            + "|(?:re)?roll (?:a |the |me a |us a )?librarian(?: for ([a-z ]{3,24}?))?"
+            + "|(?:get|find|make) (?:me |us )?an? librarian (?:selling|with|for) ([a-z ]{3,24}?)(?: books?)?)$");
     /** "You can kill golems" / "leave the golems alone": the question it would ask, answered before it asks. */
     private static final Pattern GOLEMS_OK = Pattern.compile("^(?:you can|feel free to|go ahead and) (?:kill|hunt|farm) (?:the )?(?:iron )?golems?(?: for iron)?$");
     private static final Pattern GOLEMS_NO = Pattern.compile("^(?:(?:don'?t|do not|never) (?:kill|hurt|hunt|attack) (?:the |any )?(?:iron )?golems?"
@@ -221,6 +230,12 @@ public final class CommandParser {
         at = PUT_AT.matcher(t);
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
+        var roll = ROLL.matcher(t);
+        if (roll.matches()) {
+            String wanted = roll.group(1) != null ? roll.group(1) : roll.group(2) != null ? roll.group(2) : roll.group(3);
+            wanted = wanted == null ? "mending" : wanted.strip().replaceAll(" (?:book|books)$", "");
+            if (!wanted.matches("good|trading|great|new|librarian|book")) return Optional.of(new Command(Kind.ROLL_LIBRARIAN, wanted, null));
+        }
         if (FOOD_BOTH.matcher(t).matches()) return Optional.of(new Command(Kind.FOOD_BOTH, null, null));
         var build = BUILD.matcher(t);
         if (build.matches()) {

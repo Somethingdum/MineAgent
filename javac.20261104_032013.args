@@ -1,7 +1,0 @@
--d
-/tmp/claude-0/-home-user/09b0e079-b4b3-535f-87ba-a1c4ca322a0a/scratchpad/mod-check/out-parse
--proc:none
--Xmaxerrs
-500
--implicit:none
-engine/src/main/java/com/mineagent/engine/task/BlueprintTask.java

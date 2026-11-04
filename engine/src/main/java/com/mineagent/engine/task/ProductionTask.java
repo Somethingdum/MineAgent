@@ -611,14 +611,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         BlockPos chest = null;
         for (var c : loop.chestMemory().near(dim, sp.getBlockX(), sp.getBlockY(), sp.getBlockZ(), 64.0)) {
             BlockPos p = new BlockPos(c.x(), c.y(), c.z());
-            if (!p.equals(chestPos) && c.items().getOrDefault(path, 0) > 0) {
+            if (!p.equals(chestPos) && c.items().getOrDefault(path, 0) > 0 && loop.mayTakeFrom(dim, c.x(), c.y(), c.z())) {
                 chest = p;
                 break;
             }
         }
-        if (chest == null || !loop.mayUseChests()) return TaskState.SUCCESS; // the next round's plan makes what is short
-        // The first time in a world, it says before it takes from its owner's chests (MA10.5).
-        loop.beforeTakingFromChests(step.count() - have, ProductionPlanner.plural(step.item(), step.count() - have), chest);
+        if (chest == null) return TaskState.SUCCESS; // the next round's plan makes what is short
+        // The first time in a world, it says before it takes from its owner's chests (MA10.5); its own, it just takes.
+        if (!loop.ownsChest(dim, chest.getX(), chest.getY(), chest.getZ())) {
+            loop.beforeTakingFromChests(step.count() - have, ProductionPlanner.plural(step.item(), step.count() - have), chest);
+        }
         if (!sp.canInteractWithBlock(chest, 0.0)) return walkTo(chest);
         Container c = HopperBlockEntity.getContainerAt(sp.serverLevel(), chest);
         if (c == null) {
@@ -1009,8 +1011,18 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private boolean comeDown(ServerPlayer sp) {
         BlockPos under = sp.blockPosition().below();
         var st = sp.level().getBlockState(under);
-        if (pillared <= 0 || st.isAir() && !sp.onGround()) return pillared > 0;
-        if (st.isAir() || st.getDestroySpeed(sp.level(), under) < 0) {
+        if (pillared <= 0) return false;
+        if (st.isAir()) {
+            // The block just dug: a tick or two before it drops onto the next one down. A second with nothing under
+            // it and not falling: the pillar is gone.
+            if (++airWait < 20) return true;
+            pillared = 0;
+            pillarTicks = 0;
+            airWait = 0;
+            return false;
+        }
+        airWait = 0;
+        if (st.getDestroySpeed(sp.level(), under) < 0) {
             pillared = 0;
             pillarTicks = 0;
             return false;
@@ -1035,9 +1047,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return true;
     }
 
-    /** The pillar block it is digging out, and for how long. */
+    /** The pillar block it is digging out, and for how long; ticks with air under it on the way down. */
     private BlockPos digging;
-    private int digTicks;
+    private int digTicks, airWait;
 
     /** How near it has got to its prey, and the ticks since it last got nearer. */
     private double preyClosest = Double.MAX_VALUE;

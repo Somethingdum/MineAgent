@@ -40,11 +40,19 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
             this(toolCallId, want, times, null);
         }
 
+        /** The one villager to trade with (a keeper in its cell), or null for the nearest that fits. */
+        public final java.util.UUID villager;
+
         public TradeRecord(String toolCallId, String want, int times, String pay) {
+            this(toolCallId, want, times, pay, null);
+        }
+
+        public TradeRecord(String toolCallId, String want, int times, String pay, java.util.UUID villager) {
             super(toolCallId);
             this.want = want;
             this.times = Math.max(1, Math.min(64, times));
             this.pay = pay;
+            this.villager = villager;
         }
     }
 
@@ -247,7 +255,7 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
     private Villager nearest(ServerPlayer sp) {
         Villager best = null;
         for (Villager v : sp.serverLevel().getEntitiesOfClass(Villager.class, new AABB(sp.blockPosition()).inflate(32, 8, 32),
-                v -> v.isAlive() && !v.isBaby() && !v.isTrading())) {
+                v -> v.isAlive() && !v.isBaby() && !v.isTrading() && (record.villager == null || record.villager.equals(v.getUUID())))) {
             boolean any = false;
             for (MerchantOffer o : v.getOffers()) any |= fits(o, sp);
             if (!any) continue;

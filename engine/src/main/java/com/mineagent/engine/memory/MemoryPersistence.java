@@ -239,6 +239,8 @@ public class MemoryPersistence {
         var loop = chestsOf;
         if (loop != null) {
             data.addProperty("chestsAllowed", loop.mayUseChests());
+            data.addProperty("chestsDecided", loop.chestsDecided());
+            data.add("ownChests", GSON.toJsonTree(new java.util.ArrayList<>(loop.ownChests())));
             data.addProperty("chestsTold", loop.chestsTold());
             String[] sched = loop.scheduleState();
             if (sched[0] != null) data.addProperty("dayOrder", sched[0]);
@@ -247,6 +249,7 @@ public class MemoryPersistence {
             data.add("holes", GSON.toJsonTree(loop.holes().exportState()));
             data.add("answers", GSON.toJsonTree(loop.asking().exportTold()));
             data.addProperty("protectOwner", loop.protectsOwner());
+            data.add("keepers", GSON.toJsonTree(new java.util.ArrayList<>(loop.keepers())));
         }
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
@@ -266,7 +269,15 @@ public class MemoryPersistence {
             }
             var loop = chestsOf;
             if (loop != null && data.has("chestsAllowed")) {
-                loop.chestsPermission(data.get("chestsAllowed").getAsBoolean(), data.has("chestsTold") && data.get("chestsTold").getAsBoolean());
+                // Its owner's chests are its to use only if its owner said so (a world from before kept "yes" by default).
+                boolean decided = data.has("chestsDecided") && data.get("chestsDecided").getAsBoolean();
+                loop.chestsPermission(decided && data.get("chestsAllowed").getAsBoolean(), data.has("chestsTold") && data.get("chestsTold").getAsBoolean());
+                loop.chestsDecided(decided);
+            }
+            if (loop != null && data.has("ownChests") && data.get("ownChests").isJsonArray()) {
+                java.util.List<String> keys = new java.util.ArrayList<>();
+                for (var e : data.getAsJsonArray("ownChests")) if (e.isJsonPrimitive()) keys.add(e.getAsString());
+                loop.ownChests(keys);
             }
             if (loop != null && data.has("answers") && data.get("answers").isJsonObject()) {
                 java.util.Map<String, Boolean> told = new java.util.LinkedHashMap<>();
@@ -276,6 +287,11 @@ public class MemoryPersistence {
                 loop.asking().importTold(told);
             }
             if (loop != null && data.has("protectOwner")) loop.protectOwner(data.get("protectOwner").getAsBoolean());
+            if (loop != null && data.has("keepers") && data.get("keepers").isJsonArray()) {
+                java.util.List<String> ids = new java.util.ArrayList<>();
+                for (var e : data.getAsJsonArray("keepers")) if (e.isJsonPrimitive()) ids.add(e.getAsString());
+                loop.keepers(ids);
+            }
             if (loop != null) {
                 loop.scheduleState(data.has("dayOrder") ? data.get("dayOrder").getAsString() : null,
                         data.has("nightOrder") ? data.get("nightOrder").getAsString() : null,
