@@ -404,7 +404,8 @@ public final class GameKnowledge {
         Map<String, Integer> carried = keepFood > 0 || keepTorches > 0
                 ? Reserves.afterFloors(h.carried(), foods().keySet(), keepFood, keepTorches) : h.carried();
         Map<String, Integer> stored = loop != null && job != null ? loop.itemReservations().free(h.stored(), job) : h.stored();
-        return new Have(carried, stored, h.tools(), h.furnaces(), h.table(), h.blocks(), h.knownDistance(), h.smokers(), h.blastFurnaces());
+        return new Have(carried, stored, h.tools(), h.furnaces(), h.table(), h.blocks(), h.knownDistance(), h.smokers(), h.blastFurnaces(),
+                h.animals());
     }
 
     private static Have haveAll(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except) {
@@ -489,9 +490,11 @@ public final class GameKnowledge {
             herdAt.merge(key, (int) Math.sqrt(e.blockPosition().distSqr(at)), Math::min);
         }
         // Sheep ready to shear, by colour: shearing leaves them, so there is no two to leave.
+        Map<String, Integer> animals = new HashMap<>();
         for (var sheep : level.getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, new net.minecraft.world.phys.AABB(at).inflate(48),
                 sh -> sh.isAlive() && sh.readyForShearing())) {
             String key = Production.SHEAR + "minecraft:sheep:" + sheep.getColor().getName();
+            animals.merge(key, 1, Integer::sum);
             int d = (int) Math.sqrt(sheep.blockPosition().distSqr(at));
             if (!distance.containsKey(key) || d < distance.get(key)) {
                 where.put(key, Where.KNOWN);
@@ -502,6 +505,7 @@ public final class GameKnowledge {
             if (n > LEAVE) {
                 where.put(key, Where.KNOWN);
                 distance.put(key, herdAt.get(key));
+                animals.put(key, n - LEAVE); // how many it may take: the rest of the herd stays to breed
             }
         });
         if (loop != null) {
@@ -530,6 +534,6 @@ public final class GameKnowledge {
                 }
             }
         }
-        return new Have(carried, stored, tools, furnaces, table, where, distance, smokers, blasts);
+        return new Have(carried, stored, tools, furnaces, table, where, distance, smokers, blasts, animals);
     }
 }

@@ -74,12 +74,21 @@ public final class Production {
      * What the companion has and knows: items it carries and items in chests it knows, tools, furnaces it can use
      * (placed nearby or carried), whether a crafting table is at hand, and where each mineable block is.
      */
+    /**
+     * What it has and knows. {@code animals}: for an animal or shearing source it can see, how many it may take (the herd
+     * less the two of a kind it leaves; the sheep ready to shear); one not in it is not counted (seen before, elsewhere).
+     */
     public record Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
                        boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance, int smokers,
-                       int blastFurnaces) {
+                       int blastFurnaces, Map<String, Integer> animals) {
         public Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
                     boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance) {
-            this(carried, stored, tools, furnaces, table, blocks, knownDistance, 0, 0);
+            this(carried, stored, tools, furnaces, table, blocks, knownDistance, 0, 0, Map.of());
+        }
+
+        public Have(Map<String, Integer> carried, Map<String, Integer> stored, List<Tool> tools, int furnaces,
+                    boolean table, Map<String, Where> blocks, Map<String, Integer> knownDistance, int smokers, int blastFurnaces) {
+            this(carried, stored, tools, furnaces, table, blocks, knownDistance, smokers, blastFurnaces, Map.of());
         }
 
         public int count(String item) {

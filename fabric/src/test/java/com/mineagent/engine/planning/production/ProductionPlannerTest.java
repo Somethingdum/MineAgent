@@ -290,6 +290,28 @@ final class ProductionPlannerTest {
         assertTrue(p.summary().contains("shear 2 white sheep"), p.summary());
     }
 
+    @Test void itShearsNoMoreSheepThanAreReadyAndKillsNoMoreThanTheHerdSpares() {
+        // A bed's 3 wool: one sheep ready to shear (2 wool), and a herd of 3 sheep of which it may take one (the two left).
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, m("oak_log"), Where.COMMON,
+                WHITE_SHEEP, Where.KNOWN, "entity:minecraft:sheep", Where.KNOWN));
+        var have = new Have(Map.of(m("oak_planks"), 3), Map.of(), List.of(new Tool("shears", 0, false, 200)), 0, true, w,
+                Map.of(WHITE_SHEEP, 12, "entity:minecraft:sheep", 12), 0, 0, Map.of(WHITE_SHEEP, 1, "entity:minecraft:sheep", 1));
+        var p = ProductionPlanner.plan(vanilla(), have, m("white_bed"), 1);
+        assertTrue(p.possible(), p.problems().toString());
+        assertEquals(1, only(p, Action.SHEAR, m("white_wool")).blocks(), "the one sheep ready: " + p.summary());
+        assertEquals(1, only(p, Action.HUNT, m("white_wool")).blocks(), "the rest from the one it may take: " + p.summary());
+    }
+
+    @Test void moreThanTheHerdCanGiveIsNotPlannedAsIfItCould() {
+        // 8 beef, 2 a cow, and only one cow it may take: not "hunt 4 cows".
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, m("oak_log"), Where.COMMON, COW, Where.KNOWN));
+        var have = new Have(Map.of(), Map.of(), List.of(), 0, true, w, Map.of(COW, 10), 0, 0, Map.of(COW, 1));
+        var p = ProductionPlanner.plan(vanilla(), have, m("beef"), 8);
+        assertTrue(p.steps().stream().filter(s -> s.action() == Action.HUNT).allMatch(s -> s.blocks() <= 1), p.steps().toString());
+        assertFalse(p.possible(), p.summary());
+        assertTrue(p.problems().toString().contains("enough cows near for 6 more beef"), p.problems().toString());
+    }
+
     @Test void noShearsItMakesThemFirst() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("oak_planks"), 3, m("iron_ingot"), 2), List.of(), 0, 0, 0,
                 Map.of(WHITE_SHEEP, Where.KNOWN), Map.of(WHITE_SHEEP, 12)), m("white_bed"), 1);

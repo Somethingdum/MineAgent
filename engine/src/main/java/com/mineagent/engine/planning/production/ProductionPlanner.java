@@ -60,6 +60,8 @@ public final class ProductionPlanner {
     private int furnaces;
     private boolean table;
     private final Map<String, Double> memo = new HashMap<>();
+    /** Animals it may still take (and sheep still to shear) for this job, by source: none left, none more. */
+    private final Map<String, Integer> animalsLeft = new HashMap<>();
 
     /** The job, in order. */
     private final List<Step> steps = new ArrayList<>();
@@ -127,6 +129,7 @@ public final class ProductionPlanner {
         this.without = without;
         carried.putAll(have.carried());
         stored.putAll(have.stored());
+        if (have.animals() != null) animalsLeft.putAll(have.animals());
         tools.addAll(have.tools());
         furnaces = have.furnaces();
         smokers = have.smokers();
@@ -234,6 +237,7 @@ public final class ProductionPlanner {
     private double mineUnit(Source s, Set<String> path) {
         if (s.perBlock() <= 0 || (s.silkTouch() && noSilk.contains(s.item())) || without.contains(s.block())
                 || Production.animal(s.block()) && without.contains(Production.ENTITY + "*")) return Double.POSITIVE_INFINITY;
+        if (animalsLeft.containsKey(s.block()) && animalsLeft.get(s.block()) <= 0) return Double.POSITIVE_INFINITY; // all taken
         double wear = toolWear(s, path);
         if (Double.isInfinite(wear)) return wear;
         Where where = have.where(s.block());
@@ -355,7 +359,8 @@ public final class ProductionPlanner {
             }
         }
         if (Double.isInfinite(best)) {
-            problems.add(whyNot(item, p));
+            String few = tooFew(item, left);
+            problems.add(few != null ? few : whyNot(item, p));
             return;
         }
         if (bestSource != null && bestSource.silkTouch()) {
@@ -374,8 +379,35 @@ public final class ProductionPlanner {
                 return;
             }
         }
+        if (bestSource != null && animalsLeft.containsKey(bestSource.block())) {
+            // So many animals there (or sheep to shear): what they give, and the rest another way.
+            int can = animalsLeft.get(bestSource.block());
+            int need = (int) Math.ceil(left / bestSource.perBlock());
+            if (need > can) {
+                int got = Math.min(left, (int) Math.floor(can * bestSource.perBlock()));
+                if (got > 0) mine(bestSource, got, depth, p);
+                animalsLeft.put(bestSource.block(), 0);
+                make(item, left - got, depth, path);
+                return;
+            }
+            animalsLeft.put(bestSource.block(), can - need);
+        }
         if (bestSource != null) mine(bestSource, left, depth, p);
         else craft(bestRecipe, left, depth, p);
+    }
+
+    /** When the animals near are all spoken for: "not enough cows near for 6 more beef (I leave two of a kind)". */
+    private String tooFew(String item, int left) {
+        for (Source s : book.sources(item)) {
+            if (!animalsLeft.containsKey(s.block()) || animalsLeft.get(s.block()) > 0) continue;
+            String b = s.block();
+            String who = Production.shearing(b)
+                    ? b.substring(b.lastIndexOf(':') + 1).replace('_', ' ') + " sheep ready to shear"
+                    : b.substring(b.lastIndexOf(':') + 1).replace('_', ' ') + "s";
+            return String.format(Locale.ROOT, "there aren't enough %s near for %d more %s%s", who, left, plural(item, left),
+                    Production.animal(b) ? " (I leave two of a kind)" : "");
+        }
+        return null;
     }
 
     /**
@@ -624,7 +656,7 @@ public final class ProductionPlanner {
             return n * unit("minecraft:furnace", new HashSet<>(path));
         }
         Have now = new Have(new HashMap<>(carried), new HashMap<>(stored), new ArrayList<>(tools), furnaces, table,
-                have.blocks(), have.knownDistance(), smokers, blasts);
+                have.blocks(), have.knownDistance(), smokers, blasts, new HashMap<>(animalsLeft));
         ProductionPlanner sub = new ProductionPlanner(book, now, without);
         sub.nesting = nesting + 1;
         sub.make("minecraft:furnace", n, 0, new HashSet<>(path));
