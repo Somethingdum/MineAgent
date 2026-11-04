@@ -916,7 +916,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (pillared < 3) {
             // Where the pillar goes: a cell beside it, clear of its body (a block can't go where it stands), with room
             // for three blocks and itself above, its middle two blocks or so from the golem's.
-            if (pillared == 0 && (pillarSpot == null || !sp.blockPosition().equals(pillarSpot) || !sp.onGround())) {
+            // At the spot means over its cell (a jump up from it is still at it).
+            boolean atSpot = pillarSpot != null && sp.getBlockX() == pillarSpot.getX() && sp.getBlockZ() == pillarSpot.getZ();
+            if (pillared == 0 && !atSpot) {
                 if (pillarSpot == null || g.getBoundingBox().inflate(0.2).intersects(new net.minecraft.world.phys.AABB(pillarSpot))) {
                     pillarSpot = pillarSpot(sp, g);
                     chasing = null;
