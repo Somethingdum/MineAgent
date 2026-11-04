@@ -13,6 +13,8 @@ LOG = sys.argv[1]
 REPO = os.environ["GITHUB_REPOSITORY"]
 SHA = os.environ["GITHUB_SHA"]
 TOKEN = os.environ["GITHUB_TOKEN"]
+# One check run a world: "Benchmark progress (smh-benchmark-2)".
+NAME = "Benchmark progress" + (" (%s)" % os.environ["SEED"] if os.environ.get("SEED") else "")
 API = "https://api.github.com/repos/%s/check-runs" % REPO
 
 
@@ -56,7 +58,7 @@ def read():
 run = None
 for attempt in range(5):
     try:
-        run = call("POST", API, {"name": "Benchmark progress", "head_sha": SHA, "status": "in_progress",
+        run = call("POST", API, {"name": NAME, "head_sha": SHA, "status": "in_progress",
                                  "output": {"title": "Starting", "summary": "The server is starting."}})
         break
     except Exception as e:

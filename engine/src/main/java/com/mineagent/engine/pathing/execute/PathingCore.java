@@ -375,16 +375,10 @@ public class PathingCore {
         // through it) are their own business.
         if (sp.serverLevel().dimension() != net.minecraft.world.level.Level.OVERWORLD) return false;
         if (surfaceAround(sp) - sp.getBlockY() < 2) return false;
-        var level = sp.serverLevel();
-        var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
-        var head = sp.blockPosition().above();
-        for (int dy = 1; dy <= 24; dy++) {
-            var p = head.above(dy);
-            var st = level.getBlockState(p);
-            if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(st)) continue;
-            return !placed.isPlaced(p.getX(), p.getY(), p.getZ()) && !(st.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock);
-        }
-        return true; // open over its head, the ground round it higher: a pit
+        // Open over its head, or anything over it: the ground, or what it put there itself (the run on 7ab68c7 roofed
+        // its night's shelter in a shaft ten down and sat sealed under that roof half a day; the way out digs round
+        // what someone built, never through it).
+        return true;
     }
 
     /** The highest ground (its top's air) at its spot and the blocks two round it; a column topped by something built is no ground. */

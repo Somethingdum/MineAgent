@@ -19,16 +19,22 @@ on:
 
 jobs:
   benchmark:
-    name: Three days on its own (Fabric, dedicated server)
+    # Three worlds at once (its owner: "consistently achieve minimum met by day 3. At least 3 times in a row"): the
+    # same code on three seeds, each its own job and its own progress check run.
+    name: Three days on its own (${{ matrix.seed }})
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[benchmark]')
     runs-on: ubuntu-latest
     timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: ${{ fromJSON(github.event.inputs.seed && format('["{0}"]', github.event.inputs.seed) || '["smh-benchmark-1","smh-benchmark-2","smh-benchmark-3"]') }}
     permissions:
       contents: read
       checks: write
     env:
       DAYS: ${{ github.event.inputs.days || '3' }}
-      SEED: ${{ github.event.inputs.seed || 'smh-benchmark-1' }}
+      SEED: ${{ matrix.seed }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -72,7 +78,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-report
+          name: benchmark-report-${{ matrix.seed }}
           path: |
             fabric/build/benchmark/report.json
             benchmark.log
