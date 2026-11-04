@@ -95,12 +95,26 @@ public final class Benchmark implements ModInitializer {
             System.out.println("[BENCH] day " + day + ": " + s.get("summary"));
             if (elapsed % 24_000 < 1_200) days.put("day " + (elapsed / 24_000), s);
             stuckReport(server, day);
+            deathReport(day);
         }
         if (elapsed >= total) finish(server, elapsed);
     }
 
     private static BlockPos lastAt;
     private static int stillLines;
+    private static int deathsSeen;
+
+    /** Each death since the last line: what the game said killed it, and where (the eleventh run died eleven times). */
+    private static void deathReport(String day) {
+        AgentLoop loop = TaskContext.agentLoop(companion);
+        if (loop == null) return;
+        var deaths = new java.util.ArrayList<String>();
+        for (var e : loop.journal().search("", "death", 2_000)) if (!e.text().startsWith("came back")) deaths.add(e.text());
+        if (deaths.size() <= deathsSeen) return;
+        java.util.Collections.reverse(deaths); // the journal gives the newest first
+        for (int i = deathsSeen; i < deaths.size(); i++) System.out.println("[BENCH] day " + day + " died: " + deaths.get(i));
+        deathsSeen = deaths.size();
+    }
 
     /**
      * Where it has stood still for three game minutes and more (the third run sat on one block from day 1.1, every hunt
