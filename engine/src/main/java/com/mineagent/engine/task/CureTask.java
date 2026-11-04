@@ -213,7 +213,7 @@ public class CureTask extends CompanionTask<CureTask.CureRecord> {
     }
 
     /** The pack slot of a splash potion of weakness, or -1. */
-    static int splash(ServerPlayer sp) {
+    public static int splash(ServerPlayer sp) {
         var inv = sp.getInventory();
         for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
             ItemStack st = inv.getItem(i);

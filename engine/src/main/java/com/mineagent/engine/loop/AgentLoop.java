@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-") || taskId.startsWith("dragon-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1607,6 +1607,17 @@ public class AgentLoop {
                         "mine-" + UUID.randomUUID(), "ore", 0, false, new int[] {x0, z0, 16, y}), reply -> { });
                 return true;
             }
+            case DRAGON -> {
+                // Only ever on its owner's word (SMH plan 70: "I don't want it to beat the ender dragon without me").
+                if (!fromOwner) return false;
+                boolean crystalsOnly = "crystals".equals(c.value());
+                journal.record("order", crystalsOnly ? "shoot the end crystals" : "fight the dragon", currentGameTickSafe());
+                orderGoal(crystalsOnly ? "shoot the end crystals" : "fight the dragon");
+                if (!crystalsOnly) speakToOwner("The dragon, then: the crystals on the pillars first, with the bow, then it.");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.DragonTask.DragonRecord(
+                        "dragon-" + UUID.randomUUID(), crystalsOnly), reply -> { });
+                return true;
+            }
             case CURE -> {
                 var curer = self.serverPlayer();
                 if (curer == null) return false;
@@ -1676,7 +1687,11 @@ public class AgentLoop {
             }
             case BOSS_PREP -> {
                 if (c.value() != null && c.value().startsWith("beat the game")) {
-                    speakToOwner("Beating the game means the dragon: I can get ready for it now; fighting it myself isn't something I do yet.");
+                    var inEnd = self.serverPlayer();
+                    if (fromOwner && inEnd != null && inEnd.serverLevel().dimension() == net.minecraft.world.level.Level.END) {
+                        return runCommand(new com.mineagent.engine.chat.CommandParser.Command(com.mineagent.engine.chat.CommandParser.Kind.DRAGON, "fight", null), fromOwner);
+                    }
+                    speakToOwner("Beating the game means the dragon: getting ready for it first. In the End, say \"fight the dragon\".");
                 }
                 String boss = com.mineagent.engine.gear.BossKit.boss(c.value());
                 var bossSp = self.serverPlayer();

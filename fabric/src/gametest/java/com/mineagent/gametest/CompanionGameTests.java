@@ -3943,6 +3943,43 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, the dragon's crystals (on its owner's word only): two end crystals on obsidian pillars 16 and 20 blocks
+     * off (a crystal blows up as it breaks: shot from well away), a bow and arrows: "shoot the end crystals" breaks both.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_crystals", timeoutTicks = 1600)
+    public void theEndCrystalsAreShotFromAfar(GameTestHelper helper) {
+        Scene s = scene(helper, "Archer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos stand = helper.absolutePos(new BlockPos(2, 1, 2));
+        s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        java.util.List<net.minecraft.world.entity.boss.enderdragon.EndCrystal> crystals = new java.util.ArrayList<>();
+        for (int[] c : new int[][] {{16, 4, 16}, {18, 5, 4}}) {
+            for (int y = 1; y <= c[1]; y++) helper.setBlock(c[0], y, c[2], Blocks.OBSIDIAN);
+            var crystal = EntityType.END_CRYSTAL.create(helper.getLevel());
+            BlockPos at = helper.absolutePos(new BlockPos(c[0], c[1] + 1, c[2]));
+            crystal.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 0.0f, 0.0f);
+            helper.getLevel().addFreshEntity(crystal);
+            crystals.add(crystal);
+        }
+        s.body().getInventory().setItem(1, new ItemStack(Items.BOW));
+        s.body().getInventory().setItem(2, new ItemStack(Items.ARROW, 64));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "shoot the end crystals"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "crystals");
+            long left = crystals.stream().filter(net.minecraft.world.entity.Entity::isAlive).count();
+            String done = lastSaid(s, "Shot");
+            if (left == 0 && !done.isEmpty() || helper.getTick() >= 1500) {
+                String how = left + " crystals left, health " + s.body().getHealth() + ", arrows left " + s.body().getInventory().countItem(Items.ARROW)
+                        + "; said: " + (done.isEmpty() ? lastSaid(s, "") : done);
+                crystals.forEach(net.minecraft.world.entity.Entity::discard);
+                tidy(s);
+                if (left == 0 && s.body().isAlive()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {

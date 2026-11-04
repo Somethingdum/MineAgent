@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE, DRAGON }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -181,6 +181,9 @@ public final class CommandParser {
     /** "Make a farm", "build a wheat farm", "plant a farm here", "start a crop farm": a 9 by 9 tilled, watered and sown. */
     private static final Pattern FARM = Pattern.compile("^(?:make|build|plant|start|set up|put in)(?: me| us)? (?:a |an |some )?(?:basic |small |little )?"
             + "(?:wheat |crop |carrot |potato |food )?farms?(?: here| for us| for me| by the base| by home)?$");
+    /** "Fight the dragon", "kill the ender dragon" (the fight); "shoot the end crystals", "take out the crystals" (crystals). */
+    private static final Pattern DRAGON = Pattern.compile("^(?:fight|kill|beat|slay|take (?:down|on)|go kill|go fight)(?: the)? (?:ender ?)?dragon(?: for me| for us| now)?$");
+    private static final Pattern CRYSTALS = Pattern.compile("^(?:shoot|break|destroy|take out|pop|blow up)(?: (?:the|all the|those))? (?:end )?crystals?$");
     /** "Cure the zombie villager", "cure that zombie", "cure zombie villagers". */
     private static final Pattern CURE = Pattern.compile("^cure (?:the |that |this |a |those |these )?zombie(?: villagers?)?(?: here| for me| for us)?$");
     /** "Upgrade my sword to netherite", "make my armor netherite", "netherite my gear": diamond to netherite at a smithing table. */
@@ -270,6 +273,8 @@ public final class CommandParser {
         at = PUT_AT.matcher(t);
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
+        if (DRAGON.matcher(t).matches()) return Optional.of(new Command(Kind.DRAGON, "fight", null));
+        if (CRYSTALS.matcher(t).matches()) return Optional.of(new Command(Kind.DRAGON, "crystals", null));
         if (CURE.matcher(t).matches()) return Optional.of(new Command(Kind.CURE, null, null));
         var neth = NETHERITE.matcher(t);
         if (neth.matches()) {

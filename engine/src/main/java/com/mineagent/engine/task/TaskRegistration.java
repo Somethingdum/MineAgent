@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // The dragon, on its owner's word only (SMH plan 70)
+        CompanionTaskFactory.register(
+                DragonTask.DragonRecord.class,
+                DragonTask::new
+        );
+
         // A zombie villager cured (SMH plan 70: trading mastery)
         CompanionTaskFactory.register(
                 CureTask.CureRecord.class,
