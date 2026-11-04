@@ -81,8 +81,15 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     BlockPos job = site.isPresent() && site.get().dimension() == level.dimension() ? site.get().pos()
                             : record.jobSite != null ? BlockPos.of(record.jobSite) : null;
                     if (job == null) return end(false, "it has no job site to build the cell round");
-                    // Working beside it already: where it stands is the cell.
+                    // Working beside it already: where it stands is the cell. A villager on its way to it (one with no
+                    // job yet walks up to take it) is waited for, half a minute at most, so the cell is built where it
+                    // works and not turned to it after.
                     layout = toward(level, job, v.blockPosition());
+                    if (layout == null && ticks < 600 && v.blockPosition().distSqr(job) <= 16 * 16) {
+                        if (ticks % 40 == 1) nav.navigateNear(job.getX(), job.getY(), job.getZ(), 4);
+                        nav.tick();
+                        return TaskState.RUNNING;
+                    }
                     if (layout == null) layout = choose(level, job);
                     if (layout == null) return end(false, "there's no room round its job site for a cell");
                     phase = Phase.BUILD;
@@ -91,7 +98,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                 }
                 case BUILD -> {
                     if (!Placement.hasSupportBlock(sp)) return end(false, "I have no blocks to build the cell with");
-                    if (ticks > 2_400) return end(false, "I couldn't build the cell");
+                    if (ticks > 6_000) return end(false, "I couldn't build the cell");
                     // It took its job before the cell was up and works from a spot beside it that is to be a wall (a
                     // librarian stays a long while): that spot is the cell, the cell turned to it, what is up kept.
                     BlockPos vAt = v.blockPosition();

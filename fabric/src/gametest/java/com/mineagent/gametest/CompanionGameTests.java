@@ -4241,7 +4241,7 @@ public class CompanionGameTests implements FabricGameTest {
      * a lectern stands off by itself. The cell is built round the lectern first, open at one end; the villager comes to
      * take the lectern as villagers do, steps into the only spot beside it, and one block shuts it in. It stays in.
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trap_villager", timeoutTicks = 3000)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trap_villager", timeoutTicks = 8000)
     public void aWanderingVillagerWalksIntoItsCellAndIsShutIn(GameTestHelper helper) {
         Scene s = scene(helper, "Warden2");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
@@ -4266,7 +4266,7 @@ public class CompanionGameTests implements FabricGameTest {
             if (!done.isEmpty() && shutAt[0] < 0) shutAt[0] = helper.getTick();
             String failed = lastSaid(s, "I couldn't shut the villager in");
             // Shut in, and still in a hundred ticks on.
-            if (shutAt[0] >= 0 && helper.getTick() >= shutAt[0] + 100 || !failed.isEmpty() || helper.getTick() >= 2900) {
+            if (shutAt[0] >= 0 && helper.getTick() >= shutAt[0] + 100 || !failed.isEmpty() || helper.getTick() >= 7900) {
                 var cellNow = rel(helper, villager.blockPosition());
                 boolean besideLectern = Math.abs(cellNow.getX() - lectern.getX()) + Math.abs(cellNow.getZ() - lectern.getZ()) == 1;
                 // Every way out of where it stands is a block (or the lectern), at its feet.
