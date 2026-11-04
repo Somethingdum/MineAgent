@@ -87,7 +87,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** Up to 16 hours of game time for one order (a chest of stone bricks is about one). */
     static final long LONGEST = 16 * 72_000L;
 
-    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, BACK, DONE, FAILED }
+    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, BACK, FOOD, DONE, FAILED }
 
     private Phase phase = Phase.START;
     private boolean begun;
@@ -205,6 +205,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (FOOD.equals(record.item)) foodFrom = sp.blockPosition().immutable();
         }
         if (sub != null) sub.resume();
+        if (foodTask != null) foodTask.resume();
     }
 
     @Override
@@ -221,6 +222,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 case STEPS -> steps();
                 case DEPOSIT -> deposit();
                 case BACK -> backForFood();
+                case FOOD -> foodByWhatIsThere();
                 case DONE -> TaskState.SUCCESS;
                 case FAILED -> TaskState.FAILED;
             };
@@ -264,6 +266,14 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 }
                 return putChestDown();
             }
+        }
+        if (FOOD.equals(itemId) && chestPos == null && com.mineagent.engine.settings.Switches.reactiveFood()) {
+            // Food for itself: decided again and again from what is there, not planned ahead from what it remembers
+            // (AltoClef's way, behaviour.reactiveFood). A chest to fill with food is still planned.
+            foodTask = new CollectFoodTask(player, new CollectFoodTask.FoodRecord(record.toolCallId() + ":food", record.count == 0 ? 16 : record.count));
+            foodTask.start();
+            phase = Phase.FOOD;
+            return TaskState.RUNNING;
         }
         if (FOOD.equals(itemId)) {
             String food = chooseFood(sp);
@@ -547,6 +557,25 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (delivered == 0) return fail("I couldn't make any " + ProductionPlanner.name(itemId) + ": " + why);
         shortBecause = why;
         return finish();
+    }
+
+    /** Its food got by what is there now (behaviour.reactiveFood). */
+    private CollectFoodTask foodTask;
+
+    private TaskState foodByWhatIsThere() {
+        TaskState st = foodTask.tick();
+        if (st == TaskState.RUNNING) return TaskState.RUNNING;
+        int got = foodTask.got();
+        String why = foodTask.outcome();
+        foodTask = null;
+        if (st == TaskState.SUCCESS && got > 0) {
+            long minutes = Math.max(1, (sp().level().getGameTime() - startedAt) / 1_200L);
+            say("Done: " + got + " food" + (why.isEmpty() ? "" : ", as much as I could: " + why) + ". About " + minutes + (minutes == 1 ? " minute." : " minutes."));
+            outcome = "done";
+            phase = Phase.DONE;
+            return TaskState.SUCCESS;
+        }
+        return fail(why.isEmpty() ? "I couldn't get any food" : "I couldn't get any food: " + why);
     }
 
     /** Where a food order set out from, and how far from it a failed hunt may leave it before it walks back. */
@@ -2538,6 +2567,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     @Override
     protected void onInterrupt() {
         if (sub != null) sub.interrupt();
+        if (foodTask != null) foodTask.interrupt();
         if (tradeSub != null) {
             tradeSub.interrupt(); // the menu closed; the trading starts again when it carries on
             tradeSub = null;

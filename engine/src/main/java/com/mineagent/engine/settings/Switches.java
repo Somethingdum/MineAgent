@@ -93,6 +93,7 @@ public final class Switches {
     public static boolean wayOutOfHoles() { return b().wayOutOfHoles(); }
     public static boolean dugoutHomes() { return b().dugoutHomes(); }
     public static boolean homeAtNight() { return b().homeAtNight(); }
+    public static boolean reactiveFood() { return b().reactiveFood(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

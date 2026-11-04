@@ -20,6 +20,12 @@ too dangerous to fight without gear. Ported, in plain coordinates and with one c
 - `engine/src/main/java/com/mineagent/engine/combat/MobPolicy.java`
 - `engine/src/main/java/com/mineagent/engine/survival/MobDefenseChain.java`
 
+And the deciding of its food task (`CollectFoodTask`: food on the ground first, then ripe crops, then the animal in
+sight scored by the food it gives over the distance squared, sweet berries last, and when none is in sight a wander
+to new ground and a look again, as `TimeoutWanderTask` does), rewritten for the companion's own body, into:
+
+- `engine/src/main/java/com/mineagent/engine/task/CollectFoodTask.java`
+
 ```
 MIT License
 

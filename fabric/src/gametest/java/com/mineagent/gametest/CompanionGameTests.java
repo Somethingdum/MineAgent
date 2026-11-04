@@ -3255,6 +3255,79 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * Food from what is in sight (AltoClef's way, {@code behaviour.reactiveFood}): two cows and a chicken, and "make me 2
+     * food". The plan of old kept two of each kind to breed and had none left to take ("no animals I may hunt near"):
+     * with nothing else near, these are food.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_food_sight", timeoutTicks = 2400)
+    public void foodFromWhatIsInSight(GameTestHelper helper) {
+        Scene s = scene(helper, "Forager");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_SWORD));
+        helper.spawn(EntityType.COW, new BlockPos(9, 1, 3));
+        helper.spawn(EntityType.COW, new BlockPos(10, 1, 6));
+        helper.spawn(EntityType.CHICKEN, new BlockPos(6, 1, 10));
+        var inv = s.body().getInventory();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 2 food"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "food sight");
+            int food = 0;
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                var st = inv.getItem(i);
+                if (!st.isEmpty() && st.get(net.minecraft.core.component.DataComponents.FOOD) != null) food += st.getCount();
+            }
+            String done = lastSaid(s, "Done: ");
+            if (food >= 2 && !done.isEmpty()) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                String how = "food " + food + ", beef " + inv.countItem(Items.BEEF) + ", chicken " + inv.countItem(Items.CHICKEN) + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * The one way out of anywhere (AltoClef's progress checkers, Mindcraft's unstuck mode): penned in by fences it can't
+     * step over, not a hole and not a tree, a cow outside. Its walks to the cow find no way; the second time here, the
+     * next looks again breaking what is in the way, and it gets out and gets its food.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_penned", timeoutTicks = 2400)
+    public void pennedInItBreaksOutTheSecondTime(GameTestHelper helper) {
+        Scene s = scene(helper, "Penned");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos in = helper.absolutePos(new BlockPos(5, 1, 5));
+        s.body().teleportTo(helper.getLevel(), in.getX() + 0.5, in.getY(), in.getZ() + 0.5, 0.0f, 0.0f);
+        for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) if (x != 5 || z != 5) helper.setBlock(x, 1, z, Blocks.OAK_FENCE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_AXE));
+        helper.spawn(EntityType.COW, new BlockPos(12, 1, 12));
+        helper.spawn(EntityType.COW, new BlockPos(13, 1, 10));
+        helper.spawn(EntityType.COW, new BlockPos(11, 1, 13));
+        var inv = s.body().getInventory();
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 1 food"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "penned");
+            BlockPos at = rel(helper, s.body().blockPosition());
+            boolean out = at.getX() < 4 || at.getX() > 6 || at.getZ() < 4 || at.getZ() > 6;
+            if (out && inv.countItem(Items.BEEF) + inv.countItem(Items.COOKED_BEEF) >= 1) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                int fences = 0;
+                for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) if (is(helper, x, 1, z, Blocks.OAK_FENCE)) fences++;
+                String how = "at " + at.toShortString() + ", out " + out + ", fences standing " + fences + ", beef " + inv.countItem(Items.BEEF) + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * What the three-world run found (a day and a half stood inside walls of its own at a cliff's edge, its pathing
      * stalled against them): walled in for the night with dirt, its shelter cut short with the walls still up; in the
      * morning the walls come down before anything else.

@@ -341,7 +341,7 @@ public class PathingCore {
             executor = new PathExecutor(player, path);
             state = State.EXECUTE;
         } else if (wayOut == null && wayOutAllowed && !terrainPolicy.allowPillar() && !terrainPolicy.allowBreakingObstacles()
-                && (inAHole() || upATree())) {
+                && wayOutHere()) {
             var sp = TaskContext.serverPlayer(player);
             wayOut = new IntentContract.TerrainPolicy(true, true, true, false, 16, 24,
                     Math.max(4, surfaceAround(sp) - sp.getBlockY() + 4), terrainPolicy.cleanupMode());
@@ -355,6 +355,46 @@ public class PathingCore {
             // No path found — give up
             state = State.IDLE;
         }
+    }
+
+    /**
+     * Its walks that found no way or stalled for good lately, by companion: when, and where it stood (SMH plan 70: the
+     * one way out of anywhere, as AltoClef's progress checkers and Mindcraft's unstuck mode have it, instead of a rule
+     * for each place it was caught: a pit, a tree top, walls of its own, a cliff's edge).
+     */
+    private static final java.util.Map<java.util.UUID, java.util.ArrayDeque<long[]>> FAILED =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** How long a failed walk is remembered, and how near the next must be to count as the same place. */
+    static final long FAILED_WITHIN = 600L;
+    static final int SAME_PLACE = 4;
+
+    /**
+     * This walk found no way (or stalled for good): noted, and true when another did here lately, so this one may dig
+     * and pillar ({@code behaviour.wayOutOfHoles}). In the Overworld; never through what someone built.
+     */
+    private boolean failedHere() {
+        var sp = TaskContext.serverPlayer(player);
+        if (sp == null || !com.mineagent.engine.settings.Switches.wayOutOfHoles()) return false;
+        if (sp.serverLevel().dimension() != net.minecraft.world.level.Level.OVERWORLD) return false;
+        long now = sp.serverLevel().getGameTime();
+        var fails = FAILED.computeIfAbsent(sp.getUUID(), k -> new java.util.ArrayDeque<>());
+        synchronized (fails) {
+            while (!fails.isEmpty() && now - fails.peekFirst()[3] > FAILED_WITHIN) fails.pollFirst();
+            int before = 0;
+            for (long[] f : fails) {
+                long dx = f[0] - sp.getBlockX(), dy = f[1] - sp.getBlockY(), dz = f[2] - sp.getBlockZ();
+                if (dx * dx + dy * dy + dz * dz <= (long) SAME_PLACE * SAME_PLACE) before++;
+            }
+            fails.addLast(new long[] {sp.getBlockX(), sp.getBlockY(), sp.getBlockZ(), now});
+            while (fails.size() > 16) fails.pollFirst();
+            return before >= 1;
+        }
+    }
+
+    /** No way found under its task's rules: in a hole, up a tree, or the second walk lately to fail here (noted). */
+    private boolean wayOutHere() {
+        boolean again = failedHere(); // noted whatever the rest says
+        return again || inAHole() || upATree();
     }
 
     /** Its terrain rules for this goal: its task's, or the way out of a hole once those found none. */
@@ -453,6 +493,17 @@ public class PathingCore {
                 lastFailureDetail = "EXECUTION_FAILED_WITHOUT_DETAIL";
             }
             if (executionFailures < MAX_EXECUTION_FAILURES) {
+                state = State.SEARCH;
+                executor = null;
+                searchInitialized = false;
+            } else if (failedHere() && wayOut == null && wayOutAllowed && !terrainPolicy.allowPillar() && !terrainPolicy.allowBreakingObstacles()) {
+                // Stalled for good, and not the first time here: the way out, digging and pillaring, from here.
+                var sp = TaskContext.serverPlayer(player);
+                wayOut = new IntentContract.TerrainPolicy(true, true, true, false, 16, 24,
+                        Math.max(4, surfaceAround(sp) - sp.getBlockY() + 4), terrainPolicy.cleanupMode());
+                lastFailureDetail = "STALLED_TRYING_THE_WAY_OUT";
+                excludedEdges.clear();
+                executionFailures = 0;
                 state = State.SEARCH;
                 executor = null;
                 searchInitialized = false;
