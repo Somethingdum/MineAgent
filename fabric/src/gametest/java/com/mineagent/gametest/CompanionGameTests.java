@@ -4648,7 +4648,14 @@ public class CompanionGameTests implements FabricGameTest {
             }
             if (open > 0 && !blown[0]) blown[0] = true;
             if (blown[0] && open == 0 || helper.getTick() >= 2950) {
-                String how = (blown[0] ? "blown; " : "never blown; ") + open + " blocks of the crater still open; " + sandBelow
+                StringBuilder where = new StringBuilder();
+                for (BlockPos p : BlockPos.betweenClosed(at.offset(-4, -3, -4), at.offset(4, -1, 4))) {
+                    if (p.distSqr(at) > 16 || !helper.getLevel().getBlockState(helper.absolutePos(p)).isAir()) continue;
+                    var below = helper.getLevel().getBlockState(helper.absolutePos(p.below()));
+                    where.append(" ").append(p.toShortString()).append(" over ")
+                            .append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(below.getBlock()).getPath()).append(";");
+                }
+                String how = (blown[0] ? "blown; " : "never blown; ") + open + " blocks of the crater still open:" + where + " " + sandBelow
                         + " sand below the old top; " + s.loop().holes().size() + " holes in its ledger; said: " + lastSaid(s, "");
                 MineAgentEngine.onPlayerChat(s.owner(), "you can wander");
                 tidy(s);

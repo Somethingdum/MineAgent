@@ -846,12 +846,23 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private TaskState golem(ServerPlayer sp, net.minecraft.world.entity.animal.IronGolem g) {
         var input = TaskContext.inputDriver(player);
         if (pillared < 3) {
-            double flat = Math.hypot(g.getX() - sp.getX(), g.getZ() - sp.getZ());
-            if (pillared == 0 && (flat > 2.2 || !sp.onGround())) {
-                chase(g.blockPosition(), 1);
+            // Where the pillar goes: a cell beside it, clear of its body (a block can't go where it stands), with room
+            // for three blocks and itself above, its middle two blocks or so from the golem's.
+            if (pillared == 0 && (pillarSpot == null || !sp.blockPosition().equals(pillarSpot) || !sp.onGround())) {
+                if (pillarSpot == null || g.getBoundingBox().inflate(0.2).intersects(new net.minecraft.world.phys.AABB(pillarSpot))) {
+                    pillarSpot = pillarSpot(sp, g);
+                    chasing = null;
+                }
+                if (pillarSpot == null) {
+                    unreachable.add(g.getUUID());
+                    prey = null;
+                    return TaskState.RUNNING;
+                }
+                chase(pillarSpot, 0);
                 if (navFailed) {
                     unreachable.add(g.getUUID());
                     prey = null;
+                    pillarSpot = null;
                     navFailed = false;
                 }
                 return TaskState.RUNNING;
@@ -892,6 +903,36 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             prey = null;
         }
         return TaskState.RUNNING;
+    }
+
+    private BlockPos pillarSpot;
+
+    /** The cell nearest it, beside the golem, for the pillar: see {@link #golem}. */
+    private static BlockPos pillarSpot(ServerPlayer sp, net.minecraft.world.entity.animal.IronGolem g) {
+        var level = sp.serverLevel();
+        var body = g.getBoundingBox().inflate(0.2);
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        BlockPos c = g.blockPosition();
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    BlockPos p = c.offset(dx, dy, dz);
+                    double flat = Math.hypot(p.getX() + 0.5 - g.getX(), p.getZ() + 0.5 - g.getZ());
+                    if (flat < 1.6 || flat > 2.6 || body.intersects(new net.minecraft.world.phys.AABB(p))) continue;
+                    if (!BlockHelper.canStandOn(level.getBlockState(p.below()))) continue;
+                    boolean room = true;
+                    for (int up = 0; up <= 4 && room; up++) room = BlockHelper.isPassable(level.getBlockState(p.above(up)));
+                    if (!room) continue;
+                    double d = p.distSqr(sp.blockPosition());
+                    if (d < bestD) {
+                        bestD = d;
+                        best = p.immutable();
+                    }
+                }
+            }
+        }
+        return best;
     }
 
     /** Off the golem pillar: the block under its feet dug, one at a time, as a player comes down. True while it does. */
@@ -955,6 +996,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             prey = choosePrey(sp, type);
             preyTicks = 0;
             pillarTicks = 0;
+            pillarSpot = null;
             chasing = null;
             navFailed = false;
             if (prey == null) {
@@ -1447,6 +1489,22 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             return null;
         }
         if (error.contains("No crafting table")) {
+            // None in reach: the one it put down before, a walk away (it went off shearing); else one of its own, made
+            // if it has none, put down here.
+            if (count(sp, net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) {
+                BlockPos known = nearestTable(sp);
+                if (known != null) {
+                    if (!walkSoftly(known, 2)) return "";
+                    if (sp.canInteractWithBlock(known, 1.0)) return "";
+                    tablesOutOfReach.add(known);
+                    return "";
+                }
+                var ownTable = recipeFor(sp, "minecraft:crafting_table");
+                if (ownTable == null || !"ok".equals(craftOnce(sp, ownTable, 1))) {
+                    lastCraftError = "I have no crafting table near and nothing to make one from";
+                    return null;
+                }
+            }
             if (placeNear(sp, Blocks.CRAFTING_TABLE.defaultBlockState(), 1)) {
                 wait = 2;
                 return "";
@@ -1979,6 +2037,22 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     /** The cells at Chebyshev distance {@code r} round {@code c}, at its height. */
+    /** The nearest crafting table within 32 blocks it hasn't found out of reach, or null. */
+    private BlockPos nearestTable(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        BlockPos at = sp.blockPosition(), best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-32, -6, -32), at.offset(32, 6, 32))) {
+            if (!level.isLoaded(p) || !level.getBlockState(p).is(Blocks.CRAFTING_TABLE) || tablesOutOfReach.contains(p)) continue;
+            double d = p.distSqr(at);
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
     /**
      * Next to a fence or a wall: a block put there is a step up onto it (a block's top to a fence's is half a block, which
      * a player walks up), and over the fence out of the pen. Its workshop goes elsewhere.
