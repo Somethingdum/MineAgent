@@ -72,9 +72,35 @@ public final class ChestPurposes {
         if (purpose == null || purpose.isBlank()) return false;
         if ("overflow".equals(purpose)) return true;
         if (KINDS.containsKey(purpose)) return kinds.contains(purpose);
+        return rank(purpose, itemId, kinds) < Integer.MAX_VALUE;
+    }
+
+    /**
+     * How well an item fits a purpose, lower better: 0 the thing by name ("spruce logs"), 1 a sort of thing by its last
+     * word ("wool" takes every colour of wool, "swords" every sword), 2 a kind, 3 overflow; MAX_VALUE: it doesn't fit.
+     */
+    public static int rank(String purpose, String itemId, Set<String> kinds) {
+        if (purpose == null || purpose.isBlank()) return Integer.MAX_VALUE;
+        if ("overflow".equals(purpose)) return 3;
+        if (KINDS.containsKey(purpose)) return kinds.contains(purpose) ? 2 : Integer.MAX_VALUE;
         String path = itemId.substring(itemId.indexOf(':') + 1).replace('_', ' ');
-        String p = purpose.replaceAll("ies$", "y").replaceAll("(?<=[a-z])s$", "");
-        return path.equals(purpose) || path.equals(p) || path.replaceAll("(?<=[a-z])s$", "").equals(p);
+        String p = singular(purpose);
+        if (path.equals(purpose) || path.equals(p) || singular(path).equals(p)) return 0;
+        if (!p.contains(" ") && p.length() >= 3) {
+            String last = path.substring(path.lastIndexOf(' ') + 1);
+            if (singular(last).equals(p)) return 1;
+            // A material ("Iron" on a sorting chest): its ingots, nuggets, blocks, raw and ore, not what is made of it.
+            if (path.equals("raw " + p) || path.equals("raw " + p + " block")
+                    || (path.startsWith(p + " ") || path.contains(" " + p + " ")) && MATERIAL.contains(last)) return 1;
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    /** The last words of a material's own forms. */
+    public static final Set<String> MATERIAL = Set.of("ingot", "nugget", "block", "ore", "scrap", "shard", "dust");
+
+    public static String singular(String w) {
+        return w.replaceAll("ies$", "y").replaceAll("(?<=[a-z])(?<!s)s$", "");
     }
 
     public synchronized State exportState() {

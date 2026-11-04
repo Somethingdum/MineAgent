@@ -82,6 +82,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.gearGoal(), "iron armour made where the danger grows");
         assertTrue(d.bowAtRange(), "the bow at range is on by default");
         assertTrue(d.kitGoal(), "the kit goal is on by default");
+        assertTrue(d.readChestLabels(), "reading chest labels is on by default");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

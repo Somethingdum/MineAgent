@@ -129,8 +129,11 @@ public class CompanionGameTests implements FabricGameTest {
         if (helper.getTick() % 40 != 0) return;
         var state = MineAgentEngine.getCompanion(s.companion().companionId());
         String control = state.map(c -> c.auction.inControl()).orElse("gone");
+        var feet = s.body().blockPosition();
+        var under = helper.getLevel().getBlockState(s.body().getOnPos());
         System.out.println("[SCENE " + what + "] tick " + helper.getTick() + ": at "
-                + rel(helper, s.body().blockPosition()).toShortString() + ", " + control
+                + rel(helper, feet).toShortString() + String.format(java.util.Locale.ROOT, " (y %.2f on %s)", s.body().getY(),
+                        net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(under.getBlock()).getPath()) + ", " + control
                 + (s.body().isSleeping() ? ", asleep" : ""));
     }
 
@@ -4176,6 +4179,63 @@ public class CompanionGameTests implements FabricGameTest {
                         + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
                 tidy(s);
                 if (stonePicks == 1 && swords == 1 && bread == 8 && cobble == 20 && swordsLeft == 0 && keptIron) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** A wall sign on the west face of a chest, with these lines. */
+    private static void signOn(GameTestHelper helper, BlockPos chest, String... lines) {
+        BlockPos at = chest.west();
+        helper.setBlock(at, Blocks.OAK_WALL_SIGN.defaultBlockState().setValue(net.minecraft.world.level.block.WallSignBlock.FACING,
+                net.minecraft.core.Direction.WEST));
+        if (helper.getLevel().getBlockEntity(helper.absolutePos(at)) instanceof net.minecraft.world.level.block.entity.SignBlockEntity be) {
+            var text = new net.minecraft.world.level.block.entity.SignText();
+            for (int i = 0; i < lines.length && i < 4; i++) text = text.setMessage(i, net.minecraft.network.chat.Component.literal(lines[i]));
+            be.setText(text, true);
+        }
+    }
+
+    /**
+     * SMH plan 70, its owner's chest sorting system: a chest signed "Iron", one signed "Wool, String", one with an arrow
+     * in an item frame, and a plain one: "put your things away" puts each where its label says, the rest in the plain one.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_chest_signs", timeoutTicks = 1200)
+    public void thingsPutAwayByTheSignsOnTheChests(GameTestHelper helper) {
+        Scene s = scene(helper, "Sorter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos iron = new BlockPos(7, 1, 2), wool = new BlockPos(7, 1, 5), arrows = new BlockPos(7, 1, 8), plain = new BlockPos(2, 1, 8);
+        for (BlockPos c : new BlockPos[] {iron, wool, arrows, plain}) helper.setBlock(c, Blocks.CHEST);
+        signOn(helper, iron, "[ Iron ]");
+        signOn(helper, wool, "Wool, String");
+        var frame = new net.minecraft.world.entity.decoration.ItemFrame(helper.getLevel(), helper.absolutePos(arrows.west()), net.minecraft.core.Direction.WEST);
+        frame.setItem(new ItemStack(Items.ARROW));
+        helper.getLevel().addFreshEntity(frame);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.RAW_IRON, 6));
+        inv.setItem(2, new ItemStack(Items.WHITE_WOOL, 4));
+        inv.setItem(3, new ItemStack(Items.STRING, 3));
+        inv.setItem(4, new ItemStack(Items.ARROW, 10));
+        inv.setItem(5, new ItemStack(Items.COBBLESTONE, 12));
+        inv.setItem(6, new ItemStack(Items.GOLDEN_APPLE, 2));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "put your things away"));
+        java.util.function.Function<BlockPos, net.minecraft.world.Container> at =
+                c -> (net.minecraft.world.Container) helper.getLevel().getBlockEntity(helper.absolutePos(c));
+        helper.onEachTick(() -> {
+            trace(helper, s, "chest signs");
+            String done = lastSaid(s, "Put away");
+            String failed = lastSaid(s, "I couldn't put");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1150) {
+                int ironIn = count(at.apply(iron), Items.RAW_IRON), woolIn = count(at.apply(wool), Items.WHITE_WOOL);
+                int stringIn = count(at.apply(wool), Items.STRING), arrowsIn = count(at.apply(arrows), Items.ARROW);
+                int cobbleIn = count(at.apply(plain), Items.COBBLESTONE);
+                int apples = inv.countItem(Items.GOLDEN_APPLE);
+                String how = "iron chest " + ironIn + " raw iron; wool chest " + woolIn + " wool, " + stringIn + " string; arrow chest "
+                        + arrowsIn + " arrows; plain chest " + cobbleIn + " cobblestone; golden apples kept " + apples + "; said: "
+                        + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                frame.discard();
+                if (ironIn == 6 && woolIn == 4 && stringIn == 3 && arrowsIn == 10 && cobbleIn == 12 && apples == 2) helper.succeed();
                 else fail(helper, how);
             }
         });

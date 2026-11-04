@@ -27,7 +27,7 @@ import java.util.Set;
 
 /**
  * Putting things away by purpose (SMH plan 70, MA9.2): what it carries and doesn't need for its work (its best tool of
- * each kind, 16 food and 32 torches stay) goes in the chest near whose purpose fits it; what has no chest of its own
+ * each kind, 16 food, 32 torches, its golden apples and, with a bow, 64 arrows stay) goes in the chest near whose purpose fits it; what has no chest of its own
  * goes to an overflow chest (one said to be for anything, else the nearest without a purpose), at most two. Tidying:
  * what lies in the overflow chests that a chest with a purpose takes is moved there. Chests within 32 blocks.
  */
@@ -44,7 +44,7 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
 
     private enum Phase { PLAN, VISIT, DONE, FAILED }
 
-    static final int NEAR = 32, OVERFLOW = 2, KEEP_FOOD = 16, KEEP_TORCHES = 32;
+    static final int NEAR = 32, OVERFLOW = 2, KEEP_FOOD = 16, KEEP_TORCHES = 32, KEEP_ARROWS = 64;
 
     /** One stop: a chest, what it takes from there, what it puts in. */
     private record Visit(BlockPos chest, Map<String, Integer> take, Map<String, Integer> put) {}
@@ -76,8 +76,10 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
                     var loop = TaskContext.agentLoop(player);
                     if (loop == null) return end(false, "I have no memory of chests here");
                     String dim = level.dimension().location().toString();
-                    // The chests near, with their purposes.
-                    Map<BlockPos, String> purpose = new LinkedHashMap<>();
+                    // The chests near, with their purposes: the one its owner gave it, else what the labels on it say
+                    // (signs and item frames: its owner's sorting system), several to a chest.
+                    Map<BlockPos, List<String>> purpose = new LinkedHashMap<>();
+                    boolean labels = com.mineagent.engine.settings.Switches.readChestLabels();
                     List<BlockPos> plain = new ArrayList<>();
                     BlockPos at = sp.blockPosition();
                     for (BlockPos p : BlockPos.betweenClosed(at.offset(-NEAR, -6, -NEAR), at.offset(NEAR, 6, NEAR))) {
@@ -94,14 +96,19 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
                             if (purpose.containsKey(other) || plain.contains(other)) continue;
                             if (pur.isEmpty()) pur = loop.chestPurposes().of(dim, other.getX(), other.getY(), other.getZ());
                         }
-                        if (pur.isPresent()) purpose.put(one, pur.get());
+                        if (pur.isPresent()) {
+                            purpose.put(one, List.of(pur.get()));
+                            continue;
+                        }
+                        List<String> said = labels ? com.mineagent.engine.world.ChestLabels.read(level, one) : List.of();
+                        if (!said.isEmpty()) purpose.put(one, said);
                         else plain.add(one);
                     }
                     if (purpose.isEmpty() && plain.isEmpty()) return end(false, "there's no chest near me");
                     plain.sort(java.util.Comparator.comparingDouble(p -> p.distSqr(at)));
                     List<BlockPos> overflow = new ArrayList<>();
                     purpose.forEach((p, w) -> {
-                        if ("overflow".equals(w)) overflow.add(p);
+                        if (w.contains("overflow")) overflow.add(p);
                     });
                     for (BlockPos p : plain) if (overflow.size() < OVERFLOW) overflow.add(p);
                     Map<BlockPos, Map<String, Integer>> put = new LinkedHashMap<>();
@@ -121,7 +128,7 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
                             if (st.isEmpty()) continue;
                             String id = id(st);
                             BlockPos to = chestFor(id, purpose, List.of(), at);
-                            if (to == null || "overflow".equals(purpose.get(to))) continue;
+                            if (to == null || to.equals(o) || purpose.getOrDefault(to, List.of()).contains("overflow")) continue;
                             take.computeIfAbsent(o, k -> new LinkedHashMap<>()).merge(id, st.getCount(), Integer::sum);
                             put.computeIfAbsent(to, k -> new LinkedHashMap<>()).merge(id, st.getCount(), Integer::sum);
                         }
@@ -175,16 +182,21 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
         }
     }
 
-    /** The chest for this item: the nearest whose purpose names it, then one whose purpose is its kind, then overflow. */
-    private BlockPos chestFor(String id, Map<BlockPos, String> purpose, List<BlockPos> overflow, BlockPos at) {
+    /**
+     * The chest for this item: the nearest whose purpose names it, then one for its sort ("wool", "iron"), then one for
+     * its kind ("tools"), then overflow.
+     */
+    private BlockPos chestFor(String id, Map<BlockPos, List<String>> purpose, List<BlockPos> overflow, BlockPos at) {
         ItemStack st = new ItemStack(BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id)));
         Set<String> kinds = kinds(st);
         BlockPos best = null;
         int bestRank = Integer.MAX_VALUE;
         double bestD = Double.MAX_VALUE;
         for (var e : purpose.entrySet()) {
-            if (full.contains(e.getKey()) || "overflow".equals(e.getValue()) || !ChestPurposes.fits(e.getValue(), id, kinds)) continue;
-            int rank = ChestPurposes.KINDS.containsKey(e.getValue()) ? 1 : 0; // a thing by name before a kind
+            if (full.contains(e.getKey())) continue;
+            int rank = Integer.MAX_VALUE;
+            for (String w : e.getValue()) if (!"overflow".equals(w)) rank = Math.min(rank, ChestPurposes.rank(w, id, kinds));
+            if (rank == Integer.MAX_VALUE) continue;
             double d = e.getKey().distSqr(at);
             if (rank < bestRank || rank == bestRank && d < bestD) {
                 best = e.getKey();
@@ -231,12 +243,19 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
             Integer was = keptTool.get(kind);
             if (was == null || worth(st) > worth(inv.getItem(was))) keptTool.put(kind, i);
         }
-        int food = 0, torches = 0;
+        int food = 0, torches = 0, arrows = 0;
+        boolean bow = keptTool.containsKey("bow") || keptTool.containsKey("crossbow");
         for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
             ItemStack st = inv.getItem(i);
             if (st.isEmpty() || keptTool.containsValue(i)) continue;
+            // Golden apples stay with it (what saves its life), and with a bow, a stack of arrows.
+            if (com.mineagent.engine.survival.FoodPolicy.isGoldenApple(st.getItem())) continue;
             int n = st.getCount();
-            if (st.has(net.minecraft.core.component.DataComponents.FOOD) && !st.is(Items.ROTTEN_FLESH) && !st.is(Items.SPIDER_EYE)) {
+            if (bow && st.getItem() instanceof net.minecraft.world.item.ArrowItem) {
+                int keep = Math.min(n, KEEP_ARROWS - arrows);
+                arrows += keep;
+                n -= keep;
+            } else if (st.has(net.minecraft.core.component.DataComponents.FOOD) && !st.is(Items.ROTTEN_FLESH) && !st.is(Items.SPIDER_EYE)) {
                 int keep = Math.min(n, KEEP_FOOD - food);
                 food += keep;
                 n -= keep;

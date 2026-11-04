@@ -83,9 +83,10 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
         if (++targetTicks > 400) {
             couldNot.add(target.asLong()); // out of its reach: the next darkest
             target = null;
-            return TaskState.RUNNING;
+            return ++outOfReach >= 8 ? cannotReach(sp) : TaskState.RUNNING;
         }
-        // No nearer after five seconds (behind a fence, over water): not that one.
+        // No nearer after five seconds (behind a fence, over water): not that one. Eight such in a row: what is left
+        // dark is out of its reach from here, and it stops rather than walk at fences for minutes.
         double d = target.distToCenterSqr(sp.getEyePosition());
         if (targetTicks == 1 || d < closest - 1.0) {
             closest = d;
@@ -93,7 +94,7 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
         } else if (targetTicks - closerAt > 100) {
             couldNot.add(target.asLong());
             target = null;
-            return TaskState.RUNNING;
+            return ++outOfReach >= 8 ? cannotReach(sp) : TaskState.RUNNING;
         }
         if (target.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
             if (targetTicks % 20 == 1) nav.navigateNear(target.getX(), target.getY(), target.getZ(), 2);
@@ -104,6 +105,7 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
         TaskContext.inputDriver(player).clear();
         if (Placement.placeBlock(sp, target, Blocks.TORCH.defaultBlockState())) {
             placed++;
+            outOfReach = 0;
             settle = 4;
             missed = 0;
         } else {
@@ -150,8 +152,21 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
     private final java.util.Set<Long> couldNot = new java.util.HashSet<>();
     /** How near it has come to the spot it is going to light, and when it last came nearer. */
     private double closest;
+    /** Dark spots in a row it couldn't get to. */
+    private int outOfReach;
     private int closerAt;
     private int missed;
+
+    /** What is still dark is out of its reach from here: it says so and stops. */
+    private TaskState cannotReach(ServerPlayer sp) {
+        nav.cancel();
+        TaskContext.inputDriver(player).clear();
+        var loop = TaskContext.agentLoop(player);
+        outcome = "lit: " + placed + " torches; " + couldNot.size() + " dark spots out of reach";
+        if (loop != null) loop.say(placed > 0 ? "Lit up: " + placed + (placed == 1 ? " torch" : " torches") + "; the " + couldNot.size()
+                + " dark spots left I couldn't get to." : "I couldn't get to the dark spots here.");
+        return placed > 0 ? TaskState.SUCCESS : TaskState.FAILED;
+    }
 
     private TaskState done(ServerPlayer sp, boolean lit) {
         nav.cancel();

@@ -730,6 +730,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      * When none are near, it goes to where it last saw some; when there are none there either, the round is planned
      * again without them.
      */
+    /** How near it has got to its prey, and the ticks since it last got nearer. */
+    private double preyClosest = Double.MAX_VALUE;
+    private int preyStill;
+
     private TaskState hunt() {
         ServerPlayer sp = sp();
         ServerLevel level = sp.serverLevel();
@@ -798,13 +802,25 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, prey) || !sp.hasLineOfSight(prey)) {
             chase(prey.blockPosition(), 1);
+            // Ten seconds without getting a block nearer (behind a fence, across water, up where it can't go): the next.
+            double d = sp.distanceTo(prey);
+            if (d < preyClosest - 1.0) {
+                preyClosest = d;
+                preyStill = 0;
+            } else if (++preyStill > 200) {
+                navFailed = true;
+            }
             if (navFailed) {
                 unreachable.add(prey.getUUID());
                 prey = null;
                 navFailed = false;
+                preyStill = 0;
+                preyClosest = Double.MAX_VALUE;
             }
             return TaskState.RUNNING;
         }
+        preyStill = 0;
+        preyClosest = Double.MAX_VALUE;
         nav.cancel();
         chasing = null;
         TaskContext.inputDriver(player).clear();
@@ -875,13 +891,25 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         if (!com.mineagent.engine.act.Interaction.inEntityReach(sp, prey) || !sp.hasLineOfSight(prey)) {
             chase(prey.blockPosition(), 1);
+            // Ten seconds without getting a block nearer (behind a fence, across water, up where it can't go): the next.
+            double d = sp.distanceTo(prey);
+            if (d < preyClosest - 1.0) {
+                preyClosest = d;
+                preyStill = 0;
+            } else if (++preyStill > 200) {
+                navFailed = true;
+            }
             if (navFailed) {
                 unreachable.add(prey.getUUID());
                 prey = null;
                 navFailed = false;
+                preyStill = 0;
+                preyClosest = Double.MAX_VALUE;
             }
             return TaskState.RUNNING;
         }
+        preyStill = 0;
+        preyClosest = Double.MAX_VALUE;
         nav.cancel();
         chasing = null;
         TaskContext.inputDriver(player).clear();
