@@ -179,6 +179,7 @@ public record MineAgentConfig(
      * @param autoRespawn five seconds after it dies it comes back at its bed or the world spawn, as a player does (never in Hardcore; three quick deaths and it waits for /mineagent respawn)
      * @param afkImprove while its owner is AFK, with their orders done, it works on itself as it does on its own (its kit, gear, stockpile, food store, levels) till they're back
      * @param takeTrapTnt a temple trap's TNT, once its plate is gone, broken by hand and picked up
+     * @param nightStopsWork at night, out under the sky without its iron gear, with its owner away or living on its own, it stops what it is doing and digs in till morning; the work goes on after
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -246,11 +247,12 @@ public record MineAgentConfig(
         boolean revengeThieves,
         boolean autoRespawn,
         boolean afkImprove,
-        boolean takeTrapTnt
+        boolean takeTrapTnt,
+        boolean nightStopsWork
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true
         );
     }
 
@@ -358,7 +360,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery, rawBehaviour.wholeTrees, rawBehaviour.hoard, rawBehaviour.godGear, rawBehaviour.dumpJunk, rawBehaviour.grindXp, rawBehaviour.watchChests, rawBehaviour.revengeThieves, rawBehaviour.autoRespawn, rawBehaviour.afkImprove, rawBehaviour.takeTrapTnt);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery, rawBehaviour.wholeTrees, rawBehaviour.hoard, rawBehaviour.godGear, rawBehaviour.dumpJunk, rawBehaviour.grindXp, rawBehaviour.watchChests, rawBehaviour.revengeThieves, rawBehaviour.autoRespawn, rawBehaviour.afkImprove, rawBehaviour.takeTrapTnt, rawBehaviour.nightStopsWork);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

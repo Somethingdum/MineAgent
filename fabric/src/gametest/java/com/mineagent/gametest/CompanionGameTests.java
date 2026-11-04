@@ -63,6 +63,10 @@ public class CompanionGameTests implements FabricGameTest {
         for (var s : List.copyOf(MineAgentEngine.allCompanions())) {
             MineAgentEngine.despawnCompanion(s.companion.companionId(), true);
         }
+        // Morning (a scene that wants night sets it after this): a scene is minutes of game time, and the clock runs on
+        // through all of them, so one begun at dusk had its work stopped for the night (behaviour.nightStopsWork).
+        long now = helper.getLevel().getDayTime();
+        helper.getLevel().setDayTime(now - now % 24_000L + 1_000L);
         // Scenes build past their own test area, and the areas sit close together: clear what an earlier scene left
         // above this floor (walls, roofs, gravel, lava, and blocks it marked as a player's) before laying it.
         var placed = com.mineagent.engine.world.PlacedBlocks.of(helper.getLevel());
@@ -2632,6 +2636,55 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * Plan 70, MA8.3, and what the three-day benchmark found (eight deaths, most at night, at work in the open in stone
+     * tools): its owner AFK, a hut to build, and night falls with the roof not on. Its work stops, it digs in until
+     * morning with the hut still its goal, and in the morning it builds the hut.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_night_work", timeoutTicks = 5000)
+    public void nightStopsItsWorkInTheOpenAndTheWorkGoesOnAfter(GameTestHelper helper) {
+        Scene s = scene(helper, "Nightfall");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.TORCH));
+        inv.setItem(4, new ItemStack(Items.OAK_PLANKS, 64));
+        inv.setItem(5, new ItemStack(Items.DIRT, 16));
+        var level = helper.getLevel();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "Going AFK, build a hut"));
+        boolean[] building = {false}, sheltered = {false};
+        long[] morningAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "night work");
+            String control = MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone");
+            if (!building[0] && control.contains("BlueprintTask")) {
+                building[0] = true;
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L); // night, the roof not on
+            }
+            boolean hutStill = s.loop().goalBook().active().map(g -> g.text().contains("hut")).orElse(false);
+            if (building[0] && !sheltered[0] && control.contains("ShelterTask") && hutStill) {
+                sheltered[0] = true;
+                morningAt[0] = helper.getTick() + 300;
+            }
+            if (morningAt[0] > 0 && helper.getTick() == morningAt[0]) {
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L); // the next morning
+            }
+            String built = lastSaid(s, "Built the hut at ");
+            if (!built.isEmpty()) {
+                tidy(s);
+                if (sheltered[0] && morningAt[0] > 0 && helper.getTick() > morningAt[0]) helper.succeed();
+                else fail(helper, "built with no stop for the night: building seen " + building[0] + ", sheltered " + sheltered[0] + "; said: " + built);
+            } else if (helper.getTick() >= 4900) {
+                String how = "building seen " + building[0] + ", sheltered " + sheltered[0] + ", morning at " + morningAt[0] + ", now " + control
+                        + ", goal " + s.loop().goalBook().active().map(g -> g.text()).orElse("none") + ", planks " + inv.countItem(Items.OAK_PLANKS)
+                        + ", day time " + level.getDayTime() % 24_000L + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * Plan 70, MA8.5, food that renews: "make me 2 bread" by a field of ripe wheat: it harvests what it needs, plants a
      * seed back in every cell it took, and bakes the bread at the table it carries.
      */
@@ -2900,19 +2953,35 @@ public class CompanionGameTests implements FabricGameTest {
             boolean done = primeDoneAt[0] >= 0 && helper.getTick() >= primeDoneAt[0] + 40; // the last throw landed
             if (done) {
                 int mine = s.body().getInventory().countItem(Items.IRON_HELMET);
-                String how = "hut " + hut + ", helmets: owner " + helmets + ", its own " + mine + "; beds to owner " + beds + "; said: " + lastSaid(s, "");
+                String how = "hut " + hut + ", helmets: owner " + helmets + ", its own " + mine + "; beds to owner " + beds + "; " + flock(helper, s)
+                        + "; said: " + lastSaid(s, "");
                 restore.run();
                 tidy(s);
                 if (hut && helmets >= 1 && mine >= 1 && beds >= 1) helper.succeed();
                 else fail(helper, how);
             } else if (helper.getTick() >= 11900) {
                 String how = "goal " + s.loop().goalBook().active().map(g -> g.text()).orElse("none") + "; hut " + hut + ", helmets to owner " + helmets
-                        + ", beds " + beds + "; said: " + lastSaid(s, "");
+                        + ", beds " + beds + "; " + flock(helper, s) + "; said: " + lastSaid(s, "");
                 restore.run();
                 tidy(s);
                 fail(helper, how);
             }
         });
+    }
+
+    /** The small prime's sheep and what wool takes, for its failure line: sheep alive and shorn, wool, shears, iron. */
+    private static String flock(GameTestHelper helper, Scene s) {
+        int alive = 0, shorn = 0;
+        for (var sh : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.animal.Sheep.class, s.body().getBoundingBox().inflate(48))) {
+            alive++;
+            if (sh.isSheared()) shorn++;
+        }
+        var inv = s.body().getInventory();
+        int wool = 0;
+        for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).is(net.minecraft.tags.ItemTags.WOOL)) wool += inv.getItem(i).getCount();
+        return "sheep " + alive + " (" + shorn + " shorn), wool " + wool + ", shears " + inv.countItem(Items.SHEARS) + ", iron "
+                + inv.countItem(Items.IRON_INGOT) + "+" + inv.countItem(Items.RAW_IRON) + " raw, mutton " + inv.countItem(Items.MUTTON)
+                + "+" + inv.countItem(Items.COOKED_MUTTON) + " cooked";
     }
 
     /** Plan 70, MA7.5: "make me 8 iron ingots" from 8 raw iron: one furnace, one coal, 8 ingots out. */

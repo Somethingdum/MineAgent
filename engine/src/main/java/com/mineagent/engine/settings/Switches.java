@@ -89,6 +89,7 @@ public final class Switches {
     public static boolean autoRespawn() { return b().autoRespawn(); }
     public static boolean afkImprove() { return b().afkImprove(); }
     public static boolean takeTrapTnt() { return b().takeTrapTnt(); }
+    public static boolean nightStopsWork() { return b().nightStopsWork(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

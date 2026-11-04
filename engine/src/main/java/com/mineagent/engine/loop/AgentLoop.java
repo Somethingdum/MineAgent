@@ -6731,18 +6731,41 @@ public class AgentLoop {
 
     /** The night it last sheltered for, and the day it last tried to make a bed (MA8.3). */
     private long shelteredNight = -1, bedTriedDay = -1;
+    /** The night its work was last stopped for a shelter, and how many times that night. */
+    private long nightStopsDay = -1;
+    private int nightStops;
+
+    /**
+     * Its work is stopped for the night ({@code behaviour.nightStopsWork}): night, out under the sky (not underground,
+     * not under its hut's roof), not in its full iron gear, not already sheltering, and not asleep or about to be.
+     */
+    private boolean nightStopsWork(net.minecraft.server.level.ServerPlayer player) {
+        if (!com.mineagent.engine.settings.Switches.nightStopsWork() || player.isSleeping()) return false;
+        // Out there for them: guarding them, by them, or walled in for them already.
+        if (afkOrder.guardMe() || afkOrder.shelter()
+                || MineAgentEngine.getCompanionMode(companion.companionId()) == MineAgentEngine.CompanionMode.FOLLOW) return false;
+        var level = player.serverLevel();
+        if (level.isDay() || !level.canSeeSky(player.blockPosition().above())) return false;
+        if (ironGeared(player)) return false;
+        LiveBodyState body = liveBodyState.get();
+        return body == null || body.taskId() == null || !(body.taskId().startsWith("night-") || body.taskId().startsWith("shelter-"));
+    }
 
     /**
      * Night with its owner away and no bed (MA8.3): an emergency shelter until morning (two down or walled in, as the
-     * AFK shelter), once a night, when it is out under the sky and has nothing to do. By day, with no bed, it makes one
-     * as soon as it has what it takes here (a bed of the wool it carries or sheep in sight), once a day.
+     * AFK shelter), once a night, when it is out under the sky and has nothing to do. Living on its own it is nearly
+     * always at some job, and the three-day benchmark found it dead eight times, mostly at night, working in the open
+     * in stone tools: so out under the sky at night without its iron gear it stops the job and digs in, bed or none,
+     * and the job goes on in the morning ({@code behaviour.nightStopsWork}). By day, with no bed, it makes one as soon
+     * as it has what it takes here (a bed of the wool it carries or sheep in sight), once a day.
      */
     private void nightCare(net.minecraft.server.level.ServerPlayer player) {
-        if (player == null || !com.mineagent.engine.settings.Switches.sleepWhenAway() || !ownerActivity.afk()) return;
+        if (player == null || !com.mineagent.engine.settings.Switches.sleepWhenAway() || !(ownerActivity.afk() || onItsOwn)) return;
         var level = player.serverLevel();
-        if (!level.dimensionType().bedWorks()) return;
+        if (!level.dimensionType().bedWorks() || guarding()) return;
         LiveBodyState body = liveBodyState.get();
-        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding()) return;
+        boolean task = body != null && body.taskId() != null;
+        boolean busy = task || goalBook.active().isPresent();
         long day = level.getDayTime() / 24_000L;
         boolean hasBed = false;
         var inv = player.getInventory();
@@ -6756,6 +6779,27 @@ public class AgentLoop {
                 }
             }
         }
+        if (nightStopsDay != day) {
+            nightStopsDay = day;
+            nightStops = 0;
+        }
+        // Three tries a night at most (a shelter that couldn't be made, or a job that took the body back first). With a
+        // bed to hand and nothing ordered, the bed is its night (the sleep chain), not a shelter.
+        if (busy && !level.isDay() && nightStops < 3 && !(hasBed && !busyWithOrder()) && nightStopsWork(player)) {
+            shelteredNight = day;
+            nightStops++;
+            journal.record("night", "out in the open at night without iron gear: digging in till morning, my work after", currentGameTickSafe());
+            if (task) {
+                // Cancelled, not failed: the order it was on runs again once the shelter is down in the morning.
+                var stop = new com.google.gson.JsonObject();
+                stop.addProperty("task_id", body.taskId());
+                runDirect("task_stop", stop);
+            }
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                    new com.mineagent.engine.task.ShelterTask.ShelterRecord("night-" + UUID.randomUUID(), true), reply -> { });
+            return;
+        }
+        if (busy) return;
         if (!level.isDay()) {
             if (hasBed || shelteredNight == day || !level.canSeeSky(player.blockPosition().above())) return;
             shelteredNight = day;
