@@ -20,7 +20,7 @@ public final class Orders {
     /** An order that stands until it is stopped. */
     private static final Pattern STANDING = Pattern.compile(
             "\\s*,?\\s*(?:until (?:i (?:say|tell you(?: to)?) stop|further notice|i say otherwise)|till i say stop|forever|"
-                    + "over and over|again and again|on repeat|nonstop|non-stop)\\s*$", Pattern.CASE_INSENSITIVE);
+                    + "over and over|again and again|on repeat|nonstop|non-stop|(?:and )?keep at it)\\s*$", Pattern.CASE_INSENSITIVE);
     /** The mark a standing goal's words carry in the goal book. */
     public static final String STANDS = " (until you say stop)";
 

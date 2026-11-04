@@ -79,6 +79,12 @@ public final class TaskRegistration {
                 GiveTask::new
         );
 
+        // Hunting a named player (SMH plan 70, MA10.7)
+        CompanionTaskFactory.register(
+                HuntTask.HuntRecord.class,
+                HuntTask::new
+        );
+
         // Its owner's things after they die, fetched back (SMH plan 70, MA10.8)
         CompanionTaskFactory.register(
                 RecoverTask.RecoverRecord.class,

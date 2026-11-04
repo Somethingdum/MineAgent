@@ -19,6 +19,9 @@ final class OrdersTest {
         assertEquals("mine diamonds" + Orders.STANDS, o.get(1).goalText());
         assertTrue(Orders.stands(o.get(1).goalText()));
         assertEquals("mine diamonds", Orders.withoutMark(o.get(1).goalText()));
+        var hunt = Orders.order("hunt steve and keep at it");
+        assertEquals("hunt steve", hunt.text());
+        assertTrue(hunt.standing(), "keep at it: again after each time");
     }
 
     @Test void theWaysPeopleSayThen() {

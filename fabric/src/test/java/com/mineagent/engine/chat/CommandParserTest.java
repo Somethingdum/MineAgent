@@ -170,6 +170,14 @@ final class CommandParserTest {
         assertEquals(CommandParser.Kind.PRIME, CommandParser.parse("prime the world", "Pal").orElseThrow().kind());
         assertEquals(CommandParser.Kind.PRIME, CommandParser.parse("set us up", "Pal").orElseThrow().kind());
         assertEquals(-1, CommandParser.parse("hand me a stack of torches", "Pal").orElseThrow().count().intValue());
+        // A player by name (MA10.7); whether they are a player, and one it may fight, the loop decides.
+        var hunt = CommandParser.parse("kill Rival_99", "Pal").orElseThrow();
+        assertEquals(CommandParser.Kind.HUNT_PLAYER, hunt.kind());
+        assertEquals("rival_99", hunt.value());
+        assertEquals(CommandParser.Kind.HUNT_PLAYER, CommandParser.parse("Pal, hunt down Steve", "Pal").orElseThrow().kind());
+        assertEquals("steve", CommandParser.parse("go after steve please", "Pal").orElseThrow().value());
+        assertFalse(CommandParser.parse("kill 5 cows", "Pal").map(x -> x.kind() == CommandParser.Kind.HUNT_PLAYER).orElse(false));
+        assertNotEquals(CommandParser.Kind.HUNT_PLAYER, CommandParser.parse("hunt for a village", "Pal").map(x -> x.kind()).orElse(null));
     }
 
     @Test void ordersToMineOnItsOwn() {

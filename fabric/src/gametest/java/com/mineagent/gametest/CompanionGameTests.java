@@ -3138,4 +3138,167 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * A stand-in player with a name of its own, in survival (the helper's mock is in creative, and every mock has the
+     * same name). Taken off the server with {@code server.getPlayerList().remove(p)}.
+     */
+    private static ServerPlayer player(GameTestHelper helper, String name, BlockPos at) {
+        var server = helper.getLevel().getServer();
+        var cookie = net.minecraft.server.network.CommonListenerCookie.createInitial(
+                new com.mojang.authlib.GameProfile(java.util.UUID.randomUUID(), name), false);
+        ServerPlayer p = new ServerPlayer(server, helper.getLevel(), cookie.gameProfile(), cookie.clientInformation()) {
+            @Override public boolean isSpectator() { return false; }
+            @Override public boolean isCreative() { return false; }
+        };
+        var connection = new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.SERVERBOUND);
+        new io.netty.channel.embedded.EmbeddedChannel(connection);
+        server.getPlayerList().placeNewPlayer(connection, p, cookie);
+        BlockPos abs = helper.absolutePos(at);
+        p.teleportTo(helper.getLevel(), abs.getX() + 0.5, abs.getY(), abs.getZ() + 0.5, 0.0f, 0.0f);
+        return p;
+    }
+
+    /**
+     * Plan 70, MA10.6: with PvP on, its owner names Rival. It fights Rival, every hit at full charge; never its owner
+     * (put on the list as well: code says no), a trusted player (on the list too), or a passer-by nobody named.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_pvp", timeoutTicks = 500)
+    public void fightsOnlyTheNamedPlayerAtFullCharge(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        boolean pvp = server.isPvpAllowed();
+        server.setPvpAllowed(true);
+        ServerPlayer keeper = player(helper, "Keeper", new BlockPos(3, 1, 3));
+        Scene s = scene(helper, "Duelist", false, keeper);
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        ServerPlayer rival = player(helper, "Rival", new BlockPos(7, 1, 3));
+        ServerPlayer friend = player(helper, "Friend", new BlockPos(3, 1, 6));
+        ServerPlayer passer = player(helper, "Passerby", new BlockPos(1, 1, 3));
+        s.loop().setAgentSettings(s.loop().getAgentSettings().withTrusted(friend.getUUID()).withTarget(rival.getUUID())
+                .withTarget(keeper.getUUID()).withTarget(friend.getUUID()));
+        float keeperHealth = keeper.getHealth(), friendHealth = friend.getHealth(), passerHealth = passer.getHealth();
+        float[] last = {rival.getHealth()};
+        double[] charge = {0.0};
+        boolean[] weak = {false};
+        Runnable done = () -> {
+            for (var p : List.of(rival, friend, passer)) server.getPlayerList().remove(p);
+            tidy(s);
+            server.setPvpAllowed(pvp);
+        };
+        helper.onEachTick(() -> {
+            trace(helper, s, "pvp");
+            boolean hit = rival.getHealth() < last[0];
+            if (hit && charge[0] < 0.85) weak[0] = true;
+            last[0] = rival.getHealth();
+            charge[0] = s.body().getAttackStrengthScale(0.5f);
+            if (keeper.getHealth() < keeperHealth || friend.getHealth() < friendHealth || passer.getHealth() < passerHealth) {
+                String who = keeper.getHealth() < keeperHealth ? "its owner" : friend.getHealth() < friendHealth ? "a trusted player" : "a passer-by";
+                done.run();
+                fail(helper, "it hit " + who);
+            } else if (hit) {
+                boolean full = !weak[0];
+                done.run();
+                if (full) helper.succeed();
+                else fail(helper, "it hit Rival before its attack had recharged");
+            } else if (helper.getTick() >= 480) {
+                String how = "Rival never hit; at " + rel(helper, s.body().blockPosition()).toShortString() + ", said: " + lastSaid(s, "");
+                done.run();
+                fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA10.6: Rival raises a shield; it takes out its axe for the hit (an axe puts a shield down for 5 seconds). */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_pvp_axe", timeoutTicks = 400)
+    public void anAxeAgainstARaisedShield(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        boolean pvp = server.isPvpAllowed();
+        server.setPvpAllowed(true);
+        Scene s = scene(helper, "Axeman");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().selected = 0;
+        s.body().getInventory().setItem(0, new ItemStack(Items.IRON_SWORD));
+        s.body().getInventory().setItem(1, new ItemStack(Items.IRON_AXE));
+        ServerPlayer rival = player(helper, "Rival", new BlockPos(6, 1, 3));
+        rival.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        rival.startUsingItem(net.minecraft.world.InteractionHand.OFF_HAND);
+        s.loop().setAgentSettings(s.loop().getAgentSettings().withTarget(rival.getUUID()));
+        float[] last = {rival.getHealth()};
+        Runnable done = () -> {
+            server.getPlayerList().remove(rival);
+            tidy(s);
+            server.setPvpAllowed(pvp);
+        };
+        helper.onEachTick(() -> {
+            trace(helper, s, "pvp-axe");
+            boolean shieldDown = rival.getCooldowns().isOnCooldown(Items.SHIELD);
+            if (rival.getHealth() < last[0] || shieldDown) {
+                boolean axe = s.body().getMainHandItem().getItem() instanceof net.minecraft.world.item.AxeItem;
+                String held = s.body().getMainHandItem().toString();
+                done.run();
+                if (axe) helper.succeed();
+                else fail(helper, "it hit the shielded player with " + held);
+            } else if (helper.getTick() >= 380) {
+                String how = "never hit; holding " + s.body().getMainHandItem() + ", said: " + lastSaid(s, "");
+                done.run();
+                fail(helper, how);
+            }
+            last[0] = rival.getHealth();
+        });
+    }
+
+    /**
+     * Plan 70, MA10.7: a stranger's "hunt Rival" does nothing; its owner's sends it to where it last saw Rival (Rival
+     * since gone out of sight, and the server's live position not allowed).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hunt", timeoutTicks = 700)
+    public void aHuntGoesWhereItLastSawThemAndOnlyOnItsOwnersWord(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        boolean pvp = server.isPvpAllowed();
+        server.setPvpAllowed(true);
+        Scene s = scene(helper, "Hunter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        ServerPlayer rival = player(helper, "Rival", new BlockPos(14, 1, 14));
+        ServerPlayer stranger = player(helper, "Stranger", new BlockPos(5, 1, 3));
+        BlockPos seenAt = helper.absolutePos(new BlockPos(14, 1, 14));
+        Runnable done = () -> {
+            for (var p : List.of(rival, stranger)) server.getPlayerList().remove(p);
+            tidy(s);
+            server.setPvpAllowed(pvp);
+        };
+        // Seen at (14, 1, 14); then gone where it can't see them: under the floor, far off.
+        helper.runAfterDelay(60, () -> {
+            BlockPos gone = helper.absolutePos(new BlockPos(22, -2, 22));
+            rival.teleportTo(helper.getLevel(), gone.getX() + 0.5, gone.getY(), gone.getZ() + 0.5, 0.0f, 0.0f);
+        });
+        helper.runAfterDelay(80, () -> MineAgentEngine.onPlayerChat(stranger, "Hunter, hunt Rival"));
+        boolean[] ordered = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "hunt");
+            if (helper.getTick() == 160) {
+                if (s.loop().getAgentSettings().isAllowedTarget(rival.getUUID()) || !lastSaid(s, "On it: hunting").isEmpty()) {
+                    done.run();
+                    fail(helper, "a stranger's hunt order was taken");
+                    return;
+                }
+                MineAgentEngine.onPlayerChat(s.owner(), "hunt Rival");
+                ordered[0] = true;
+            }
+            if (!ordered[0]) return;
+            double d = Math.sqrt(s.body().blockPosition().distSqr(seenAt));
+            if (d <= 3.5) {
+                boolean listed = s.loop().getAgentSettings().isAllowedTarget(rival.getUUID());
+                String said = lastSaid(s, "On it: hunting");
+                done.run();
+                if (listed && !said.isEmpty()) helper.succeed();
+                else fail(helper, "listed " + listed + "; said: " + said);
+            } else if (helper.getTick() >= 680) {
+                String how = String.format("%.1f from where it last saw Rival; said: %s", d, lastSaid(s, ""));
+                done.run();
+                fail(helper, how);
+            }
+        });
+    }
 }

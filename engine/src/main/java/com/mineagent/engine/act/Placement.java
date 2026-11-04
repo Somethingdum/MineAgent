@@ -272,6 +272,33 @@ public final class Placement {
         return Attempt.failure(lastFailure);
     }
 
+    /**
+     * Why {@link #placeBlock} would not place {@code state} at {@code pos} from where the player is now, in a few words;
+     * null when nothing stands in the way that it can see. For the builder's report (SMH plan 70, MA9.1).
+     */
+    public static String whyNot(ServerPlayer player, BlockPos pos, BlockState state) {
+        if (player == null || pos == null || state == null) return "nothing to place";
+        ServerLevel level = player.serverLevel();
+        if (!canPlaceAt(level, pos, state)) return "something is there already";
+        if (!hasPlacementAnchor(level, pos)) return "nothing beside it to place against";
+        if (!state.canSurvive(level, pos)) return "it wouldn't stay there";
+        if (!level.isUnobstructed(state, pos, CollisionContext.of(player))) return "something is in the way (itself, or someone)";
+        if (!isWithinReach(player, pos)) return "out of reach from where it stood";
+        if (findBlockInventorySlot(player, state.getBlock()) < 0 && !player.isCreative()) return "none carried";
+        boolean anyInReach = false;
+        for (Direction fromTarget : SUPPORT_SEARCH_ORDER) {
+            BlockPos support = pos.relative(fromTarget);
+            BlockState supportState = level.getBlockState(support);
+            if (supportState.isAir() || supportState.canBeReplaced() || supportState.getCollisionShape(level, support).isEmpty()) continue;
+            if (!player.canInteractWithBlock(support, 1.0)) continue;
+            anyInReach = true;
+            if (BlockTargeting.findVisibleFace(player, support, fromTarget.getOpposite(), BlockTargeting.interactionReach(player)).isPresent()) {
+                return null;
+            }
+        }
+        return anyInReach ? "no face beside it can be seen from where it stood" : "the blocks beside it are out of reach";
+    }
+
     private static boolean hasPlacementAnchor(ServerLevel level, BlockPos pos) {
         for (Direction direction : Direction.values()) {
             BlockPos neighbor = pos.relative(direction);

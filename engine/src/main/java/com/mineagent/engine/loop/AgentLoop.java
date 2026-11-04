@@ -939,7 +939,7 @@ public class AgentLoop {
         // evidence, but publish a null task id so the next decision sees an
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
-                || taskId.startsWith("build-"))) {
+                || taskId.startsWith("build-") || taskId.startsWith("hunt-"))) {
             lastOrderState = state;
             var note = message == null ? null : java.util.regex.Pattern.compile("\"note\":\"([^\"]*)\"").matcher(message);
             lastOrderNote = note != null && note.find() ? note.group(1) : message == null ? "" : message;
@@ -1388,6 +1388,9 @@ public class AgentLoop {
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.GiveTask.GiveRecord(
                         "give-" + UUID.randomUUID(), what, count), reply -> { });
                 return true;
+            }
+            case HUNT_PLAYER -> {
+                return huntCommand(c.value());
             }
             case WHY -> speakToOwner(why());
             case NEEDS -> speakToOwner(needs());
@@ -2570,6 +2573,7 @@ public class AgentLoop {
             if (gameTick % 20L == 0L) orderHeartbeat(player);
             if (gameTick % 100L == 0L) nightCare(player);
             if (gameTick % 20L == 0L) lookAfterOwner(player);
+            if (gameTick % 20L == 0L) notePlayers(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3202,6 +3206,7 @@ public class AgentLoop {
         var k = c.get().kind();
         return k == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE || k == com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE
                 || k == com.mineagent.engine.chat.CommandParser.Kind.GIVE || k == com.mineagent.engine.chat.CommandParser.Kind.BUILD
+                || k == com.mineagent.engine.chat.CommandParser.Kind.HUNT_PLAYER
                 ? c : java.util.Optional.empty();
     }
 
@@ -3472,6 +3477,96 @@ public class AgentLoop {
                 errand("minecraft:torch", wantTorches - torches);
             }
         }
+    }
+
+    // ── Hunting a named player (SMH plan 70, MA10.7) ──
+
+    /** Where it last saw a player: their name, the dimension, the spot, and when (game ticks). */
+    public record SeenPlayer(String name, String dim, net.minecraft.core.BlockPos at, long tick) {}
+
+    private final Map<UUID, SeenPlayer> seenPlayers = new ConcurrentHashMap<>();
+
+    /** Where it last saw this player, if it has. */
+    public java.util.Optional<SeenPlayer> lastSeen(UUID player) {
+        return java.util.Optional.ofNullable(seenPlayers.get(player));
+    }
+
+    /** The players it can see now (within 16 blocks, or in sight within 96), noted with where they are. */
+    private void notePlayers(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null) return;
+        String dim = self.serverLevel().dimension().location().toString();
+        long now = currentGameTickSafe();
+        for (var p : self.serverLevel().players()) {
+            if (p == self || p.isSpectator() || !p.isAlive()) continue;
+            double d = p.distanceTo(self);
+            if (d <= 16 || d <= 96 && self.hasLineOfSight(p)) {
+                seenPlayers.put(p.getUUID(), new SeenPlayer(p.getName().getString(), dim, p.blockPosition(), now));
+            }
+        }
+        if (seenPlayers.size() > 256) {
+            seenPlayers.entrySet().stream().min(java.util.Comparator.comparingLong(e -> e.getValue().tick()))
+                    .ifPresent(e -> seenPlayers.remove(e.getKey()));
+        }
+    }
+
+    /**
+     * "Kill Steve" from its owner or a trusted player: Steve on its target list and hunted, by code. Never its owner, a
+     * trusted player or a companion of the same owner. False when no player goes by that name (the words may mean
+     * something else, for the model).
+     */
+    private boolean huntCommand(String who) {
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return false;
+        var sp = self.serverPlayer();
+        var server = sp.getServer();
+        if (server == null || who == null) return false;
+        var target = server.getPlayerList().getPlayerByName(who);
+        UUID id = target != null ? target.getUUID() : null;
+        String name = target != null ? target.getName().getString() : null;
+        if (id == null) {
+            for (var e : seenPlayers.entrySet()) {
+                if (e.getValue().name().equalsIgnoreCase(who)) {
+                    id = e.getKey();
+                    name = e.getValue().name();
+                }
+            }
+        }
+        if (id == null) return false;
+        String key = id.toString().toLowerCase(java.util.Locale.ROOT);
+        if (id.equals(self.ownerUuid()) || MineAgentEngine.isCompanionOwnedBy(id, self.ownerUuid())
+                || agentSettings.trusted().contains(key) || MineAgentEngine.isCompanionPlayer(id) && id.equals(sp.getUUID())) {
+            speakToOwner("I never fight " + name + ".");
+            return true;
+        }
+        if (!com.mineagent.engine.settings.Switches.fightPlayers()) {
+            speakToOwner("Fighting players is switched off (behaviour.fightPlayers).");
+            return true;
+        }
+        if (target == null) {
+            speakToOwner(name + " isn't on the server now.");
+            return true;
+        }
+        if (!sp.canHarmPlayer(target)) {
+            speakToOwner("Nobody can hurt " + name + " here (PvP is off), so I won't go after them.");
+            return true;
+        }
+        if (!agentSettings.isAllowedTarget(id)) {
+            var next = agentSettings.withTarget(id);
+            if (next == agentSettings) {
+                speakToOwner("My list of players to fight is full; say stop to clear it.");
+                return true;
+            }
+            setAgentSettings(next);
+            MineAgentEngine.persistCompanionNow(companion.companionId());
+        }
+        String words = "hunt " + name;
+        journal.record("order", words, currentGameTickSafe());
+        orderGoal(words);
+        var seen = seenPlayers.get(id);
+        speakToOwner("On it: hunting " + name + (seen == null ? "." : ", last seen at " + seen.at().getX() + ", " + seen.at().getY() + ", "
+                + seen.at().getZ() + "."));
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.HuntTask.HuntRecord(
+                "hunt-" + UUID.randomUUID(), name, id), reply -> { });
+        return true;
     }
 
     // ── Looking after you (SMH plan 70, MA10.8) ──

@@ -172,6 +172,19 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
         return true;
     }
 
+    /** How many times it has asked for each material: twice and still short, it says so instead of asking again. */
+    private final java.util.Map<String, Integer> asked = new java.util.HashMap<>();
+
+    /** The materials for the blocks not yet where the blueprint has them. */
+    private Map<String, Integer> stillNeeded(ServerLevel level) {
+        Map<String, Integer> out = new java.util.LinkedHashMap<>();
+        for (Blueprint.Block b : print.blocks()) {
+            if (level.getBlockState(at(b.x(), b.y(), b.z())).is(block(b.id()))) continue;
+            out.merge(b.id().replace("wall_torch", "torch"), 1, Integer::sum);
+        }
+        return out;
+    }
+
     private String materialsLine() {
         List<String> parts = new ArrayList<>();
         for (var e : print.materials().entrySet()) parts.add(e.getValue() + " " + ProductionPlanner.plural(e.getKey(), e.getValue()));
@@ -187,11 +200,15 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             sub = null;
             if (st != TaskState.SUCCESS) return fail("I couldn't get the materials");
         }
-        for (Map.Entry<String, Integer> e : print.materials().entrySet()) {
+        // What the blocks not yet in place need (a build picked up again needs only the rest), and a job to have that
+        // many in its pack: a production job's count is how many to have, not how many more to make.
+        for (Map.Entry<String, Integer> e : stillNeeded(sp.serverLevel()).entrySet()) {
             int have = ProductionTask.count(sp, ProductionTask.item(e.getKey()));
             if (have >= e.getValue()) continue;
+            if (asked.getOrDefault(e.getKey(), 0) >= 2) return fail("I couldn't get " + e.getValue() + " " + ProductionPlanner.plural(e.getKey(), e.getValue()));
+            asked.merge(e.getKey(), 1, Integer::sum);
             sub = new ProductionTask(player, new ProductionTask.ProduceRecord(record.toolCallId() + ":" + e.getKey(), e.getKey(),
-                    e.getValue() - have, null));
+                    e.getValue(), null));
             sub.start();
             return TaskState.RUNNING;
         }
@@ -200,11 +217,36 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
         return TaskState.RUNNING;
     }
 
-    /** Each block in order: placed, or placed at the top of a jump when it is above its eyes' reach of a face. */
+    /**
+     * Each block in order: placed from the ground when it can be (a block over its own head can only go in that way),
+     * else at the top of a jump; a block that won't go from here is tried from the other spots inside, one by one, and
+     * left for the check only when none will do.
+     */
     private TaskState place() {
         ServerPlayer sp = sp();
         ServerLevel level = sp.serverLevel();
         var input = TaskContext.inputDriver(player);
+        if (moving != null) {
+            // On its way to another spot inside: there first.
+            if (ProductionTask.standing(sp).equals(moving)) {
+                nav.cancel();
+                moving = null;
+                tries = 0;
+            } else {
+                if (walkingTo == null || !walkingTo.equals(moving) || !nav.isNavigating() && ++walkTicks > 20) {
+                    walkingTo = moving;
+                    walkTicks = 0;
+                    nav.navigateTo(moving.getX(), moving.getY(), moving.getZ());
+                }
+                nav.tick();
+                if (++moveTicks > 100) {
+                    nav.cancel();
+                    moving = null; // it can't get there: tries the next one
+                    tries = 0;
+                }
+                return TaskState.RUNNING;
+            }
+        }
         while (index < print.blocks().size()) {
             Blueprint.Block b = print.blocks().get(index);
             if (b.fromOutside()) {
@@ -214,32 +256,69 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             BlockPos p = at(b.x(), b.y(), b.z());
             Block want = block(b.id());
             if (level.getBlockState(p).is(want)) {
-                index++;
-                tries = 0;
+                next();
                 continue;
             }
             // The ground it jumps from, kept while it is in the air (its block position rises with it).
             if (sp.onGround() || groundY == Integer.MIN_VALUE) groundY = ProductionTask.standing(sp).getY();
             int feet = groundY;
             boolean high = p.getY() >= feet + 2;
-            if (high) input.setJumping(true);
-            if ((!high || !sp.onGround() && sp.getY() >= feet + 0.9) && Placement.placeBlock(sp, p, want.defaultBlockState())) {
+            tries++;
+            // From the ground first, a few ticks; then at the top of a jump, for a block above its eyes.
+            if (sp.onGround() && Placement.placeBlock(sp, p, want.defaultBlockState())) {
                 input.setJumping(false);
-                index++;
-                tries = 0;
+                next();
                 return TaskState.RUNNING;
             }
-            if (++tries > 80) {
-                // Not this one now: the check finds it, and puts it in again.
+            if (high && tries > 3) {
+                input.setJumping(true);
+                if (!sp.onGround() && sp.getY() >= feet + 0.9 && Placement.placeBlock(sp, p, want.defaultBlockState())) {
+                    input.setJumping(false);
+                    next();
+                    return TaskState.RUNNING;
+                }
+            }
+            if (tries > 30) {
                 input.setJumping(false);
-                index++;
-                tries = 0;
+                if (sp.onGround()) {
+                    String why = Placement.whyNot(sp, p, want.defaultBlockState());
+                    System.out.println("[MineAgent] builder: " + b.x() + "," + b.y() + "," + b.z() + " " + b.id()
+                            + " not from " + rel(ProductionTask.standing(sp)) + ": " + (why == null ? "it didn't take" : why));
+                }
+                // Another spot inside, the next it hasn't tried for this block.
+                if (spotTried < SPOTS.length) {
+                    int[] s2 = SPOTS[spotTried++];
+                    moving = at(s2[0], 1, s2[1]);
+                    moveTicks = 0;
+                    tries = 0;
+                    return TaskState.RUNNING;
+                }
+                // None will do: the check finds it.
+                next();
             }
             return TaskState.RUNNING;
         }
         input.clear();
         phase = Phase.OUTSIDE;
         return TaskState.RUNNING;
+    }
+
+    /** The spots inside it may stand on to place a block: the middle, then the four beside it. */
+    private static final int[][] SPOTS = {{2, 2}, {1, 2}, {3, 2}, {2, 1}, {2, 3}};
+    private BlockPos moving;
+    private int moveTicks, spotTried;
+
+    /** On to the next block: its tries and spots start again. */
+    private void next() {
+        index++;
+        tries = 0;
+        spotTried = 0;
+    }
+
+    /** A place as an offset from the corner, for the report. */
+    private String rel(BlockPos p) {
+        BlockPos d = p.subtract(corner);
+        return d.getX() + "," + (d.getY() + 1) + "," + d.getZ();
     }
 
     /** The door, from in front of the doorway. */
@@ -272,9 +351,18 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             for (Blueprint.Block b : missing) Placement.placeBlock(sp, at(b.x(), b.y(), b.z()), block(b.id()).defaultBlockState());
             return TaskState.RUNNING;
         }
+        List<String> where = new ArrayList<>();
+        for (Blueprint.Block b : missing) {
+            if (where.size() == 6) {
+                where.add("...");
+                break;
+            }
+            where.add(ProductionPlanner.name(b.id()) + " at " + b.x() + "," + b.y() + "," + b.z());
+        }
         String line = missing.isEmpty()
                 ? "Built the " + record.name + " at " + corner.toShortString() + ": " + materialsLine() + "; every block checked."
-                : "Built the " + record.name + " at " + corner.toShortString() + ", but " + missing.size() + " blocks are missing; I couldn't place them.";
+                : "Built the " + record.name + " at " + corner.toShortString() + ", but " + missing.size()
+                        + " blocks are missing; I couldn't place them (" + String.join("; ", where) + ").";
         say(line);
         var loop = TaskContext.agentLoop(player);
         if (loop != null) loop.journal().record("built", line, level.getGameTime());

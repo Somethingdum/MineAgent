@@ -190,6 +190,8 @@ public final class MineAgentEngine {
         BrainChains.register(9,  p -> new com.mineagent.engine.survival.LavaFireChain(p));
         BrainChains.register(6,  p -> new BreathChain(p));
         BrainChains.register(5,  p -> new MobDefenseChain(p, survivalCfg));
+        // Fighting players its owner named, or who started it (SMH plan 70, MA10.6).
+        BrainChains.register(5,  p -> new com.mineagent.engine.survival.PlayerFightChain(p));
         BrainChains.register(4,  p -> new FoodChain(p, survivalCfg));
         // Sleeping like a player, so the night can pass (SMH plan 70, MA5.5).
         BrainChains.register(5,  p -> new com.mineagent.engine.survival.SleepChain(p));
