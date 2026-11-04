@@ -37,6 +37,7 @@ public class CompanionGameTests implements FabricGameTest {
 
     static {
         System.setProperty("mineagent.traceFights", "true"); // fights print what the companion saw and did
+        System.setProperty("mineagent.traceWork", "true"); // smelting prints what holds it up
     }
 
     private record Scene(ServerPlayer owner, CompanionEntity companion, ServerPlayer body, AgentLoop loop) {}

@@ -1705,8 +1705,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (smeltStage == 0) {
             // Where it works: by the furnaces it has near (put down for the last job), else here; back here after.
             if (workSpot == null) workSpot = byFurnaces(sp, level);
-            if (!standing(sp).equals(workSpot)) {
+            // A block off it is near enough (a cow in a field shoves it off the very spot, and it walked back for ever);
+            // thirty seconds without getting there is no way there.
+            if (standing(sp).distManhattan(workSpot) > 1) {
+                if (workSpot.equals(walkingTo) && ++workWalkTicks > 600) navFailed = true;
+                if (Boolean.getBoolean("mineagent.traceWork") && level.getGameTime() % 200 == 0) {
+                    System.out.println("[MineAgent] smelting " + step.input() + ": to its work spot " + workSpot.toShortString() + " from "
+                            + standing(sp).toShortString() + ", " + workWalkTicks + " ticks, navigating " + nav.isNavigating());
+                }
                 if (navFailed && workSpot.equals(walkingTo)) {
+                    workWalkTicks = 0;
                     // No way to the spot by those furnaces (shut in, or something in the way): they are out of reach for
                     // this job, and it works by others, or after three such tries from where it stands.
                     walkingTo = null;
@@ -1716,6 +1724,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     return TaskState.RUNNING;
                 }
                 return walkTo(workSpot, 0);
+            }
+            workWalkTicks = 0;
+            if (walkingTo != null && walkingTo.equals(workSpot)) {
+                nav.cancel();
+                walkingTo = null;
             }
             var station = station(sp);
             furnaces.removeIf(f -> !level.getBlockState(f).is(station) || furnacesOutOfReach.contains(f));
@@ -1909,7 +1922,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             System.out.println("[MineAgent] furnaces at the deadline, it at " + sp.blockPosition().toShortString() + ":" + what);
             return fail("the furnaces stopped before the " + ProductionPlanner.name(step.item()) + " was done");
         }
-        if (smeltDeadline - level.getGameTime() < 1_200 && level.getGameTime() % 400 < 20) { // near its deadline: what holds it up
+        if ((smeltDeadline - level.getGameTime() < 1_200 || Boolean.getBoolean("mineagent.traceWork")) && level.getGameTime() % 400 < 20) { // what holds it up
             StringBuilder what = new StringBuilder();
             for (int i = 0; i < furnaces.size(); i++) {
                 BlockPos f = furnaces.get(i);
@@ -1984,6 +1997,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Times its only furnace was out of reach and it set up again. */
     private int resetups;
+    /** Ticks on the way to its work spot by the furnaces. */
+    private int workWalkTicks;
     /** The furnace its work spot is by, and the work spots it could not get to. */
     private BlockPos workFurnace;
     private int workSpotMisses;
