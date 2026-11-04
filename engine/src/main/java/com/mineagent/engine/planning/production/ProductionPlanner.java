@@ -265,13 +265,23 @@ public final class ProductionPlanner {
     }
 
     private double recipeUnit(Recipe r, Set<String> path) {
+        return recipeUnit(r, path, 0);
+    }
+
+    /**
+     * One of what a recipe makes, priced; with {@code batches} &gt; 0, the batches about to be made: an ingredient it holds
+     * enough of for all of them costs nothing (the sugar cane it carries makes sugar before honey it would have to find).
+     */
+    private double recipeUnit(Recipe r, Set<String> path, int batches) {
         if (r.kind() == Kind.STONECUT || r.kind() == Kind.CAMPFIRE) return Double.POSITIVE_INFINITY; // stations it doesn't run yet
         // A smoker or blast furnace when it has one (twice as quick for food or ore); it doesn't build them.
         if (r.kind() == Kind.BLAST && blasts == 0 || r.kind() == Kind.SMOKE && smokers == 0) return Double.POSITIVE_INFINITY;
         double in = 0;
         for (Need n : r.needs()) {
             double cheapest = Double.POSITIVE_INFINITY;
-            for (String alt : n.anyOf()) cheapest = Math.min(cheapest, unit(alt, path));
+            for (String alt : n.anyOf()) {
+                cheapest = Math.min(cheapest, batches > 0 && available(alt) >= (long) n.count() * batches ? 0 : unit(alt, path));
+            }
             in += cheapest * n.count();
             if (Double.isInfinite(in)) return in;
         }
@@ -354,7 +364,7 @@ public final class ProductionPlanner {
             }
         }
         for (Recipe r : book.recipes(item)) {
-            double c = recipeUnit(r, p);
+            double c = recipeUnit(r, p, (int) Math.ceil(left / (double) Math.max(1, r.outputCount())));
             if (c < best) {
                 best = c;
                 bestRecipe = r;
@@ -627,13 +637,15 @@ public final class ProductionPlanner {
             int haveFuel = available(e.getKey());
             boolean freely = freely(e.getKey());
             int most = limitedMost(e.getKey());
+            Map<Integer, Double> bought = new HashMap<>();
             for (int f = 1; f <= Math.max(mostStations, haveStations); f++) {
                 var sp = FurnaceSplit.split(items, f, r.cookTicks(), burn, freely);
                 int extra = Math.max(0, sp.furnaces() - haveStations);
                 double build = extra == 0 ? 0 : !furnace ? Double.POSITIVE_INFINITY
                         : buildCost.computeIfAbsent(extra, n -> furnacesCost(n, path));
                 int buy = Math.max(0, sp.fuelTotal() - haveFuel);
-                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) || buy > most ? Double.POSITIVE_INFINITY : buy * fuelUnit + errand;
+                double fuelCost = buy == 0 ? 0 : Double.isInfinite(fuelUnit) || buy > most ? Double.POSITIVE_INFINITY
+                        : bought.computeIfAbsent(buy, n -> buyCost(e.getKey(), n, path)) + errand;
                 double total = sp.ticks() + build + fuelCost + sp.furnaces() * TEND_TICKS;
                 if (best == null || total < best.total() - 1e-9
                         || (Math.abs(total - best.total()) < 1e-9 && sp.furnaces() < best.split().furnaces())) {
@@ -643,6 +655,44 @@ public final class ProductionPlanner {
             }
         }
         return best == null || Double.isInfinite(best.total()) ? null : best;
+    }
+
+    /**
+     * What {@code n} more of an item cost, all told: its cheapest sources first, each one there is only so much of (the
+     * sheep ready to shear, the herd it may take from) up to what is left of it, the rest from the next. Sixteen wool
+     * from two sheep ready to shear is four shorn, then sheep killed, then wool looked for: not sixteen at the shearing
+     * price. Priced as more than it holds (what it holds is not free more).
+     */
+    private double buyCost(String item, int n, Set<String> path) {
+        boolean wasMore = pricingMore;
+        pricingMore = true;
+        memo.clear();
+        try {
+            List<double[]> ways = new ArrayList<>(); // {price each, how many}
+            for (Source s : book.sources(item)) {
+                double u = mineUnit(s, new HashSet<>(path));
+                if (Double.isInfinite(u)) continue;
+                Integer left = limitedLeft.get(s.block());
+                ways.add(new double[] {u, left == null ? Double.POSITIVE_INFINITY : Math.floor(left * s.perBlock())});
+            }
+            for (Recipe r : book.recipes(item)) {
+                double u = recipeUnit(r, new HashSet<>(path));
+                if (!Double.isInfinite(u)) ways.add(new double[] {u, Double.POSITIVE_INFINITY});
+            }
+            ways.sort((a, b) -> Double.compare(a[0], b[0]));
+            double cost = 0;
+            double left = n;
+            for (double[] w : ways) {
+                if (left <= 0) break;
+                double take = Math.min(left, w[1]);
+                cost += take * w[0];
+                left -= take;
+            }
+            return left > 0 ? Double.POSITIVE_INFINITY : cost;
+        } finally {
+            pricingMore = wasMore;
+            memo.clear();
+        }
     }
 
     /** A fuel cheap to have more of than it burns: a bucket of lava (MA7.9). The task splits by the same rule. */

@@ -508,6 +508,7 @@ public class AgentLoop {
             p.setGoalBook(goalBook);
             p.setRouteMemory(placeKeeper.memory()); // reads an older routes.json once; the store keeps them now
             p.setTalks(phraseBook, talkSummary);
+            p.setChestPurposes(chestPurposes);
             p.setTacticBook(tacticBook);
             p.loadAll();
             openStore(memDir.resolve("store"));
@@ -963,7 +964,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1445,6 +1446,33 @@ public class AgentLoop {
                 orderGoal("trade for " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
+                return true;
+            }
+            case CHEST_PURPOSE -> {
+                if (!fromOwner) return false;
+                var me = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+                var owner = me == null ? null : me.serverPlayerOwner();
+                var chest = owner == null ? null : chestMeant(owner);
+                if (chest == null) {
+                    speakToOwner("Which chest? Look at it and say it again.");
+                    return true;
+                }
+                String dim = owner.serverLevel().dimension().location().toString();
+                chestPurposes.set(dim, chest.getX(), chest.getY(), chest.getZ(), c.value());
+                String what = chestPurposes.of(dim, chest.getX(), chest.getY(), chest.getZ()).orElse(c.value());
+                journal.record("order", "the chest at " + chest.toShortString() + " is for " + what, currentGameTickSafe(), dim,
+                        chest.getX(), chest.getY(), chest.getZ());
+                saveMemoryNow();
+                speakToOwner("That chest is for " + ("overflow".equals(what) ? "anything without a chest of its own" : what) + " now.");
+                return true;
+            }
+            case PUT_AWAY, TIDY -> {
+                boolean tidy = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.TIDY;
+                String words = tidy ? "tidy the chests" : "put your things away";
+                journal.record("order", words, currentGameTickSafe());
+                orderGoal(words);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.PutAwayTask.PutAwayRecord(
+                        "putaway-" + UUID.randomUUID(), tidy), reply -> { });
                 return true;
             }
             case REPAIR, GRIND -> {
@@ -3146,18 +3174,28 @@ public class AgentLoop {
     }
 
     /**
-     * What farmers pay an emerald for, a trade's worth at a time (20 wheat, 26 potatoes, 22 carrots, 15 beetroots): when
-     * it carries enough of none, the one its fields in sight give soonest, as an order ("make me 20 wheat"); "" when it
-     * has enough to sell or no field has any ripe.
+     * What the villagers near pay an emerald for (a farmer's crops, a fletcher's sticks), a trade's worth at a time; a
+     * farmer's four crops when none is near: when it carries enough of none, the one it can get soonest from what it has
+     * seen (its fields first, ripe), as an order ("make me 20 wheat"); "" when it has enough to sell or can get none.
      */
     private String cropToSell() {
         if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return "";
         var sp = self.serverPlayer();
+        // What the villagers near buy for an emerald, a trade's worth of each (a novice farmer has two of the four).
         Map<net.minecraft.world.item.Item, Integer> lots = new java.util.LinkedHashMap<>();
-        lots.put(net.minecraft.world.item.Items.WHEAT, 20);
-        lots.put(net.minecraft.world.item.Items.POTATO, 26);
-        lots.put(net.minecraft.world.item.Items.CARROT, 22);
-        lots.put(net.minecraft.world.item.Items.BEETROOT, 15);
+        for (var v : sp.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class, sp.getBoundingBox().inflate(48, 12, 48),
+                v -> v.isAlive() && !v.isBaby())) {
+            for (var o : v.getOffers()) {
+                if (o.isOutOfStock() || !o.getResult().is(net.minecraft.world.item.Items.EMERALD) || !o.getCostB().isEmpty()) continue;
+                lots.merge(o.getCostA().getItem(), o.getCostA().getCount(), Math::min);
+            }
+        }
+        if (lots.isEmpty()) {
+            lots.put(net.minecraft.world.item.Items.WHEAT, 20);
+            lots.put(net.minecraft.world.item.Items.POTATO, 26);
+            lots.put(net.minecraft.world.item.Items.CARROT, 22);
+            lots.put(net.minecraft.world.item.Items.BEETROOT, 15);
+        }
         for (var e : lots.entrySet()) if (com.mineagent.engine.task.ProductionTask.count(sp, e.getKey()) >= e.getValue()) return "";
         var book = com.mineagent.engine.planning.production.GameKnowledge.book(sp);
         var have = com.mineagent.engine.planning.production.GameKnowledge.have(sp, this, null);
@@ -3167,7 +3205,7 @@ public class AgentLoop {
             String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(e.getKey()).toString();
             var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, e.getValue(),
                     java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN));
-            if (!plan.possible() || plan.steps().stream().noneMatch(st -> st.action() == com.mineagent.engine.planning.production.ProductionPlanner.Action.HARVEST)) continue;
+            if (!plan.possible()) continue;
             if (plan.ticks() < bestTicks) {
                 bestTicks = plan.ticks();
                 best = "make me " + e.getValue() + " " + com.mineagent.engine.planning.production.ProductionPlanner.plural(id, e.getValue());
@@ -3295,12 +3333,20 @@ public class AgentLoop {
             com.mineagent.engine.chat.CommandParser.Kind.GUARD_HERE, com.mineagent.engine.chat.CommandParser.Kind.GOAL_ADD,
             com.mineagent.engine.chat.CommandParser.Kind.FOOD_BOTH, com.mineagent.engine.chat.CommandParser.Kind.PATROL,
             com.mineagent.engine.chat.CommandParser.Kind.REPAIR, com.mineagent.engine.chat.CommandParser.Kind.GRIND,
-            com.mineagent.engine.chat.CommandParser.Kind.BARTER);
+            com.mineagent.engine.chat.CommandParser.Kind.BARTER, com.mineagent.engine.chat.CommandParser.Kind.PUT_AWAY,
+            com.mineagent.engine.chat.CommandParser.Kind.TIDY, com.mineagent.engine.chat.CommandParser.Kind.CHEST_PURPOSE);
     /** The running summary of talks in this world (MA10.2), fed the orders its owner gives. */
     private final com.mineagent.engine.chat.TalkSummary talkSummary = new com.mineagent.engine.chat.TalkSummary();
 
     public com.mineagent.engine.chat.TalkSummary talkSummary() {
         return talkSummary;
+    }
+
+    /** Chests with a purpose in this world (MA9.2): "this chest is for tools". */
+    private final com.mineagent.engine.world.ChestPurposes chestPurposes = new com.mineagent.engine.world.ChestPurposes();
+
+    public com.mineagent.engine.world.ChestPurposes chestPurposes() {
+        return chestPurposes;
     }
     /** Its owner's last words code didn't understand, and the last fixed phrase used (with when, game ticks). */
     private String lastUnparsed;
@@ -3888,7 +3934,8 @@ public class AgentLoop {
                 || k == com.mineagent.engine.chat.CommandParser.Kind.TRADE || k == com.mineagent.engine.chat.CommandParser.Kind.BREW
                 || k == com.mineagent.engine.chat.CommandParser.Kind.BREED || k == com.mineagent.engine.chat.CommandParser.Kind.FISH
                 || k == com.mineagent.engine.chat.CommandParser.Kind.REPAIR || k == com.mineagent.engine.chat.CommandParser.Kind.GRIND
-                || k == com.mineagent.engine.chat.CommandParser.Kind.BARTER
+                || k == com.mineagent.engine.chat.CommandParser.Kind.BARTER || k == com.mineagent.engine.chat.CommandParser.Kind.PUT_AWAY
+                || k == com.mineagent.engine.chat.CommandParser.Kind.TIDY
                 ? c : java.util.Optional.empty();
     }
 

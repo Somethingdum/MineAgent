@@ -85,6 +85,16 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
             target = null;
             return TaskState.RUNNING;
         }
+        // No nearer after five seconds (behind a fence, over water): not that one.
+        double d = target.distToCenterSqr(sp.getEyePosition());
+        if (targetTicks == 1 || d < closest - 1.0) {
+            closest = d;
+            closerAt = targetTicks;
+        } else if (targetTicks - closerAt > 100) {
+            couldNot.add(target.asLong());
+            target = null;
+            return TaskState.RUNNING;
+        }
         if (target.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
             if (targetTicks % 20 == 1) nav.navigateNear(target.getX(), target.getY(), target.getZ(), 2);
             nav.tick();
@@ -138,6 +148,9 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
 
     /** Spots it tried and couldn't light, and the misses in a row. */
     private final java.util.Set<Long> couldNot = new java.util.HashSet<>();
+    /** How near it has come to the spot it is going to light, and when it last came nearer. */
+    private double closest;
+    private int closerAt;
     private int missed;
 
     private TaskState done(ServerPlayer sp, boolean lit) {

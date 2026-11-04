@@ -363,6 +363,42 @@ final class ProductionPlannerTest {
         assertEquals(m("coal"), only(p, Action.SMELT, m("stone")).fuel(), p.summary());
     }
 
+    @Test void fuelFromTwoSheepReadyToShearIsNotPricedAsIfThereWereEight() {
+        // 8 beef to cook; two sheep ready to shear (4 wool), a herd it may take one from, and one coal: not "16 wool".
+        Map<String, Where> w = new HashMap<>(Map.of(m("stone"), Where.COMMON, WHITE_SHEEP, Where.KNOWN, "entity:minecraft:sheep", Where.KNOWN));
+        var have = new Have(Map.of(m("beef"), 8, m("coal"), 1), Map.of(), List.of(new Tool("shears", 0, false, 200)), 4, true, w,
+                Map.of(WHITE_SHEEP, 6, "entity:minecraft:sheep", 6), 0, 0, Map.of(WHITE_SHEEP, 2, "entity:minecraft:sheep", 1));
+        var book = vanilla();
+        Map<String, Integer> fuel = new HashMap<>(book.fuelTicks());
+        fuel.put(m("white_wool"), 100);
+        // As in the game: wool blocks too, somewhere it hasn't seen.
+        Map<String, List<Source>> src = new HashMap<>(book.sourcesByItem());
+        List<Source> wool = new ArrayList<>(src.get(m("white_wool")));
+        wool.add(new Source(m("white_wool"), m("white_wool"), "", 0, false, 1.0, 16));
+        src.put(m("white_wool"), wool);
+        var p = ProductionPlanner.plan(new Book(book.recipesByOutput(), src, fuel, book.durability()), have, m("cooked_beef"), 8);
+        assertTrue(p.possible(), p.problems().toString());
+        var smelt = only(p, Action.SMELT, m("cooked_beef"));
+        assertNotEquals(m("white_wool"), smelt.fuel(), "not wool it would have to kill sheep and go looking for: " + p.summary());
+        assertTrue(p.steps().stream().noneMatch(st -> st.action() == Action.MINE && st.item().equals(m("white_wool"))), p.summary());
+    }
+
+    @Test void theWayFromWhatItCarriesBeforeACheaperWayFromWhatItWouldHaveToFind() {
+        // Sugar: from the cane it carries, or from honey (a bottle gives three) it would have to find: the cane.
+        Book b = vanilla();
+        Map<String, List<Recipe>> r = new HashMap<>(b.recipesByOutput());
+        r.put(m("sugar"), List.of(
+                new Recipe(m("sugar_from_honey_bottle"), Kind.CRAFT, m("sugar"), 3, List.of(new Need(List.of(m("honey_bottle")), 1)), false, 0),
+                new Recipe(m("sugar_from_sugar_cane"), Kind.CRAFT, m("sugar"), 1, List.of(new Need(List.of(m("sugar_cane")), 1)), false, 0)));
+        Map<String, List<Source>> src = new HashMap<>(b.sourcesByItem());
+        src.put(m("sugar_cane"), List.of(new Source(m("sugar_cane"), m("sugar_cane"), "", 0, false, 1.0, 2)));
+        src.put(m("honey_bottle"), List.of(new Source(m("honey_bottle"), m("bee_nest"), "", 0, false, 1.0, 2)));
+        var p = ProductionPlanner.plan(new Book(r, src, b.fuelTicks(), b.durability()),
+                have(Map.of(m("sugar_cane"), 1), Map.of(), List.of(), 0, true, Map.of()), m("sugar"), 1);
+        assertTrue(p.possible(), p.problems().toString());
+        assertEquals(m("sugar_from_sugar_cane"), only(p, Action.CRAFT, m("sugar")).recipe(), p.summary());
+    }
+
     @Test void noShearsItMakesThemFirst() {
         var p = ProductionPlanner.plan(vanilla(), have(Map.of(m("oak_planks"), 3, m("iron_ingot"), 2), List.of(), 0, 0, 0,
                 Map.of(WHITE_SHEEP, Where.KNOWN), Map.of(WHITE_SHEEP, 12)), m("white_bed"), 1);

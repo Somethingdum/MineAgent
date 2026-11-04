@@ -4035,4 +4035,58 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * Plan 70, MA9.2, chests with a purpose: one for tools, one for food (told while its owner looks at each), a plain
+     * one: "put your things away": the spare pickaxe to the tools, the bread beyond 16 to the food, the cobblestone to the
+     * plain chest; the sword lying in the plain chest tidied into the tools.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_put_away", timeoutTicks = 1200)
+    public void thingsPutAwayByWhatEachChestIsFor(GameTestHelper helper) {
+        Scene s = scene(helper, "Steward");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos tools = new BlockPos(6, 1, 2), food = new BlockPos(6, 1, 5), plain = new BlockPos(2, 1, 7);
+        for (BlockPos c : new BlockPos[] {tools, food, plain}) helper.setBlock(c, Blocks.CHEST);
+        var plainChest = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(helper.absolutePos(plain));
+        plainChest.setItem(0, new ItemStack(Items.STONE_SWORD));
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.IRON_PICKAXE));
+        inv.setItem(2, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(3, new ItemStack(Items.BREAD, 24));
+        inv.setItem(4, new ItemStack(Items.COBBLESTONE, 20));
+        helper.runAfterDelay(5, () -> {
+            s.owner().lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(helper.absolutePos(tools)));
+            MineAgentEngine.onPlayerChat(s.owner(), "this chest is for tools");
+        });
+        helper.runAfterDelay(10, () -> {
+            s.owner().lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(helper.absolutePos(food)));
+            MineAgentEngine.onPlayerChat(s.owner(), "this is the food chest");
+        });
+        helper.runAfterDelay(20, () -> MineAgentEngine.onPlayerChat(s.owner(), "put your things away"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "put away");
+            String done = lastSaid(s, "Put away");
+            String failed = lastSaid(s, "I couldn't put");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1150) {
+                var t = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(helper.absolutePos(tools));
+                var f = (net.minecraft.world.Container) helper.getLevel().getBlockEntity(helper.absolutePos(food));
+                int stonePicks = count(t, Items.STONE_PICKAXE), swords = count(t, Items.STONE_SWORD), bread = count(f, Items.BREAD);
+                int cobble = count(plainChest, Items.COBBLESTONE), swordsLeft = count(plainChest, Items.STONE_SWORD);
+                boolean keptIron = inv.countItem(Items.IRON_PICKAXE) == 1;
+                String how = "tools chest: " + stonePicks + " stone pickaxes, " + swords + " swords; food chest: " + bread + " bread; plain chest: "
+                        + cobble + " cobblestone, " + swordsLeft + " swords; kept its iron pickaxe " + keptIron + "; said: "
+                        + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (stonePicks == 1 && swords == 1 && bread == 8 && cobble == 20 && swordsLeft == 0 && keptIron) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    private static int count(net.minecraft.world.Container c, net.minecraft.world.item.Item item) {
+        int n = 0;
+        if (c == null) return 0;
+        for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(item)) n += c.getItem(i).getCount();
+        return n;
+    }
 }

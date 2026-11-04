@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -123,6 +123,15 @@ public final class CommandParser {
             + "|explore for|go and find|hunt for)(?: me| us)? (?:a |an |the |some |another )?([a-z][a-z ]{2,24})$");
     private static final Pattern EXPLORE = Pattern.compile("^(?:explore|go exploring|scout around|explore around|explore a bit)$");
     private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
+    /** "This chest is for tools", "this is the food chest", "use this chest for spruce logs" (MA9.2). */
+    private static final Pattern CHEST_PURPOSE = Pattern.compile("^(?:(?:this|that) (?:chest|barrel) is (?:for |the |my |our )?(.{2,40}?)(?: chest| barrel)?"
+            + "|(?:this|that) is (?:the|my|a|our) (.{2,30}?) (?:chest|barrel)|use (?:this|that) (?:chest|barrel) for (.{2,40}))$");
+    /** "Put your things away", "empty your pack into the chests" (MA9.2): by what each chest is for. */
+    private static final Pattern PUT_AWAY = Pattern.compile("^(?:(?:put|store) (?:all )?(?:your|the) (?:things|stuff|items|loot|inventory)(?: away| in the chests)"
+            + "|put (?:your |all your )?(?:things|stuff|items|loot) (?:in|into) the chests|empty your (?:pack|inventory|pockets)(?: into the chests)?"
+            + "|(?:sort|stash|put away) your (?:things|stuff|items|loot|inventory))$");
+    /** "Tidy the chests" (MA9.2): the overflow chests sorted into the chests with a purpose. */
+    private static final Pattern TIDY = Pattern.compile("^(?:tidy|sort|organi[sz]e)(?: up| out)? (?:the |our |my )?(?:chests|storage|storage room)$");
     /** "Repair your pickaxe", "fix my sword", "mend your gear" (MA11.2): an anvil, and what mends it. */
     private static final Pattern REPAIR = Pattern.compile("^(?:repair|fix|mend)(?: up)? (?:your |my |the |some |a )?(gear|stuff|things|tools|armou?r|[a-z ]{3,20}?)(?: at the anvil| on the anvil)?$");
     /** "Disenchant your bow", "grind the enchantments off my sword" (MA11.2): a grindstone. */
@@ -204,6 +213,13 @@ public final class CommandParser {
         if (breed.matches()) return Optional.of(new Command(Kind.BREED, breed.group(1).strip(), null));
         var brew = BREW.matcher(t);
         if (brew.matches()) return Optional.of(new Command(Kind.BREW, brew.group(1).replace("speed", "swiftness").replace(' ', '_'), null));
+        var purpose = CHEST_PURPOSE.matcher(t);
+        if (purpose.matches()) {
+            String w = purpose.group(1) != null ? purpose.group(1) : purpose.group(2) != null ? purpose.group(2) : purpose.group(3);
+            if (w != null && !w.isBlank()) return Optional.of(new Command(Kind.CHEST_PURPOSE, w.strip(), null));
+        }
+        if (PUT_AWAY.matcher(t).matches()) return Optional.of(new Command(Kind.PUT_AWAY, null, null));
+        if (TIDY.matcher(t).matches()) return Optional.of(new Command(Kind.TIDY, null, null));
         var repair = REPAIR.matcher(t);
         if (repair.matches()) {
             String what = repair.group(1).strip();

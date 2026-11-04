@@ -206,6 +206,13 @@ public class MemoryPersistence {
     private volatile com.mineagent.engine.chat.PhraseBook phraseBook;
     private volatile com.mineagent.engine.chat.TalkSummary talkSummary;
 
+    private volatile com.mineagent.engine.world.ChestPurposes chestPurposes;
+
+    /** Keep this world's chests with a purpose with its memory, in the same file (MA9.2). */
+    public synchronized void setChestPurposes(com.mineagent.engine.world.ChestPurposes purposes) {
+        this.chestPurposes = purposes;
+    }
+
     /** Keep this world's learned phrases and talk summary with its memory (MA10.2). */
     public synchronized void setTalks(com.mineagent.engine.chat.PhraseBook phrases, com.mineagent.engine.chat.TalkSummary talks) {
         this.phraseBook = phrases;
@@ -215,12 +222,14 @@ public class MemoryPersistence {
     private void saveTalks() throws IOException {
         var phrases = phraseBook;
         var talks = talkSummary;
-        if (phrases == null && talks == null) return;
+        var purposes = chestPurposes;
+        if (phrases == null && talks == null && purposes == null) return;
         JsonObject data = new JsonObject();
         data.addProperty("version", FORMAT_VERSION);
         data.addProperty("timestamp", System.currentTimeMillis());
         if (phrases != null && com.mineagent.engine.settings.Switches.keepPhrases()) data.add("phrases", GSON.toJsonTree(phrases.exportState()));
         if (talks != null && com.mineagent.engine.settings.Switches.talkSummary()) data.add("talks", GSON.toJsonTree(talks.exportState()));
+        if (purposes != null) data.add("chestPurposes", GSON.toJsonTree(purposes.exportState()));
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
 
@@ -236,6 +245,10 @@ public class MemoryPersistence {
             var talks = talkSummary;
             if (talks != null && com.mineagent.engine.settings.Switches.talkSummary() && data.has("talks") && data.get("talks").isJsonObject()) {
                 talks.importState(GSON.fromJson(data.get("talks"), com.mineagent.engine.chat.TalkSummary.State.class));
+            }
+            var purposes = chestPurposes;
+            if (purposes != null && data.has("chestPurposes") && data.get("chestPurposes").isJsonObject()) {
+                purposes.importState(GSON.fromJson(data.get("chestPurposes"), com.mineagent.engine.world.ChestPurposes.State.class));
             }
         } catch (RuntimeException malformed) {
             throw new IOException("invalid talks", malformed);
