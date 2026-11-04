@@ -36,10 +36,18 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         /** A word in the item's name ("pickaxe"), or "gear" for the best it has. */
         public final String what;
 
+        /** For "book": the enchantment of the book to put on ("minecraft:mending"), or null for any book it has. */
+        public final String book;
+
         public AnvilRecord(String toolCallId, String mode, String what) {
+            this(toolCallId, mode, what, null);
+        }
+
+        public AnvilRecord(String toolCallId, String mode, String what, String book) {
             super(toolCallId);
-            this.mode = "grind".equals(mode) ? "grind" : "repair";
+            this.mode = "grind".equals(mode) || "book".equals(mode) ? mode : "repair";
             this.what = what == null || what.isBlank() ? "gear" : what;
+            this.book = book;
         }
     }
 
@@ -61,6 +69,10 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
 
     private boolean grind() {
         return "grind".equals(record.mode);
+    }
+
+    private boolean bookMode() {
+        return "book".equals(record.mode);
     }
 
     @Override
@@ -127,7 +139,8 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         int slot = pick(sp);
         if (slot < 0 || done >= MOST) return finish(sp);
         ItemStack gear = inv.getItem(slot);
-        int mender = menderFor(sp, slot);
+        int mender = bookMode() ? bookSlot(sp) : menderFor(sp, slot);
+        if (bookMode() && mender < 0) return close(sp, false, "I have no " + (record.book == null ? "enchanted book" : bookName() + " book"));
         if (mender < 0) {
             skipped.add(slot);
             return TaskState.RUNNING;
@@ -135,7 +148,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         String name = BuiltInRegistries.ITEM.getKey(gear.getItem()).getPath().replace('_', ' ');
         ItemStack mend = inv.getItem(mender);
         // The material: a quarter of its wear each, no more than it takes; a second piece: the whole of it.
-        int units = mend.is(gear.getItem()) ? 1
+        int units = bookMode() || mend.is(gear.getItem()) ? 1
                 : Math.max(1, Math.min(mend.getCount(), (int) Math.ceil(gear.getDamageValue() / Math.max(1.0, gear.getMaxDamage() / 4.0))));
         menu.getSlot(0).set(inv.removeItem(slot, 1));
         menu.getSlot(1).set(inv.removeItem(mender, units));
@@ -153,9 +166,11 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         TaskContext.syncInventory(sp);
         if (!can) {
             if (done > 0) return finish(sp);
-            return close(sp, false, cost >= 40 ? "mending my " + name + " is too expensive for an anvil now"
-                    : "mending my " + name + " costs " + cost + " levels and I have " + sp.experienceLevel);
+            String doing = bookMode() ? "putting the book on my " + name : "mending my " + name;
+            return close(sp, false, cost >= 40 ? doing + " is too expensive for an anvil now" : cost <= 0 ? "the anvil won't put that book on my " + name
+                    : doing + " costs " + cost + " levels and I have " + sp.experienceLevel);
         }
+        if (bookMode()) return finish(sp); // one book, one piece
         return TaskState.RUNNING;
     }
 
@@ -197,12 +212,18 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         if (done == 0) return close(sp, false, nothingTo());
         String list = String.join(", ", worked);
         return close(sp, true, grind() ? "Ground the enchantments off my " + list + "."
+                : bookMode() ? "Put " + (record.book == null ? "the book" : bookName()) + " on my " + list + " (" + levelsSpent + (levelsSpent == 1 ? " level)." : " levels).")
                 : "Mended my " + list + " (" + levelsSpent + (levelsSpent == 1 ? " level)." : " levels)."));
+    }
+
+    private String bookName() {
+        return record.book == null ? "the book" : record.book.substring(record.book.indexOf(':') + 1).replace('_', ' ');
     }
 
     private String nothingTo() {
         String called = "gear".equals(record.what) ? "" : " called " + record.what;
-        return grind() ? "I have nothing enchanted" + called + " to grind" : "I have nothing worn" + called + " to mend";
+        return grind() ? "I have nothing enchanted" + called + " to grind" : bookMode() ? "I have nothing" + called + " to put the book on"
+                : "I have nothing worn" + called + " to mend";
     }
 
     /**
@@ -221,6 +242,8 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
             if (!"gear".equals(record.what) && !id.contains(record.what.replace(' ', '_'))) continue;
             if (grind()) {
                 if (!st.isEnchanted() && !st.is(Items.ENCHANTED_BOOK)) continue;
+            } else if (bookMode()) {
+                if (st.is(Items.ENCHANTED_BOOK) || st.is(Items.BOOK) || !st.isEnchantable() && !st.isDamageableItem()) continue;
             } else {
                 if (!st.isDamageableItem() || st.getDamageValue() <= 0 || menderFor(sp, i) < 0) continue;
             }
@@ -233,6 +256,17 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
             }
         }
         return best;
+    }
+
+    /** For a book: the enchanted book to put on (of the named enchantment, if one was named). The slot, or -1. */
+    private int bookSlot(ServerPlayer sp) {
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack c = inv.getItem(i);
+            if (!c.is(Items.ENCHANTED_BOOK)) continue;
+            if (record.book == null || TradeTask.bookHas(c, record.book)) return i;
+        }
+        return -1;
     }
 
     /** What mends the piece in this slot: its material, or a second worn one of the same kind. The slot, or -1. */
@@ -270,7 +304,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         TaskContext.inputDriver(player).clear();
         outcome = line;
         var loop = TaskContext.agentLoop(player);
-        if (loop != null) loop.say(ok ? line : "I couldn't " + (grind() ? "grind that" : "mend that") + ": " + line + ".");
+        if (loop != null) loop.say(ok ? line : "I couldn't " + (grind() ? "grind that" : bookMode() ? "put the book on" : "mend that") + ": " + line + ".");
         phase = ok ? Phase.DONE : Phase.FAILED;
         return ok ? TaskState.SUCCESS : TaskState.FAILED;
     }

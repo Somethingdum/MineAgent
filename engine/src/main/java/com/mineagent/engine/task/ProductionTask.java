@@ -1342,6 +1342,25 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 if (!taken.isEmpty()) furnace.setItem(2, taken);
                 furnace.awardUsedRecipesAndPopExperience(sp);
             }
+            // Busy with something else (another job's input, or a player's): not one to use for this; the others share it.
+            ItemStack busy = furnace.getItem(0);
+            if (!busy.isEmpty() && !busy.is(in) && loaded[i] == 0 && fuelled[i] == 0 && furnaces.size() > 1) {
+                furnacesOutOfReach.add(f);
+                int moved = share[i];
+                furnaces.remove(i);
+                share = without(share, i);
+                loaded = without(loaded, i);
+                fuelled = without(fuelled, i);
+                for (int k = 0; moved > 0; k = (k + 1) % share.length, moved--) share[k]++;
+                return TaskState.RUNNING;
+            }
+            if (!busy.isEmpty() && !busy.is(in) && loaded[i] == 0 && fuelled[i] == 0) {
+                furnacesOutOfReach.add(f); // its only furnace is busy: set up again with another
+                furnaces.clear();
+                smeltStage = 0;
+                if (++resetups > 2) return fail("the furnace at " + f.toShortString() + " is busy with " + ProductionPlanner.name(BuiltInRegistries.ITEM.getKey(busy.getItem()).toString()));
+                return TaskState.RUNNING;
+            }
             int room = 64 - furnace.getItem(0).getCount();
             int add = Math.min(room, share[i] - loaded[i]);
             if (add > 0 && count(sp, in) > 0) {
@@ -1404,7 +1423,19 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             phase = Phase.ROUND;
             return TaskState.RUNNING;
         }
-        if (level.getGameTime() > smeltDeadline) return fail("the furnaces stopped before the " + ProductionPlanner.name(step.item()) + " was done");
+        if (level.getGameTime() > smeltDeadline) {
+            StringBuilder what = new StringBuilder();
+            for (int i = 0; i < furnaces.size(); i++) {
+                BlockPos f = furnaces.get(i);
+                if (level.getBlockEntity(f) instanceof AbstractFurnaceBlockEntity furnace) {
+                    what.append(' ').append(f.toShortString()).append(": in ").append(furnace.getItem(0)).append(", fuel ").append(furnace.getItem(1))
+                            .append(", out ").append(furnace.getItem(2)).append(", loaded ").append(loaded[i]).append('/').append(share[i])
+                            .append(", fuelled ").append(fuelled[i]).append(';');
+                }
+            }
+            System.out.println("[MineAgent] furnaces at the deadline, it at " + sp.blockPosition().toShortString() + ":" + what);
+            return fail("the furnaces stopped before the " + ProductionPlanner.name(step.item()) + " was done");
+        }
         wait = 20; // a look every second
         return TaskState.RUNNING;
     }

@@ -1400,6 +1400,12 @@ public class AgentLoop {
                 if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(net.minecraft.resources.ResourceLocation.tryParse(door))) {
                     door = "minecraft:oak_door";
                 }
+                // On Hard some zombies break wooden doors; none can break a fence gate (MA8.7): its shelter gets one.
+                if (ce.serverPlayer().serverLevel().getDifficulty() == net.minecraft.world.Difficulty.HARD) {
+                    String gate = wall.replace("_planks", "_fence_gate");
+                    door = net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(net.minecraft.resources.ResourceLocation.tryParse(gate))
+                            ? gate : "minecraft:oak_fence_gate";
+                }
                 haltNow();
                 standDown();
                 String print = c.value() == null ? "hut" : c.value();
@@ -1444,6 +1450,12 @@ public class AgentLoop {
             case TRADE -> {
                 String want = "emerald".equals(c.value()) ? "minecraft:emerald"
                         : com.mineagent.engine.planning.production.GameKnowledge.itemFor(c.value());
+                // "A mending book": an enchanted book of that enchantment, a librarian's (MA11.2).
+                var bookWords = java.util.regex.Pattern.compile("^(?:an? |the )?([a-z ]{3,30}?) (?:book|enchanted book)$").matcher(c.value());
+                if (bookWords.matches()) {
+                    String ench = enchantmentId(bookWords.group(1));
+                    if (ench != null) want = "minecraft:enchanted_book#" + ench;
+                }
                 if (want == null || want.startsWith(com.mineagent.engine.planning.production.GameKnowledge.ANY)) return false;
                 // Emeralds and nothing to sell: a crop farmers buy harvested from a field in sight first (MA11.3).
                 if ("minecraft:emerald".equals(want) && dispatchingGoal == null && fromOwner) {
@@ -1497,6 +1509,17 @@ public class AgentLoop {
                 orderGoal(words);
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.PutAwayTask.PutAwayRecord(
                         "putaway-" + UUID.randomUUID(), tidy), reply -> { });
+                return true;
+            }
+            case APPLY_BOOK -> {
+                String[] parts = c.value().split("\\|", 2);
+                String ench = enchantmentId(parts[0]);
+                if (ench == null && !parts[0].matches("(?:the |a |an )?(?:enchanted )?book")) return false;
+                String words = "put " + parts[0] + " on your " + parts[1];
+                journal.record("order", words, currentGameTickSafe());
+                orderGoal(words);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.AnvilTask.AnvilRecord(
+                        "anvil-" + UUID.randomUUID(), "book", parts[1], ench), reply -> { });
                 return true;
             }
             case REPAIR, GRIND -> {
@@ -3261,6 +3284,16 @@ public class AgentLoop {
         return best;
     }
 
+    /** "Mending", "silk touch", "unbreaking 3": the enchantment's id ("minecraft:mending"), or null. */
+    private String enchantmentId(String words) {
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return null;
+        String w = words.toLowerCase(java.util.Locale.ROOT).replaceAll("\\b(?:i{1,3}|iv|v|[1-5])$", "").strip().replace(' ', '_');
+        var key = net.minecraft.resources.ResourceLocation.tryParse("minecraft:" + w);
+        if (key == null) return null;
+        var reg = self.serverPlayer().serverLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+        return reg.containsKey(key) ? key.toString() : null;
+    }
+
     // ── The Nether (SMH plan 70, MA11.1) ──
 
     /**
@@ -3857,6 +3890,27 @@ public class AgentLoop {
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LightTask.LightRecord(
                         "partner-light-" + UUID.randomUUID(), dark, 5), reply -> { });
             }
+            case FARMING -> {
+                // Harvesting and replanting beside them: the crop they are working, the ripe ones near them.
+                if (now - partnerFarmedAt < 600) return;
+                String crop = ownerWork.farming(now);
+                if (crop == null) return;
+                var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(net.minecraft.resources.ResourceLocation.tryParse(crop));
+                if (!(block instanceof net.minecraft.world.level.block.CropBlock kind)) return;
+                int ripe = 0;
+                for (var p : net.minecraft.core.BlockPos.betweenClosed(owner.blockPosition().offset(-12, -3, -12), owner.blockPosition().offset(12, 3, 12))) {
+                    var st = level.getBlockState(p);
+                    if (st.getBlock() == block && kind.isMaxAge(st)) ripe++;
+                }
+                if (ripe < 2) return;
+                var item = cropItem(kind);
+                String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString();
+                partnerFarmedAt = now;
+                int have = self.getInventory().countItem(item);
+                journal.record("partner", "harvesting the " + com.mineagent.engine.planning.production.ProductionPlanner.plural(itemId, 2) + " beside you", now);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                        "partner-farm-" + UUID.randomUUID(), itemId, have + Math.min(32, ripe), null, false, true), reply -> { });
+            }
             case BUILDING -> {
                 String block = ownerWork.placing(now);
                 if (block == null) return;
@@ -3890,6 +3944,8 @@ public class AgentLoop {
         }
     }
 
+    /** When it last harvested beside its owner (game ticks). */
+    private long partnerFarmedAt = Long.MIN_VALUE / 2;
     /** When it last went for ore beside its owner (game ticks). */
     private long partnerMinedAt = Long.MIN_VALUE / 2;
 
@@ -4303,6 +4359,7 @@ public class AgentLoop {
                 || k == com.mineagent.engine.chat.CommandParser.Kind.REPAIR || k == com.mineagent.engine.chat.CommandParser.Kind.GRIND
                 || k == com.mineagent.engine.chat.CommandParser.Kind.BARTER || k == com.mineagent.engine.chat.CommandParser.Kind.PUT_AWAY
                 || k == com.mineagent.engine.chat.CommandParser.Kind.TIDY || k == com.mineagent.engine.chat.CommandParser.Kind.FIND_STRONGHOLD
+                || k == com.mineagent.engine.chat.CommandParser.Kind.APPLY_BOOK
                 ? c : java.util.Optional.empty();
     }
 

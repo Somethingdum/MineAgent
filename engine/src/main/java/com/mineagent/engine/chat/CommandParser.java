@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -141,6 +141,8 @@ public final class CommandParser {
     private static final Pattern TIDY = Pattern.compile("^(?:tidy|sort|organi[sz]e)(?: up| out)? (?:the |our |my )?(?:chests|storage|storage room)$");
     /** "Repair your pickaxe", "fix my sword", "mend your gear" (MA11.2): an anvil, and what mends it. */
     private static final Pattern REPAIR = Pattern.compile("^(?:repair|fix|mend)(?: up)? (?:your |my |the |some |a )?(gear|stuff|things|tools|armou?r|[a-z ]{3,20}?)(?: at the anvil| on the anvil)?$");
+    /** "Put mending on your pickaxe", "apply the mending book to my sword" (MA11.2): the book and the piece in an anvil. */
+    private static final Pattern APPLY_BOOK = Pattern.compile("^(?:put|apply|add)(?: the| a| your| my)? ([a-z ]{3,30}?)(?: book)? (?:on|onto|to) (?:your |my |the )?([a-z ]{3,20})$");
     /** "Disenchant your bow", "grind the enchantments off my sword" (MA11.2): a grindstone. */
     private static final Pattern GRIND = Pattern.compile("^(?:disenchant|grind(?: the enchantments? off)?|take the enchantments? off|strip the enchantments? (?:off|from)"
             + "|remove the enchantments? (?:from|off)) (?:your |my |the |a )?([a-z ]{3,20}?)(?: at the grindstone| on the grindstone)?$");
@@ -232,6 +234,10 @@ public final class CommandParser {
         }
         if (PUT_AWAY.matcher(t).matches()) return Optional.of(new Command(Kind.PUT_AWAY, null, null));
         if (TIDY.matcher(t).matches()) return Optional.of(new Command(Kind.TIDY, null, null));
+        var apply = APPLY_BOOK.matcher(t);
+        if (apply.matches() && !apply.group(1).matches(".*\\b(?:torch|torches|block|blocks|chest|planks?)\\b.*")) {
+            return Optional.of(new Command(Kind.APPLY_BOOK, apply.group(1).strip().replaceAll("^the ", "") + "|" + apply.group(2).strip(), null));
+        }
         var repair = REPAIR.matcher(t);
         if (repair.matches()) {
             String what = repair.group(1).strip();

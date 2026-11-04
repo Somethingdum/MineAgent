@@ -167,7 +167,12 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
     private boolean fits(MerchantOffer o, ServerPlayer sp) {
         if (o.isOutOfStock()) return false;
         String result = BuiltInRegistries.ITEM.getKey(o.getResult().getItem()).toString();
-        if (!record.want.equals(result)) return false;
+        int hash = record.want.indexOf('#');
+        if (hash > 0) {
+            // A book of one enchantment ("minecraft:enchanted_book#minecraft:mending"): a librarian's.
+            if (!record.want.substring(0, hash).equals(result)) return false;
+            if (!bookHas(o.getResult(), record.want.substring(hash + 1))) return false;
+        } else if (!record.want.equals(result)) return false;
         ItemStack a = o.getCostA(), b = o.getCostB();
         if (ProductionTask.count(sp, a.getItem()) < a.getCount()) return false;
         return b.isEmpty() || ProductionTask.count(sp, b.getItem()) >= b.getCount() + (b.is(a.getItem()) ? a.getCount() : 0);
@@ -220,6 +225,14 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
         int y = level.isLoaded(new BlockPos(x, at.getY(), z))
                 ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) : at.getY();
         return new BlockPos(x, y, z);
+    }
+
+    /** Whether an enchanted book holds this enchantment ("minecraft:mending"). */
+    public static boolean bookHas(ItemStack book, String enchantment) {
+        var stored = book.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS);
+        if (stored == null) return false;
+        for (var e : stored.keySet()) if (e.unwrapKey().map(k -> k.location().toString().equals(enchantment)).orElse(false)) return true;
+        return false;
     }
 
     /** The nearest villager within 32 blocks with a trade it can pay for. */

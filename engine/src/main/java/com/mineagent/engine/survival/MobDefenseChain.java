@@ -301,6 +301,8 @@ public final class MobDefenseChain implements TaskChain {
             if (!enemy && !(mob instanceof NeutralMob && (targetsSelf || targetsOwner || targetsWard))) continue;
             if (mob instanceof Creeper && !avoidCreepers && !targetsSelf) continue;
             double distance = mob.distanceTo(sp);
+            // A phantom circling overhead is out of reach: watched, and fought as it dives in (or shot, with a bow).
+            if (mob instanceof net.minecraft.world.entity.monster.Phantom && distance > 5.0 && !carriesBow(sp)) continue;
             if (letGo.containsKey(mob.getUUID()) && distance > 4.0) continue;
             String type = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).getPath();
             boolean bow = mob.isUsingItem() && (mob.getUseItem().getItem() instanceof BowItem
@@ -365,6 +367,17 @@ public final class MobDefenseChain implements TaskChain {
         double r = setup.perimeter() + 8.0;
         return new AABB(Math.min(around.minX, anchor.x - r), Math.min(around.minY, anchor.y - 8), Math.min(around.minZ, anchor.z - r),
                 Math.max(around.maxX, anchor.x + r), Math.max(around.maxY, anchor.y + 8), Math.max(around.maxZ, anchor.z + r));
+    }
+
+    private static boolean carriesBow(ServerPlayer sp) {
+        var inv = sp.getInventory();
+        boolean bow = false, arrows = false;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (st.getItem() instanceof BowItem) bow = true;
+            if (st.getItem() instanceof net.minecraft.world.item.ArrowItem) arrows = true;
+        }
+        return bow && arrows;
     }
 
     private Self selfOf(ServerPlayer sp) {

@@ -14,7 +14,11 @@ import java.util.Set;
  * agent loop feeds it from the game's block events and acts on the guess only when it has nothing else to do.
  */
 public final class OwnerWork {
-    public enum Doing { NOTHING, MINING, BUILDING }
+    public enum Doing { NOTHING, MINING, BUILDING, FARMING }
+
+    /** Crops: breaking one is a harvest, placing one is planting (not building). */
+    static final Set<String> CROPS = Set.of("minecraft:wheat", "minecraft:carrots", "minecraft:potatoes", "minecraft:beetroots",
+            "minecraft:melon", "minecraft:pumpkin", "minecraft:sugar_cane", "minecraft:nether_wart", "minecraft:sweet_berry_bush");
 
     /** How far back it looks, game ticks. */
     public static final long WINDOW = 600;
@@ -50,11 +54,13 @@ public final class OwnerWork {
     /** The guess now. */
     public synchronized Doing doing(long now) {
         prune(now);
-        int mined = 0, placed = 0;
+        int mined = 0, placed = 0, farmed = 0;
         for (Event e : events) {
-            if (e.placed()) placed++;
+            if (CROPS.contains(e.block())) farmed++;
+            else if (e.placed()) placed++;
             else if (STONE.contains(e.block()) || e.block().endsWith("_ore")) mined++;
         }
+        if (farmed >= ENOUGH && farmed >= placed && farmed >= mined) return Doing.FARMING;
         if (placed >= ENOUGH && placed >= mined) return Doing.BUILDING;
         if (mined >= ENOUGH) return Doing.MINING;
         return Doing.NOTHING;
@@ -64,7 +70,15 @@ public final class OwnerWork {
     public synchronized String placing(long now) {
         prune(now);
         Map<String, Integer> n = new HashMap<>();
-        for (Event e : events) if (e.placed()) n.merge(e.block(), 1, Integer::sum);
+        for (Event e : events) if (e.placed() && !CROPS.contains(e.block())) n.merge(e.block(), 1, Integer::sum);
+        return n.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
+    }
+
+    /** The crop they have been working most in the window ("minecraft:wheat"), or null. */
+    public synchronized String farming(long now) {
+        prune(now);
+        Map<String, Integer> n = new HashMap<>();
+        for (Event e : events) if (CROPS.contains(e.block())) n.merge(e.block(), 1, Integer::sum);
         return n.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
     }
 

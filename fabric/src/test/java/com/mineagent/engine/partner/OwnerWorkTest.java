@@ -35,4 +35,13 @@ final class OwnerWorkTest {
         w.broke("minecraft:oak_log", 0, 73, 0, 2_000);
         assertEquals(OwnerWork.Doing.NOTHING, w.doing(2_010), "felling a tree is not mining");
     }
+
+    @Test void harvestingAndPlantingIsFarmingNotBuilding() {
+        var w = new OwnerWork();
+        for (int i = 0; i < 3; i++) w.broke("minecraft:wheat", i, 64, 0, 10);
+        for (int i = 0; i < 3; i++) w.placed("minecraft:wheat", i, 64, 0, 12);
+        assertEquals(OwnerWork.Doing.FARMING, w.doing(20));
+        assertEquals("minecraft:wheat", w.farming(20));
+        assertNull(w.placing(20), "seeds planted are not blocks to bring");
+    }
 }

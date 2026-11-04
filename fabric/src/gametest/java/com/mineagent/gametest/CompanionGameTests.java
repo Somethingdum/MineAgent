@@ -4355,4 +4355,143 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA8.3: at night a phantom comes for it: watched as it circles, struck as it dives in; dead, the companion alive. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_phantom", timeoutTicks = 1600)
+    public void aDivingPhantomIsFought(GameTestHelper helper) {
+        Scene s = scene(helper, "Skywatch");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        var level = helper.getLevel();
+        long was = level.getDayTime();
+        level.setDayTime(was - was % 24_000L + 18_000L);
+        var phantom = helper.spawn(EntityType.PHANTOM, new BlockPos(4, 12, 3));
+        phantom.setTarget(s.body());
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "phantom");
+            if (!phantom.isAlive() || s.body().isDeadOrDying() || helper.getTick() >= 1550) {
+                String how = "phantom alive " + phantom.isAlive() + ", companion health " + s.body().getHealth();
+                level.setDayTime(was);
+                tidy(s);
+                phantom.discard();
+                if (!phantom.isAlive() && !s.body().isDeadOrDying()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA10.4, the farming half: its owner harvests wheat; the companion harvests the ripe wheat beside them too. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_partner_farm", timeoutTicks = 1400)
+    public void aFarmerIsHelpedWithTheHarvest(GameTestHelper helper) {
+        ServerPlayer farmer = player(helper, "Grange", new BlockPos(7, 1, 7));
+        Scene s = scene(helper, "Gleaner", false, farmer);
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var ripe = ((net.minecraft.world.level.block.CropBlock) Blocks.WHEAT).getStateForAge(7);
+        for (int x = 8; x <= 12; x++) for (int z = 8; z <= 12; z++) {
+            helper.setBlock(x, 0, z, Blocks.FARMLAND);
+            helper.setBlock(x, 1, z, ripe);
+        }
+        helper.setBlock(10, 0, 13, Blocks.WATER);
+        for (int i = 0; i < 5; i++) {
+            final int x = 8 + i;
+            helper.runAfterDelay(20 + i * 15L, () -> farmer.gameMode.destroyBlock(helper.absolutePos(new BlockPos(x, 1, 8))));
+        }
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "partner-farm");
+            int stillRipe = 0;
+            for (int x = 8; x <= 12; x++) for (int z = 9; z <= 12; z++) {
+                var st = helper.getLevel().getBlockState(helper.absolutePos(new BlockPos(x, 1, z)));
+                if (st.is(Blocks.WHEAT) && ((net.minecraft.world.level.block.CropBlock) Blocks.WHEAT).isMaxAge(st)) stillRipe++;
+            }
+            int wheat = s.body().getInventory().countItem(Items.WHEAT);
+            if (wheat >= 4 && stillRipe <= 16 || helper.getTick() >= 1350) {
+                String how = wheat + " wheat with it, " + stillRipe + " of 20 still ripe; said: " + lastSaid(s, "") + "; doing "
+                        + s.loop().ownerWork().doing(helper.getLevel().getGameTime());
+                tidy(s);
+                if (wheat >= 4 && stillRipe <= 16) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA8.7: on Hard, where some zombies break wooden doors, the hut it builds has a fence gate in the doorway. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hard_gate", timeoutTicks = 2400)
+    public void onHardTheHutGetsAFenceGate(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        var was = helper.getLevel().getDifficulty();
+        server.setDifficulty(net.minecraft.world.Difficulty.HARD, true);
+        Scene s = scene(helper, "Gatekeeper");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_FENCE_GATE));
+        inv.setItem(3, new ItemStack(Items.TORCH, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a hut"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "hard gate");
+            String done = lastSaid(s, "Built the hut");
+            String failed = lastSaid(s, "I couldn't build");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2350) {
+                boolean gate = false;
+                for (BlockPos p : BlockPos.betweenClosed(helper.absolutePos(new BlockPos(-10, 1, -10)), helper.absolutePos(new BlockPos(20, 1, 20)))) {
+                    if (helper.getLevel().getBlockState(p).getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock) gate = true;
+                }
+                String how = "fence gate in place " + gate + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                server.setDifficulty(was, true);
+                tidy(s);
+                if (gate && done.contains("every block checked")) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA11.2, Mending from a librarian: "trade for a mending book, then put mending on your pickaxe": the book
+     * bought with emeralds and a book, then put on the pickaxe at the anvil it carries.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_mending", timeoutTicks = 1600)
+    public void mendingFromALibrarian(GameTestHelper helper) {
+        Scene s = scene(helper, "Bookish");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var level = helper.getLevel();
+        var mending = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .getHolderOrThrow(net.minecraft.world.item.enchantment.Enchantments.MENDING);
+        var villager = EntityType.VILLAGER.create(level);
+        BlockPos vAt = helper.absolutePos(new BlockPos(7, 1, 3));
+        villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
+        villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.LIBRARIAN).setLevel(1));
+        villager.setNoAi(true);
+        var offers = new net.minecraft.world.item.trading.MerchantOffers();
+        offers.add(new net.minecraft.world.item.trading.MerchantOffer(new net.minecraft.world.item.trading.ItemCost(Items.EMERALD, 10),
+                java.util.Optional.of(new net.minecraft.world.item.trading.ItemCost(Items.BOOK, 1)),
+                net.minecraft.world.item.EnchantedBookItem.createForEnchantment(new net.minecraft.world.item.enchantment.EnchantmentInstance(mending, 1)),
+                12, 1, 0.2f));
+        villager.setOffers(offers);
+        level.addFreshEntity(villager);
+        var inv = s.body().getInventory();
+        ItemStack pick = new ItemStack(Items.DIAMOND_PICKAXE);
+        pick.setDamageValue(300);
+        inv.setItem(1, pick);
+        inv.setItem(2, new ItemStack(Items.EMERALD, 10));
+        inv.setItem(3, new ItemStack(Items.BOOK));
+        inv.setItem(4, new ItemStack(Items.ANVIL));
+        s.body().giveExperienceLevels(30);
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "trade for a mending book, then put mending on your pickaxe"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "mending");
+            boolean has = false;
+            for (int k = 0; k < inv.getContainerSize(); k++) {
+                var st = inv.getItem(k);
+                if (st.is(Items.DIAMOND_PICKAXE) && net.minecraft.world.item.enchantment.EnchantmentHelper.getItemEnchantmentLevel(mending, st) > 0) has = true;
+            }
+            String failed = lastSaid(s, "I couldn't");
+            if (has || !failed.isEmpty() || helper.getTick() >= 1550) {
+                String how = "mending on the pickaxe " + has + "; queue: " + lastSaid(s, "Got it") + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                tidy(s);
+                villager.discard();
+                if (has) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }
