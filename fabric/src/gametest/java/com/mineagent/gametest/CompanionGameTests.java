@@ -4026,6 +4026,37 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Charcoal, the fuel a world with no coal runs on: 16 oak logs, two furnaces and some planks in its pack: "make me 8
+     * charcoal" smelts logs into it, the furnaces put down and fuelled.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_charcoal", timeoutTicks = 2600)
+    public void charcoalMadeFromLogs(GameTestHelper helper) {
+        Scene s = scene(helper, "Collier");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.OAK_LOG, 16));
+        inv.setItem(2, new ItemStack(Items.FURNACE, 2));
+        inv.setItem(3, new ItemStack(Items.OAK_PLANKS, 8));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 8 charcoal"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "charcoal");
+            String done = lastSaid(s, "Done");
+            String failed = lastSaid(s, "I couldn't");
+            int charcoal = inv.countItem(Items.CHARCOAL) + s.owner().getInventory().countItem(Items.CHARCOAL);
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2500) {
+                for (var drop : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(-8, -2, -8))).expandTowards(32, 12, 32))) {
+                    if (drop.getItem().is(Items.CHARCOAL)) charcoal += drop.getItem().getCount();
+                }
+                String how = charcoal + " charcoal (carried, given or dropped); said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (charcoal >= 8) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {
