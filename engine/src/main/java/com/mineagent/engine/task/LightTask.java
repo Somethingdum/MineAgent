@@ -159,6 +159,16 @@ public class LightTask extends CompanionTask<LightTask.LightRecord> {
 
     /** What is still dark is out of its reach from here: it says so and stops. */
     private TaskState cannotReach(ServerPlayer sp) {
+        if (Boolean.getBoolean("mineagent.traceWork")) {
+            // For the scenes: what is round it when it can get nowhere (shut in by its own furnaces, say).
+            StringBuilder round = new StringBuilder();
+            BlockPos at = sp.blockPosition();
+            for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                round.append(' ').append(d.getName()).append(": ").append(sp.serverLevel().getBlockState(at.relative(d)).getBlock())
+                        .append('/').append(sp.serverLevel().getBlockState(at.relative(d).above()).getBlock());
+            }
+            System.out.println("[MineAgent] light: can get nowhere from " + at.toShortString() + ";" + round);
+        }
         nav.cancel();
         TaskContext.inputDriver(player).clear();
         var loop = TaskContext.agentLoop(player);

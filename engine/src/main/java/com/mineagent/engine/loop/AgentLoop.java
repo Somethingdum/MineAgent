@@ -5161,7 +5161,7 @@ public class AgentLoop {
         if (templates >= 1 && templates < toUpgrade && stock.getOrDefault("minecraft:diamond", 0) >= 7 + 8 && mayTry("netherite:copy")) {
             journal.record("gear", "toward netherite: copying the smithing template", now);
             dispatchFree("netherite-", "netherite:copy", new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                    freeJob("netherite-", "netherite:copy"), "minecraft:netherite_upgrade_smithing_template", 1, null, false, true));
+                    freeJob("netherite-", "netherite:copy"), "minecraft:netherite_upgrade_smithing_template", templates + 1, null, false, true));
             return;
         }
         boolean wantTemplate = templates == 0;

@@ -3954,6 +3954,14 @@ public class CompanionGameTests implements FabricGameTest {
     public void onItsOwnWithNoSwampItMakesItsBaseHere(GameTestHelper helper) {
         Scene s = scene(helper, "Loner");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        // Its starter kit already on it (it makes what it lacks of it first): on to its base.
+        var kit = s.body().getInventory();
+        kit.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        kit.setItem(2, new ItemStack(Items.STONE_AXE));
+        kit.setItem(3, new ItemStack(Items.STONE_SWORD));
+        kit.setItem(4, new ItemStack(Items.STONE_SHOVEL));
+        kit.setItem(5, new ItemStack(Items.CHARCOAL, 8));
+        kit.setItem(6, new ItemStack(Items.COOKED_BEEF, 16));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
         helper.onEachTick(() -> {
             if (helper.getTick() % 100 == 0) trace(helper, s, "on its own");
@@ -4250,7 +4258,7 @@ public class CompanionGameTests implements FabricGameTest {
 
     /**
      * SMH plan 70, on to netherite: one smithing template is enough, as a player copies it: with seven diamonds, a
-     * netherrack and a crafting table, "make me a netherite upgrade smithing template" makes the copy (two from one).
+     * netherrack and a crafting table, "make me 2 netherite upgrade smithing templates" makes the copy (two from one).
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_netherite_template", timeoutTicks = 1200)
     public void aSmithingTemplateIsCopied(GameTestHelper helper) {
@@ -4261,7 +4269,8 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(2, new ItemStack(Items.DIAMOND, 7));
         inv.setItem(3, new ItemStack(Items.NETHERRACK, 1));
         inv.setItem(4, new ItemStack(Items.CRAFTING_TABLE, 1));
-        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a netherite upgrade smithing template"));
+        // Two in all: the one it has and its copy ("make me" counts what it has).
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 2 netherite upgrade smithing templates"));
         helper.onEachTick(() -> {
             if (helper.getTick() % 200 == 0) trace(helper, s, "template");
             int templates = inv.countItem(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE);

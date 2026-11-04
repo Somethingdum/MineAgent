@@ -173,7 +173,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         // Chests by a part it couldn't take apart stay shut.
                         if (!stuckParts.isEmpty()) {
                             int before = chests.size();
-                            chests.removeIf(c -> stuckParts.stream().anyMatch(q -> q.distSqr(c) <= 6 * 6 * 3));
+                            chests.removeIf(c -> stuckParts.stream().anyMatch(q -> q.distSqr(c) <= 6 * 6));
                             skipped += before - chests.size();
                         }
                         if (disarmed > 0) say("Traps taken apart: " + disarmed + (disarmed == 1 ? " part." : " parts."));
@@ -185,6 +185,10 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     BlockPos q = parts.get(part);
                     // From beside it, never on it: the pathfinder keeps off a plate over TNT and off string.
                     if (q.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0 || standingOn(sp, q)) {
+                        if (Boolean.getBoolean("mineagent.traceWork") && ticks % 100 == 1) {
+                            System.out.println("[MineAgent] loot: walking to " + level.getBlockState(q).getBlock() + " at " + q.toShortString() + " from "
+                                    + sp.blockPosition().toShortString() + ", navigating " + nav.isNavigating());
+                        }
                         if (ticks > 900) {
                             stuckParts.add(q);
                             part++;
@@ -200,7 +204,14 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                     var st = level.getBlockState(q);
                     // String cut with shears doesn't set it off (with its hooks gone first, nothing does).
                     if (st.is(Blocks.TRIPWIRE)) TaskContext.selectInventoryItem(player, "minecraft:shears");
-                    if (ticks % 20 == 1) BlockDigger.startBreaking(sp, q);
+                    if (ticks % 20 == 1) {
+                        var a = BlockDigger.startBreakingDetailed(sp, q);
+                        if (Boolean.getBoolean("mineagent.traceWork") && ticks % 100 == 1) {
+                            System.out.println("[MineAgent] loot: taking apart " + st.getBlock() + " at " + q.toShortString() + " from "
+                                    + sp.blockPosition().toShortString() + ", " + String.format("%.1f", Math.sqrt(q.distToCenterSqr(sp.getEyePosition())))
+                                    + " off: " + a.status() + " " + a.detail());
+                        }
+                    }
                     if (ticks > 400) {
                         stuckParts.add(q);
                         part++;
