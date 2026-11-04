@@ -3872,6 +3872,98 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, its owner: "When it cuts down trees, it should get ALL of the wood, and then replant them. With
+     * conscious spacing." An oak of six logs in its leaves, and a sapling already one block from its trunk: asked for 2
+     * logs it fells the whole tree (no log left in the air), and plants its sapling where it can grow, 3 or more blocks
+     * from the one there.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_whole_tree", timeoutTicks = 1600)
+    public void aTreeIsFelledWholeAndReplantedSpaced(GameTestHelper helper) {
+        Scene s = scene(helper, "Woodsman");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 2; x <= 14; x++) for (int z = 2; z <= 12; z++) helper.setBlock(x, 0, z, Blocks.GRASS_BLOCK);
+        BlockPos trunk = new BlockPos(8, 1, 6);
+        for (int y = 0; y < 6; y++) helper.setBlock(trunk.above(y), Blocks.OAK_LOG);
+        var leaf = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, false)
+                .setValue(net.minecraft.world.level.block.LeavesBlock.DISTANCE, 1);
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int y = 4; y <= 6; y++) {
+            if (dx == 0 && dz == 0 && y < 6) continue;
+            if (Math.abs(dx) == 2 && Math.abs(dz) == 2) continue;
+            helper.setBlock(trunk.offset(dx, y - 1, dz), leaf);
+        }
+        helper.setBlock(trunk.above(6), leaf);
+        BlockPos other = new BlockPos(9, 1, 7); // a sapling already one block (corner to corner) from the trunk
+        helper.setBlock(other, Blocks.OAK_SAPLING);
+        s.body().getInventory().setItem(1, new ItemStack(Items.IRON_AXE));
+        s.body().getInventory().setItem(2, new ItemStack(Items.OAK_SAPLING, 1));
+        s.body().getInventory().setItem(3, new ItemStack(Items.DIRT, 16));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "get me 2 oak logs"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "whole tree");
+            String done = lastSaid(s, "Done");
+            if (!done.isEmpty() || helper.getTick() >= 1550) {
+                int standing = 0, saplings = 0, near = 0;
+                for (BlockPos p : BlockPos.betweenClosed(trunk.offset(-4, -1, -4), trunk.offset(4, 8, 4))) {
+                    var st = helper.getLevel().getBlockState(helper.absolutePos(p));
+                    if (st.is(net.minecraft.tags.BlockTags.LOGS)) standing++;
+                    if (st.is(Blocks.OAK_SAPLING) && !p.equals(other)) {
+                        saplings++;
+                        if (Math.max(Math.abs(p.getX() - other.getX()), Math.abs(p.getZ() - other.getZ())) < 3) near++;
+                    }
+                }
+                int logs = s.body().getInventory().countItem(Items.OAK_LOG);
+                String how = standing + " logs still standing, " + logs + " carried, " + saplings + " planted (" + near
+                        + " too close to the other); said: " + (done.isEmpty() ? lastSaid(s, "") : done);
+                tidy(s);
+                if (standing == 0 && logs >= 5 && saplings >= 1 && near == 0) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** An enchanted book of one enchantment at a level, as a librarian or a table gives it. */
+    private static ItemStack book(GameTestHelper helper, net.minecraft.resources.ResourceKey<net.minecraft.world.item.enchantment.Enchantment> key, int level) {
+        var reg = helper.getLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+        return net.minecraft.world.item.EnchantedBookItem.createForEnchantment(
+                new net.minecraft.world.item.enchantment.EnchantmentInstance(reg.getHolderOrThrow(key), level));
+    }
+
+    /**
+     * SMH plan 70, god-tier gear: a diamond sword, books of Sharpness V, Unbreaking III, Mending and Looting III, 30
+     * levels and an anvil: "make your sword god tier" puts all four on in the cheapest order, no step too expensive.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_god_sword", timeoutTicks = 800)
+    public void aSwordGetsItsBooksInTheBestOrder(GameTestHelper helper) {
+        Scene s = scene(helper, "Enchanter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.DIAMOND_SWORD));
+        inv.setItem(2, book(helper, net.minecraft.world.item.enchantment.Enchantments.SHARPNESS, 5));
+        inv.setItem(3, book(helper, net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 3));
+        inv.setItem(4, book(helper, net.minecraft.world.item.enchantment.Enchantments.MENDING, 1));
+        inv.setItem(5, book(helper, net.minecraft.world.item.enchantment.Enchantments.LOOTING, 3));
+        inv.setItem(6, new ItemStack(Items.ANVIL));
+        s.body().giveExperienceLevels(30);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make your sword god tier"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "god sword");
+            String done = lastSaid(s, "Enchanted my");
+            String failed = lastSaid(s, "I couldn't");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 760) {
+                ItemStack sword = ItemStack.EMPTY;
+                for (int i = 0; i < 36; i++) if (inv.getItem(i).is(Items.DIAMOND_SWORD)) sword = inv.getItem(i);
+                var e = sword.get(net.minecraft.core.component.DataComponents.ENCHANTMENTS);
+                int on = e == null ? 0 : e.size();
+                String how = "sword has " + on + " enchantments (" + (e == null ? "" : e.toString()) + "); levels left " + s.body().experienceLevel
+                        + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (on == 4 && !done.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "catch me 1 fish" by a pool: the rod cast, reeled in on a bite, a fish caught. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fish", timeoutTicks = 3000)
     public void aFishCaughtAtAPool(GameTestHelper helper) {
@@ -4210,7 +4302,7 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * SMH plan 70, trading mastery: "roll a librarian for mending", a villager with no job in a small pen: a lectern put
+     * SMH plan 70, trading mastery: "roll a librarian for mending", a villager with no job in a one-block cell: a lectern put
      * down by it, taken up (a librarian), its offers read, and while there's no Mending the lectern broken and put down
      * again: ten rolls (Mending itself is about one roll in fifty, too long for a scene), or Mending if it comes.
      */
@@ -4218,8 +4310,10 @@ public class CompanionGameTests implements FabricGameTest {
     public void aLibrarianIsRolledForMending(GameTestHelper helper) {
         Scene s = scene(helper, "Scholar");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
-        for (int x = 7; x <= 11; x++) for (int z = 7; z <= 11; z++) {
-            if (x == 7 || x == 11 || z == 7 || z == 11) helper.setBlock(x, 1, z, Blocks.OAK_FENCE);
+        // A one-block cell as a trading hall has them, open on the side it stands at: the lectern goes there.
+        for (BlockPos f : new BlockPos[] {new BlockPos(8, 1, 9), new BlockPos(10, 1, 9), new BlockPos(9, 1, 10), new BlockPos(8, 1, 10),
+                new BlockPos(10, 1, 10), new BlockPos(8, 1, 8), new BlockPos(10, 1, 8)}) {
+            helper.setBlock(f, Blocks.OAK_FENCE);
         }
         var villager = EntityType.VILLAGER.create(helper.getLevel());
         BlockPos vAt = helper.absolutePos(new BlockPos(9, 1, 9));
@@ -4450,7 +4544,7 @@ public class CompanionGameTests implements FabricGameTest {
             String done = second[0] ? lastSaid(s, "Done: 4 iron") : "";
             String failed = lastSaid(s, "I can't");
             if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2350) {
-                boolean told = !lastSaid(s, "I'll take").isEmpty();
+                boolean told = !lastSaid(s, "I'll take").isEmpty() || !lastSaid(s, "I'll use what's in your chests").isEmpty();
                 int left = count(chest, Items.IRON_INGOT), ingots = inv.countItem(Items.IRON_INGOT);
                 String how = "told first " + told + ", " + left + " ingots left in the chest, " + ingots + " carried; said: "
                         + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);

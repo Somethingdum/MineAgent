@@ -107,11 +107,22 @@ public final class BlockDigger {
      * Select the fastest safe tool. Inventory moves are swaps, never copies,
      * and every mutation is broadcast so clients see the held item change.
      */
+    /**
+     * Breaking leaves for their saplings (a felled tree to replant): no shears and no Silk Touch, which drop the leaves
+     * themselves instead. Set by the task that wants the saplings, for its leaves only.
+     */
+    public static volatile boolean forSaplings;
+
+    private static boolean wrongForSaplings(ItemStack st, BlockState state) {
+        return forSaplings && state.is(net.minecraft.tags.BlockTags.LEAVES)
+                && (st.getItem() instanceof net.minecraft.world.item.ShearsItem || st.isEnchanted());
+    }
+
     public static void prepareBestTool(ServerPlayer player, BlockState state) {
         var inventory = player.getInventory();
         int currentSlot = inventory.selected;
         ItemStack current = inventory.getItem(currentSlot);
-        boolean currentUsable = hasSafeDurability(current);
+        boolean currentUsable = hasSafeDurability(current) && !wrongForSaplings(current, state);
 
         int bestSlot = currentUsable ? currentSlot : -1;
         float bestSpeed = currentUsable && !current.isEmpty()
@@ -122,7 +133,7 @@ public final class BlockDigger {
         int limit = Math.min(36, inventory.getContainerSize());
         for (int slot = 0; slot < limit; slot++) {
             ItemStack candidate = inventory.getItem(slot);
-            if (candidate.isEmpty() || !hasSafeDurability(candidate)) continue;
+            if (candidate.isEmpty() || !hasSafeDurability(candidate) || wrongForSaplings(candidate, state)) continue;
             float speed = candidate.getDestroySpeed(state);
             boolean correct = candidate.isCorrectToolForDrops(state);
             if ((correct && !bestCorrect) || (correct == bestCorrect && speed > bestSpeed)) {
@@ -147,7 +158,7 @@ public final class BlockDigger {
             return;
         }
 
-        if (bestSlot < 0 && !currentUsable) {
+        if (bestSlot < 0 && !currentUsable || bestSlot < 0 && wrongForSaplings(current, state)) {
             for (int slot = 0; slot < Math.min(9, inventory.getContainerSize()); slot++) {
                 if (inventory.getItem(slot).isEmpty()) {
                     inventory.selected = slot;

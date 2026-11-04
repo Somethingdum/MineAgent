@@ -200,8 +200,8 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
         if (level.getBlockState(target).isAir()) {
             // Only count disappearance after this task owned the break target.
             if (target.equals(activeBreakTarget)) {
-                minedCount++;
-                replant(sp, target);
+                if (!leafPass) minedCount++;
+                afterBreak(sp, target);
             }
             activeBreakTarget = null;
             invalidateWorldAsset(target);
@@ -234,8 +234,8 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
 
         digTicks++;
         if (level.getBlockState(target).isAir()) {
-            minedCount++;
-            replant(sp, target);
+            if (!leafPass) minedCount++;
+            afterBreak(sp, target);
             consecutiveTargetFailures = 0;
             activeBreakTarget = null;
             invalidateWorldAsset(target);
@@ -266,6 +266,14 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
         currentBlockIndex++;
         digTicks = 0;
         markProgress(TaskContext.serverPlayer(player).level().getGameTime());
+        // A tree is felled whole (its owner: "it should get ALL of the wood"), then its saplings, then planted.
+        BlockPos next = nextOfTree(TaskContext.serverPlayer(player));
+        if (next != null) {
+            targetBlocks = new java.util.ArrayList<>(java.util.List.of(next));
+            currentBlockIndex = 0;
+            navigateToNextBlock();
+            return;
+        }
         if (minedCount >= record.count) {
             cancelNav();
         } else if (targetBlocks == null || currentBlockIndex >= targetBlocks.size()) {
@@ -292,11 +300,158 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
             net.minecraft.world.level.block.Blocks.DARK_OAK_LOG, net.minecraft.world.level.block.Blocks.DARK_OAK_SAPLING,
             net.minecraft.world.level.block.Blocks.CHERRY_LOG, net.minecraft.world.level.block.Blocks.CHERRY_SAPLING);
 
+    // ── Whole trees (SMH plan 70: "get ALL of the wood, and then replant them, with conscious spacing") ──
+
+    /** The tree it is felling: its logs (still to cut, or cut), its natural leaves, its stump, and whether it is at the leaves. */
+    private java.util.List<BlockPos> tree, treeLeaves;
+    private boolean leafPass;
+    private int leavesBroken;
+    /** Leaves broken for saplings, at most. */
+    static final int LEAVES_FOR_SAPLINGS = 40;
+
+    private void afterBreak(net.minecraft.server.level.ServerPlayer sp, BlockPos at) {
+        var was = breakingState;
+        if (leafPass) {
+            breakingState = null;
+            leavesBroken++;
+            return;
+        }
+        if (tree == null && was != null && was.is(net.minecraft.tags.BlockTags.LOGS) && com.mineagent.engine.settings.Switches.wholeTrees()) {
+            survey(sp.serverLevel(), at);
+        }
+        replant(sp, at);
+    }
+
+    /**
+     * The tree a log was part of: the logs joined to it (any way, corners too) within 8 blocks across and 40 up, none a
+     * player placed; a tree when natural leaves touch them (a log cabin has none). Kept for the felling.
+     */
+    private void survey(net.minecraft.server.level.ServerLevel level, BlockPos from) {
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
+        java.util.ArrayDeque<BlockPos> todo = new java.util.ArrayDeque<>();
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        java.util.List<BlockPos> logs = new java.util.ArrayList<>();
+        java.util.Set<BlockPos> leaves = new java.util.LinkedHashSet<>();
+        seen.add(from);
+        todo.add(from);
+        while (!todo.isEmpty() && logs.size() < 160) {
+            BlockPos p = todo.poll();
+            for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+                BlockPos q = p.offset(dx, dy, dz);
+                if (!seen.add(q) || Math.abs(q.getX() - from.getX()) > 8 || Math.abs(q.getZ() - from.getZ()) > 8
+                        || q.getY() < from.getY() - 3 || q.getY() > from.getY() + 40) continue;
+                var st = level.getBlockState(q);
+                if (st.is(net.minecraft.tags.BlockTags.LOGS) && !placed.isPlaced(q.getX(), q.getY(), q.getZ())) {
+                    logs.add(q.immutable());
+                    todo.add(q);
+                } else if (st.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock
+                        && !st.getValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT) && leaves.size() < 96) {
+                    leaves.add(q.immutable());
+                }
+            }
+        }
+        if (leaves.size() < 3) return; // not a tree: a built thing of logs, left as it is
+        logs.sort(java.util.Comparator.comparingInt(BlockPos::getY));
+        tree = logs;
+        treeLeaves = new java.util.ArrayList<>(leaves);
+    }
+
+    /**
+     * The next block of the tree to cut: its lowest log still standing (cut from the bottom up, as a player does); then,
+     * with no sapling of its kind on it to plant, a leaf, for the saplings; then none, and it plants.
+     */
+    private BlockPos nextOfTree(net.minecraft.server.level.ServerPlayer sp) {
+        if (tree == null) return null;
+        var level = sp.serverLevel();
+        for (BlockPos p : tree) {
+            if (level.getBlockState(p).is(net.minecraft.tags.BlockTags.LOGS) && !unreachableBlocks.contains(p)) return p;
+        }
+        var sapling = pendingSapling;
+        boolean need = sapling != null && com.mineagent.engine.settings.Switches.replantTrees()
+                && ProductionTask.count(sp, sapling.asItem()) < saplingsFor(sapling);
+        if (need && leavesBroken < LEAVES_FOR_SAPLINGS) {
+            leafPass = true;
+            BlockDigger.forSaplings = true;
+            BlockPos best = null;
+            double bestD = Double.MAX_VALUE;
+            for (BlockPos p : treeLeaves) {
+                var st = level.getBlockState(p);
+                if (!(st.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock) || unreachableBlocks.contains(p)) continue;
+                double d = p.distToCenterSqr(sp.getEyePosition());
+                if (d < bestD) {
+                    bestD = d;
+                    best = p;
+                }
+            }
+            if (best != null) return best;
+        }
+        // Down, and its saplings had: planted, spaced.
+        leafPass = false;
+        BlockDigger.forSaplings = false;
+        tree = null;
+        treeLeaves = null;
+        replant(sp, null);
+        return null;
+    }
+
+    /** Saplings a tree of this kind needs: four for a dark oak (it grows only from a square of four), else one. */
+    static int saplingsFor(net.minecraft.world.level.block.Block sapling) {
+        return sapling == net.minecraft.world.level.block.Blocks.DARK_OAK_SAPLING ? 4 : 1;
+    }
+
+    /** Open air over a sapling that tree needs to grow into. */
+    static int roomFor(net.minecraft.world.level.block.Block sapling) {
+        if (sapling == net.minecraft.world.level.block.Blocks.SPRUCE_SAPLING || sapling == net.minecraft.world.level.block.Blocks.JUNGLE_SAPLING) return 10;
+        if (sapling == net.minecraft.world.level.block.Blocks.ACACIA_SAPLING || sapling == net.minecraft.world.level.block.Blocks.DARK_OAK_SAPLING) return 8;
+        return 7;
+    }
+
+    /**
+     * Where a sapling goes so it grows: earth under it, the cell itself open, room above it for the tree, and no other
+     * sapling or trunk within 2 blocks either way (its owner: "with conscious spacing"); the stump first, else the nearest
+     * such spot within 3 of it. Null when there is none.
+     */
+    static BlockPos spacedSpot(net.minecraft.server.level.ServerLevel level, BlockPos stump, net.minecraft.world.level.block.Block sapling) {
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = -1; dy <= 1; dy++) {
+            BlockPos p = stump.offset(dx, dy, dz);
+            if (!level.getBlockState(p).canBeReplaced() || !level.getFluidState(p).isEmpty()
+                    || !level.getBlockState(p.below()).is(net.minecraft.tags.BlockTags.DIRT)) continue;
+            boolean room = true;
+            for (int up = 1; up <= roomFor(sapling) && room; up++) {
+                var st = level.getBlockState(p.above(up));
+                room = st.isAir() || st.is(net.minecraft.tags.BlockTags.LEAVES) || st.canBeReplaced();
+            }
+            if (!room || crowded(level, p)) continue;
+            double d = p.distSqr(stump);
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
+    /** A sapling or a trunk within 2 blocks of this one, either way (corners too). */
+    static boolean crowded(net.minecraft.server.level.ServerLevel level, BlockPos p) {
+        for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++) for (int dy = -1; dy <= 1; dy++) {
+            if (dx == 0 && dz == 0 && dy == 0) continue;
+            var st = level.getBlockState(p.offset(dx, dy, dz));
+            if (st.is(net.minecraft.tags.BlockTags.SAPLINGS) || st.is(net.minecraft.tags.BlockTags.LOGS)) return true;
+        }
+        return false;
+    }
+
     /**
      * Leaving no trace (SMH plan 70, MA9.4; {@code behaviour.replantTrees}): the foot of a tree it felled, on earth,
-     * gets a sapling of its kind when it carries one.
+     * gets a sapling of its kind when it carries one, spaced so it grows; {@code at} null: the tree is down, plant now.
      */
     private void replant(net.minecraft.server.level.ServerPlayer sp, BlockPos at) {
+        if (at == null) {
+            plantSpaced(sp);
+            return;
+        }
         var was = breakingState;
         breakingState = null;
         if (!com.mineagent.engine.settings.Switches.replantTrees()) return;
@@ -306,15 +461,33 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
             pendingBase = at.immutable();
             pendingSapling = SAPLINGS.get(was.getBlock());
         }
-        if (pendingBase == null) return;
+        if (pendingBase == null || tree != null) return; // a whole tree: planted when it is all down
         // Only once the tree is down: a sapling at the trunk's foot fills the cell it stands in to reach the high logs.
         for (int up = 1; up <= 12; up++) {
             if (level.getBlockState(pendingBase.above(up)).is(net.minecraft.tags.BlockTags.LOGS)) return;
         }
-        BlockPos p = pendingBase;
+        plantSpaced(sp);
+    }
+
+    /** The sapling (or a dark oak's four) put down where it will grow, near where the tree stood. */
+    private void plantSpaced(net.minecraft.server.level.ServerPlayer sp) {
+        BlockPos stump = pendingBase;
+        var sapling = pendingSapling;
         pendingBase = null;
-        if (!level.getBlockState(p).isAir() || ProductionTask.count(sp, pendingSapling.asItem()) == 0) return;
-        com.mineagent.engine.act.Placement.placeBlock(sp, p, pendingSapling.defaultBlockState());
+        if (stump == null || sapling == null || !com.mineagent.engine.settings.Switches.replantTrees()) return;
+        var level = sp.serverLevel();
+        if (ProductionTask.count(sp, sapling.asItem()) < saplingsFor(sapling)) return;
+        if (sapling == net.minecraft.world.level.block.Blocks.DARK_OAK_SAPLING) {
+            // A square of four where the trunk stood (dark oaks grow from nothing less).
+            for (BlockPos p : new BlockPos[] {stump, stump.east(), stump.south(), stump.east().south()}) {
+                if (level.getBlockState(p).canBeReplaced() && level.getBlockState(p.below()).is(net.minecraft.tags.BlockTags.DIRT)) {
+                    com.mineagent.engine.act.Placement.placeBlock(sp, p, sapling.defaultBlockState());
+                }
+            }
+            return;
+        }
+        BlockPos spot = spacedSpot(level, stump, sapling);
+        if (spot != null) com.mineagent.engine.act.Placement.placeBlock(sp, spot, sapling.defaultBlockState());
     }
 
     /** The foot of the tree it is felling, to plant when the last log above it is down. */
@@ -416,7 +589,10 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
     }
 
     @Override
-    public void onInterrupt() { cancelNav(); }
+    public void onInterrupt() {
+        cancelNav();
+        BlockDigger.forSaplings = false; // shears are fine again for anyone else's leaves
+    }
 
     @Override
     public TaskSnapshot snapshot() {

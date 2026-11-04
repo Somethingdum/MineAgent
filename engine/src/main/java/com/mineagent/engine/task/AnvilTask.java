@@ -45,7 +45,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
 
         public AnvilRecord(String toolCallId, String mode, String what, String book) {
             super(toolCallId);
-            this.mode = "grind".equals(mode) || "book".equals(mode) ? mode : "repair";
+            this.mode = "grind".equals(mode) || "book".equals(mode) || "best".equals(mode) ? mode : "repair";
             this.what = what == null || what.isBlank() ? "gear" : what;
             this.book = book;
         }
@@ -121,7 +121,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
                     return TaskState.RUNNING;
                 }
                 case WORK -> {
-                    return grind() ? grindOne(sp) : repairOne(sp);
+                    return grind() ? grindOne(sp) : bestMode() ? bestStep(sp) : repairOne(sp);
                 }
                 default -> {
                     return phase == Phase.DONE ? TaskState.SUCCESS : TaskState.FAILED;
@@ -174,6 +174,119 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         return TaskState.RUNNING;
     }
 
+    private boolean bestMode() {
+        return "best".equals(record.mode);
+    }
+
+    /** The order the books go on in (gear/GodGear), and how far it has got. */
+    private java.util.List<com.mineagent.engine.gear.GodGear.Step> plan;
+    private int stepAt;
+    private net.minecraft.world.item.Item gearItem;
+
+    /**
+     * The books it carries that the piece lacks of its best, put on in the cheapest order with no step too expensive
+     * (books into books first where that is cheaper, then onto the piece): one anvil step a tick, each paid for in levels.
+     */
+    private TaskState bestStep(ServerPlayer sp) {
+        if (!(sp.containerMenu instanceof AnvilMenu menu)) return finish(sp);
+        var inv = sp.getInventory();
+        if (plan == null) {
+            int slot = pick(sp);
+            if (slot < 0) return close(sp, false, "I have nothing" + ("gear".equals(record.what) ? "" : " called " + record.what) + " to enchant");
+            ItemStack gear = inv.getItem(slot);
+            gearItem = gear.getItem();
+            String kind = com.mineagent.engine.gear.GodGear.kindOf(BuiltInRegistries.ITEM.getKey(gearItem).toString());
+            if (kind == null) return close(sp, false, "I don't know the best enchantments for that");
+            java.util.Map<String, Integer> has = enchants(gear);
+            java.util.List<com.mineagent.engine.gear.GodGear.Ench> books = new java.util.ArrayList<>();
+            java.util.Set<String> taken = new java.util.HashSet<>();
+            for (var want : com.mineagent.engine.gear.GodGear.missing(kind, has)) {
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    var b = bookOf(inv.getItem(i));
+                    if (b != null && b.size() == 1 && b.getOrDefault(want.id(), 0) >= want.level() && taken.add(want.id())) {
+                        books.add(want);
+                        break;
+                    }
+                }
+            }
+            if (books.isEmpty()) return close(sp, false, "I have no books my " + kind.replace('_', ' ') + " lacks");
+            Integer rc = gear.get(net.minecraft.core.component.DataComponents.REPAIR_COST);
+            int work = rc == null ? 0 : 32 - Integer.numberOfLeadingZeros(Math.max(0, rc));
+            var order = com.mineagent.engine.gear.GodGear.order(books, work);
+            if (!order.possible()) return close(sp, false, "those books on my " + kind.replace('_', ' ') + " would be too expensive for an anvil in any order");
+            if (sp.experienceLevel < order.steps().stream().mapToInt(com.mineagent.engine.gear.GodGear.Step::cost).max().orElse(0)) {
+                return close(sp, false, "that takes " + order.total() + " levels all told, and I have " + sp.experienceLevel);
+            }
+            plan = order.steps();
+            stepAt = 0;
+        }
+        if (stepAt >= plan.size()) {
+            worked.add(BuiltInRegistries.ITEM.getKey(gearItem).getPath().replace('_', ' '));
+            return finish(sp);
+        }
+        var step = plan.get(stepAt);
+        int t = slotFor(sp, step.target()), s = slotFor(sp, step.sacrifice());
+        if (t < 0 || s < 0 || t == s) return close(sp, false, "I lost track of a book in the order");
+        menu.getSlot(0).set(inv.removeItem(t, 1));
+        menu.getSlot(1).set(inv.removeItem(s, 1));
+        int cost = menu.getCost();
+        boolean can = cost > 0 && cost < 40 && sp.experienceLevel >= cost && !menu.getSlot(2).getItem().isEmpty();
+        if (can) {
+            int before = sp.experienceLevel;
+            menu.clicked(2, 0, ClickType.QUICK_MOVE, sp);
+            levelsSpent += Math.max(0, before - sp.experienceLevel);
+            done++;
+            stepAt++;
+        }
+        back(sp, menu);
+        TaskContext.syncInventory(sp);
+        if (!can) return close(sp, false, "a step cost " + cost + " levels and I have " + sp.experienceLevel);
+        return TaskState.RUNNING;
+    }
+
+    /** The slot holding what a step names: the piece ("item" in it) or the book holding just those enchantments. */
+    private int slotFor(ServerPlayer sp, java.util.List<String> names) {
+        var inv = sp.getInventory();
+        boolean item = names.contains("item");
+        java.util.Set<String> want = new java.util.HashSet<>(names);
+        want.remove("item");
+        int best = -1;
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
+            ItemStack st = inv.getItem(i);
+            if (item) {
+                if (!st.is(gearItem)) continue;
+                java.util.Set<String> got = new java.util.HashSet<>();
+                enchants(st).forEach((k, v) -> got.add(k + " " + v));
+                if (got.containsAll(want)) return i;
+                if (best < 0) best = i;
+            } else {
+                var b = bookOf(st);
+                if (b == null) continue;
+                java.util.Set<String> got = new java.util.HashSet<>();
+                b.forEach((k, v) -> got.add(k + " " + v));
+                if (got.equals(want)) return i;
+            }
+        }
+        return best;
+    }
+
+    /** A piece's enchantments, by name ("sharpness") and level. */
+    private static java.util.Map<String, Integer> enchants(ItemStack st) {
+        java.util.Map<String, Integer> out = new java.util.HashMap<>();
+        var e = st.get(net.minecraft.core.component.DataComponents.ENCHANTMENTS);
+        if (e != null) for (var x : e.entrySet()) x.getKey().unwrapKey().ifPresent(k -> out.put(k.location().getPath(), x.getIntValue()));
+        return out;
+    }
+
+    /** An enchanted book's enchantments by name and level, or null for anything else. */
+    private static java.util.Map<String, Integer> bookOf(ItemStack st) {
+        if (!st.is(Items.ENCHANTED_BOOK)) return null;
+        java.util.Map<String, Integer> out = new java.util.HashMap<>();
+        var e = st.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS);
+        if (e != null) for (var x : e.entrySet()) x.getKey().unwrapKey().ifPresent(k -> out.put(k.location().getPath(), x.getIntValue()));
+        return out;
+    }
+
     /** One piece's enchantments ground off: it in, the result taken; the experience it gives back is picked up. */
     private TaskState grindOne(ServerPlayer sp) {
         if (!(sp.containerMenu instanceof GrindstoneMenu menu)) return finish(sp);
@@ -212,6 +325,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
         if (done == 0) return close(sp, false, nothingTo());
         String list = String.join(", ", worked);
         return close(sp, true, grind() ? "Ground the enchantments off my " + list + "."
+                : bestMode() ? "Enchanted my " + list + " in the best order: " + done + (done == 1 ? " step, " : " steps, ") + levelsSpent + (levelsSpent == 1 ? " level." : " levels.")
                 : bookMode() ? "Put " + (record.book == null ? "the book" : bookName()) + " on my " + list + " (" + levelsSpent + (levelsSpent == 1 ? " level)." : " levels).")
                 : "Mended my " + list + " (" + levelsSpent + (levelsSpent == 1 ? " level)." : " levels)."));
     }
@@ -242,7 +356,7 @@ public class AnvilTask extends CompanionTask<AnvilTask.AnvilRecord> {
             if (!"gear".equals(record.what) && !id.contains(record.what.replace(' ', '_'))) continue;
             if (grind()) {
                 if (!st.isEnchanted() && !st.is(Items.ENCHANTED_BOOK)) continue;
-            } else if (bookMode()) {
+            } else if (bookMode() || bestMode()) {
                 if (st.is(Items.ENCHANTED_BOOK) || st.is(Items.BOOK) || !st.isEnchantable() && !st.isDamageableItem()) continue;
             } else {
                 if (!st.isDamageableItem() || st.getDamageValue() <= 0 || menderFor(sp, i) < 0) continue;

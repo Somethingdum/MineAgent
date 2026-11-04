@@ -1485,6 +1485,17 @@ public class AgentLoop {
                         "eyes-" + UUID.randomUUID()), reply -> { });
                 return true;
             }
+            case BEST_ENCHANTS -> {
+                journal.record("order", "best enchants on " + c.value(), currentGameTickSafe());
+                orderGoal("best enchants on my " + c.value());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.AnvilTask.AnvilRecord(
+                        "anvil-" + UUID.randomUUID(), "best", c.value().replaceAll("s$", "")), reply -> { });
+                return true;
+            }
+            case GEAR_REPORT -> {
+                speakToOwner(gearReport());
+                return true;
+            }
             case ROLL_LIBRARIAN -> {
                 String ench = enchantmentId(c.value());
                 if (ench == null) {
@@ -4018,6 +4029,56 @@ public class AgentLoop {
         String goal = goalBook.active().map(g -> g.text().toLowerCase(java.util.Locale.ROOT)).orElse("");
         return goal.contains(" xp") || goal.startsWith("xp") || goal.contains("experience") || goal.contains("levels")
                 || goal.contains("enchant");
+    }
+
+    /**
+     * What its gear lacks of god tier (gear/GodGear): each piece it wears and its best tools, by what is missing; or that
+     * it is all there.
+     */
+    private String gearReport() {
+        var self = ((com.mineagent.engine.entity.CompanionEntity) companion).serverPlayer();
+        if (self == null) return "I'm not in the world right now.";
+        java.util.List<net.minecraft.world.item.ItemStack> pieces = new java.util.ArrayList<>();
+        for (var slot : List.of(net.minecraft.world.entity.EquipmentSlot.HEAD, net.minecraft.world.entity.EquipmentSlot.CHEST,
+                net.minecraft.world.entity.EquipmentSlot.LEGS, net.minecraft.world.entity.EquipmentSlot.FEET, net.minecraft.world.entity.EquipmentSlot.OFFHAND)) {
+            pieces.add(self.getItemBySlot(slot));
+        }
+        var inv = self.getInventory();
+        java.util.Set<String> kinds = new java.util.HashSet<>();
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) pieces.add(inv.getItem(i));
+        List<String> parts = new ArrayList<>();
+        for (var st : pieces) {
+            if (st.isEmpty()) continue;
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
+            String kind = com.mineagent.engine.gear.GodGear.kindOf(id);
+            if (kind == null || !kinds.add(kind)) continue;
+            java.util.Map<String, Integer> has = new java.util.HashMap<>();
+            var e = st.get(net.minecraft.core.component.DataComponents.ENCHANTMENTS);
+            if (e != null) for (var x : e.entrySet()) x.getKey().unwrapKey().ifPresent(k -> has.put(k.location().getPath(), x.getIntValue()));
+            var lacks = com.mineagent.engine.gear.GodGear.missing(kind, has);
+            String material = id.substring(id.indexOf(':') + 1).contains("netherite") ? "" : " (not netherite yet)";
+            if (lacks.isEmpty()) {
+                parts.add("my " + kind.replace('_', ' ') + " is done" + material);
+                continue;
+            }
+            List<String> names = new ArrayList<>();
+            for (var l : lacks) names.add(l.id().replace('_', ' ') + " " + roman(l.level()));
+            var order = com.mineagent.engine.gear.GodGear.order(lacks);
+            parts.add("my " + kind.replace('_', ' ') + " needs " + String.join(", ", names)
+                    + (order.possible() ? " (about " + order.total() + " levels in the best order)" : "") + material);
+        }
+        return parts.isEmpty() ? "I've no gear worth enchanting yet." : "For god-tier gear: " + String.join("; ", parts) + ".";
+    }
+
+    private static String roman(int n) {
+        return switch (n) {
+            case 1 -> "I";
+            case 2 -> "II";
+            case 3 -> "III";
+            case 4 -> "IV";
+            case 5 -> "V";
+            default -> String.valueOf(n);
+        };
     }
 
     // ── Trading mastery: the villagers it keeps (SMH plan 70) ──

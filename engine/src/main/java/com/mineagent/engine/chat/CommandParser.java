@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -181,6 +181,13 @@ public final class CommandParser {
     private static final Pattern ROLL = Pattern.compile("^(?:(?:get|find|make) (?:me |us )?an? ([a-z ]{3,24}?) (?:villager|librarian)"
             + "|(?:re)?roll (?:a |the |me a |us a )?librarian(?: for ([a-z ]{3,24}?))?"
             + "|(?:get|find|make) (?:me |us )?an? librarian (?:selling|with|for) ([a-z ]{3,24}?)(?: books?)?)$");
+    /** "Make your sword god tier", "best enchants on your pickaxe", "max out your boots": the books on in the best order. */
+    private static final Pattern BEST_ENCHANTS = Pattern.compile("^(?:make (?:your|my|the) ([a-z ]{3,20}?) god[- ]?tier|god[- ]?tier (?:your|my|the) ([a-z ]{3,20}?)"
+            + "|(?:put )?(?:the )?best enchant(?:ment)?s on (?:your|my|the) ([a-z ]{3,20}?)|max out (?:your|my|the) ([a-z ]{3,20}?)(?: enchants| enchantments)?"
+            + "|optimi[sz]e (?:your|my|the) ([a-z ]{3,20}?)(?:'s)?(?: enchants| enchantments)?)$");
+    /** "What do you need for god gear", "how's your gear": what each piece lacks of its best. */
+    private static final Pattern GEAR_REPORT = Pattern.compile("^(?:what do you need for god (?:gear|tier)|how'?s your gear|what does your gear need"
+            + "|what are you missing for god gear|gear report)$");
     /** "You can kill golems" / "leave the golems alone": the question it would ask, answered before it asks. */
     private static final Pattern GOLEMS_OK = Pattern.compile("^(?:you can|feel free to|go ahead and) (?:kill|hunt|farm) (?:the )?(?:iron )?golems?(?: for iron)?$");
     private static final Pattern GOLEMS_NO = Pattern.compile("^(?:(?:don'?t|do not|never) (?:kill|hurt|hunt|attack) (?:the |any )?(?:iron )?golems?"
@@ -318,6 +325,13 @@ public final class CommandParser {
         if (STRONGHOLD.matcher(t).matches()) return Optional.of(new Command(Kind.FIND_STRONGHOLD, null, null));
         if (CHESTS_NO.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_NO, null, null));
         if (CHESTS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_OK, null, null));
+        var best = BEST_ENCHANTS.matcher(t);
+        if (best.matches()) {
+            String what = null;
+            for (int i = 1; i <= best.groupCount() && what == null; i++) what = best.group(i);
+            if (what != null && !what.matches("(?:max|out|gear|stats?|levels?)")) return Optional.of(new Command(Kind.BEST_ENCHANTS, what.strip(), null));
+        }
+        if (GEAR_REPORT.matcher(t).matches()) return Optional.of(new Command(Kind.GEAR_REPORT, null, null));
         if (PROTECTION_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "off", null));
         if (PROTECTION_ON.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "on", null));
         if (GOLEMS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.GOLEMS, "on", null));
