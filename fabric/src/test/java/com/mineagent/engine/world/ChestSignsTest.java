@@ -50,4 +50,32 @@ class ChestSignsTest {
         assertEquals(1, ChestPurposes.rank("gold", "minecraft:gold_nugget", Set.of("ores")));
         assertEquals(Integer.MAX_VALUE, ChestPurposes.rank("gold", "minecraft:golden_apple", Set.of("food")));
     }
+
+    @Test void theOwnersOwnWords() {
+        Predicate<String> thing = w -> Set.of("ingot", "seed", "sapling", "iron", "gold").contains(ChestPurposes.singular(w));
+        var ores = ChestSigns.purposes(List.of("Ores, ingots and shit"), thing);
+        assertTrue(ores.contains("ores") && !ores.contains("overflow"), "the ores chest, not an overflow chest too: " + ores);
+        for (String coal : List.of("minecraft:coal", "minecraft:raw_iron", "minecraft:diamond", "minecraft:lapis_lazuli", "minecraft:gold_ingot")) {
+            int best = Integer.MAX_VALUE;
+            for (String p : ores) best = Math.min(best, ChestPurposes.rank(p, coal, Set.of("ores")));
+            assertTrue(best < Integer.MAX_VALUE, coal + " goes in " + ores);
+        }
+        assertEquals(List.of("food"), ChestSigns.purposes(List.of("Food"), thing));
+        assertEquals(List.of("armor"), ChestSigns.purposes(List.of("Armor"), thing));
+        assertEquals(List.of("weapons"), ChestSigns.purposes(List.of("Weapons"), thing));
+        assertEquals(List.of("overflow"), ChestSigns.purposes(List.of("Spare bullshit"), thing));
+        assertEquals(List.of("seeds", "saplings"), ChestSigns.purposes(List.of("Seeds and saplings"), thing));
+        assertEquals(1, ChestPurposes.rank("seeds", "minecraft:wheat_seeds", Set.of("crops")));
+        assertEquals(1, ChestPurposes.rank("saplings", "minecraft:oak_sapling", Set.of("blocks")));
+    }
+
+    @Test void armourWeaponsAndToolsEachHaveTheirChestAndAToolsChestTakesTheRest() {
+        assertEquals(2, ChestPurposes.rank("weapons", "minecraft:iron_sword", Set.of("weapons", "gear")));
+        assertEquals(2, ChestPurposes.rank("armor", "minecraft:iron_chestplate", Set.of("armor", "gear")));
+        assertEquals(Integer.MAX_VALUE, ChestPurposes.rank("armor", "minecraft:iron_sword", Set.of("weapons", "gear")));
+        assertEquals(3, ChestPurposes.rank("tools", "minecraft:iron_sword", Set.of("weapons", "gear")), "with no weapons chest, the tools one");
+        assertEquals(2, ChestPurposes.rank("gear", "minecraft:iron_sword", Set.of("weapons", "gear")));
+        assertEquals("weapons", ChestPurposes.purpose("this chest is for weapons".replaceFirst("^this chest is ", "")));
+        assertEquals("armor", ChestPurposes.purpose("the armour chest"));
+    }
 }

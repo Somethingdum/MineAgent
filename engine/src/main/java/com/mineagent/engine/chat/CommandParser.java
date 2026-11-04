@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -166,6 +166,16 @@ public final class CommandParser {
     /** "Build a nether portal", "make a portal" (MA11.1): the frame from the obsidian it carries, lit. */
     private static final Pattern PORTAL = Pattern.compile("^(?:build|make|put up|set up|light)(?: me| us)? (?:a |the )?(?:nether )?portal(?: here| for us)?$");
     /** "Don't touch my garden", "leave the farm alone" (MA10.2): a place no companion breaks or builds in. */
+    /** "Don't protect me", "I can look after myself" (off); "you can protect me again" (on): its owner's fights, SMH plan 70. */
+    private static final Pattern PROTECTION_OFF = Pattern.compile("^(?:(?:you )?(?:don'?t|do not) (?:need to |have to )?(?:protect|defend|look after|save|help) me"
+            + "|no (?:need to )?protect(?:ion|ing)?(?: me)?|i can (?:look after|take care of|handle|defend|protect) myself"
+            + "|let me fight (?:my own battles|alone|on my own)|(?:don'?t|do not) fight for me|stay out of my fights)$");
+    private static final Pattern PROTECTION_ON = Pattern.compile("^(?:(?:you can|please) (?:protect|defend|look after) me(?: again)?|protect me again"
+            + "|look out for me(?: again)?|have my back(?: again)?)$");
+    /** "You can kill golems" / "leave the golems alone": the question it would ask, answered before it asks. */
+    private static final Pattern GOLEMS_OK = Pattern.compile("^(?:you can|feel free to|go ahead and) (?:kill|hunt|farm) (?:the )?(?:iron )?golems?(?: for iron)?$");
+    private static final Pattern GOLEMS_NO = Pattern.compile("^(?:(?:don'?t|do not|never) (?:kill|hurt|hunt|attack) (?:the |any )?(?:iron )?golems?"
+            + "|leave (?:the )?(?:iron )?golems? alone)$");
     private static final Pattern PROTECT = Pattern.compile("^(?:(?:don'?t|do not|never) (?:touch|break|mess with|dig up|mine in|grief|build in|change)"
             + " (?:my|the|this|that|our) ([a-z][a-z ]{2,23}?)|leave (?:my|the|this|that|our) ([a-z][a-z ]{2,23}?) alone)(?: here| please)?$");
     /** "You can touch the garden now", "stop protecting my farm" (MA10.2): that place free again. */
@@ -293,6 +303,10 @@ public final class CommandParser {
         if (STRONGHOLD.matcher(t).matches()) return Optional.of(new Command(Kind.FIND_STRONGHOLD, null, null));
         if (CHESTS_NO.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_NO, null, null));
         if (CHESTS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_OK, null, null));
+        if (PROTECTION_OFF.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "off", null));
+        if (PROTECTION_ON.matcher(t).matches()) return Optional.of(new Command(Kind.PROTECTION, "on", null));
+        if (GOLEMS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.GOLEMS, "on", null));
+        if (GOLEMS_NO.matcher(t).matches()) return Optional.of(new Command(Kind.GOLEMS, "off", null));
         var keep = PROTECT.matcher(t);
         if (keep.matches()) return Optional.of(new Command(Kind.PROTECT, (keep.group(1) != null ? keep.group(1) : keep.group(2)).strip(), null));
         var free = UNPROTECT.matcher(t);

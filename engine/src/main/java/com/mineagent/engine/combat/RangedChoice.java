@@ -17,6 +17,13 @@ public final class RangedChoice {
     private RangedChoice() {}
 
     public static final double MIN = 5.0, CREEPER_MIN = 6.0, MAX = 40.0, CLOSE = 4.5;
+    /**
+     * Within this a skeleton can't be missed: every arrow a player looses scatters by up to about a degree and a half
+     * (the game's own spread), 0.6 of a block at 24, and an arrow hits anything within 0.3 of a skeleton's 0.6-wide body.
+     * Further off it closes in first.
+     */
+    public static final double SURE = 24.0;
+    static final Set<String> SKELETONS = Set.of("skeleton", "stray", "bogged", "wither_skeleton");
     static final Set<String> NO_ARROWS = Set.of("enderman", "breeze");
 
     /** The index of the hostile to shoot, or -1. {@code guard}: on guard, anything near the post is fair game. */
@@ -34,12 +41,13 @@ public final class RangedChoice {
             if (p.mustFlee() || NO_ARROWS.contains(p.id())) continue;
             if (p.onlyIfAngry() && !h.angry() && !h.attacking()) continue;
             boolean creeper = "creeper".equals(h.type());
-            if (h.distance() < (creeper ? CREEPER_MIN : MIN) || h.distance() > MAX) continue;
+            if (h.distance() < (creeper ? CREEPER_MIN : MIN) || h.distance() > (SKELETONS.contains(h.type()) ? SURE : MAX)) continue;
             boolean worth = h.attacking() || guard && h.fromAnchor() <= 24
                     || h.closingSpeed() > 0.05 && h.distance() <= 20 || creeper && h.distance() <= 16
                     || p.preferRanged() && h.drawingBow();
             if (!worth) continue;
-            double score = CombatBrain.threat(h) + (p.preferRanged() ? 30 : 0) + (h.fusing() ? 50 : 0) - h.distance() * 0.5;
+            double score = CombatBrain.threat(h) + (p.preferRanged() ? 30 : 0) + (SKELETONS.contains(h.type()) ? 25 : 0)
+                    + (h.fusing() ? 50 : 0) - h.distance() * 0.5;
             if (score > bestScore) {
                 bestScore = score;
                 best = i;

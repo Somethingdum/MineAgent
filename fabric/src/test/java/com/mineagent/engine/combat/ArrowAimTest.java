@@ -74,4 +74,37 @@ class ArrowAimTest {
         assertEquals(0.35, Math.abs(off.yaw() - exact.yaw()), 1e-4);
         assertTrue(miss(eye, off, target, ZERO, ZERO) < 0.6, "a fraction of a degree at 20 blocks still hits a body: " + miss(eye, off, target, ZERO, ZERO));
     }
+
+    /** The game's own scatter for a player's bow (inaccuracy 1): each part of the unit direction off by a triangle of 0.0172275. */
+    static double[] scattered(ArrowAim.Shot s, double a, double b, double c) {
+        double yaw = Math.toRadians(s.yaw()), pitch = Math.toRadians(s.pitch());
+        double x = -Math.sin(yaw) * Math.cos(pitch) + a * 0.0172275, y = -Math.sin(pitch) + b * 0.0172275, z = Math.cos(yaw) * Math.cos(pitch) + c * 0.0172275;
+        double len = Math.sqrt(x * x + y * y + z * z);
+        return new double[] {x / len, y / len, z / len};
+    }
+
+    @Test void withinSureRangeTheWorstScatterStillHitsASkeleton() {
+        double[] eye = {0, 65.62, 0}, target = {0, 65.0 + 1.99 * 0.55, RangedChoice.SURE};
+        var s = ArrowAim.solve(eye, new double[] {target[0], target[1], target[2]}, ZERO, ZERO, 0, 0, 0);
+        double worst = 0;
+        for (int a = -1; a <= 1; a++) for (int b = -1; b <= 1; b++) for (int c = -1; c <= 1; c++) {
+            double[] d = scattered(s, a, b, c);
+            double vx = d[0] * ArrowAim.SPEED, vy = d[1] * ArrowAim.SPEED, vz = d[2] * ArrowAim.SPEED;
+            double x = eye[0], y = eye[1] - ArrowAim.SPAWN_DROP, z = eye[2];
+            for (int t = 0; t < 40 && z < target[2]; t++) {
+                double f = Math.min(1, (target[2] - z) / vz);
+                if (f < 1) {
+                    x += vx * f;
+                    y += vy * f;
+                    z = target[2];
+                    break;
+                }
+                x += vx; y += vy; z += vz;
+                vx *= ArrowAim.DRAG; vy = vy * ArrowAim.DRAG - ArrowAim.GRAVITY; vz *= ArrowAim.DRAG;
+            }
+            // Off its middle sideways, and up or down from where it was aimed.
+            worst = Math.max(worst, Math.max(Math.abs(x - target[0]) / 0.6, Math.abs(y - target[1]) / (1.99 * 0.55 + 0.3)));
+        }
+        assertTrue(worst < 1.0, "the worst scatter at " + RangedChoice.SURE + " blocks lands inside: " + worst);
+    }
 }

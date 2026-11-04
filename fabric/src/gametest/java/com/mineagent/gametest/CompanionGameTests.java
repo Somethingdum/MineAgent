@@ -1056,6 +1056,47 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, its owner: "If it's running through the dark to my base and gets shot by a skeleton, it shouldn't go
+     * start attacking it. It should keep running." On a walk of 36 blocks, a skeleton off to the side shooting at it:
+     * it gets where it was going and leaves the skeleton be.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_keep_going", timeoutTicks = 800)
+    public void shotAtOnTheWayItKeepsGoing(GameTestHelper helper) {
+        Scene s = scene(helper, "Courier");
+        var level = helper.getLevel();
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        armed(s.body());
+        BlockPos aside = helper.absolutePos(new BlockPos(3, 1, -12));
+        s.owner().teleportTo(level, aside.getX() + 0.5, aside.getY(), aside.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos start = helper.absolutePos(new BlockPos(-14, 1, 4));
+        s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, 0.0f, 0.0f);
+        var skeleton = EntityType.SKELETON.create(level);
+        BlockPos skAt = helper.absolutePos(new BlockPos(4, 1, 16));
+        skeleton.moveTo(skAt.getX() + 0.5, skAt.getY(), skAt.getZ() + 0.5, 180.0f, 0.0f);
+        skeleton.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        skeleton.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.LEATHER_HELMET)); // no burning in the sun
+        level.addFreshEntity(skeleton);
+        helper.runAfterDelay(2, () -> skeleton.setTarget(s.body()));
+        BlockPos goal = helper.absolutePos(new BlockPos(22, 1, 4));
+        sendTo(helper, s, goal, "walk-courier");
+        int[] fighting = {0};
+        helper.onEachTick(() -> {
+            trace(helper, s, "keep going");
+            String control = MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("");
+            if (control.contains("mob_defense")) fighting[0]++;
+            double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
+            if (off <= 1.5 || helper.getTick() >= 760 || !s.body().isAlive()) {
+                String how = String.format("%.1f blocks short; %d ticks fighting; skeleton %s; health %.0f", off, fighting[0],
+                        skeleton.isAlive() ? "alive " + skeleton.getHealth() : "dead", s.body().getHealth());
+                tidy(s);
+                skeleton.discard();
+                if (off <= 1.5 && fighting[0] <= 40 && skeleton.isAlive()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA5.10: on a long straight walk it sprints, as a player would. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_sprint", timeoutTicks = 600)
     public void itSprintsOnALongStraightWalk(GameTestHelper helper) {
@@ -4120,8 +4161,8 @@ public class CompanionGameTests implements FabricGameTest {
 
     /**
      * SMH plan 70, "kill iron golems at villages": a village's golem near, no iron ore anywhere: "make me 3 iron ingots"
-     * comes from the golem, fought from a pillar three blocks high beside it (out of its reach), without a scratch; the
-     * pillar taken down after.
+     * comes from the golem once its owner says yes to its question, fought from a pillar three blocks high beside it (out
+     * of its reach), without a scratch; the pillar taken down after.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_golem", timeoutTicks = 2400)
     public void ironFromAVillageGolemFoughtFromAPillar(GameTestHelper helper) {
@@ -4137,8 +4178,14 @@ public class CompanionGameTests implements FabricGameTest {
         helper.getLevel().addFreshEntity(golem);
         helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 3 iron ingots"));
         float health = s.body().getHealth();
+        boolean[] answered = {false};
         helper.onEachTick(() -> {
             trace(helper, s, "golem");
+            // It asks before killing a village's golem; its owner says yes.
+            if (!answered[0] && !lastSaid(s, "May I kill golems").isEmpty()) {
+                answered[0] = true;
+                MineAgentEngine.onPlayerChat(s.owner(), "yes");
+            }
             int ingots = s.body().getInventory().countItem(Items.IRON_INGOT) + s.owner().getInventory().countItem(Items.IRON_INGOT);
             int pillar = 0;
             for (BlockPos p : BlockPos.betweenClosed(gAt.offset(-3, 0, -3), gAt.offset(3, 3, 3))) {
@@ -4148,11 +4195,11 @@ public class CompanionGameTests implements FabricGameTest {
             String failed = lastSaid(s, "I couldn't");
             if (ingots >= 3 && pillar == 0 && down || !failed.isEmpty() || helper.getTick() >= 2350) {
                 String how = ingots + " iron ingots; golem " + (golem.isAlive() ? "alive " + golem.getHealth() : "dead") + "; " + pillar
-                        + " pillar blocks left; down " + down + "; health " + s.body().getHealth() + "; plan: " + lastSaid(s, "On it")
+                        + " pillar blocks left; down " + down + "; health " + s.body().getHealth() + "; asked " + answered[0] + "; plan: " + lastSaid(s, "On it")
                         + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
                 tidy(s);
                 if (golem.isAlive()) golem.discard();
-                if (ingots >= 3 && pillar == 0 && down && s.body().getHealth() >= health) helper.succeed();
+                if (ingots >= 3 && pillar == 0 && down && s.body().getHealth() >= health && answered[0]) helper.succeed();
                 else fail(helper, how);
             }
         });

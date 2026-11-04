@@ -213,10 +213,23 @@ public class PutAwayTask extends CompanionTask<PutAwayTask.PutAwayRecord> {
     static Set<String> kinds(ItemStack st) {
         Set<String> out = new HashSet<>();
         String path = BuiltInRegistries.ITEM.getKey(st.getItem()).getPath();
-        if (st.isDamageableItem() || st.getItem() instanceof net.minecraft.world.item.ArmorItem) out.add("tools");
+        var item = st.getItem();
+        if (item instanceof net.minecraft.world.item.ArmorItem || item instanceof net.minecraft.world.item.ShieldItem
+                || item instanceof net.minecraft.world.item.ElytraItem || item instanceof net.minecraft.world.item.AnimalArmorItem) out.add("armor");
+        if (item instanceof net.minecraft.world.item.SwordItem || item instanceof net.minecraft.world.item.ProjectileWeaponItem
+                || item instanceof net.minecraft.world.item.TridentItem || item instanceof net.minecraft.world.item.MaceItem
+                || item instanceof net.minecraft.world.item.ArrowItem || item instanceof net.minecraft.world.item.AxeItem) out.add("weapons");
+        if (item instanceof net.minecraft.world.item.DiggerItem || item instanceof net.minecraft.world.item.ShearsItem
+                || item instanceof net.minecraft.world.item.FlintAndSteelItem || item instanceof net.minecraft.world.item.FishingRodItem
+                || item instanceof net.minecraft.world.item.BrushItem || st.is(Items.BUCKET) || st.is(Items.WATER_BUCKET) || st.is(Items.LAVA_BUCKET)
+                || st.is(Items.COMPASS) || st.is(Items.CLOCK) || st.is(Items.SPYGLASS) || st.is(Items.LEAD)) out.add("tools");
+        if (!out.contains("armor") && !out.contains("weapons") && !out.contains("tools") && st.isDamageableItem()) out.add("tools");
+        if (out.contains("armor") || out.contains("weapons") || out.contains("tools")) out.add("gear");
         if (st.has(net.minecraft.core.component.DataComponents.FOOD)) out.add("food");
         if (path.startsWith("raw_") || path.endsWith("_ingot") || path.endsWith("_nugget") || path.endsWith("_ore")
-                || Set.of("diamond", "emerald", "lapis_lazuli", "redstone", "coal", "charcoal", "quartz", "amethyst_shard", "netherite_scrap").contains(path)) {
+                || Set.of("diamond", "emerald", "lapis_lazuli", "redstone", "coal", "charcoal", "quartz", "amethyst_shard", "netherite_scrap",
+                        "ancient_debris", "iron_block", "gold_block", "diamond_block", "emerald_block", "lapis_block", "redstone_block",
+                        "coal_block", "copper_block", "netherite_block", "flint").contains(path)) {
             out.add("ores");
         }
         if (st.is(ItemTags.LOGS) || st.is(ItemTags.PLANKS) || st.is(Items.STICK)) out.add("wood");

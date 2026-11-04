@@ -745,6 +745,16 @@ public class AgentLoop {
         int close0 = message.indexOf("]: ");
         journal.record("order", (fromOwner ? "" : message.startsWith("[") && close0 > 0 ? message.substring(1, close0) + ": " : "")
                 + (close0 > 0 && message.startsWith("[") ? message.substring(close0 + 3) : message), currentGameTickSafe());
+        if (fromOwner) {
+            // A yes or a no to the question it asked.
+            var settled = asking.hear(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName()));
+            if (settled.isPresent()) {
+                journal.record("answer", settled.get().key() + ": " + (settled.get().yes() ? "yes" : "no"), currentGameTickSafe());
+                speakToOwner(settled.get().yes() ? "Got it: yes." : "Got it: no.");
+                saveMemoryNow();
+                return;
+            }
+        }
         if (fromOwner && scheduleCommand(com.mineagent.engine.chat.CommandParser.normalise(message, companion.companionName()))) return;
         if (fromOwner) {
             // Phrasing it has learned, for its owner's own words only (MA10.2); and "that", "it", "there" pinned down.
@@ -1473,6 +1483,21 @@ public class AgentLoop {
                 orderGoal("find the stronghold");
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.EyeTask.EyeRecord(
                         "eyes-" + UUID.randomUUID()), reply -> { });
+                return true;
+            }
+            case PROTECTION -> {
+                if (!fromOwner) return false; // its owner's own say only
+                protectOwner = "on".equals(c.value());
+                journal.record("order", protectOwner ? "protect me" : "don't protect me", currentGameTickSafe());
+                speakToOwner(protectOwner ? "I'll step in when something could really hurt you." : "Got it: your fights are yours. I'll keep to mine.");
+                saveMemoryNow();
+                return true;
+            }
+            case GOLEMS -> {
+                if (!fromOwner) return false;
+                asking.tell("golems", "on".equals(c.value()));
+                speakToOwner("on".equals(c.value()) ? "I'll get iron from village golems when that's the cheapest way." : "I'll leave the golems alone.");
+                saveMemoryNow();
                 return true;
             }
             case CHESTS_OK, CHESTS_NO -> {
@@ -2863,6 +2888,10 @@ public class AgentLoop {
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
             if (gameTick % 1200L == 600L) gearGoal(player);
             if (gameTick % 1200L == 900L) kitGoal(player);
+            if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
+                journal.record("assumed", st.key() + ": " + (st.yes() ? "yes" : "no"), gameTick);
+                speakToOwner("No answer, so I'm taking that as a " + (st.yes() ? "yes" : "no") + " for now.");
+            });
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3872,6 +3901,68 @@ public class AgentLoop {
     }
 
     /** As kept with the world. */
+    // ── Asking instead of guessing (SMH plan 70) ──
+
+    private final com.mineagent.engine.chat.Asking asking = new com.mineagent.engine.chat.Asking();
+
+    public com.mineagent.engine.chat.Asking asking() {
+        return asking;
+    }
+
+    /** How long a question waits for its owner before the convenient answer is taken: a minute. */
+    static final long ASK_WAITS = 1_200L;
+
+    /** The answer it goes by on this, if it has one (told, or assumed within the day). */
+    public java.util.Optional<Boolean> answer(String key) {
+        return asking.answer(key, currentGameTickSafe());
+    }
+
+    /**
+     * Ask its owner, yes or no, when it has no answer on this and no other question waits; {@code convenient}: the answer
+     * it takes after a minute without one (the one that lets the job go on), said in the question.
+     */
+    public void ask(String key, String question, boolean convenient) {
+        if (asking.ask(key, question, convenient, currentGameTickSafe(), ASK_WAITS)) {
+            journal.record("asked", question, currentGameTickSafe());
+            speakToOwner(question + " (Yes or no; if I don't hear back in a minute, I'll take it as a " + (convenient ? "yes" : "no") + ".)");
+        }
+    }
+
+    /** The mob a job of its is hunting now, for its drops, and when it last said so. */
+    private volatile String huntingFor;
+    private volatile long huntingAt;
+
+    /** A job hunts this mob ("spider") for what it drops: a reason to fight one. */
+    public void noteHunting(String mob) {
+        huntingFor = mob;
+        huntingAt = currentGameTickSafe();
+    }
+
+    /** Its own reasons to fight now (combat/FightWeighing): the drops a job needs, and wanting experience. */
+    public com.mineagent.engine.combat.FightWeighing.Reasons fightReasons() {
+        String h = huntingFor;
+        java.util.Set<String> drops = h != null && currentGameTickSafe() - huntingAt < 200 ? java.util.Set.of(h) : java.util.Set.of();
+        return new com.mineagent.engine.combat.FightWeighing.Reasons(drops, wantsXp());
+    }
+
+    /** It wants experience: a goal of its owner's asks for levels or an enchanting it can't yet pay for. */
+    public boolean wantsXp() {
+        String goal = goalBook.active().map(g -> g.text().toLowerCase(java.util.Locale.ROOT)).orElse("");
+        return goal.contains(" xp") || goal.startsWith("xp") || goal.contains("experience") || goal.contains("levels")
+                || goal.contains("enchant");
+    }
+
+    /** Whether it steps in for its owner (unless told "don't protect me"). */
+    private volatile boolean protectOwner = true;
+
+    public boolean protectsOwner() {
+        return protectOwner;
+    }
+
+    public void protectOwner(boolean on) {
+        protectOwner = on;
+    }
+
     public void chestsPermission(boolean allowed, boolean told) {
         this.chestsAllowed = allowed;
         this.chestsTold = told;

@@ -245,6 +245,8 @@ public class MemoryPersistence {
             if (sched[1] != null) data.addProperty("nightOrder", sched[1]);
             if (sched[2] != null) data.addProperty("idleHome", sched[2]);
             data.add("holes", GSON.toJsonTree(loop.holes().exportState()));
+            data.add("answers", GSON.toJsonTree(loop.asking().exportTold()));
+            data.addProperty("protectOwner", loop.protectsOwner());
         }
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
@@ -266,6 +268,14 @@ public class MemoryPersistence {
             if (loop != null && data.has("chestsAllowed")) {
                 loop.chestsPermission(data.get("chestsAllowed").getAsBoolean(), data.has("chestsTold") && data.get("chestsTold").getAsBoolean());
             }
+            if (loop != null && data.has("answers") && data.get("answers").isJsonObject()) {
+                java.util.Map<String, Boolean> told = new java.util.LinkedHashMap<>();
+                for (var e : data.getAsJsonObject("answers").entrySet()) {
+                    if (e.getValue().isJsonPrimitive() && e.getValue().getAsJsonPrimitive().isBoolean()) told.put(e.getKey(), e.getValue().getAsBoolean());
+                }
+                loop.asking().importTold(told);
+            }
+            if (loop != null && data.has("protectOwner")) loop.protectOwner(data.get("protectOwner").getAsBoolean());
             if (loop != null) {
                 loop.scheduleState(data.has("dayOrder") ? data.get("dayOrder").getAsString() : null,
                         data.has("nightOrder") ? data.get("nightOrder").getAsString() : null,

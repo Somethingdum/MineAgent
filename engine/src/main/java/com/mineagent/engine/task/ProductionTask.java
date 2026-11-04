@@ -87,7 +87,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** Up to 16 hours of game time for one order (a chest of stone bricks is about one). */
     static final long LONGEST = 16 * 72_000L;
 
-    private enum Phase { START, ROUND, STEPS, DEPOSIT, DONE, FAILED }
+    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, DONE, FAILED }
 
     private Phase phase = Phase.START;
     private boolean begun;
@@ -211,6 +211,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         try {
             return switch (phase) {
                 case START -> begin();
+                case ASK -> waitForAnswer();
                 case ROUND -> round();
                 case STEPS -> steps();
                 case DEPOSIT -> deposit();
@@ -295,6 +296,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         // From here, target counts what goes in all told, this item and any before it.
         target += delivered;
+        var asks = TaskContext.agentLoop(player);
+        if (asks != null && asks.answer("golems").map(b -> !b).orElse(false)) without.add(GOLEM); // "leave the golems alone"
         var plan = ProductionPlanner.plan(GameKnowledge.book(sp), have(sp),
                 itemId, target - delivered, without);
         if (!plan.possible()) {
@@ -303,11 +306,49 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             if (most <= 0) return fail(plan.summary().replaceAll("[.]$", ""));
             plan = ProductionPlanner.plan(GameKnowledge.book(sp), have(sp),
                     itemId, most, without);
+            if (askFirst(plan)) return TaskState.RUNNING;
             say("On it, as far as I can: " + plan.summary());
         } else {
+            if (askFirst(plan)) return TaskState.RUNNING;
             say((delivered > 0 ? "Now " : "On it. ") + plan.summary());
         }
         phase = Phase.ROUND;
+        return TaskState.RUNNING;
+    }
+
+    static final String GOLEM = Production.ENTITY + "minecraft:iron_golem";
+
+    /**
+     * A plan that would kill a village's golem, never answered on: its owner is asked first (SMH plan 70, "it can ask
+     * questions if it needs to"), and the job waits; a minute without an answer and it goes ahead (the convenient
+     * answer). True while it asks.
+     */
+    private boolean askFirst(ProductionPlanner.Plan plan) {
+        var loop = TaskContext.agentLoop(player);
+        if (loop == null || loop.answer("golems").isPresent()) return false;
+        if (plan.steps().stream().noneMatch(st -> st.action() == Action.HUNT && GOLEM.equals(st.block()))) return false;
+        loop.ask("golems", "The quickest way to that iron is the village's iron golem: 3 to 5 ingots each, but the village loses its guard"
+                + " and the villagers like us less. May I kill golems for iron?", true);
+        phase = Phase.ASK;
+        return true;
+    }
+
+    /** Waiting on its owner's answer, then planned again by it. */
+    private TaskState waitForAnswer() {
+        var loop = TaskContext.agentLoop(player);
+        if (loop == null) {
+            phase = Phase.START;
+            return TaskState.RUNNING;
+        }
+        var a = loop.answer("golems");
+        if (a.isEmpty()) {
+            // Another question was waiting: this one is asked when that one is settled.
+            loop.ask("golems", "May I kill the village's iron golems for iron?", true);
+            TaskContext.inputDriver(player).clear();
+            return TaskState.RUNNING;
+        }
+        if (!a.get()) without.add(GOLEM);
+        phase = Phase.START;
         return TaskState.RUNNING;
     }
 
@@ -890,6 +931,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         String kind = step.block().substring(Production.ENTITY.length());
         var type = BuiltInRegistries.ENTITY_TYPE.getOptional(ResourceLocation.tryParse(kind)).orElse(null);
         if (type == null) return outOf(step.block());
+        var hunter = TaskContext.agentLoop(player);
+        if (hunter != null) hunter.noteHunting(kind.substring(kind.indexOf(':') + 1)); // a reason to fight one (combat/FightWeighing)
         // Down off a golem pillar first, block by block, when the golem is dead or gone.
         if (pillared > 0 && !(prey instanceof net.minecraft.world.entity.animal.IronGolem g0 && g0.isAlive())) {
             if (comeDown(sp)) return TaskState.RUNNING;

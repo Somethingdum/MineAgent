@@ -349,7 +349,26 @@ public final class MobDefenseChain implements TaskChain {
 
         Self self = selfOf(sp);
         Tactics t = tactics != null ? tactics : Tactics.of("balanced", config.healthFlee());
-        Assessment assessment = CombatBrain.assess(hostiles, self, t, context);
+        java.util.function.Predicate<Hostile> worth = null;
+        if (com.mineagent.engine.settings.Switches.weighFights()) {
+            // Whether each fight is worth it (combat/FightWeighing): what it is doing, its reasons, its means, its owner.
+            var doing = doing(sp, setup, now);
+            var reasons = loop != null ? loop.fightReasons() : com.mineagent.engine.combat.FightWeighing.Reasons.none();
+            var charge = charge(sp, owner, hostiles, mobs, loop);
+            double weaponLeft = weaponLeft(sp);
+            Self me = self;
+            List<Mob> seenMobs = mobs;
+            List<Hostile> seen = hostiles;
+            worth = h -> {
+                int i = seen.indexOf(h);
+                // One at arm's length that hit it just now is not being got away from: fought.
+                if (i >= 0 && h.distance() <= 3.0 && sp.getLastHurtByMob() == seenMobs.get(i)
+                        && sp.tickCount - sp.getLastHurtByMobTimestamp() < 40) return true;
+                return com.mineagent.engine.combat.FightWeighing.weigh(h, me, weaponLeft, doing, reasons, charge)
+                        == com.mineagent.engine.combat.FightWeighing.Call.FIGHT;
+            };
+        }
+        Assessment assessment = CombatBrain.assess(hostiles, self, t, context, worth);
         if (now != trendTick) {
             trendTick = now;
             trend.sample(now, sp.getHealth());
@@ -362,6 +381,72 @@ public final class MobDefenseChain implements TaskChain {
         Snapshot s = new Snapshot(now, setup, anchor, context, hostiles, mobs, self, assessment, arrow, arrowFrom, drawing);
         seen = s;
         return s;
+    }
+
+    /** Where it stood a few seconds ago, to tell walking somewhere from working on the spot. */
+    private Vec3 wasAt;
+    private long wasAtTick;
+    private boolean travelling;
+
+    /**
+     * What it is doing, for the weighing: busy on a job or escorting; on its way somewhere (three blocks or more in the
+     * last three seconds, on a job); shut in (eight or fewer open spots round it, no sky); in daylight; guarding.
+     */
+    private com.mineagent.engine.combat.FightWeighing.Doing doing(ServerPlayer sp, AgentLoop.CombatSetup setup, long now) {
+        boolean busy = setup.duty() == Duty.WORKING || setup.duty() == Duty.ESCORT;
+        if (wasAt == null || now - wasAtTick >= 60) {
+            travelling = wasAt != null && now - wasAtTick < 120 && busy && horizontal(sp.position(), wasAt) >= 3.0;
+            wasAt = sp.position();
+            wasAtTick = now;
+        }
+        var level = sp.serverLevel();
+        net.minecraft.core.BlockPos feet = sp.blockPosition();
+        int open = 0;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                net.minecraft.core.BlockPos p = feet.offset(dx, 0, dz);
+                if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p))
+                        && com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p.above()))) open++;
+            }
+        }
+        boolean confined = open <= 8 && !level.canSeeSky(feet.above());
+        boolean daylight = level.isDay() && level.canSeeSky(feet.above());
+        boolean moving = sp.getDeltaMovement().horizontalDistance() > 0.08;
+        return new com.mineagent.engine.combat.FightWeighing.Doing(busy, busy && (travelling || moving), confined, daylight,
+                setup.duty() == Duty.GUARD);
+    }
+
+    /** Its owner as the weighing sees them, when within 24 blocks: health, armour, its leave to protect them, the danger on them. */
+    private static com.mineagent.engine.combat.FightWeighing.Charge charge(ServerPlayer sp, ServerPlayer owner, List<Hostile> hostiles,
+                                                                           List<Mob> mobs, AgentLoop loop) {
+        if (owner == null || owner.level() != sp.level() || owner.distanceTo(sp) > 24.0) return null;
+        double danger = 0;
+        int on = 0;
+        boolean creeper = false;
+        for (int i = 0; i < hostiles.size(); i++) {
+            Hostile h = hostiles.get(i);
+            Mob m = mobs.get(i);
+            if (m instanceof Creeper && m.distanceTo(owner) <= 5.0) creeper = true;
+            if (!h.targetsOwner()) continue;
+            on++;
+            danger += com.mineagent.engine.combat.MobPolicy.of(h.type()).danger();
+        }
+        boolean invulnerable = owner.isCreative() || owner.isSpectator() || owner.getAbilities().invulnerable;
+        return new com.mineagent.engine.combat.FightWeighing.Charge(owner.getHealth(), owner.getMaxHealth(), owner.getArmorValue(),
+                (loop == null || loop.protectsOwner()) && !invulnerable, danger, on, creeper);
+    }
+
+    /** How much of its best weapon is left, 0 to 1 (1 with none: a fist doesn't wear). */
+    private static double weaponLeft(ServerPlayer sp) {
+        var inv = sp.getInventory();
+        ItemStack best = ItemStack.EMPTY;
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) {
+            ItemStack st = inv.getItem(i);
+            if (weaponTier(st) > weaponTier(best)) best = st;
+        }
+        if (best.isEmpty() || best.getMaxDamage() <= 0) return 1.0;
+        return (best.getMaxDamage() - best.getDamageValue()) / (double) best.getMaxDamage();
     }
 
     /** It hit one of them in the last 5 s (it may have turned to someone else since). */

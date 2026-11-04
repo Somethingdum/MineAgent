@@ -73,8 +73,11 @@ public final class BowShot {
         double[] sv = {own.x, sp.onGround() ? 0 : own.y, own.z};
         // The error changes a few times a second, not each tick, as a hand drifts.
         if (sp.level().getGameTime() % 5 == 0) { errYaw = ERR.nextGaussian() * 0.5; errPitch = ERR.nextGaussian() * 0.5; }
+        // Skeletons get no error at all (its owner: "diabolical, infallible"): the aim is exact, and the shot is held to
+        // the range where the bow's own scatter still lands in one (combat/RangedChoice.SURE).
+        double error = target instanceof net.minecraft.world.entity.monster.AbstractSkeleton ? 0.0 : AIM_ERROR;
         var shot = com.mineagent.engine.combat.ArrowAim.solve(new double[] {eye.x, eye.y, eye.z},
-                new double[] {at.x, at.y, at.z}, tv, sv, AIM_ERROR, clamp(errYaw), clamp(errPitch));
+                new double[] {at.x, at.y, at.z}, tv, sv, error, clamp(errYaw), clamp(errPitch));
         if (shot == null) {
             Vec3 d = at.subtract(eye);
             sp.setYRot((float) Math.toDegrees(Math.atan2(-d.x, d.z)));

@@ -18,15 +18,22 @@ public final class ChestPurposes {
 
     /** The kinds a purpose may name, each with the words for it. */
     public static final Map<String, Set<String>> KINDS = Map.ofEntries(
-            Map.entry("tools", Set.of("tools", "tool", "gear", "weapons", "weapon", "armour", "armor")),
-            Map.entry("food", Set.of("food", "foods", "meat", "snacks")),
-            Map.entry("ores", Set.of("ores", "ore", "ingots", "minerals", "gems", "valuables", "metal", "metals")),
+            Map.entry("tools", Set.of("tools", "tool", "pickaxes and shovels")),
+            Map.entry("armor", Set.of("armor", "armour", "armors", "armours", "armor stuff", "protection")),
+            Map.entry("weapons", Set.of("weapons", "weapon", "arms", "weaponry", "combat")),
+            Map.entry("gear", Set.of("gear", "equipment", "kit", "tools and gear")),
+            Map.entry("food", Set.of("food", "foods", "meat", "snacks", "grub", "eats", "cooked food", "rations")),
+            Map.entry("ores", Set.of("ores", "ore", "ingots", "ingot", "minerals", "gems", "valuables", "metal", "metals", "ores and ingots")),
             Map.entry("wood", Set.of("wood", "logs", "planks", "lumber", "timber")),
             Map.entry("stone", Set.of("stone", "stones", "cobble", "cobblestone", "rock", "rocks")),
-            Map.entry("crops", Set.of("crops", "crop", "farm", "farming", "seeds", "harvest", "plants")),
-            Map.entry("mob drops", Set.of("mob drops", "drops", "loot", "mob loot")),
-            Map.entry("blocks", Set.of("blocks", "building blocks", "building", "building stuff")),
-            Map.entry("overflow", Set.of("overflow", "anything", "everything", "anything else", "spare", "junk", "misc", "stuff", "the rest")));
+            Map.entry("crops", Set.of("crops", "crop", "farm", "farming", "harvest", "plants", "produce")),
+            Map.entry("mob drops", Set.of("mob drops", "drops", "loot", "mob loot", "monster drops")),
+            Map.entry("blocks", Set.of("blocks", "building blocks", "building", "building stuff", "building materials")),
+            Map.entry("overflow", Set.of("overflow", "anything", "everything", "anything else", "spare", "spares", "junk", "misc",
+                    "miscellaneous", "stuff", "the rest", "extra", "extras", "leftovers", "random", "random stuff", "spare stuff")));
+
+    /** Kinds a sort of gear also fits in, when no chest is for its own kind: a sword or armour in the tools chest. */
+    static final Map<String, Set<String>> ALSO = Map.of("tools", Set.of("weapons", "armor"), "gear", Set.of("tools", "weapons", "armor"));
 
     /** What is kept: by chest ("dim|x|y|z"), its purpose. */
     public record State(Map<String, String> purposes) {}
@@ -82,7 +89,11 @@ public final class ChestPurposes {
     public static int rank(String purpose, String itemId, Set<String> kinds) {
         if (purpose == null || purpose.isBlank()) return Integer.MAX_VALUE;
         if ("overflow".equals(purpose)) return 3;
-        if (KINDS.containsKey(purpose)) return kinds.contains(purpose) ? 2 : Integer.MAX_VALUE;
+        if (KINDS.containsKey(purpose)) {
+            if (kinds.contains(purpose)) return 2;
+            for (String k : ALSO.getOrDefault(purpose, Set.of())) if (kinds.contains(k)) return 3;
+            return Integer.MAX_VALUE;
+        }
         String path = itemId.substring(itemId.indexOf(':') + 1).replace('_', ' ');
         String p = singular(purpose);
         if (path.equals(purpose) || path.equals(p) || singular(path).equals(p)) return 0;

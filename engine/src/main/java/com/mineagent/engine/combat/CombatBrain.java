@@ -171,6 +171,15 @@ public final class CombatBrain {
 
     /** Andy Omega §12.1: total threat from what is its business, the posture it calls for, whom to strike first. */
     public static Assessment assess(List<Hostile> hostiles, Self self, Tactics tactics, Context context) {
+        return assess(hostiles, self, tactics, context, null);
+    }
+
+    /**
+     * As above, a fight taken only where {@code worth} says it is worth it ({@code FightWeighing}: the rest is left behind
+     * or let be). What must be fled is fled whatever it says.
+     */
+    public static Assessment assess(List<Hostile> hostiles, Self self, Tactics tactics, Context context,
+                                    java.util.function.Predicate<Hostile> worth) {
         double strength = strength(self);
         double total = 0.0;
         int primary = -1;
@@ -188,6 +197,7 @@ public final class CombatBrain {
                 return new Assessment(threat(h), strength, Posture.FLEEING, i, h.targetsOwner(), "too strong for this gear: " + p.id());
             }
             if (!relevant(h, context) && !inBowReach(h, self, context)) continue;
+            if (worth != null && !worth.test(h)) continue;
             double t = threat(h);
             if (t <= 0.0) continue;
             total += t;
