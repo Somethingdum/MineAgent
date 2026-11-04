@@ -7,6 +7,7 @@ import com.mineagent.api.task.TaskState;
 import com.mineagent.engine.act.Interaction;
 import com.mineagent.engine.pathing.execute.PlayerNav;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.npc.Villager;
@@ -23,7 +24,8 @@ import java.util.Map;
  * Trading (SMH plan 70, MA11.3): to the nearest villager with a trade it can pay for, the trading menu opened as a
  * player opens it, and the trades made by the menu's own rules (the villager's prices, its stock). "For emeralds"
  * sells what it carries for emeralds; "for X" buys X. Villagers are never hurt (the fighting code leaves them be, and
- * no sweep goes near one). Villages from memory and emeralds from its farms are not built yet.
+ * no sweep goes near one). None near: to the nearest village or villagers it remembers (within 512 blocks), in legs,
+ * and the trading there.
  */
 public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
     public static final class TradeRecord extends TaskRecord {
@@ -39,12 +41,17 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
         }
     }
 
-    private enum Phase { FIND, OPEN, TRADE, DONE, FAILED }
+    private enum Phase { FIND, TRAVEL, OPEN, TRADE, DONE, FAILED }
+
+    /** How far a remembered village may be, and each leg of the way there. */
+    static final int REMEMBERED = 512, LEG = 40;
 
     private Phase phase = Phase.FIND;
     private Villager villager;
     private PlayerNav nav;
-    private int ticks, tries, made;
+    private int ticks, tries, made, travelTicks;
+    private BlockPos village, leg;
+    private boolean travelled;
     private final Map<String, Integer> got = new LinkedHashMap<>();
     private String outcome = "";
 
@@ -66,6 +73,16 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
                 case FIND -> {
                     if (villager == null || !villager.isAlive()) {
                         villager = nearest(sp);
+                        if (villager == null && !travelled && (village = remembered(sp)) != null) {
+                            // None here: the village it remembers.
+                            travelled = true;
+                            travelTicks = 0;
+                            leg = null;
+                            phase = Phase.TRAVEL;
+                            var loop = TaskContext.agentLoop(player);
+                            if (loop != null) loop.say("No villager here: off to the one I remember at " + village.toShortString() + ".");
+                            return TaskState.RUNNING;
+                        }
                         if (villager == null) return end(false, "no villager near has a trade for " + name(record.want) + " I can pay for");
                     }
                     if (Interaction.inEntityReach(sp, villager)) {
@@ -77,6 +94,21 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
                     }
                     if (ticks > 1_200) return end(false, "I couldn't get to the villager");
                     if (ticks % 20 == 1) nav.navigateNear(villager.getBlockX(), villager.getBlockY(), villager.getBlockZ(), 1);
+                    nav.tick();
+                    return TaskState.RUNNING;
+                }
+                case TRAVEL -> {
+                    if (sp.blockPosition().distSqr(village) <= 20 * 20 || ++travelTicks > 6_000) {
+                        nav.cancel();
+                        TaskContext.inputDriver(player).clear();
+                        phase = Phase.FIND;
+                        ticks = 0;
+                        return TaskState.RUNNING;
+                    }
+                    if (leg == null || sp.blockPosition().distSqr(leg) <= 4 * 4 || navDone()) {
+                        leg = legToward(sp, village);
+                        nav.navigateNear(leg.getX(), leg.getY(), leg.getZ(), 3);
+                    }
                     nav.tick();
                     return TaskState.RUNNING;
                 }
@@ -139,6 +171,55 @@ public class TradeTask extends CompanionTask<TradeTask.TradeRecord> {
         ItemStack a = o.getCostA(), b = o.getCostB();
         if (ProductionTask.count(sp, a.getItem()) < a.getCount()) return false;
         return b.isEmpty() || ProductionTask.count(sp, b.getItem()) >= b.getCount() + (b.is(a.getItem()) ? a.getCount() : 0);
+    }
+
+    private boolean navDone() {
+        return !nav.isNavigating();
+    }
+
+    /**
+     * The nearest village it remembers in this world, or the villagers it saw last, within {@link #REMEMBERED}: where
+     * it goes when none is near. Null when it knows of none.
+     */
+    private BlockPos remembered(ServerPlayer sp) {
+        var loop = TaskContext.agentLoop(player);
+        if (loop == null) return null;
+        String dim = sp.serverLevel().dimension().location().toString();
+        BlockPos at = sp.blockPosition();
+        BlockPos best = null;
+        double bestD = (double) REMEMBERED * REMEMBERED;
+        for (var p : loop.placeKeeper().memory().places()) {
+            if (!"village".equals(p.kind()) || !p.at().dim().equals(dim)) continue;
+            BlockPos b = new BlockPos(p.at().x(), p.at().y(), p.at().z());
+            double d = b.distSqr(at);
+            if (d < bestD && d > 32 * 32) {
+                bestD = d;
+                best = b;
+            }
+        }
+        for (var f : loop.placeKeeper().sightings().nearest("villager", dim, at.getX(), at.getY(), at.getZ(), 4, REMEMBERED)) {
+            var v = f.sighting();
+            BlockPos b = new BlockPos(v.x(), v.y(), v.z());
+            double d = b.distSqr(at);
+            if (d < bestD && d > 32 * 32) {
+                bestD = d;
+                best = b;
+            }
+        }
+        return best;
+    }
+
+    /** The next stretch of the way: {@link #LEG} blocks toward it, on the ground there when that is loaded. */
+    private static BlockPos legToward(ServerPlayer sp, BlockPos to) {
+        BlockPos at = sp.blockPosition();
+        double dx = to.getX() - at.getX(), dz = to.getZ() - at.getZ();
+        double len = Math.sqrt(dx * dx + dz * dz);
+        if (len <= LEG) return to;
+        int x = at.getX() + (int) Math.round(dx / len * LEG), z = at.getZ() + (int) Math.round(dz / len * LEG);
+        var level = sp.serverLevel();
+        int y = level.isLoaded(new BlockPos(x, at.getY(), z))
+                ? level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) : at.getY();
+        return new BlockPos(x, y, z);
     }
 
     /** The nearest villager within 32 blocks with a trade it can pay for. */

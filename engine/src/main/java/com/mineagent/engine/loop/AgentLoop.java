@@ -1436,6 +1436,11 @@ public class AgentLoop {
                 String want = "emerald".equals(c.value()) ? "minecraft:emerald"
                         : com.mineagent.engine.planning.production.GameKnowledge.itemFor(c.value());
                 if (want == null || want.startsWith(com.mineagent.engine.planning.production.GameKnowledge.ANY)) return false;
+                // Emeralds and nothing to sell: a crop farmers buy harvested from a field in sight first (MA11.3).
+                if ("minecraft:emerald".equals(want) && dispatchingGoal == null && fromOwner) {
+                    String crop = cropToSell();
+                    if (!crop.isEmpty() && queueOrders(crop + ", then trade for emeralds")) return true;
+                }
                 journal.record("order", "trade for " + c.value(), currentGameTickSafe());
                 orderGoal("trade for " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
@@ -3138,6 +3143,37 @@ public class AgentLoop {
         int bottles = has.applyAsInt(net.minecraft.world.item.Items.GLASS_BOTTLE);
         if (water + bottles < 3) make.add("make me " + (3 - water) + " glass bottles");
         return String.join(", then ", make);
+    }
+
+    /**
+     * What farmers pay an emerald for, a trade's worth at a time (20 wheat, 26 potatoes, 22 carrots, 15 beetroots): when
+     * it carries enough of none, the one its fields in sight give soonest, as an order ("make me 20 wheat"); "" when it
+     * has enough to sell or no field has any ripe.
+     */
+    private String cropToSell() {
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return "";
+        var sp = self.serverPlayer();
+        Map<net.minecraft.world.item.Item, Integer> lots = new java.util.LinkedHashMap<>();
+        lots.put(net.minecraft.world.item.Items.WHEAT, 20);
+        lots.put(net.minecraft.world.item.Items.POTATO, 26);
+        lots.put(net.minecraft.world.item.Items.CARROT, 22);
+        lots.put(net.minecraft.world.item.Items.BEETROOT, 15);
+        for (var e : lots.entrySet()) if (com.mineagent.engine.task.ProductionTask.count(sp, e.getKey()) >= e.getValue()) return "";
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(sp);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(sp, this, null);
+        String best = "";
+        double bestTicks = Double.MAX_VALUE;
+        for (var e : lots.entrySet()) {
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(e.getKey()).toString();
+            var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, e.getValue(),
+                    java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN));
+            if (!plan.possible() || plan.steps().stream().noneMatch(st -> st.action() == com.mineagent.engine.planning.production.ProductionPlanner.Action.HARVEST)) continue;
+            if (plan.ticks() < bestTicks) {
+                bestTicks = plan.ticks();
+                best = "make me " + e.getValue() + " " + com.mineagent.engine.planning.production.ProductionPlanner.plural(id, e.getValue());
+            }
+        }
+        return best;
     }
 
     // ── The Nether (SMH plan 70, MA11.1) ──

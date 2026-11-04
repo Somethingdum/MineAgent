@@ -3968,4 +3968,71 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    private static net.minecraft.world.entity.npc.Villager farmer(GameTestHelper helper, BlockPos at) {
+        var villager = EntityType.VILLAGER.create(helper.getLevel());
+        BlockPos vAt = helper.absolutePos(at);
+        villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
+        villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.FARMER).setLevel(1));
+        villager.setNoAi(true);
+        helper.getLevel().addFreshEntity(villager);
+        return villager;
+    }
+
+    /** Plan 70, MA11.3, villages from memory: no villager within reach, one it remembers 36 blocks off: there, and the trade. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trade_memory", timeoutTicks = 1400)
+    public void aRememberedVillagerIsGoneToForTheTrade(GameTestHelper helper) {
+        Scene s = scene(helper, "Pedlar");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos from = helper.absolutePos(new BlockPos(-14, 1, 3));
+        s.body().teleportTo(helper.getLevel(), from.getX() + 0.5, from.getY(), from.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getInventory().setItem(1, new ItemStack(Items.WHEAT, 64));
+        var villager = farmer(helper, new BlockPos(22, 1, 3));
+        BlockPos vAt = villager.blockPosition();
+        s.loop().placeKeeper().sightings().see(com.mineagent.engine.memory.Sightings.Kind.VILLAGER, "villager",
+                helper.getLevel().dimension().location().toString(), vAt.getX(), vAt.getY(), vAt.getZ(), 1, helper.getLevel().getGameTime());
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "trade for emeralds"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "trade memory");
+            String done = lastSaid(s, "Traded");
+            String failed = lastSaid(s, "I couldn't trade");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1350) {
+                int emeralds = s.body().getInventory().countItem(Items.EMERALD);
+                boolean went = !lastSaid(s, "No villager here").isEmpty();
+                String how = emeralds + " emeralds, went to the one remembered " + went + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                villager.discard();
+                if (emeralds >= 1 && went) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA11.3, emeralds from its farms: nothing to sell, a field of ripe wheat: 20 harvested, then sold. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trade_farm", timeoutTicks = 2400)
+    public void emeraldsFromTheWheatField(GameTestHelper helper) {
+        Scene s = scene(helper, "Grower");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var ripe = ((net.minecraft.world.level.block.CropBlock) Blocks.WHEAT).getStateForAge(7);
+        for (int x = 8; x <= 12; x++) for (int z = 8; z <= 12; z++) {
+            helper.setBlock(x, 0, z, Blocks.FARMLAND);
+            helper.setBlock(x, 1, z, ripe);
+        }
+        helper.setBlock(10, 0, 13, Blocks.WATER);
+        var villager = farmer(helper, new BlockPos(6, 1, 3));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "trade for emeralds"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "trade farm");
+            String done = lastSaid(s, "Traded");
+            String failed = lastSaid(s, "I couldn't");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2350) {
+                int emeralds = s.body().getInventory().countItem(Items.EMERALD);
+                String how = emeralds + " emeralds; queue: " + lastSaid(s, "Got it") + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                villager.discard();
+                if (emeralds >= 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

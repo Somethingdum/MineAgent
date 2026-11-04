@@ -1654,7 +1654,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(id));
     }
 
-    static int count(ServerPlayer sp, Item item) {
+    public static int count(ServerPlayer sp, Item item) {
         int n = 0;
         var inv = sp.getInventory();
         for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).is(item)) n += inv.getItem(i).getCount();
