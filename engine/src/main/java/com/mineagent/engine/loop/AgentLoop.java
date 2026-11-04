@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-") || taskId.startsWith("loot-") || taskId.startsWith("smith-") || taskId.startsWith("cure-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1605,6 +1605,46 @@ public class AgentLoop {
                 orderGoal("dig a slime room");
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.MiningTask.MineRecord(
                         "mine-" + UUID.randomUUID(), "ore", 0, false, new int[] {x0, z0, 16, y}), reply -> { });
+                return true;
+            }
+            case CURE -> {
+                var curer = self.serverPlayer();
+                if (curer == null) return false;
+                journal.record("order", "cure the zombie villager", currentGameTickSafe());
+                boolean potion = com.mineagent.engine.task.CureTask.splash(curer) >= 0;
+                boolean apple = curer.getInventory().countItem(net.minecraft.world.item.Items.GOLDEN_APPLE) > 0;
+                if ((!potion || !apple) && !cureReady) {
+                    // What a cure takes, made first: a splash potion of weakness (no nether wart in it) and a golden apple.
+                    List<String> first = new ArrayList<>();
+                    if (!potion) first.add("brew a splash potion of weakness");
+                    if (!apple) first.add("make me 1 golden apple");
+                    first.add("cure the zombie villager");
+                    cureReady = true;
+                    speakToOwner("Curing one takes a splash potion of weakness and a golden apple: making " + (!potion && !apple ? "both" : !potion ? "the potion" : "the apple") + " first.");
+                    return queueOrders(String.join(", then ", first));
+                }
+                cureReady = false;
+                orderGoal("cure the zombie villager");
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.CureTask.CureRecord(
+                        "cure-" + UUID.randomUUID()), reply -> { });
+                return true;
+            }
+            case NETHERITE -> {
+                var smither = self.serverPlayer();
+                if (smither == null) return false;
+                String what = c.value() == null ? "gear" : c.value().replaceAll("^(?:my|your|the|our) ", "").strip();
+                journal.record("order", "upgrade " + what + " to netherite", currentGameTickSafe());
+                orderGoal("upgrade my " + what + " to netherite");
+                // Worn armour and the shield come into the pack for the table; on again after.
+                if ("gear".equals(what) || "armor".equals(what) || "armour".equals(what)) {
+                    for (String k : java.util.List.of("helmet", "chestplate", "leggings", "boots")) intoPackForAnvil(smither, k);
+                    if (!"gear".equals(what)) what = "armor";
+                } else {
+                    intoPackForAnvil(smither, what.replaceAll("s$", "").equals("boot") ? "boots" : what);
+                }
+                String smithJob = "smith-" + UUID.randomUUID();
+                afterTaskAlways.put(smithJob, () -> com.mineagent.engine.survival.GearUp.run(smither));
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.SmithingTask.SmithRecord(smithJob, what), reply -> { });
                 return true;
             }
             case LOOT -> {
@@ -3455,10 +3495,11 @@ public class AgentLoop {
     private String brewNeeds(String potion) {
         if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return "";
         var sp = self.serverPlayer();
-        var ingredient = com.mineagent.engine.task.BrewTask.INGREDIENT.get(potion);
+        var ingredient = com.mineagent.engine.task.BrewTask.INGREDIENT.get(com.mineagent.engine.task.BrewTask.base(potion));
         if (ingredient == null) return "";
         List<String> make = new ArrayList<>();
         java.util.function.ToIntFunction<net.minecraft.world.item.Item> has = item -> com.mineagent.engine.task.ProductionTask.count(sp, item);
+        if (potion.startsWith("splash_") && has.applyAsInt(net.minecraft.world.item.Items.GUNPOWDER) == 0) make.add("make me 1 gunpowder");
         boolean powderToo = ingredient == net.minecraft.world.item.Items.BLAZE_POWDER; // the ingredient and the fuel: one order for both
         if (!powderToo && has.applyAsInt(ingredient) == 0) {
             make.add("make me 1 " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(ingredient).getPath().replace('_', ' '));
@@ -3984,7 +4025,11 @@ public class AgentLoop {
         java.util.Map<String, Boolean> makeable = new java.util.HashMap<>();
         java.util.function.Predicate<String> canMake = item -> makeable.computeIfAbsent(item,
                 k -> com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, k, 1, without).possible());
-        var next = com.mineagent.engine.gear.GodGear.next(pieces, books, sold, canMake, godGearFailed.keySet());
+        // Netherite: a template and an ingot it carries (or the ingot it can make: four scrap and four gold).
+        boolean template = inv.countItem(net.minecraft.world.item.Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE) > 0;
+        boolean ingot = inv.countItem(net.minecraft.world.item.Items.NETHERITE_INGOT) > 0 || template && canMake.test("minecraft:netherite_ingot");
+        java.util.function.Predicate<String> canSmith = k -> template && ingot;
+        var next = com.mineagent.engine.gear.GodGear.next(pieces, books, sold, canMake, canSmith, godGearFailed.keySet());
         if (next == null) return;
         final String job = "god-" + UUID.randomUUID();
         switch (next.move()) {
@@ -4003,6 +4048,23 @@ public class AgentLoop {
                 godGearJobs.put(job, next.key());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.AnvilTask.AnvilRecord(
                         job, "best", next.kind()), reply -> { });
+            }
+            case SMITH -> {
+                if (!intoPackForAnvil(self, next.kind())) return;
+                journal.record("gear", "toward god-tier gear: my " + next.kind() + " to netherite", now);
+                afterTaskAlways.put(job, () -> com.mineagent.engine.survival.GearUp.run(self));
+                godGearJobs.put(job, next.key());
+                Runnable smith = () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                        new com.mineagent.engine.task.SmithingTask.SmithRecord(job, next.kind()), reply -> { });
+                if (inv.countItem(net.minecraft.world.item.Items.NETHERITE_INGOT) == 0) {
+                    String make = "god-ingot-" + UUID.randomUUID();
+                    godGearJobs.put(make, next.key());
+                    afterTask.put(make, smith);
+                    com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                            make, "minecraft:netherite_ingot", 1, null, false, true), reply -> { });
+                } else {
+                    smith.run();
+                }
             }
             case BUY_BOOK -> {
                 UUID who = seller.get(next.what());
@@ -4476,6 +4538,21 @@ public class AgentLoop {
         queueOrders("prime the world, then make a farm, then make a slime farm");
     }
 
+    /** Mobs its fighting leaves be (a zombie villager it is curing), by id. */
+    private final java.util.Set<UUID> spared = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public void spare(UUID id) {
+        if (id != null && spared.size() < 64) spared.add(id);
+    }
+
+    public void unspare(UUID id) {
+        if (id != null) spared.remove(id);
+    }
+
+    public boolean spared(UUID id) {
+        return id != null && spared.contains(id);
+    }
+
     /** Places it has looted (structures, by dimension and chunk), kept with the world, so "go looting" goes on to new ones. */
     private final java.util.Set<String> looted = java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
 
@@ -4506,6 +4583,9 @@ public class AgentLoop {
         looted.clear();
         if (keys != null) for (String k : keys) if (k != null && looted.size() < 4096) looted.add(k);
     }
+
+    /** A cure whose potion and apple were queued to be made first: the next cure order goes ahead. */
+    private volatile boolean cureReady;
 
     /** A farm order whose hoe and bucket were queued to be made first: the next farm order goes ahead. */
     private volatile boolean farmReady;
@@ -4582,14 +4662,18 @@ public class AgentLoop {
                         }
                     }
                 }
-                if (stash == null && self.blockPosition().distSqr(home) > 16) {
-                    goTo(new com.mineagent.engine.world.RouteMemory.Point(dim, home.getX(), home.getY(), home.getZ()), List.of(), false);
+                if (stash == null) {
+                    if (self.blockPosition().distSqr(home) > 16) {
+                        goTo(new com.mineagent.engine.world.RouteMemory.Point(dim, home.getX(), home.getY(), home.getZ()), List.of(), false);
+                    }
+                    return;
                 }
+                // Its chest is down: on to filling it.
+            } else {
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                        "hoard-chest-" + UUID.randomUUID(), "minecraft:chest", 1, null, false, true), reply -> { });
                 return;
             }
-            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
-                    "hoard-chest-" + UUID.randomUUID(), "minecraft:chest", 1, null, false, true), reply -> { });
-            return;
         }
         // What it holds of its own: its pack and its own chests.
         java.util.Map<String, Integer> has = new java.util.HashMap<>();

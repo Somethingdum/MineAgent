@@ -43,13 +43,21 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
             "fire_resistance", Items.MAGMA_CREAM, "healing", Items.GLISTERING_MELON_SLICE,
             "strength", Items.BLAZE_POWDER, "swiftness", Items.SUGAR, "slow_falling", Items.PHANTOM_MEMBRANE,
             "regeneration", Items.GHAST_TEAR, "night_vision", Items.GOLDEN_CARROT, "water_breathing", Items.PUFFERFISH,
-            "leaping", Items.RABBIT_FOOT);
+            "leaping", Items.RABBIT_FOOT, "weakness", Items.FERMENTED_SPIDER_EYE);
+
+    /** Brewed from a water bottle with no nether wart first (weakness: a fermented spider eye in water). */
+    public static final java.util.Set<String> NO_WART = java.util.Set.of("weakness");
+
+    /** "splash_weakness" is weakness, made a splash potion with gunpowder after; the rest as named. */
+    public static String base(String potion) {
+        return potion != null && potion.startsWith("splash_") ? potion.substring("splash_".length()) : potion;
+    }
 
     private static final Map<String, Holder<Potion>> RESULT = Map.of(
             "fire_resistance", Potions.FIRE_RESISTANCE, "healing", Potions.HEALING,
             "strength", Potions.STRENGTH, "swiftness", Potions.SWIFTNESS, "slow_falling", Potions.SLOW_FALLING,
             "regeneration", Potions.REGENERATION, "night_vision", Potions.NIGHT_VISION, "water_breathing", Potions.WATER_BREATHING,
-            "leaping", Potions.LEAPING);
+            "leaping", Potions.LEAPING, "weakness", Potions.WEAKNESS);
 
     private enum Phase { FILL, STAND, LOAD, BREW, TAKE, DONE, FAILED }
 
@@ -76,8 +84,15 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
     protected TaskState onTick() {
         ServerPlayer sp = TaskContext.serverPlayer(player);
         ServerLevel level = sp.serverLevel();
-        Item ingredient = INGREDIENT.get(record.potion);
+        String base = base(record.potion);
+        boolean splash = !base.equals(record.potion);
+        Item ingredient = INGREDIENT.get(base);
         if (ingredient == null) return end(false, "I don't know how to brew " + record.potion.replace('_', ' '));
+        // What goes in, in turn: nether wart for an awkward potion (not for weakness), the ingredient, gunpowder for a splash.
+        List<Item> adds = new java.util.ArrayList<>();
+        if (!NO_WART.contains(base)) adds.add(Items.NETHER_WART);
+        adds.add(ingredient);
+        if (splash) adds.add(Items.GUNPOWDER);
         try {
             switch (phase) {
                 case FILL -> {
@@ -115,7 +130,8 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
                         return TaskState.RUNNING;
                     }
                     if (waterBottles(sp) == 0) return end(false, "I have no water bottles" + (filled ? " and no water near to fill some" : ""));
-                    if (ProductionTask.count(sp, Items.NETHER_WART) == 0) return end(false, "I have no nether wart");
+                    if (adds.contains(Items.NETHER_WART) && ProductionTask.count(sp, Items.NETHER_WART) == 0) return end(false, "I have no nether wart");
+                    if (splash && ProductionTask.count(sp, Items.GUNPOWDER) == 0) return end(false, "I have no gunpowder for a splash potion");
                     if (ProductionTask.count(sp, ingredient) == 0) return end(false, "I have no " + name(ingredient));
                     if (ProductionTask.count(sp, Items.BLAZE_POWDER) == 0) return end(false, "I have no blaze powder for the stand's fuel");
                     stand = nearStand(level, sp);
@@ -160,7 +176,7 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
                         for (int slot = 0; slot < 3; slot++) if (!be.getItem(slot).isEmpty()) bottles++;
                         if (bottles == 0) return end(false, "no bottles went in");
                     }
-                    Item next = step == 0 ? Items.NETHER_WART : ingredient;
+                    Item next = adds.get(Math.min(step, adds.size() - 1));
                     if (!move(sp, be, next, 1, 3)) return end(false, "I have no " + name(next) + " left");
                     be.setChanged();
                     TaskContext.syncInventory(sp);
@@ -172,8 +188,8 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
                     if (!(level.getBlockEntity(stand) instanceof BrewingStandBlockEntity be)) return end(false, "the brewing stand is gone");
                     // The ingredient is used up when a brew is done (400 ticks).
                     if (be.getItem(3).isEmpty()) {
-                        if (step == 0) {
-                            step = 1;
+                        if (step + 1 < adds.size()) {
+                            step++;
                             phase = Phase.LOAD;
                         } else {
                             phase = Phase.TAKE;
@@ -190,13 +206,13 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
                         ItemStack st = be.getItem(slot);
                         if (st.isEmpty()) continue;
                         var c = st.get(DataComponents.POTION_CONTENTS);
-                        if (c != null && c.is(RESULT.get(record.potion))) made++;
+                        if (c != null && c.is(RESULT.get(base)) && st.is(splash ? Items.SPLASH_POTION : Items.POTION)) made++;
                         if (!sp.getInventory().add(be.removeItem(slot, 1))) sp.drop(st, false);
                     }
                     be.setChanged();
                     TaskContext.syncInventory(sp);
                     if (made == 0) return end(false, "the potions came out wrong");
-                    return end(true, "Brewed " + made + " potion" + (made == 1 ? "" : "s") + " of " + record.potion.replace('_', ' ') + ".");
+                    return end(true, "Brewed " + made + (splash ? " splash" : "") + " potion" + (made == 1 ? "" : "s") + " of " + base.replace('_', ' ') + ".");
                 }
                 default -> {
                     return phase == Phase.DONE ? TaskState.SUCCESS : TaskState.FAILED;

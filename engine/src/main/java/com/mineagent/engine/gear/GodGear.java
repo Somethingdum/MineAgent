@@ -174,7 +174,7 @@ public final class GodGear {
     public record Piece(String kind, int tier, Map<String, Integer> ench) {}
 
     /** What it does next for a piece: makes one ({@code what} the item), puts its books on, or buys a book ({@code what} the enchantment). */
-    public enum Move { MAKE, APPLY_BOOKS, BUY_BOOK }
+    public enum Move { MAKE, APPLY_BOOKS, BUY_BOOK, SMITH }
 
     public record Next(String kind, Move move, String what) {
         /** The key a failed try is remembered by, so the same thing isn't tried again at once. */
@@ -214,6 +214,16 @@ public final class GodGear {
      */
     public static Next next(Map<String, Piece> pieces, Map<String, Integer> books, Map<String, Integer> sold,
                             java.util.function.Predicate<String> canMake, java.util.Set<String> skip) {
+        return next(pieces, books, sold, canMake, k -> false, skip);
+    }
+
+    /**
+     * As above, and a diamond piece upgraded to netherite at a smithing table first when {@code canSmith} says it has a
+     * template and an ingot for it (its enchantments go with it, so the order doesn't waste a book).
+     */
+    public static Next next(Map<String, Piece> pieces, Map<String, Integer> books, Map<String, Integer> sold,
+                            java.util.function.Predicate<String> canMake, java.util.function.Predicate<String> canSmith,
+                            java.util.Set<String> skip) {
         for (String kind : LADDER) {
             Piece p = pieces.get(kind);
             int t = p == null ? 0 : p.tier();
@@ -229,6 +239,10 @@ public final class GodGear {
                 Next i = new Next(kind, Move.MAKE, "minecraft:iron_" + kind);
                 if (t < 3 && !skip.contains(i.key()) && canMake.test(i.what())) return i;
                 continue; // books go on diamond and better only
+            }
+            if (t == 4 && !UNTIERED.contains(kind)) {
+                Next up = new Next(kind, Move.SMITH, "minecraft:netherite_" + kind);
+                if (!skip.contains(up.key()) && canSmith.test(kind)) return up;
             }
             List<Ench> lack = missing(kind, p == null ? Map.of() : p.ench());
             Next apply = new Next(kind, Move.APPLY_BOOKS, kind);

@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS, FARM, SLIME, LOOT, NETHERITE, CURE }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -164,7 +164,7 @@ public final class CommandParser {
     /** "Breed the cows", "breed some sheep", "breed the animals" (MA8.5): two grown ones fed by hand. */
     private static final Pattern BREED = Pattern.compile("^breed (?:the |some |our |my |two |a pair of |more )?([a-z][a-z ]{2,19}?)$");
     /** "Brew a potion of fire resistance", "brew healing potions" (MA11.4). */
-    private static final Pattern BREW = Pattern.compile("^(?:brew|make)(?: me| us)? (?:a |some |3 |three )?(?:potions? of )?(fire resistance|healing|strength|swiftness|speed|slow falling|regeneration|night vision|water breathing|leaping)(?: potions?)?$");
+    private static final Pattern BREW = Pattern.compile("^(?:brew|make)(?: me| us)? (?:a |some |3 |three )?(splash )?(?:potions? of )?(?:splash )?(fire resistance|healing|strength|swiftness|speed|slow falling|regeneration|night vision|water breathing|leaping|weakness)(?: (?:splash )?potions?)?$");
     /** "Build a nether portal", "make a portal" (MA11.1): the frame from the obsidian it carries, lit. */
     private static final Pattern PORTAL = Pattern.compile("^(?:build|make|put up|set up|light)(?: me| us)? (?:a |the )?(?:nether )?portal(?: here| for us)?$");
     /** "Don't touch my garden", "leave the farm alone" (MA10.2): a place no companion breaks or builds in. */
@@ -181,6 +181,11 @@ public final class CommandParser {
     /** "Make a farm", "build a wheat farm", "plant a farm here", "start a crop farm": a 9 by 9 tilled, watered and sown. */
     private static final Pattern FARM = Pattern.compile("^(?:make|build|plant|start|set up|put in)(?: me| us)? (?:a |an |some )?(?:basic |small |little )?"
             + "(?:wheat |crop |carrot |potato |food )?farms?(?: here| for us| for me| by the base| by home)?$");
+    /** "Cure the zombie villager", "cure that zombie", "cure zombie villagers". */
+    private static final Pattern CURE = Pattern.compile("^cure (?:the |that |this |a |those |these )?zombie(?: villagers?)?(?: here| for me| for us)?$");
+    /** "Upgrade my sword to netherite", "make my armor netherite", "netherite my gear": diamond to netherite at a smithing table. */
+    private static final Pattern NETHERITE = Pattern.compile("^(?:upgrade|turn|make|smith)(?: up)? ((?:my|your|the|our|all (?:my|your|the)) [a-z ]{3,24}?)"
+            + " (?:to|into|in)? ?netherite$|^netherite (?:up )?((?:my|your|the|our) [a-z ]{3,24})$");
     /** "Loot the chests here", "loot this place" (here); "go looting", "go find loot", "get us some loot" (go). */
     private static final Pattern LOOT_HERE = Pattern.compile("^(?:loot|raid|empty|clear out) (?:the |all the |these |those )?(?:chests|loot|barrels)"
             + "(?: here| round here| around here)?$|^loot (?:this|the) (?:place|structure|village|portal|temple|shipwreck|wreck|igloo)$");
@@ -265,6 +270,14 @@ public final class CommandParser {
         at = PUT_AT.matcher(t);
         if (at.matches()) return Optional.of(new Command(Kind.PRODUCE, "chestat|" + at.group(3) + "," + at.group(4) + "," + at.group(5)
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
+        if (CURE.matcher(t).matches()) return Optional.of(new Command(Kind.CURE, null, null));
+        var neth = NETHERITE.matcher(t);
+        if (neth.matches()) {
+            String what = neth.group(1) != null ? neth.group(1) : neth.group(2);
+            what = what.replaceAll("^(?:all )?(?:my|your|the|our) ", "").strip();
+            return Optional.of(new Command(Kind.NETHERITE, what.matches("gear|stuff|things|everything|tools|armou?r") && !what.startsWith("armo") ? "gear"
+                    : what.startsWith("armo") ? "armor" : what.replaceAll("s$", "").replace("legging", "leggings").replace("boot", "boots"), null));
+        }
         if (LOOT_HERE.matcher(t).matches()) return Optional.of(new Command(Kind.LOOT, "here", null));
         if (LOOT_GO.matcher(t).matches()) return Optional.of(new Command(Kind.LOOT, "go", null));
         if (SLIME_FIND.matcher(t).matches()) return Optional.of(new Command(Kind.SLIME, "find", null));
@@ -298,7 +311,10 @@ public final class CommandParser {
         var breed = BREED.matcher(t);
         if (breed.matches()) return Optional.of(new Command(Kind.BREED, breed.group(1).strip(), null));
         var brew = BREW.matcher(t);
-        if (brew.matches()) return Optional.of(new Command(Kind.BREW, brew.group(1).replace("speed", "swiftness").replace(' ', '_'), null));
+        if (brew.matches()) {
+            boolean splash = brew.group(1) != null || t.contains("splash");
+            return Optional.of(new Command(Kind.BREW, (splash ? "splash_" : "") + brew.group(2).replace("speed", "swiftness").replace(' ', '_'), null));
+        }
         var purpose = CHEST_PURPOSE.matcher(t);
         if (purpose.matches()) {
             String w = purpose.group(1) != null ? purpose.group(1) : purpose.group(2) != null ? purpose.group(2) : purpose.group(3);

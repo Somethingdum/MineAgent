@@ -291,6 +291,11 @@ final class CommandParserTest {
         assertEquals("here", CommandParser.parse("loot the chests here", "Pal").orElseThrow().value());
         assertEquals("go", CommandParser.parse("go find the craziest loot", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.LOOT, CommandParser.parse("go looting", "Pal").orElseThrow().kind());
+        assertEquals("sword", CommandParser.parse("upgrade my sword to netherite", "Pal").orElseThrow().value());
+        assertEquals("armor", CommandParser.parse("make my armor netherite", "Pal").orElseThrow().value());
+        assertEquals(CommandParser.Kind.PRODUCE, CommandParser.parse("make me 4 netherite ingots", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.CURE, CommandParser.parse("cure the zombie villager", "Pal").orElseThrow().kind());
+        assertEquals("splash_weakness", CommandParser.parse("brew a splash potion of weakness", "Pal").orElseThrow().value());
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }

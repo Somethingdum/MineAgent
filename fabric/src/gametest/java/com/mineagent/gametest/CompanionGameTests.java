@@ -3811,6 +3811,138 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, curing for trades: "brew a splash potion of weakness" from water bottles, a fermented spider eye and
+     * gunpowder (no nether wart: weakness is brewed straight from water): three splash potions of weakness.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_brew_weakness", timeoutTicks = 2000)
+    public void splashPotionsOfWeaknessBrewedWithoutWart(GameTestHelper helper) {
+        Scene s = scene(helper, "Alchemist");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.BREWING_STAND));
+        inv.setItem(2, new ItemStack(Items.BLAZE_POWDER));
+        for (int i = 3; i <= 5; i++) inv.setItem(i, com.mineagent.engine.task.BrewTask.waterBottle());
+        inv.setItem(6, new ItemStack(Items.FERMENTED_SPIDER_EYE));
+        inv.setItem(7, new ItemStack(Items.GUNPOWDER));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "brew a splash potion of weakness"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "weakness");
+            String done = lastSaid(s, "Brewed");
+            String failed = lastSaid(s, "I couldn't brew");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1900) {
+                int potions = 0;
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    var c = inv.getItem(i).get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+                    if (inv.getItem(i).is(Items.SPLASH_POTION) && c != null && c.is(net.minecraft.world.item.alchemy.Potions.WEAKNESS)) potions++;
+                }
+                String how = potions + " splash potions of weakness; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (potions >= 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, curing for trades: a zombie villager under a roof (out of the sun, held still), and a splash potion of
+     * weakness and a golden apple in its pack: "cure the zombie villager" throws the potion on it and feeds it the apple,
+     * and it starts to turn back, unhurt by the companion.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_cure", timeoutTicks = 900)
+    public void aZombieVillagerIsCuredWithWeaknessAndAGoldenApple(GameTestHelper helper) {
+        Scene s = scene(helper, "Healer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 0; x <= 16; x++) for (int z = 0; z <= 16; z++) helper.setBlock(x, 5, z, Blocks.STONE);
+        var zombie = EntityType.ZOMBIE_VILLAGER.create(helper.getLevel());
+        BlockPos zAt = helper.absolutePos(new BlockPos(9, 1, 8));
+        zombie.moveTo(zAt.getX() + 0.5, zAt.getY(), zAt.getZ() + 0.5, 0.0f, 0.0f);
+        zombie.setNoAi(true);
+        zombie.setPersistenceRequired();
+        helper.getLevel().addFreshEntity(zombie);
+        var inv = s.body().getInventory();
+        inv.setItem(1, net.minecraft.world.item.alchemy.PotionContents.createItemStack(Items.SPLASH_POTION, net.minecraft.world.item.alchemy.Potions.WEAKNESS));
+        inv.setItem(2, net.minecraft.world.item.alchemy.PotionContents.createItemStack(Items.SPLASH_POTION, net.minecraft.world.item.alchemy.Potions.WEAKNESS));
+        inv.setItem(3, new ItemStack(Items.GOLDEN_APPLE));
+        inv.setItem(4, new ItemStack(Items.COBBLESTONE, 8));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "cure the zombie villager"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "cure");
+            String failed = lastSaid(s, "I couldn't cure");
+            if (zombie.isConverting() || !failed.isEmpty() || !zombie.isAlive() || helper.getTick() >= 850) {
+                String how = "converting " + zombie.isConverting() + ", alive " + zombie.isAlive() + ", weak " + zombie.hasEffect(net.minecraft.world.effect.MobEffects.WEAKNESS)
+                        + ", apples left " + inv.countItem(Items.GOLDEN_APPLE) + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                boolean ok = zombie.isConverting() && zombie.isAlive();
+                tidy(s);
+                zombie.discard();
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, its own hoard: home named, a chest, a crafting table and three stacks of wheat in its pack, and no order at all: in its
+     * free time it puts its own chest down by home and fills it with the first of its stockpile, 64 bread.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_hoard", timeoutTicks = 6600)
+    public void inFreeTimeItsOwnChestByHomeIsFilled(GameTestHelper helper) {
+        Scene s = scene(helper, "Hoarder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var o = s.owner().position();
+        s.body().teleportTo(helper.getLevel(), o.x + 1.0, o.y, o.z, 0.0f, 0.0f);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.CHEST));
+        for (int i = 2; i <= 4; i++) inv.setItem(i, new ItemStack(Items.WHEAT, 64));
+        inv.setItem(5, new ItemStack(Items.SHIELD));
+        inv.setItem(6, new ItemStack(Items.GOLDEN_APPLE, 4));
+        inv.setItem(7, new ItemStack(Items.CRAFTING_TABLE)); // bread is three wide: a table's grid
+        helper.runAfterDelay(2, () -> MineAgentEngine.onPlayerChat(s.owner(), "this is home"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 400 == 0) trace(helper, s, "hoard");
+            int bread = 0;
+            BlockPos at = s.owner().blockPosition();
+            for (BlockPos p : BlockPos.betweenClosed(at.offset(-4, -2, -4), at.offset(4, 2, 4))) {
+                if (helper.getLevel().getBlockEntity(p) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest) {
+                    for (int i = 0; i < chest.getContainerSize(); i++) if (chest.getItem(i).is(Items.BREAD)) bread += chest.getItem(i).getCount();
+                }
+            }
+            if (bread >= 64 || helper.getTick() >= 6500) {
+                String how = bread + " bread in a chest by home; carried " + inv.countItem(Items.BREAD) + " bread, " + inv.countItem(Items.CHEST)
+                        + " chests; said: " + lastSaid(s, "");
+                tidy(s);
+                if (bread >= 64) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, "go survive on your own": in the test world (one flat biome, no swamp in it), it says so and makes its
+     * base where it stands, its home from then on.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_on_its_own", timeoutTicks = 900)
+    public void onItsOwnWithNoSwampItMakesItsBaseHere(GameTestHelper helper) {
+        Scene s = scene(helper, "Loner");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 100 == 0) trace(helper, s, "on its own");
+            String noSwamp = lastSaid(s, "I found no swamp");
+            String swamp = lastSaid(s, "There's a swamp");
+            String base = lastSaid(s, "Made my base here");
+            if (!base.isEmpty() || !swamp.isEmpty() || helper.getTick() >= 850) {
+                boolean homeHere = s.loop().homeIn(helper.getLevel().dimension().location().toString()) != null;
+                String how = "no swamp said " + !noSwamp.isEmpty() + ", base said " + !base.isEmpty() + ", home " + homeHere + ", on its own " + s.loop().onItsOwn()
+                        + "; said: " + (swamp.isEmpty() ? lastSaid(s, "") : swamp);
+                s.loop().onItsOwn(false);
+                tidy(s);
+                if (!noSwamp.isEmpty() && !base.isEmpty() && homeHere) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "breed the cows" with two cows and wheat: both fed by hand, a calf comes. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_breed", timeoutTicks = 900)
     public void twoCowsBredForACalf(GameTestHelper helper) {
@@ -4159,6 +4291,47 @@ public class CompanionGameTests implements FabricGameTest {
                         + " carried, trapped one shut " + trappedShut + "; said: " + (done.isEmpty() ? none.isEmpty() ? lastSaid(s, "") : none : done);
                 tidy(s);
                 if (aOpened && left == 0 && carried > 0 && trappedShut && !done.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, god-tier gear: a diamond sword with Sharpness V, a netherite upgrade template, a netherite ingot and a
+     * smithing table in its pack: "upgrade my sword to netherite" puts the table down and makes the netherite sword, its
+     * Sharpness kept.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_netherite", timeoutTicks = 600)
+    public void aDiamondSwordUpgradedToNetheriteKeepsItsSharpness(GameTestHelper helper) {
+        Scene s = scene(helper, "Smith");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        var sword = new ItemStack(Items.DIAMOND_SWORD);
+        var reg = helper.getLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+        sword.enchant(reg.getHolderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SHARPNESS), 5);
+        inv.setItem(1, sword);
+        inv.setItem(2, new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE));
+        inv.setItem(3, new ItemStack(Items.NETHERITE_INGOT));
+        inv.setItem(4, new ItemStack(Items.SMITHING_TABLE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "upgrade my sword to netherite"));
+        helper.onEachTick(() -> {
+            String done = lastSaid(s, "Upgraded");
+            String failed = lastSaid(s, "I couldn't upgrade");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 560) {
+                int sharp = 0;
+                boolean netherite = false;
+                for (int i = 0; i < 36; i++) {
+                    if (!inv.getItem(i).is(Items.NETHERITE_SWORD)) continue;
+                    netherite = true;
+                    var e = inv.getItem(i).get(net.minecraft.core.component.DataComponents.ENCHANTMENTS);
+                    if (e != null) for (var en : e.entrySet()) {
+                        if (en.getKey().is(net.minecraft.world.item.enchantment.Enchantments.SHARPNESS)) sharp = en.getIntValue();
+                    }
+                }
+                String how = "netherite sword " + netherite + ", Sharpness " + sharp + ", diamond sword left " + inv.countItem(Items.DIAMOND_SWORD)
+                        + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (netherite && sharp == 5 && inv.countItem(Items.DIAMOND_SWORD) == 0) helper.succeed();
                 else fail(helper, how);
             }
         });

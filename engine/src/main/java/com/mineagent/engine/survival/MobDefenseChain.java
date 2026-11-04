@@ -296,7 +296,7 @@ public final class MobDefenseChain implements TaskChain {
         for (Mob mob : sp.level().getEntitiesOfClass(Mob.class, box, Mob::isAlive)) {
             // The smallest slime does a player no harm (a small magma cube still burns): no threat, no fight; a job
             // that wants its slimeballs hunts it.
-            if (harmless(mob)) continue;
+            if (harmless(mob) || loop != null && loop.spared(mob.getUUID())) continue; // spared: one it is curing
             boolean enemy = mob instanceof Enemy;
             LivingEntity aim = mob.getTarget();
             boolean targetsSelf = aim == sp;

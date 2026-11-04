@@ -66,5 +66,20 @@ class GodGearTest {
         assertEquals(5, GodGear.tier("minecraft:netherite_sword"));
         assertEquals(2, GodGear.tier("minecraft:chainmail_helmet"));
     }
+
+    @Test void diamondGoesToNetheriteWhenItHasTheTemplateAndAnIngot() {
+        java.util.Map<String, GodGear.Piece> pieces = new java.util.HashMap<>();
+        pieces.put("sword", new GodGear.Piece("sword", 4, Map.of("sharpness", 5)));
+        var up = GodGear.next(pieces, Map.of("unbreaking", 3), Map.of(), id -> false, k -> k.equals("sword"), java.util.Set.of());
+        assertEquals(GodGear.Move.SMITH, up.move(), "netherite first: the books go with it");
+        assertEquals("minecraft:netherite_sword", up.what());
+        var books = GodGear.next(pieces, Map.of("unbreaking", 3), Map.of(), id -> false, k -> false, java.util.Set.of());
+        assertEquals(GodGear.Move.APPLY_BOOKS, books.move(), "no template or ingot: the books instead");
+        pieces.put("sword", new GodGear.Piece("sword", 5, Map.of("sharpness", 5)));
+        var done = GodGear.next(pieces, Map.of(), Map.of(), id -> false, k -> true, java.util.Set.of());
+        assertNull(done, "netherite already, and nothing else to do for it");
+        assertNull(GodGear.next(java.util.Map.of("bow", new GodGear.Piece("bow", 4, Map.of("power", 5, "unbreaking", 3, "mending", 1, "punch", 2, "flame", 1))),
+                Map.of(), Map.of(), id -> false, k -> true, java.util.Set.of()), "a bow has no netherite");
+    }
 }
 

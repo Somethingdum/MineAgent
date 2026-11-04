@@ -115,6 +115,18 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // A zombie villager cured (SMH plan 70: trading mastery)
+        CompanionTaskFactory.register(
+                CureTask.CureRecord.class,
+                CureTask::new
+        );
+
+        // Diamond gear to netherite at a smithing table (SMH plan 70: god-tier gear)
+        CompanionTaskFactory.register(
+                SmithingTask.SmithRecord.class,
+                SmithingTask::new
+        );
+
         // Loot from the chests the world made (SMH plan 70: "collect the craziest loot")
         CompanionTaskFactory.register(
                 LootTask.LootRecord.class,
