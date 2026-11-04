@@ -362,10 +362,10 @@ public class PathingCore {
     }
 
     /**
-     * In a hole in the ground: two blocks or more below the ground round it, and either walled in at head height on
-     * every side by the ground itself (a pit, a shaft) or with the ground over its head (a cave, a tunnel). What
-     * someone built (its own villager cell, a hut, a roof) is no hole: walking in and round those is its task's own
-     * business.
+     * In a hole in the ground: two blocks or more below the ground round it (a pit, a shaft, a dig beside a hill, a
+     * cave), with nothing someone built beside it at its head or over it. What someone built (its own villager cell, a
+     * hut, a roof) is no hole: walking in and round those is its task's own business. (The ninth benchmark run dug for
+     * stone five below its crafting table beside a hill, open on one side, and no longer counted as in a hole.)
      */
     private boolean inAHole() {
         var sp = TaskContext.serverPlayer(player);
@@ -376,34 +376,36 @@ public class PathingCore {
         if (surfaceAround(sp) - sp.getBlockY() < 2) return false;
         var level = sp.serverLevel();
         var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
-        var head = sp.blockPosition().above();
-        boolean walled = true;
-        for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
-            var p = head.relative(d);
-            if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(level.getBlockState(p)) || placed.isPlaced(p.getX(), p.getY(), p.getZ())) {
-                walled = false;
-                break;
+        var feet = sp.blockPosition();
+        var head = feet.above();
+        if (placed.isPlaced(feet.getX(), feet.getY() - 1, feet.getZ())) return false; // on something built
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                var p = head.offset(dx, 0, dz);
+                if (placed.isPlaced(p.getX(), p.getY(), p.getZ()) || placed.isPlaced(p.getX(), p.getY() - 1, p.getZ())) return false;
             }
         }
-        if (walled) return true;
         for (int dy = 1; dy <= 24; dy++) {
             var p = head.above(dy);
             var st = level.getBlockState(p);
             if (com.mineagent.engine.pathing.util.BlockHelper.isPassable(st)) continue;
             return !placed.isPlaced(p.getX(), p.getY(), p.getZ()) && !(st.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock);
         }
-        return false;
+        return true; // open over its head, the ground round it higher: a pit
     }
 
-    /** The highest ground (its top's air) at its spot and the blocks two round it. */
+    /** The highest ground (its top's air) at its spot and the blocks two round it; a column topped by something built is no ground. */
     private static int surfaceAround(net.minecraft.server.level.ServerPlayer sp) {
         var level = sp.serverLevel();
+        var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
         int top = Integer.MIN_VALUE;
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 int x = sp.getBlockX() + dx, z = sp.getBlockZ() + dz;
                 if (!level.hasChunk(x >> 4, z >> 4)) continue;
-                top = Math.max(top, level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z));
+                int h = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                if (placed.isPlaced(x, h - 1, z)) continue;
+                top = Math.max(top, h);
             }
         }
         return top == Integer.MIN_VALUE ? sp.getBlockY() : top;
