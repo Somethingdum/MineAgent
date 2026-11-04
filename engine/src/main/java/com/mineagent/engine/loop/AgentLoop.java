@@ -977,7 +977,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-") || taskId.startsWith("putaway-") || taskId.startsWith("eyes-") || taskId.startsWith("roll-") || taskId.startsWith("farm-") || taskId.startsWith("slime-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1554,6 +1554,23 @@ public class AgentLoop {
                     return true;
                 }
                 String sdim = slevel.dimension().location().toString();
+                if ("hunt".equals(c.value())) {
+                    // The farm it dug: the slime chunk it remembers, nearest.
+                    var farm = placeKeeper.memory().find("slime chunk", com.mineagent.engine.world.PlaceKeeper.point(slimer));
+                    if (farm.isEmpty() || !farm.get().at().dim().equals(sdim)) {
+                        speakToOwner("I have no slime farm yet: say \"make a slime farm\" and I'll dig one.");
+                        return true;
+                    }
+                    var at = farm.get().at();
+                    int want = c.count() == null ? 64 : c.count();
+                    journal.record("order", "farm " + want + " slimeballs", currentGameTickSafe());
+                    speakToOwner("Working the slime farm for " + want + " slimeballs: what's in the room first, then a minute at a time away"
+                            + " from it (slimes spawn no nearer than 24 blocks to anyone), and down again.");
+                    orderGoal("farm slimeballs");
+                    com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.SlimeFarmTask.SlimeRecord(
+                            "slime-" + UUID.randomUUID(), at.x() - 8, at.z() - 8, at.y(), 16, want), reply -> { });
+                    return true;
+                }
                 var shome = home(sdim);
                 var from = shome != null ? shome : slimer.blockPosition();
                 long seed = slevel.getSeed();

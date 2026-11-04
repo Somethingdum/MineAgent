@@ -115,6 +115,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // A slime farm worked (SMH plan 70: "highly favoring of slime")
+        CompanionTaskFactory.register(
+                SlimeFarmTask.SlimeRecord.class,
+                SlimeFarmTask::new
+        );
+
         // Farms made (SMH plan 70: "build a base and basic farms")
         CompanionTaskFactory.register(
                 FarmTask.FarmRecord.class,

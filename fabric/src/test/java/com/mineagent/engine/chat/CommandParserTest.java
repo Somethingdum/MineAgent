@@ -284,6 +284,10 @@ final class CommandParserTest {
         assertEquals("find", CommandParser.parse("where's the nearest slime chunk", "Pal").orElseThrow().value());
         assertEquals("farm", CommandParser.parse("make a slime farm", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.PRODUCE, CommandParser.parse("get me 16 slimeballs", "Pal").orElseThrow().kind(), "slimeballs are made");
+        var farmSlime = CommandParser.parse("get me 32 slimeballs from the slime farm", "Pal").orElseThrow();
+        assertEquals("hunt", farmSlime.value());
+        assertEquals(32, farmSlime.count().intValue());
+        assertEquals("hunt", CommandParser.parse("work the slime farm", "Pal").orElseThrow().value());
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }

@@ -4080,6 +4080,47 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, the slime farm worked: a closed room four by four with six small slimes in it (the size that drops
+     * slimeballs) and the companion in it with a sword: its first round hunts what is in the room, and it comes away with
+     * slimeballs.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_slime_farm", timeoutTicks = 1800)
+    public void theSlimeRoomIsHuntedForSlimeballs(GameTestHelper helper) {
+        Scene s = scene(helper, "Slimer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 6; x <= 11; x++) for (int z = 6; z <= 11; z++) for (int y = 1; y <= 4; y++) {
+            boolean inside = x >= 7 && x <= 10 && z >= 7 && z <= 10 && y <= 3;
+            if (!inside) helper.setBlock(x, y, z, Blocks.STONE);
+        }
+        BlockPos stand = helper.absolutePos(new BlockPos(8, 1, 8));
+        s.body().teleportTo(helper.getLevel(), stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, 0.0f, 0.0f);
+        s.body().getInventory().setItem(1, new ItemStack(Items.IRON_SWORD));
+        for (int i = 0; i < 6; i++) {
+            var slime = EntityType.SLIME.create(helper.getLevel());
+            slime.setSize(1, true);
+            BlockPos at = helper.absolutePos(new BlockPos(7 + i % 4, 1, i < 4 ? 10 : 9));
+            slime.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5, 0.0f, 0.0f);
+            helper.getLevel().addFreshEntity(slime);
+        }
+        BlockPos corner = helper.absolutePos(new BlockPos(7, 1, 7));
+        helper.runAfterDelay(10, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.engine.task.SlimeFarmTask.SlimeRecord("slime-farm", corner.getX(), corner.getZ(), corner.getY(), 4, 1), r -> { }));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) trace(helper, s, "slime farm");
+            int balls = s.body().getInventory().countItem(Items.SLIME_BALL);
+            if (balls >= 1 || helper.getTick() >= 1700) {
+                var slimesLeft = helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.monster.Slime.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(6, 0, 6))).expandTowards(6, 5, 6));
+                String how = balls + " slimeballs, " + slimesLeft.size() + " slimes left; said: " + lastSaid(s, "");
+                slimesLeft.forEach(net.minecraft.world.entity.Entity::discard);
+                tidy(s);
+                if (balls >= 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA8.5, food that renews: "catch me 1 fish" by a pool: the rod cast, reeled in on a bite, a fish caught. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fish", timeoutTicks = 3000)
     public void aFishCaughtAtAPool(GameTestHelper helper) {

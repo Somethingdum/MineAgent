@@ -184,6 +184,9 @@ public final class CommandParser {
     /** "Find a slime chunk", "where's the nearest slime chunk" (find); "make a slime farm", "dig a slime room" (farm). */
     private static final Pattern SLIME_FIND = Pattern.compile("^(?:find|locate|show me)(?: me| us)? (?:a |the )?(?:nearest |closest )?slime chunks?"
             + "|where(?:'s| is) (?:a |the )?(?:nearest |closest )?slime chunk$");
+    /** "Farm the slimes", "get me 32 slimeballs from the slime farm": the slime room worked, rounds of waiting and hunting. */
+    private static final Pattern SLIME_HUNT = Pattern.compile("^(?:farm|work|hunt|get|bring)(?: me| us)? (?:(\\d+) )?(?:the )?(?:slimes?|slime ?balls?)"
+            + "(?: (?:from|at|in) (?:the |my |your )?slime (?:farm|room|chunk))?$|^(?:farm|work|use) (?:the |my |your )?slime (?:farm|room)$");
     private static final Pattern SLIME_FARM = Pattern.compile("^(?:make|build|dig|set up|start)(?: me| us)? (?:a |an |the )?slime (?:farm|room|chunk farm)"
             + "|dig out (?:a |the )?slime chunk$");
     private static final Pattern ROLL = Pattern.compile("^(?:(?:get|find|make) (?:me |us )?an? ([a-z ]{3,24}?) (?:villager|librarian)"
@@ -259,6 +262,13 @@ public final class CommandParser {
                 + "|" + at.group(2).strip(), Integer.parseInt(at.group(1))));
         if (SLIME_FIND.matcher(t).matches()) return Optional.of(new Command(Kind.SLIME, "find", null));
         if (SLIME_FARM.matcher(t).matches()) return Optional.of(new Command(Kind.SLIME, "farm", null));
+        var slimeHunt = SLIME_HUNT.matcher(t);
+        // "get me 16 slimeballs" alone is an order to make them (any way); from the slime farm, or "farm the slimes", it works the farm.
+        if (slimeHunt.matches() && (t.contains("slime farm") || t.contains("slime room") || t.contains("slime chunk") || t.startsWith("farm")
+                || t.startsWith("work") || t.startsWith("use"))) {
+            int n = slimeHunt.groupCount() < 1 || slimeHunt.group(1) == null ? 64 : Integer.parseInt(slimeHunt.group(1));
+            return Optional.of(new Command(Kind.SLIME, "hunt", Math.max(1, Math.min(2304, n))));
+        }
         if (FARM.matcher(t).matches()) return Optional.of(new Command(Kind.FARM, t.endsWith(" here") ? "here" : null, null));
         var roll = ROLL.matcher(t);
         if (roll.matches()) {
