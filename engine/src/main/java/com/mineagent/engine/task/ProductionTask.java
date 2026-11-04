@@ -2042,7 +2042,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             // None put in with some to put: the chest won't take them. With none to put (the round made nothing: the
             // herd it remembered is gone), the next round says how far it got, or finds another way.
             if (put == 0 && before > 0) return fail("I made the " + ProductionPlanner.name(itemId) + " but couldn't put them in the chest");
+            if (put == 0 && ++emptyRounds >= 3) return ranOut(); // rounds that made nothing: what there was, it has put in
         }
+        if (put > 0) emptyRounds = 0;
         phase = Phase.ROUND;
         return TaskState.RUNNING;
     }

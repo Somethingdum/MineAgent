@@ -1087,11 +1087,12 @@ public class CompanionGameTests implements FabricGameTest {
             if (control.contains("mob_defense")) fighting[0]++;
             double off = flat(s.body().position(), Vec3.atBottomCenterOf(goal));
             if (off <= 1.5 || helper.getTick() >= 760 || !s.body().isAlive()) {
+                boolean spared = skeleton.isAlive();
                 String how = String.format("%.1f blocks short; %d ticks fighting; skeleton %s; health %.0f", off, fighting[0],
-                        skeleton.isAlive() ? "alive " + skeleton.getHealth() : "dead", s.body().getHealth());
+                        spared ? "alive " + skeleton.getHealth() : "dead", s.body().getHealth());
                 tidy(s);
                 skeleton.discard();
-                if (off <= 1.5 && fighting[0] <= 40 && skeleton.isAlive()) helper.succeed();
+                if (off <= 1.5 && fighting[0] <= 40 && spared) helper.succeed();
                 else fail(helper, how);
             }
         });
@@ -4184,7 +4185,7 @@ public class CompanionGameTests implements FabricGameTest {
         helper.onEachTick(() -> {
             trace(helper, s, "golem");
             // It asks before killing a village's golem; its owner says yes.
-            if (!answered[0] && !lastSaid(s, "May I kill golems").isEmpty()) {
+            if (!answered[0] && !lastSaid(s, "The quickest way to that iron").isEmpty()) {
                 answered[0] = true;
                 MineAgentEngine.onPlayerChat(s.owner(), "yes");
             }

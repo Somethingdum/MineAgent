@@ -3849,7 +3849,14 @@ public class AgentLoop {
         String dim = self.serverLevel().dimension().location().toString();
         var level = self.serverLevel();
         List<int[]> todo = new ArrayList<>();
-        for (var h : holes.near(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ(), 24, 64)) {
+        // All the holes near, lowest first, then a batch: a crater is filled from its floor up (a block of sand put over
+        // a hole not yet filled would fall into it).
+        List<int[]> all = new ArrayList<>();
+        for (var h : holes.near(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ(), 24, com.mineagent.engine.world.Holes.MAX)) {
+            all.add(new int[] {h.x(), h.y(), h.z()});
+        }
+        for (int[] hh : com.mineagent.engine.world.Craters.bottomUp(all, self.getBlockX(), self.getBlockZ())) {
+            var h = new com.mineagent.engine.world.Holes.Hole(dim, hh[0], hh[1], hh[2], "", 0);
             var p = new net.minecraft.core.BlockPos(h.x(), h.y(), h.z());
             if (!level.isLoaded(p)) continue;
             if (!level.getBlockState(p).canBeReplaced()) {

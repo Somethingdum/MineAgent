@@ -22,9 +22,13 @@ public final class FightWeighing {
      * What it is doing: {@code busy} on a job or an errand, {@code travelling} on its way somewhere, {@code confined} in a
      * tunnel or a small room, {@code daylight}, {@code guarding} a place or a person.
      */
-    public record Doing(boolean busy, boolean travelling, boolean confined, boolean daylight, boolean guarding) {
+    public record Doing(boolean busy, boolean travelling, boolean confined, boolean daylight, boolean guarding, int crowd) {
+        public Doing(boolean busy, boolean travelling, boolean confined, boolean daylight, boolean guarding) {
+            this(busy, travelling, confined, daylight, guarding, 0);
+        }
+
         public static Doing idle() {
-            return new Doing(false, false, false, true, false);
+            return new Doing(false, false, false, true, false, 0);
         }
     }
 
@@ -67,6 +71,8 @@ public final class FightWeighing {
             return d.travelling() && !d.confined() ? Call.KEEP_GOING : Call.FIGHT;
         }
         if (d.confined() && h.distance() <= 8.0) return Call.FIGHT; // nowhere to go: it is killed
+        // Three or more closing on it where it stands: dealt with now (fought, or got away from: the fight decides).
+        if (!d.travelling() && d.crowd() >= 3 && h.distance() <= 8.0) return Call.FIGHT;
         boolean fast = FAST.contains(p.id());
         boolean ranged = p.preferRanged() || h.drawingBow();
         if (h.distance() <= 2.5) {
@@ -107,8 +113,13 @@ public final class FightWeighing {
         if (p.fleeUnlessGeared() && (me.weaponTier() < 3 || me.armor() < 10)) return false;
         double[] perHit = {1, 4, 5, 6, 7, 8};
         double hits = Math.max(1.0, h.health() / perHit[Math.max(0, Math.min(5, me.weaponTier()))]);
-        boolean bowWillDo = me.hasBow() && me.arrows() >= hits / 1.5;
-        if (me.weaponTier() > 0 && weaponLeft < 0.1 && !bowWillDo) return false;
+        // From range with the bow (a full draw does 6 or more): arrows spent, and only an archer's arrows taken back.
+        double arrowsNeeded = Math.ceil(h.health() / 6.0) + 1;
+        if (me.hasBow() && me.arrows() >= arrowsNeeded && h.distance() >= RangedChoice.MIN && h.lineOfSight()) {
+            double back = p.preferRanged() || h.drawingBow() ? p.danger() * arrowsNeeded * 0.3 * (1.0 - Math.min(20, me.armor()) / 25.0) : 0.0;
+            return me.health() - back >= 8.0;
+        }
+        if (me.weaponTier() > 0 && weaponLeft < 0.1) return false; // its weapon about to break: not for this
         double taken = p.danger() * hits * 0.4 * (1.0 - Math.min(20, me.armor()) / 25.0);
         return me.health() - taken >= 8.0;
     }

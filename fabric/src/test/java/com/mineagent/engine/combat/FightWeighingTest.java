@@ -79,6 +79,16 @@ class FightWeighingTest {
 
     static final Self SWORD_ONLY = new Self(20, 20, 15, true, 3, false, 0, 18, false);
 
+    @Test void threeClosingOnItAreDealtWithNowAndABowFightCostsArrowsNotHealth() {
+        Doing crowded = new Doing(false, false, false, true, false, 3);
+        assertEquals(Call.FIGHT, w(mob("zombie", 4, true, false), SWORD_ONLY, crowded), "three at once: dealt with (the fight may run)");
+        assertEquals(Call.KEEP_GOING, w(mob("zombie", 4, true, false), SWORD_ONLY, new Doing(true, true, false, false, false, 3)),
+                "on the move, still outrun");
+        Self bowOnly = new Self(20, 20, 0, false, 0, true, 32, 20, false);
+        assertTrue(FightWeighing.affordable(mob("husk", 26, true, false), bowOnly, 1.0), "a husk 26 out costs arrows, not health");
+        assertFalse(FightWeighing.affordable(mob("husk", 2, true, false), bowOnly, 1.0), "bare-handed at arm's length it would");
+    }
+
     @Test void idleItMeetsWhatComesWhenItGetsHere() {
         assertEquals(Call.LET_BE, w(mob("zombie", 10, true, false), SWORD_ONLY, AT_HOME));
         assertEquals(Call.FIGHT, w(mob("zombie", 2, true, false), SWORD_ONLY, AT_HOME));

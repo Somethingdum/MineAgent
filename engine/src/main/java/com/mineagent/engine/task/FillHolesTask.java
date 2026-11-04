@@ -113,6 +113,11 @@ public class FillHolesTask extends CompanionTask<FillHolesTask.FillRecord> {
                 return TaskState.RUNNING;
             }
             var state = ((BlockItem) with).getBlock().defaultBlockState();
+            // Sand or gravel over a hole not yet filled would fall into it: that one waits for the next round.
+            if (state.getBlock() instanceof net.minecraft.world.level.block.FallingBlock && level.getBlockState(p.below()).canBeReplaced()) {
+                next();
+                return TaskState.RUNNING;
+            }
             if (Placement.placeBlock(sp, p, state)) {
                 filled++;
                 if (loop != null) loop.holes().filled(dim, p.getX(), p.getY(), p.getZ());

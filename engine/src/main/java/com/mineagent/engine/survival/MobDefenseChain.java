@@ -352,7 +352,7 @@ public final class MobDefenseChain implements TaskChain {
         java.util.function.Predicate<Hostile> worth = null;
         if (com.mineagent.engine.settings.Switches.weighFights()) {
             // Whether each fight is worth it (combat/FightWeighing): what it is doing, its reasons, its means, its owner.
-            var doing = doing(sp, setup, now);
+            var doing = doing(sp, setup, now, hostiles);
             var reasons = loop != null ? loop.fightReasons() : com.mineagent.engine.combat.FightWeighing.Reasons.none();
             var charge = charge(sp, owner, hostiles, mobs, loop);
             double weaponLeft = weaponLeft(sp);
@@ -392,7 +392,7 @@ public final class MobDefenseChain implements TaskChain {
      * What it is doing, for the weighing: busy on a job or escorting; on its way somewhere (three blocks or more in the
      * last three seconds, on a job); shut in (eight or fewer open spots round it, no sky); in daylight; guarding.
      */
-    private com.mineagent.engine.combat.FightWeighing.Doing doing(ServerPlayer sp, AgentLoop.CombatSetup setup, long now) {
+    private com.mineagent.engine.combat.FightWeighing.Doing doing(ServerPlayer sp, AgentLoop.CombatSetup setup, long now, List<Hostile> crowdOf) {
         boolean busy = setup.duty() == Duty.WORKING || setup.duty() == Duty.ESCORT;
         if (wasAt == null || now - wasAtTick >= 60) {
             travelling = wasAt != null && now - wasAtTick < 120 && busy && horizontal(sp.position(), wasAt) >= 3.0;
@@ -413,8 +413,10 @@ public final class MobDefenseChain implements TaskChain {
         boolean confined = open <= 8 && !level.canSeeSky(feet.above());
         boolean daylight = level.isDay() && level.canSeeSky(feet.above());
         boolean moving = sp.getDeltaMovement().horizontalDistance() > 0.08;
+        int crowd = 0;
+        for (Hostile h : crowdOf) if (h.targetsSelf() && h.distance() <= 8.0) crowd++;
         return new com.mineagent.engine.combat.FightWeighing.Doing(busy, busy && (travelling || moving), confined, daylight,
-                setup.duty() == Duty.GUARD);
+                setup.duty() == Duty.GUARD, crowd);
     }
 
     /** Its owner as the weighing sees them, when within 24 blocks: health, armour, its leave to protect them, the danger on them. */
