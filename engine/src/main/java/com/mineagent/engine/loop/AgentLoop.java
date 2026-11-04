@@ -1444,7 +1444,7 @@ public class AgentLoop {
                 String print = c.value() == null ? "hut" : c.value();
                 // The home hut is stone: cobblestone (its pickaxe digs it anywhere, a creeper does it less harm; wood near
                 // a base runs out, the three-day benchmark found: 27 planks of the 55). Its door of the wood about.
-                if ("hut_home".equals(print)) wall = "minecraft:cobblestone";
+                if ("hut_home".equals(print)) wall = homeHutWall();
                 String said = switch (print) {
                     case "dirt_shelter" -> "build a dirt shelter";
                     case "small_wood_house" -> "build a small wood house";
@@ -5228,7 +5228,29 @@ public class AgentLoop {
     private volatile int swampTries;
     private volatile double swampBest = Double.MAX_VALUE;
 
-    /** When its starter kit last jumped the queue. */
+    /** Plain building blocks a home hut's walls may be of (never ores, nothing worth keeping). */
+    private static final List<String> HUT_WALLS = List.of("minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:stone",
+            "minecraft:deepslate", "minecraft:andesite", "minecraft:diorite", "minecraft:granite", "minecraft:tuff", "minecraft:sandstone",
+            "minecraft:blackstone", "minecraft:netherrack", "minecraft:dirt", "minecraft:oak_planks", "minecraft:spruce_planks",
+            "minecraft:birch_planks", "minecraft:jungle_planks", "minecraft:acacia_planks", "minecraft:dark_oak_planks",
+            "minecraft:mangrove_planks", "minecraft:cherry_planks");
+
+    /**
+     * Its home hut's walls (55 blocks): what it carries enough of already, the plainest first (the tenth benchmark run
+     * carried 94 blocks and still went to mine stone for its walls, the build stalled); else cobblestone, mined.
+     */
+    private String homeHutWall() {
+        var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e.serverPlayer() : null;
+        if (self == null) return "minecraft:cobblestone";
+        var inv = self.getInventory();
+        for (String id : HUT_WALLS) {
+            var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));
+            if (inv.countItem(item) >= 55) return id;
+        }
+        return "minecraft:cobblestone";
+    }
+
+    /** When its starter kit last jumped the queue. */    /** When its starter kit last jumped the queue. */
     private volatile long kitJumpedAt = Long.MIN_VALUE / 2;
 
     /**
