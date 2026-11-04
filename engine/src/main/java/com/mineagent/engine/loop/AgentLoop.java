@@ -1432,6 +1432,24 @@ public class AgentLoop {
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
                 return true;
             }
+            case PATROL -> {
+                if (!fromOwner) return false;
+                if ("clear".equals(c.value())) {
+                    patrol.clear();
+                    speakToOwner("No patrol: I'll keep to one post.");
+                    return true;
+                }
+                var me = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
+                var owner = me == null ? null : me.serverPlayerOwner();
+                if (owner == null) return false;
+                if (patrol.size() >= 8) patrol.remove(0);
+                // The post it already keeps is the first point.
+                if (patrol.isEmpty() && guardPost != null) patrol.add(guardPost);
+                patrol.add(owner.position());
+                speakToOwner("Patrol point " + patrol.size() + " at " + owner.getBlockX() + ", " + owner.getBlockY() + ", " + owner.getBlockZ()
+                        + (guardPost == null ? ". Say \"guard here\" to start." : "."));
+                return true;
+            }
             case BREED -> {
                 String w = c.value();
                 String animal = null;
@@ -3378,7 +3396,18 @@ public class AgentLoop {
      * each dusk; farmland and crops get no torches), and what happens there reported in a few words: someone coming in
      * who isn't its owner's, and blocks people built there broken.
      */
+    /** The points a guard walks between (its owner's "add a patrol point here"), and when it last moved on. */
+    private final List<net.minecraft.world.phys.Vec3> patrol = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private int patrolAt;
+    private long patrolMoved;
+
     private void guardWatch(net.minecraft.server.level.ServerPlayer self) {
+        // On a patrol: on to the next point every 30 seconds (the fighting chain walks it there and keeps it).
+        if (guardPost != null && patrol.size() >= 2 && currentGameTickSafe() - patrolMoved >= 600) {
+            patrolMoved = currentGameTickSafe();
+            patrolAt = (patrolAt + 1) % patrol.size();
+            guardPost = patrol.get(patrolAt);
+        }
         var post = guardPost;
         if (self == null || post == null || !com.mineagent.engine.settings.Switches.guardPerimeter()) return;
         var level = self.serverLevel();
