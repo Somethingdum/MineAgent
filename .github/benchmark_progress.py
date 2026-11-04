@@ -36,7 +36,7 @@ def read():
             if "[MineAgent][" in l and "Lesson failed" not in l and "LLM call" not in l]
     # Its work traced (what it is stuck on and why), the noise left out.
     noise = ("Lesson failed", "LLM call", "saved companion", "Saved ", "Loaded ", "transport failure", "[MineAgent][",
-             "paused for survival chain", "LLM retries", "Stale request", "Trimmed history", "food to make")
+             "paused for survival chain", "LLM retries", "Stale request", "Trimmed history")
     traced = []
     for l in lines:
         if "[MineAgent] " not in l or any(n in l for n in noise):

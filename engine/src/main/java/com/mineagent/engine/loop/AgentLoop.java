@@ -3042,7 +3042,9 @@ public class AgentLoop {
             var source = body.getLastDamageSource();
             String type = source == null ? "" : source.typeHolder().unwrapKey().map(k -> k.location().toString()).orElse("");
             var pos = body.blockPosition();
-            journal.record("death", cause + " at " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), tick,
+            // The game's own words, and what last hurt it when those say nothing ("died": no fight on record).
+            journal.record("death", cause + (type.isEmpty() || !cause.endsWith(" died") ? "" : " (last hurt by " + type.replace("minecraft:", "") + ")")
+                    + " at " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), tick,
                     body.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
             // Three deaths here in 15 minutes: a place to keep away from (MA8.6).
             var zone = com.mineagent.engine.learning.DangerZones.of(body.getUUID()).died(
