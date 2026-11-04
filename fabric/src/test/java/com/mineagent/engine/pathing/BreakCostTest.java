@@ -54,6 +54,16 @@ final class BreakCostTest {
         }
     }
 
+    @Test void foodThatGrowsBackIsNeverBrokenToGetSomewhere() {
+        for (String food : new String[] {"minecraft:sweet_berry_bush", "wheat", "carrots", "potatoes", "beetroots",
+                "melon_stem", "pumpkin_stem", "cocoa", "nether_wart", "cave_vines", "farmland"}) {
+            assertEquals(BreakCost.Kind.AVOID, BreakCost.classify(food, false), food);
+        }
+        // The fruit itself is land like any other: a melon or a pumpkin is taken whole.
+        assertEquals(BreakCost.Kind.NATURAL, BreakCost.classify("melon", false));
+        assertEquals(BreakCost.Kind.NATURAL, BreakCost.classify("pumpkin", false));
+    }
+
     @Test void blocksThatHoldThingsAndInfestedStoneAreLeftAlone() {
         assertEquals(BreakCost.Kind.BUILT, BreakCost.classify("chest", true));
         assertEquals(BreakCost.Kind.BUILT, BreakCost.classify("furnace", true));

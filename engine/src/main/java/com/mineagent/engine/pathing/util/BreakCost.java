@@ -73,6 +73,12 @@ public final class BreakCost {
     /** Name starts that only built blocks carry. */
     private static final String[] BUILT_STARTS = {"polished_", "smooth_", "chiseled_", "cut_", "waxed_"};
 
+    /** Plants it eats from, again and again: no walk breaks them. */
+    private static final Set<String> FOOD_PLANTS = Set.of(
+            "sweet_berry_bush", "wheat", "carrots", "potatoes", "beetroots", "melon_stem", "pumpkin_stem",
+            "attached_melon_stem", "attached_pumpkin_stem", "cocoa", "nether_wart", "cave_vines", "cave_vines_plant",
+            "farmland");
+
     /** Natural blocks a rule above would otherwise catch. */
     private static final Set<String> NATURAL_EXCEPTIONS = Set.of(
             "smooth_basalt", "raw_copper_block", "raw_iron_block", "raw_gold_block", "bee_nest", "moss_carpet");
@@ -90,6 +96,9 @@ public final class BreakCost {
         int colon = name.indexOf(':');
         if (colon >= 0) name = name.substring(colon + 1);
         if (name.startsWith("infested_")) return Kind.AVOID;
+        // Food that grows back (Baritone keeps a list of blocks its walks never break, blocksToAvoidBreaking; these are
+        // this companion's): a walk through a berry patch or a field takes nothing from it.
+        if (FOOD_PLANTS.contains(name)) return Kind.AVOID;
         if (NATURAL_EXCEPTIONS.contains(name)) return Kind.NATURAL;
         if (name.endsWith("_ore")) return Kind.NATURAL;
         if (BUILT_NAMES.contains(name)) return Kind.BUILT;

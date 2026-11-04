@@ -612,9 +612,14 @@ public class AStarPathFinder {
         // As Baritone has it (AbstractNodeCostSearch.MIN_DIST_PATH): a partial path that gets it no more than five
         // blocks from where it stands is no path. Walked, it ends at the same wall each time and the walk begins again
         // (the three-world run's companion at a cliff's edge); said, its walk's rules can look again with more allowed.
+        // One change to Baritone's rule: when the goal is itself near, a short way that at least halves what is left to
+        // it is a way (a berry bush two blocks off among others it won't walk through: its last step is the reach of
+        // its arm, and "no path" sent it to the walk that breaks its way out, through the bushes).
         long dx = bestNode.x - startX, dy = bestNode.y - startY, dz = bestNode.z - startZ;
         if (dx * dx + dy * dy + dz * dz <= MIN_DIST_PATH * MIN_DIST_PATH) {
-            return PathCalcResult.failure(PathCalcResult.FailureReason.NO_PATH, nodesExplored);
+            PathNode startNode = visitedNodes.get(posKey(startX, startY, startZ));
+            boolean halved = startNode != null && bestNode.heuristic <= startNode.heuristic * 0.5;
+            if (!halved) return PathCalcResult.failure(PathCalcResult.FailureReason.NO_PATH, nodesExplored);
         }
 
         // Build a partial path to the best node
