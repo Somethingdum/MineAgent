@@ -394,7 +394,13 @@ public final class GameKnowledge {
      */
     public static Have have(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except, String job, int keepFood,
                             int keepTorches) {
-        Have h = haveAll(sp, loop, except);
+        return have(sp, loop, except, job, keepFood, keepTorches, true);
+    }
+
+    /** As above; {@code ground} false leaves out what lies on the ground (a craft found it wasn't to be had). */
+    public static Have have(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except, String job, int keepFood,
+                            int keepTorches, boolean ground) {
+        Have h = haveAll(sp, loop, except, ground);
         Map<String, Integer> carried = keepFood > 0 || keepTorches > 0
                 ? Reserves.afterFloors(h.carried(), foods().keySet(), keepFood, keepTorches) : h.carried();
         Map<String, Integer> stored = loop != null && job != null ? loop.itemReservations().free(h.stored(), job) : h.stored();
@@ -402,6 +408,10 @@ public final class GameKnowledge {
     }
 
     private static Have haveAll(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except) {
+        return haveAll(sp, loop, except, true);
+    }
+
+    private static Have haveAll(ServerPlayer sp, com.mineagent.engine.loop.AgentLoop loop, BlockPos except, boolean ground) {
         ServerLevel level = sp.serverLevel();
         String dim = level.dimension().location().toString();
         Map<String, Integer> carried = new HashMap<>();
@@ -427,7 +437,7 @@ public final class GameKnowledge {
         BlockPos at = sp.blockPosition();
         // Closest source first (MA7.6): what lies on the ground near it counts as what it has; the job picks it up.
         for (var e : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(at).inflate(GROUND, 6, GROUND),
-                x -> x.isAlive() && com.mineagent.engine.survival.Manners.mayTake(x, sp)
+                x -> ground && x.isAlive() && com.mineagent.engine.survival.Manners.mayTake(x, sp)
                         && !com.mineagent.engine.world.AfkFarms.protects(level.dimension().location().toString(), x.getBlockX(), x.getBlockY(), x.getBlockZ()))) {
             carried.merge(id(e.getItem().getItem()), e.getItem().getCount(), Integer::sum);
         }

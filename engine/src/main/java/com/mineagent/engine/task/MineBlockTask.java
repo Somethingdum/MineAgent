@@ -299,14 +299,27 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
     private void replant(net.minecraft.server.level.ServerPlayer sp, BlockPos at) {
         var was = breakingState;
         breakingState = null;
-        if (was == null || !com.mineagent.engine.settings.Switches.replantTrees()) return;
-        var sapling = SAPLINGS.get(was.getBlock());
-        if (sapling == null) return;
+        if (!com.mineagent.engine.settings.Switches.replantTrees()) return;
         var level = sp.serverLevel();
-        if (!level.getBlockState(at.below()).is(net.minecraft.tags.BlockTags.DIRT) || !level.getBlockState(at).isAir()) return;
-        if (ProductionTask.count(sp, sapling.asItem()) == 0) return;
-        com.mineagent.engine.act.Placement.placeBlock(sp, at, sapling.defaultBlockState());
+        if (was != null && pendingBase == null && SAPLINGS.containsKey(was.getBlock())
+                && level.getBlockState(at.below()).is(net.minecraft.tags.BlockTags.DIRT)) {
+            pendingBase = at.immutable();
+            pendingSapling = SAPLINGS.get(was.getBlock());
+        }
+        if (pendingBase == null) return;
+        // Only once the tree is down: a sapling at the trunk's foot fills the cell it stands in to reach the high logs.
+        for (int up = 1; up <= 12; up++) {
+            if (level.getBlockState(pendingBase.above(up)).is(net.minecraft.tags.BlockTags.LOGS)) return;
+        }
+        BlockPos p = pendingBase;
+        pendingBase = null;
+        if (!level.getBlockState(p).isAir() || ProductionTask.count(sp, pendingSapling.asItem()) == 0) return;
+        com.mineagent.engine.act.Placement.placeBlock(sp, p, pendingSapling.defaultBlockState());
     }
+
+    /** The foot of the tree it is felling, to plant when the last log above it is down. */
+    private BlockPos pendingBase;
+    private net.minecraft.world.level.block.Block pendingSapling;
 
     private BlockPos trunkBase(BlockPos log) {
         var level = TaskContext.serverPlayer(player).serverLevel();

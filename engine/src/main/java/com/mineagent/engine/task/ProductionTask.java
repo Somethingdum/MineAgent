@@ -130,7 +130,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 keepTorches = Math.min(com.mineagent.engine.settings.Switches.readyTorches(), count(sp, net.minecraft.world.item.Items.TORCH));
             }
         }
-        return GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos, record.toolCallId(), keepFood, keepTorches);
+        return GameKnowledge.have(sp, TaskContext.agentLoop(player), chestPos, record.toolCallId(), keepFood, keepTorches, craftReplans == 0);
     }
 
     /** What it may put in the chest of this item: what it carries less the trip food and torches it keeps. */
