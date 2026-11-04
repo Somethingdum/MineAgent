@@ -905,18 +905,33 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     }
 
     /**
-     * Nothing it can't walk through between two cells at one height (a fence, a wall, a block): a furnace put down over
-     * a fence is one it can reach from here and never walk back to.
+     * A furnace at {@code to} is one it can walk back to from {@code from}: a cell beside it reached on foot within 8
+     * blocks, through doors and gates but never over a fence or a wall (a furnace put down over a fence is in reach from
+     * where it stands and nowhere it can walk back to).
      */
     static boolean sameSide(ServerLevel level, BlockPos from, BlockPos to) {
-        double dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
-        int steps = (int) Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) * 2);
-        for (int i = 1; i < steps; i++) {
-            BlockPos c = BlockPos.containing(from.getX() + 0.5 + dx * i / steps, from.getY(), from.getZ() + 0.5 + dz * i / steps);
-            if (c.equals(to) || c.equals(from)) continue;
-            if (!BlockHelper.isPassable(level.getBlockState(c))) return false;
+        java.util.ArrayDeque<BlockPos> todo = new java.util.ArrayDeque<>();
+        java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+        todo.add(from);
+        seen.add(from);
+        while (!todo.isEmpty() && seen.size() < 800) {
+            BlockPos c = todo.poll();
+            if (Math.abs(c.getX() - to.getX()) + Math.abs(c.getZ() - to.getZ()) == 1 && Math.abs(c.getY() - to.getY()) <= 1) return true;
+            for (net.minecraft.core.Direction d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    BlockPos n = c.relative(d).above(dy);
+                    if (n.equals(to) || Math.max(Math.abs(n.getX() - from.getX()), Math.abs(n.getZ() - from.getZ())) > 8 || !seen.add(n)) continue;
+                    if (walkable(level, n) && walkable(level, n.above()) && BlockHelper.canStandOn(level.getBlockState(n.below()))) todo.add(n);
+                }
+            }
         }
-        return true;
+        return false;
+    }
+
+    private static boolean walkable(ServerLevel level, BlockPos p) {
+        var st = level.getBlockState(p);
+        return BlockHelper.isPassable(st) || st.getBlock() instanceof net.minecraft.world.level.block.DoorBlock
+                || st.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock;
     }
 
     /** The pillar it put up by a golem: blocks placed, the cell the next goes in, its ticks up there. */
