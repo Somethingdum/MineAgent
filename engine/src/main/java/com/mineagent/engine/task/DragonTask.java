@@ -106,6 +106,7 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
                     }
                     nav.cancel();
                     TaskContext.inputDriver(player).clear();
+                    bowInHand(sp);
                     BowShot.tick(sp, crystal);
                     if (++crystalTicks > 1_600) { // shot and shot and still there: the next
                         caged++;
@@ -140,6 +141,7 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
                     if (sp.distanceTo(dragon) <= SHOT && sp.hasLineOfSight(dragon)) {
                         nav.cancel();
                         TaskContext.inputDriver(player).clear();
+                        bowInHand(sp);
                         BowShot.tick(sp, dragon);
                         return TaskState.RUNNING;
                     }
@@ -158,6 +160,11 @@ public class DragonTask extends CompanionTask<DragonTask.DragonRecord> {
         } catch (RuntimeException e) {
             return end(false, "something went wrong: " + e.getMessage());
         }
+    }
+
+    /** The bow into its main hand (the shot draws only a bow held there). */
+    private void bowInHand(ServerPlayer sp) {
+        if (!(sp.getMainHandItem().getItem() instanceof net.minecraft.world.item.BowItem)) TaskContext.selectInventoryItem(player, "minecraft:bow");
     }
 
     /** Its breath on the ground near: a step out of it first. True while it moves. */

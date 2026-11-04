@@ -134,7 +134,7 @@ public class CompanionGameTests implements FabricGameTest {
         System.out.println("[SCENE " + what + "] tick " + helper.getTick() + ": at "
                 + rel(helper, feet).toShortString() + String.format(java.util.Locale.ROOT, " (y %.2f on %s)", s.body().getY(),
                         net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(under.getBlock()).getPath()) + ", " + control
-                + (s.body().isSleeping() ? ", asleep" : ""));
+                + (s.loop().doing().isEmpty() ? "" : " (" + s.loop().doing() + ")") + (s.body().isSleeping() ? ", asleep" : ""));
     }
 
     /** A scene's failure, also printed, so the reason is in CI's log (the report file is not). */
@@ -2774,9 +2774,10 @@ public class CompanionGameTests implements FabricGameTest {
         Scene s = scene(helper, "Pioneer");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         field(helper, 6);
-        // Five sheep: shearing gives 1 to 3 wool each, and two beds take six (two of each kind are left alive).
-        for (int i = 0; i < 5; i++) {
-            var sh = helper.spawn(EntityType.SHEEP, new BlockPos(1 + i * 2, 1, 12));
+        // Eight sheep: two of each kind are left alone to breed, and shearing gives 1 to 3 wool each, so six shorn give the
+        // six wool two beds take, whatever the dice say.
+        for (int i = 0; i < 8; i++) {
+            var sh = helper.spawn(EntityType.SHEEP, new BlockPos(1 + (i % 6) * 2, 1, 12 + (i / 6) * 2));
             sh.setColor(net.minecraft.world.item.DyeColor.WHITE);
         }
         var inv = s.body().getInventory();

@@ -4562,6 +4562,12 @@ public class AgentLoop {
         queueOrders("prime the world, then make a farm, then make a slime farm");
     }
 
+    /** What its body's task last said it is doing (its snapshot's stage), or "" when idle: for the game tests' traces. */
+    public String doing() {
+        LiveBodyState b = liveBodyState.get();
+        return b == null || b.snapshot() == null || b.snapshot().stage() == null ? "" : b.snapshot().stage();
+    }
+
     /** Mobs its fighting leaves be (a zombie villager it is curing), by id. */
     private final java.util.Set<UUID> spared = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
