@@ -60,7 +60,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
     private Phase phase = Phase.FIND;
     private BlockPos site, triedAt;
     private final List<BlockPos> chests = new ArrayList<>();
-    private int index, ticks, opened, skipped;
+    private int index, ticks, opened, skipped, openTries;
     private final Map<String, Integer> got = new LinkedHashMap<>();
     private String outcome = "";
 
@@ -145,6 +145,7 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         opened++;
                         index++;
                         ticks = 0;
+                        openTries = 0;
                         return TaskState.RUNNING;
                     }
                     if (!(level.getBlockEntity(c) instanceof RandomizableContainerBlockEntity rc)) {
@@ -164,13 +165,17 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         ticks = 0;
                         return TaskState.RUNNING;
                     }
-                    if (!sp.canInteractWithBlock(c, 0.0)) {
+                    // Near enough by the chest's middle (as the opening measures it), with a step to spare.
+                    // A few tries that didn't open it (something between): right up to it.
+                    double reach = openTries > 8 ? 1.8 : 3.5;
+                    if (c.distToCenterSqr(sp.getEyePosition()) > reach * reach) {
                         if (ticks > 900) { // no way to it
                             index++;
                             ticks = 0;
+                            openTries = 0;
                             return TaskState.RUNNING;
                         }
-                        if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(c.getX(), c.getY(), c.getZ(), 2);
+                        if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(c.getX(), c.getY(), c.getZ(), openTries > 8 ? 1 : 2);
                         nav.tick();
                         return TaskState.RUNNING;
                     }
@@ -185,11 +190,13 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
                         opened++;
                         index++;
                         ticks = 0;
+                        openTries = 0;
                         return TaskState.RUNNING;
                     }
-                    if (!open && ++ticks > 60) {
+                    if (!open && ++openTries > 30) {
                         index++;
                         ticks = 0;
+                        openTries = 0;
                     }
                     return TaskState.RUNNING;
                 }
