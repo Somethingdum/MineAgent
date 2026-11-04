@@ -956,7 +956,8 @@ public class AgentLoop {
         // evidence, but publish a null task id so the next decision sees an
         // idle executor instead of treating SUCCESS/FAILED as body occupancy.
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
-                || taskId.startsWith("build-") || taskId.startsWith("hunt-"))) {
+                || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
+                || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1369,6 +1370,7 @@ public class AgentLoop {
                 haltNow();
                 standDown();
                 journal.record("order", "light up the area", currentGameTickSafe());
+                orderGoal("light up the area");
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LightTask.LightRecord(
                         "light-" + UUID.randomUUID(), center, c.count() == null ? 8 : c.count()), reply -> { });
                 return true;
@@ -1419,6 +1421,7 @@ public class AgentLoop {
             }
             case ENCHANT -> {
                 journal.record("order", "enchant " + c.value(), currentGameTickSafe());
+                orderGoal("enchant your " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.EnchantTask.EnchantRecord(
                         "enchant-" + UUID.randomUUID(), c.value()), reply -> { });
                 return true;
@@ -1428,6 +1431,7 @@ public class AgentLoop {
                         : com.mineagent.engine.planning.production.GameKnowledge.itemFor(c.value());
                 if (want == null || want.startsWith(com.mineagent.engine.planning.production.GameKnowledge.ANY)) return false;
                 journal.record("order", "trade for " + c.value(), currentGameTickSafe());
+                orderGoal("trade for " + c.value());
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
                 return true;
@@ -1464,18 +1468,21 @@ public class AgentLoop {
                     if (animal == null) return false;
                 }
                 journal.record("order", "breed " + w, currentGameTickSafe());
+                orderGoal("breed the " + w);
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BreedTask.BreedRecord(
                         "breed-" + UUID.randomUUID(), animal, 1), reply -> { });
                 return true;
             }
             case BREW -> {
                 journal.record("order", "brew " + c.value().replace('_', ' '), currentGameTickSafe());
+                orderGoal("brew a potion of " + c.value().replace('_', ' '));
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BrewTask.BrewRecord(
                         "brew-" + UUID.randomUUID(), c.value()), reply -> { });
                 return true;
             }
             case PORTAL -> {
                 journal.record("order", "build a nether portal", currentGameTickSafe());
+                orderGoal("build a nether portal");
                 speakToOwner("On it: a nether portal.");
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.PortalTask.PortalRecord(
                         "portal-" + UUID.randomUUID()), reply -> { });
@@ -3743,7 +3750,10 @@ public class AgentLoop {
         var k = c.get().kind();
         return k == com.mineagent.engine.chat.CommandParser.Kind.PRODUCE || k == com.mineagent.engine.chat.CommandParser.Kind.MINE_ORE
                 || k == com.mineagent.engine.chat.CommandParser.Kind.GIVE || k == com.mineagent.engine.chat.CommandParser.Kind.BUILD
-                || k == com.mineagent.engine.chat.CommandParser.Kind.HUNT_PLAYER
+                || k == com.mineagent.engine.chat.CommandParser.Kind.HUNT_PLAYER || k == com.mineagent.engine.chat.CommandParser.Kind.LIGHT
+                || k == com.mineagent.engine.chat.CommandParser.Kind.PORTAL || k == com.mineagent.engine.chat.CommandParser.Kind.ENCHANT
+                || k == com.mineagent.engine.chat.CommandParser.Kind.TRADE || k == com.mineagent.engine.chat.CommandParser.Kind.BREW
+                || k == com.mineagent.engine.chat.CommandParser.Kind.BREED
                 ? c : java.util.Optional.empty();
     }
 

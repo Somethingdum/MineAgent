@@ -75,11 +75,14 @@ public class EnchantTask extends CompanionTask<EnchantTask.EnchantRecord> {
                         table = spot;
                     }
                     shelves.clear();
-                    for (int dx = -2; dx <= 2; dx++) {
-                        for (int dz = -2; dz <= 2; dz++) {
-                            if (Math.abs(dx) != 2 && Math.abs(dz) != 2) continue;
-                            if (dx == 0 && dz == 2) continue; // the way in
-                            shelves.add(table.offset(dx, 0, dz));
+                    // The ring on the ground first, then the ring above it (for any that wouldn't go in below).
+                    for (int dy = 0; dy <= 1; dy++) {
+                        for (int dx = -2; dx <= 2; dx++) {
+                            for (int dz = -2; dz <= 2; dz++) {
+                                if (Math.abs(dx) != 2 && Math.abs(dz) != 2) continue;
+                                if (dx == 0 && dz == 2) continue; // the way in
+                                shelves.add(table.offset(dx, dy, dz));
+                            }
                         }
                     }
                     phase = Phase.SHELVES;
@@ -88,7 +91,7 @@ public class EnchantTask extends CompanionTask<EnchantTask.EnchantRecord> {
                     return TaskState.RUNNING;
                 }
                 case SHELVES -> {
-                    while (index < shelves.size() && ProductionTask.count(sp, Items.BOOKSHELF) > 0) {
+                    while (index < shelves.size() && ProductionTask.count(sp, Items.BOOKSHELF) > 0 && shelvesThere(level) < 15) {
                         BlockPos p = shelves.get(index);
                         var st = level.getBlockState(p);
                         if (st.is(Blocks.BOOKSHELF) || !st.isAir() && !st.canBeReplaced()) {
@@ -101,7 +104,9 @@ public class EnchantTask extends CompanionTask<EnchantTask.EnchantRecord> {
                             return TaskState.RUNNING;
                         }
                         if (++tries > 30) {
-                            index++; // that one can't go in from here: fewer shelves, a lower level
+                            String why = Placement.whyNot(sp, p, Blocks.BOOKSHELF.defaultBlockState());
+                            System.out.println("[MineAgent] enchanting: a shelf not at " + p.subtract(table).toShortString() + ": " + why);
+                            index++; // that one can't go in from here: the next, or the ring above
                             tries = 0;
                         }
                         return TaskState.RUNNING;
@@ -155,8 +160,8 @@ public class EnchantTask extends CompanionTask<EnchantTask.EnchantRecord> {
                 break;
             }
         }
+        int cost = best >= 0 ? menu.costs[best] : 0; // read before: the menu clears its costs once it has enchanted
         boolean done = best >= 0 && menu.clickMenuButton(sp, best);
-        int cost = best >= 0 ? menu.costs[best] : 0;
         // Both back in its pack.
         ItemStack out = menu.getSlot(0).getItem().copy();
         ItemStack left = menu.getSlot(1).getItem().copy();

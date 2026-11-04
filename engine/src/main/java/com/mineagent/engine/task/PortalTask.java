@@ -122,7 +122,9 @@ public class PortalTask extends CompanionTask<PortalTask.PortalRecord> {
                 case GO -> {
                     tries = 0;
                     BlockPos s = stand();
-                    if (ProductionTask.standing(sp).distSqr(s) <= 1) {
+                    // On the spot itself, its body clear of the frame's row (a block off, it leans into it).
+                    var frameRow = new net.minecraft.world.phys.AABB(Vec3.atLowerCornerOf(at(0, 1)), Vec3.atLowerCornerOf(at(3, 5)).add(1, 1, 1));
+                    if (ProductionTask.standing(sp).equals(s) && !sp.getBoundingBox().intersects(frameRow)) {
                         nav.cancel();
                         TaskContext.inputDriver(player).clear();
                         phase = Phase.BUILD;
@@ -304,8 +306,7 @@ public class PortalTask extends CompanionTask<PortalTask.PortalRecord> {
         BlockPos far = c.relative(along, 3).above(5);
         var box = new net.minecraft.world.phys.AABB(Vec3.atLowerCornerOf(c), Vec3.atLowerCornerOf(far).add(1, 1, 1))
                 .expandTowards(Vec3.atLowerCornerOf(facing.getOpposite().getNormal()).scale(3));
-        if (!level.getEntitiesOfClass(net.minecraft.world.entity.player.Player.class, box, p -> !com.mineagent.engine.MineAgentEngine
-                .isCompanionPlayer(p.getUUID())).isEmpty()) return false;
+        if (!level.getEntitiesOfClass(net.minecraft.world.entity.player.Player.class, box, p -> true).isEmpty()) return false;
         for (int x = 0; x < 4; x++) {
             BlockPos col = c.relative(along, x);
             if (!BlockHelper.canStandOn(level.getBlockState(col.below()))) return false;
