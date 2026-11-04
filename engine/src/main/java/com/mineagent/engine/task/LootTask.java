@@ -528,11 +528,21 @@ public class LootTask extends CompanionTask<LootTask.LootRecord> {
             }
             var near = drops.get(0);
             for (var d : drops) if (d.distanceToSqr(sp) < near.distanceToSqr(sp)) near = d;
+            if (Boolean.getBoolean("mineagent.traceWork") && pickTicks % 100 == 1) {
+                System.out.println("[MineAgent] loot: picking up " + drops.size() + " TNT drops, the nearest at " + near.blockPosition().toShortString()
+                        + ", from " + sp.blockPosition().toShortString() + ", navigating " + nav.isNavigating());
+            }
             if (ticks % 20 == 1 || !nav.isNavigating()) nav.navigateNear(near.getBlockX(), near.getBlockY(), near.getBlockZ(), 0);
             nav.tick();
             return TaskState.RUNNING;
         }
         BlockPos target = list.get(i);
+        if (Boolean.getBoolean("mineagent.traceWork") && ticks % 100 == 1) {
+            System.out.println("[MineAgent] loot: TNT step " + (tntIndex + 1) + " of " + (uncover.size() + tnt.size()) + ", "
+                    + level.getBlockState(target).getBlock() + " at " + target.toShortString() + " from " + sp.blockPosition().toShortString()
+                    + " (on " + level.getBlockState(sp.blockPosition().below()).getBlock() + "), standing spot " + (standAt == null ? "none" : standAt.toShortString())
+                    + ", " + String.format("%.1f", Math.sqrt(target.distToCenterSqr(sp.getEyePosition()))) + " off: " + BlockDigger.assessBreak(sp, target).status());
+        }
         if (ticks > 600) {
             // It can't get at this one: the next.
             tntIndex++;

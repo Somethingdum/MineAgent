@@ -1868,10 +1868,11 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
         inv.setItem(1, new ItemStack(Items.STONE_AXE));
         inv.setItem(2, new ItemStack(Items.STONE_SWORD));
-        inv.setItem(3, new ItemStack(Items.COAL, 8));
+        // Enough coal and sticks for the torches it keeps ready as well (it makes 16 while they're away).
+        inv.setItem(3, new ItemStack(Items.COAL, 24));
         inv.setItem(4, new ItemStack(Items.BREAD, 16));
         inv.setItem(5, new ItemStack(Items.COBBLESTONE, 4));
-        inv.setItem(6, new ItemStack(Items.STICK, 4));
+        inv.setItem(6, new ItemStack(Items.STICK, 16));
         inv.setItem(7, new ItemStack(Items.CRAFTING_TABLE));
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "afk"));
         boolean[] back = {false};

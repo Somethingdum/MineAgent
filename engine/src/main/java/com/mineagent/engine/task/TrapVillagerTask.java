@@ -81,7 +81,9 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     BlockPos job = site.isPresent() && site.get().dimension() == level.dimension() ? site.get().pos()
                             : record.jobSite != null ? BlockPos.of(record.jobSite) : null;
                     if (job == null) return end(false, "it has no job site to build the cell round");
-                    layout = choose(level, job);
+                    // Working beside it already: where it stands is the cell.
+                    layout = toward(level, job, v.blockPosition());
+                    if (layout == null) layout = choose(level, job);
                     if (layout == null) return end(false, "there's no room round its job site for a cell");
                     phase = Phase.BUILD;
                     ticks = 0;
@@ -90,6 +92,21 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                 case BUILD -> {
                     if (!Placement.hasSupportBlock(sp)) return end(false, "I have no blocks to build the cell with");
                     if (ticks > 2_400) return end(false, "I couldn't build the cell");
+                    // It took its job before the cell was up and works from a spot beside it that is to be a wall (a
+                    // librarian stays a long while): that spot is the cell, the cell turned to it, what is up kept.
+                    BlockPos vAt = v.blockPosition();
+                    if (!vAt.equals(at(layout.cell())) && layout.walls().contains(new VillagerCell.Pos(vAt.getX(), vAt.getY(), vAt.getZ()))) {
+                        if (++offCell > 100) {
+                            var turned = toward(level, at(layout.jobSite()), vAt);
+                            if (turned != null) {
+                                layout = turned;
+                                waitAt = null;
+                            }
+                            offCell = 0;
+                        }
+                    } else {
+                        offCell = 0;
+                    }
                     boolean waiting = false, underMe = false;
                     for (var w : layout.walls()) {
                         BlockPos p = at(w);
@@ -208,6 +225,19 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
     }
 
     private BlockPos waitAt;
+    private int offCell;
+
+    /**
+     * The cell where the villager stands, when that is beside its job site at its height (the way in and the place to
+     * trade from clear); null otherwise.
+     */
+    private static VillagerCell.Layout toward(ServerLevel level, BlockPos job, BlockPos villager) {
+        int dx = villager.getX() - job.getX(), dz = villager.getZ() - job.getZ();
+        if (villager.getY() != job.getY() || Math.abs(dx) + Math.abs(dz) != 1) return null;
+        var l = VillagerCell.plan(job.getX(), job.getY(), job.getZ(), dx, dz);
+        if (!open(level, at(l.way())) || !open(level, at(l.tradeFrom()))) return null;
+        return l;
+    }
 
     /** Outside the door and a step to one side (off the way in), else two out on the line. */
     private static BlockPos waitSpot(ServerLevel level, VillagerCell.Layout l) {
