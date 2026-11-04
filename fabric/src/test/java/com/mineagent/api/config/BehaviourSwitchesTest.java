@@ -77,6 +77,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.lavaFuel(), "lava buckets for big smelts");
         assertTrue(d.keepPhrases(), "learned phrases kept");
         assertTrue(d.talkSummary(), "a running summary of talks");
+        assertTrue(d.fillHoles(), "holes near home filled");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

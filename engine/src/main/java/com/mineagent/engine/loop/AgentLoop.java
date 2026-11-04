@@ -2803,6 +2803,7 @@ public class AgentLoop {
             if (gameTick % 100L == 0L) goldInTheNether(player);
             if (gameTick % 100L == 0L) schedule(player);
             if (gameTick % 100L == 0L) stayNearHome(player);
+            if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3504,6 +3505,72 @@ public class AgentLoop {
         if (dx * dx + dz * dz <= (double) idleRadius * idleRadius) return;
         journal.record("home", "back within " + idleRadius + " blocks of home", currentGameTickSafe());
         goTo(home, List.of(), false);
+    }
+
+    // ── Leaving no trace: holes near home filled (SMH plan 70, MA9.4) ──
+
+    private final com.mineagent.engine.world.Holes holes = new com.mineagent.engine.world.Holes();
+
+    public com.mineagent.engine.world.Holes holes() {
+        return holes;
+    }
+
+    /**
+     * It broke a block: kept as a hole to fill when it is the top of the ground (the sky above it), near home (a home it
+     * remembers, or the one it was told to stay near), not what its order is for ("make me 64 dirt" keeps its dirt), and
+     * not in a place it was told to keep out of. Off with {@code behaviour.fillHoles}.
+     */
+    public void noteDug(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (!com.mineagent.engine.settings.Switches.fillHoles()) return;
+        boolean ground = state.is(net.minecraft.tags.BlockTags.DIRT) || state.is(net.minecraft.world.level.block.Blocks.GRASS_BLOCK)
+                || state.is(net.minecraft.tags.BlockTags.BASE_STONE_OVERWORLD) || state.is(net.minecraft.world.level.block.Blocks.SAND)
+                || state.is(net.minecraft.world.level.block.Blocks.GRAVEL) || state.is(net.minecraft.world.level.block.Blocks.COBBLESTONE);
+        if (!ground || !level.canSeeSky(pos.above())) return;
+        String dim = level.dimension().location().toString();
+        if (!nearHome(dim, pos)) return;
+        String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+        String name = id.substring(id.indexOf(':') + 1).replace('_', ' ');
+        String goal = goalBook.active().map(g -> g.text().toLowerCase(java.util.Locale.ROOT)).orElse("");
+        if (!goal.isEmpty() && (goal.contains(name) || goal.contains(name.replace(" block", "")))) return;
+        holes.dug(dim, pos.getX(), pos.getY(), pos.getZ(), id, currentGameTickSafe());
+    }
+
+    private boolean nearHome(String dim, net.minecraft.core.BlockPos pos) {
+        var home = idleHome;
+        if (home != null && home.dim().equals(dim)) {
+            double dx = pos.getX() - home.x(), dz = pos.getZ() - home.z();
+            if (dx * dx + dz * dz <= (double) (idleRadius + 16) * (idleRadius + 16)) return true;
+        }
+        for (var p : placeKeeper.memory().places()) {
+            if (!"home".equals(p.kind()) || !p.at().dim().equals(dim)) continue;
+            double dx = pos.getX() - p.at().x(), dz = pos.getZ() - p.at().z();
+            if (dx * dx + dz * dz <= 48.0 * 48.0) return true;
+        }
+        return false;
+    }
+
+    /** With nothing to do, the holes near it filled (at most 16 at a time). */
+    private void fillHolesWhenIdle(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || holes.size() == 0 || !com.mineagent.engine.settings.Switches.fillHoles()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        String dim = self.serverLevel().dimension().location().toString();
+        var level = self.serverLevel();
+        List<int[]> todo = new ArrayList<>();
+        for (var h : holes.near(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ(), 24, 32)) {
+            var p = new net.minecraft.core.BlockPos(h.x(), h.y(), h.z());
+            if (!level.isLoaded(p)) continue;
+            if (!level.getBlockState(p).canBeReplaced()) {
+                holes.filled(dim, h.x(), h.y(), h.z()); // filled already
+                continue;
+            }
+            if (todo.size() < 16) todo.add(new int[] {h.x(), h.y(), h.z()});
+        }
+        if (todo.isEmpty()) return;
+        journal.record("tidy", "filling " + todo.size() + " holes near home", currentGameTickSafe());
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.FillHolesTask.FillRecord(
+                "fill-holes-" + UUID.randomUUID(), todo), reply -> { });
     }
 
     /** As kept with the world: the schedule, and the home to stay near. */

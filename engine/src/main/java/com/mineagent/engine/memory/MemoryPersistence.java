@@ -244,6 +244,7 @@ public class MemoryPersistence {
             if (sched[0] != null) data.addProperty("dayOrder", sched[0]);
             if (sched[1] != null) data.addProperty("nightOrder", sched[1]);
             if (sched[2] != null) data.addProperty("idleHome", sched[2]);
+            data.add("holes", GSON.toJsonTree(loop.holes().exportState()));
         }
         writeAtomic(memoryDir.resolve(TALKS_FILE), GSON.toJson(data));
     }
@@ -269,6 +270,9 @@ public class MemoryPersistence {
                 loop.scheduleState(data.has("dayOrder") ? data.get("dayOrder").getAsString() : null,
                         data.has("nightOrder") ? data.get("nightOrder").getAsString() : null,
                         data.has("idleHome") ? data.get("idleHome").getAsString() : null);
+                if (data.has("holes") && data.get("holes").isJsonObject()) {
+                    loop.holes().importState(GSON.fromJson(data.get("holes"), com.mineagent.engine.world.Holes.State.class));
+                }
             }
             var purposes = chestPurposes;
             if (purposes != null && data.has("chestPurposes") && data.get("chestPurposes").isJsonObject()) {

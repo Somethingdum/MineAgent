@@ -118,7 +118,8 @@ public final class PlayerFightChain implements TaskChain {
             }
             var me = new PlayerFightBrain.Me(sp.getHealth(), charge, sp.onGround(), falling, sp.isSprinting(), chargedTicks,
                     axe, bow, arrows, apple, food, sp.getFoodData().getFoodLevel(), shield, totem,
-                    sp.getOffhandItem().is(Items.TOTEM_OF_UNDYING), mace, wind, backingOff);
+                    sp.getOffhandItem().is(Items.TOTEM_OF_UNDYING), mace, wind, backingOff,
+                    sp.getInventory().countItem(Items.ENDER_PEARL) > 0 && !sp.getCooldowns().isOnCooldown(Items.ENDER_PEARL));
             boolean shieldUp = p.isUsingItem() && p.getUseItem().getItem() instanceof ShieldItem;
             double distance = sp.getEyePosition().distanceTo(p.getBoundingBox().getCenter());
             var them = new PlayerFightBrain.Foe(distance, shieldUp, sp.hasLineOfSight(p), p.swinging, friendBeside(p, sp));
@@ -277,6 +278,22 @@ public final class PlayerFightChain implements TaskChain {
                 cancelNav();
                 move(sp, input, 0.0f, 0.0f, false);
                 eat(sp);
+            }
+            case PEARL -> {
+                // Away from them, a shallow throw: it lands about twenty blocks off.
+                cancelNav();
+                shieldDown(sp);
+                Vec3 away = sp.position().subtract(p.position());
+                if (away.horizontalDistanceSqr() < 1e-6) away = new Vec3(1, 0, 0);
+                away = away.normalize();
+                float yaw = (float) Math.toDegrees(Math.atan2(-away.x, away.z));
+                sp.setYRot(yaw);
+                sp.setYHeadRot(yaw);
+                sp.setXRot(-20.0f);
+                if (!TaskContext.selectInventoryItemForHand(companion, "minecraft:ender_pearl", InteractionHand.MAIN_HAND)) return;
+                Interaction.useItem(sp, InteractionHand.MAIN_HAND);
+                TaskContext.syncInventory(sp);
+                System.out.println("[MineAgent] pearl away from " + p.getName().getString() + " at " + String.format(java.util.Locale.ROOT, "%.1f", sp.getHealth()) + " health");
             }
             case LAUNCH -> {
                 cancelNav();

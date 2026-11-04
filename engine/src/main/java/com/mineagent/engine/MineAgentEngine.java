@@ -329,7 +329,21 @@ public final class MineAgentEngine {
      */
     public static void onPlayerBlock(net.minecraft.world.entity.player.Player player, net.minecraft.server.level.ServerLevel level,
                                      net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState state, boolean placed) {
-        if (player == null || state == null || isCompanionPlayer(player.getUUID())) return;
+        if (player == null || state == null) return;
+        if (isCompanionPlayer(player.getUUID())) {
+            // Its own digging: a hole in the ground near home, to fill later (MA9.4).
+            if (!placed) {
+                for (CompanionState s : List.copyOf(COMPANIONS.values())) {
+                    try {
+                        var sp = s.companion.serverPlayer();
+                        if (sp != null && sp.getUUID().equals(player.getUUID())) s.loop.noteDug(level, pos, state);
+                    } catch (RuntimeException ignored) {
+                        // a courtesy
+                    }
+                }
+            }
+            return;
+        }
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
         long tick = level.getGameTime();
         for (CompanionState s : getCompanionsByOwner(player.getUUID())) {

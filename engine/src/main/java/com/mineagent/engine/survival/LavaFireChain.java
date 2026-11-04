@@ -77,6 +77,37 @@ public final class LavaFireChain implements TaskChain {
                 return;
             }
             ServerLevel level = sp.serverLevel();
+            // Fire resistance first (MA11.1): a potion of it drunk as it gets out; with it, lava and fire don't hurt.
+            if ((sp.isInLava() || sp.isOnFire()) && !sp.hasEffect(MobEffects.FIRE_RESISTANCE)) {
+                boolean drinking = sp.isUsingItem() && fireResistance(sp.getUseItem());
+                if (!drinking) {
+                    int potion = fireResistanceSlot(sp);
+                    if (potion >= 0) {
+                        hold(sp, potion);
+                        Interaction.useItem(sp, InteractionHand.MAIN_HAND);
+                        drinking = sp.isUsingItem();
+                        if (drinking) SurvivalBuiltin.bodyLog(companion).report("in the fire: drinking a potion of fire resistance");
+                    }
+                }
+                if (drinking && !sp.isInLava()) {
+                    input.clear(); // out of the lava already: the drink finishes, and the fire can't hurt then
+                    return;
+                }
+                if (drinking) {
+                    // Still in lava: on toward the shore while it drinks (no bucket now: that would put the potion away).
+                    if (goal == null || ++goalAge > 20 || !standable(level, goal)) {
+                        goal = nearest(level, sp.blockPosition(), false);
+                        goalAge = 0;
+                    }
+                    if (goal == null) {
+                        input.clear();
+                        input.setJumping(true);
+                    } else {
+                        walkAt(sp, input, Vec3.atBottomCenterOf(goal));
+                    }
+                    return;
+                }
+            }
             if (sp.isInLava()) {
                 // The nearest ground it can stand on, faced and jumped to.
                 if (goal == null || ++goalAge > 20 || !standable(level, goal)) {
@@ -246,6 +277,20 @@ public final class LavaFireChain implements TaskChain {
         if (level.getFluidState(p.above()).is(FluidTags.LAVA) || level.getFluidState(p.below()).is(FluidTags.LAVA)) return false;
         if (feet.getBlock() instanceof BaseFireBlock || head.getBlock() instanceof BaseFireBlock) return false;
         return BlockHelper.isPassable(feet) && BlockHelper.isPassable(head) && BlockHelper.canStandOn(below);
+    }
+
+    /** A potion of fire resistance (either length). */
+    static boolean fireResistance(ItemStack st) {
+        if (!st.is(Items.POTION)) return false;
+        var c = st.get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+        return c != null && (c.is(net.minecraft.world.item.alchemy.Potions.FIRE_RESISTANCE) || c.is(net.minecraft.world.item.alchemy.Potions.LONG_FIRE_RESISTANCE));
+    }
+
+    private static int fireResistanceSlot(ServerPlayer sp) {
+        var inv = sp.getInventory();
+        if (fireResistance(inv.getSelected())) return inv.selected;
+        for (int i = 0; i < Math.min(36, inv.getContainerSize()); i++) if (fireResistance(inv.getItem(i))) return i;
+        return -1;
     }
 
     private static int slotOf(ServerPlayer sp, net.minecraft.world.item.Item item) {

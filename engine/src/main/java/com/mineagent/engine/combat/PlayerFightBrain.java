@@ -51,7 +51,15 @@ public final class PlayerFightBrain {
     public record Me(double health, double charge, boolean onGround, boolean falling, boolean sprinting,
                      int chargedTicks, boolean hasAxe, boolean hasBow, int arrows, boolean hasGoldenApple,
                      boolean hasFood, int hunger, boolean hasShield, boolean hasTotem, boolean totemInHand,
-                     boolean hasMace, boolean hasWindCharge, boolean backingOff) {}
+                     boolean hasMace, boolean hasWindCharge, boolean backingOff, boolean hasPearl) {
+        public Me(double health, double charge, boolean onGround, boolean falling, boolean sprinting,
+                  int chargedTicks, boolean hasAxe, boolean hasBow, int arrows, boolean hasGoldenApple,
+                  boolean hasFood, int hunger, boolean hasShield, boolean hasTotem, boolean totemInHand,
+                  boolean hasMace, boolean hasWindCharge, boolean backingOff) {
+            this(health, charge, onGround, falling, sprinting, chargedTicks, hasAxe, hasBow, arrows, hasGoldenApple, hasFood, hunger,
+                    hasShield, hasTotem, totemInHand, hasMace, hasWindCharge, backingOff, false);
+        }
+    }
 
     public enum Weapon { MELEE, AXE, BOW, MACE, NONE }
 
@@ -75,8 +83,13 @@ public final class PlayerFightBrain {
         /** The totem into the off hand. */
         TOTEM,
         /** A wind charge at its feet, for a mace smash. */
-        LAUNCH
+        LAUNCH,
+        /** An ender pearl thrown away from them: out of a fight it is losing (the landing costs 5 health). */
+        PEARL
     }
+
+    /** A pearl's landing hurts this much: it is thrown only with more health than that left over. */
+    public static final double PEARL_HURT = 5.0;
 
     /** What to do this tick, with what in hand. */
     public record Plan(Step step, Weapon weapon, boolean sprint, int strafe) {}
@@ -88,6 +101,8 @@ public final class PlayerFightBrain {
         boolean low = me.health() <= BACK_OFF_AT || me.backingOff() && me.health() < BACK_AT;
         if (me.hasTotem() && !me.totemInHand() && me.health() <= 10.0) return new Plan(Step.TOTEM, melee, false, 0);
         if (low) {
+            // Losing, and they are on it: a pearl away, when the landing leaves it standing (MA10.6).
+            if (foe.distance() < 4.0 && me.hasPearl() && me.health() > PEARL_HURT + 1.0) return new Plan(Step.PEARL, Weapon.NONE, false, 0);
             if (foe.distance() < 6.0) return new Plan(Step.BACK_OFF, Weapon.NONE, true, 0);
             if (me.hasGoldenApple() || me.hasFood() && me.hunger() < 18) return new Plan(Step.HEAL, Weapon.NONE, false, 0);
             return new Plan(Step.BACK_OFF, Weapon.NONE, true, 0);

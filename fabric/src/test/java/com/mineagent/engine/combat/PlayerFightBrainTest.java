@@ -104,6 +104,17 @@ class PlayerFightBrainTest {
     }
 
     @Test
+    void aPearlAwayWhenLosingAndTheyAreOnIt() {
+        Me pearl = new Me(7, 1.0, true, false, false, 0, false, false, 0, false, false, 20, false, false, false, false, false, false, true);
+        assertEquals(Step.PEARL, PlayerFightBrain.decide(new Foe(2.5, false, true, true), pearl, 0).step());
+        assertEquals(Step.BACK_OFF, PlayerFightBrain.decide(new Foe(5.0, false, true, false), pearl, 0).step(), "not on it: just away");
+        Me tooLow = new Me(5, 1.0, true, false, false, 0, false, false, 0, false, false, 20, false, false, false, false, false, false, true);
+        assertNotEquals(Step.PEARL, PlayerFightBrain.decide(new Foe(2.5, false, true, true), tooLow, 0).step(), "the landing would finish it");
+        Me well = new Me(18, 1.0, true, false, false, 0, false, false, 0, false, false, 20, false, false, false, false, false, false, true);
+        assertNotEquals(Step.PEARL, PlayerFightBrain.decide(new Foe(2.5, false, true, true), well, 0).step(), "winning: it fights");
+    }
+
+    @Test
     void aTotemInTheOffHandWhenLow() {
         Me totem = new Me(9, 1.0, true, false, false, 0, false, false, 0, false, false, 20, true, true, false, false, false, false);
         assertEquals(Step.TOTEM, PlayerFightBrain.decide(new Foe(2.0, false, true, false), totem, 0).step());

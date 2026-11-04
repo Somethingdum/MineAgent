@@ -4230,4 +4230,53 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA11.1, fire resistance first: stepped into lava with a potion of it, drunk as it gets out; out, unhurt by fire. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_lava_potion", timeoutTicks = 200)
+    public void inLavaItDrinksFireResistance(GameTestHelper helper) {
+        Scene s = scene(helper, "Salamander");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 6; x <= 8; x++) for (int z = 6; z <= 8; z++) helper.setBlock(x, 0, z, Blocks.LAVA);
+        s.body().getInventory().setItem(4, net.minecraft.world.item.alchemy.PotionContents.createItemStack(Items.POTION,
+                net.minecraft.world.item.alchemy.Potions.FIRE_RESISTANCE));
+        BlockPos in = helper.absolutePos(new BlockPos(7, 0, 7));
+        s.body().teleportTo(helper.getLevel(), in.getX() + 0.5, in.getY(), in.getZ() + 0.5, 0.0f, 0.0f);
+        helper.onEachTick(() -> {
+            trace(helper, s, "lava potion");
+            var body = s.body();
+            boolean resisting = body.hasEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
+            if (body.isDeadOrDying() || resisting && !body.isInLava() || helper.getTick() >= 180) {
+                String how = "dead " + body.isDeadOrDying() + ", fire resistance " + resisting + ", in lava " + body.isInLava() + ", health " + body.getHealth();
+                tidy(s);
+                if (!body.isDeadOrDying() && resisting && !body.isInLava()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA9.4, leaving no trace: three holes it dug in the ground near home, filled when it has nothing to do. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fill_holes", timeoutTicks = 1000)
+    public void holesItDugNearHomeAreFilled(GameTestHelper helper) {
+        Scene s = scene(helper, "Tidier");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.DIRT, 8));
+        BlockPos[] holes = {new BlockPos(6, 0, 6), new BlockPos(7, 0, 6), new BlockPos(8, 0, 6)};
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "stay within 16 blocks of here when you're idle"));
+        helper.runAfterDelay(20, () -> {
+            for (BlockPos h : holes) s.body().gameMode.destroyBlock(helper.absolutePos(h));
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 30) return;
+            trace(helper, s, "fill holes");
+            int open = 0;
+            for (BlockPos h : holes) if (helper.getLevel().getBlockState(helper.absolutePos(h)).isAir()) open++;
+            if (open == 0 || helper.getTick() >= 980) {
+                String how = open + " holes still open; " + s.loop().holes().size() + " in its ledger; said: " + lastSaid(s, "");
+                MineAgentEngine.onPlayerChat(s.owner(), "you can wander");
+                tidy(s);
+                if (open == 0) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

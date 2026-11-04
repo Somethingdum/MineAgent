@@ -109,6 +109,12 @@ public final class TaskRegistration {
                 PutAwayTask::new
         );
 
+        // Holes near home filled (SMH plan 70, MA9.4)
+        CompanionTaskFactory.register(
+                FillHolesTask.FillRecord.class,
+                FillHolesTask::new
+        );
+
         // Fishing (SMH plan 70, MA8.5)
         CompanionTaskFactory.register(
                 FishTask.FishRecord.class,

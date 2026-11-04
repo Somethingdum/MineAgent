@@ -362,6 +362,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         var have = have(sp);
         String best = null;
         double bestCost = Double.POSITIVE_INFINITY;
+        StringBuilder seen = new StringBuilder();
         for (var e : GameKnowledge.foods().entrySet()) {
             if (foodsDone.contains(e.getKey())) continue;
             // Priced for 16, or for as many as it can make here (the cows near, less the two it leaves).
@@ -369,16 +370,23 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             var plan = ProductionPlanner.plan(book, have, e.getKey(), n, without);
             if (!plan.possible()) {
                 n = ProductionPlanner.most(book, have, e.getKey(), 16, without);
-                if (n <= 0) continue;
+                if (n <= 0) {
+                    if (e.getValue() >= 6f && seen.length() < 600) seen.append(' ').append(ProductionPlanner.name(e.getKey())).append(": ")
+                            .append(String.join("; ", plan.problems())).append(';');
+                    continue;
+                }
                 plan = ProductionPlanner.plan(book, have, e.getKey(), n, without);
                 if (!plan.possible()) continue;
             }
             double cost = plan.ticks() / (n * (double) Math.max(1f, e.getValue())) * (n < 16 ? 16.0 / n : 1.0);
+            if (seen.length() < 600) seen.append(' ').append(ProductionPlanner.name(e.getKey())).append(' ').append(n)
+                    .append(String.format(java.util.Locale.ROOT, " (%.0f);", cost));
             if (cost < bestCost) {
                 bestCost = cost;
                 best = e.getKey();
             }
         }
+        System.out.println("[MineAgent] food to make:" + seen + (without.isEmpty() ? "" : " (without " + without + ")"));
         return best;
     }
 
@@ -1248,8 +1256,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             return TaskState.RUNNING;
         }
         if (smeltStage == 0) {
-            // Where it works: here, the first time; back here after.
-            if (workSpot == null) workSpot = standing(sp);
+            // Where it works: by the furnaces it has near (put down for the last job), else here; back here after.
+            if (workSpot == null) workSpot = byFurnaces(sp, level);
             if (!standing(sp).equals(workSpot)) return walkTo(workSpot, 0);
             var station = station(sp);
             furnaces.removeIf(f -> !level.getBlockState(f).is(station) || furnacesOutOfReach.contains(f));
@@ -1402,6 +1410,31 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Times the fuel ran short in this job and it planned again. */
     private int fuelReplans;
+
+    /**
+     * Where to smelt: here when a furnace of the kind is within 12 (or it carries all it needs), else beside the nearest
+     * within 24 it can stand by, so the furnaces the plan counted are the ones it uses.
+     */
+    private BlockPos byFurnaces(ServerPlayer sp, ServerLevel level) {
+        BlockPos here = standing(sp);
+        var station = station(sp);
+        BlockPos nearest = null;
+        double best = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(here.offset(-24, -6, -24), here.offset(24, 6, 24))) {
+            if (!level.isLoaded(p) || !level.getBlockState(p).is(station) || furnacesOutOfReach.contains(p)) continue;
+            double d = p.distSqr(here);
+            if (d < best) {
+                best = d;
+                nearest = p.immutable();
+            }
+        }
+        if (nearest == null || best <= 12 * 12 || count(sp, station.asItem()) >= step.furnaces()) return here;
+        for (BlockPos c : ring(nearest, 1)) {
+            if (BlockHelper.isPassable(level.getBlockState(c)) && BlockHelper.isPassable(level.getBlockState(c.above()))
+                    && BlockHelper.canStandOn(level.getBlockState(c.below()))) return c.immutable();
+        }
+        return here;
+    }
     private static int[] without(int[] a, int i) {
         int[] out = new int[a.length - 1];
         System.arraycopy(a, 0, out, 0, i);
