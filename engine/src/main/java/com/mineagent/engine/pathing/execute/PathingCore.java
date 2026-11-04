@@ -89,6 +89,13 @@ public class PathingCore {
     private int pathSegments;
     private boolean bridgeDisabledForCurrentGoal;
     private boolean digDisabledForCurrentGoal;
+    /**
+     * The way out of a hole, for this goal: its task's terrain rules found no path and it stands below the ground at
+     * its own spot (the third benchmark run mined down to coal five blocks under, and every walk after that, its
+     * hunts, its trees, its hut, was under rules that neither dig nor pillar, and found no way up for two days). Then
+     * once more as a player would: digging (never what someone built) and pillaring, as far up as the surface is.
+     */
+    private IntentContract.TerrainPolicy wayOut;
     private String lastFailureDetail;
     private final Set<CalculationContext.ExcludedEdge> excludedEdges = new HashSet<>();
 
@@ -134,6 +141,7 @@ public class PathingCore {
         this.searchInitialized = false;
         this.bridgeDisabledForCurrentGoal = false;
         this.digDisabledForCurrentGoal = false;
+        this.wayOut = null;
         this.lastFailureDetail = null;
         this.excludedEdges.clear();
     }
@@ -188,6 +196,7 @@ public class PathingCore {
         searchInitialized = false;
         bridgeDisabledForCurrentGoal = false;
         digDisabledForCurrentGoal = false;
+        wayOut = null;
         lastFailureDetail = null;
         excludedEdges.clear();
     }
@@ -217,18 +226,18 @@ public class PathingCore {
             CalculationContext ctx = new CalculationContext(
                     caches.level(), caches.worldView(), chunkTest,
                     pathConfig.allowDigThrough()
-                            && terrainPolicy.allowBreakingObstacles()
+                            && policy().allowBreakingObstacles()
                             && !digDisabledForCurrentGoal,
-                    pathConfig.allowBridge() && terrainPolicy.allowBridge()
+                    pathConfig.allowBridge() && policy().allowBridge()
                             && !bridgeDisabledForCurrentGoal
                             && com.mineagent.engine.act.Placement.hasSupportBlock(
                                     TaskContext.serverPlayer(player)),
-                    pathConfig.allowBridge() && terrainPolicy.allowPillar()
+                    pathConfig.allowBridge() && policy().allowPillar()
                             && !bridgeDisabledForCurrentGoal
                             && com.mineagent.engine.act.Placement.hasSupportBlock(
                                     TaskContext.serverPlayer(player)),
-                    pathConfig.allowParkour() && terrainPolicy.allowParkour(),
-                    pos.getY(), terrainPolicy.maxUpwardDeviation(), excludedEdges);
+                    pathConfig.allowParkour() && policy().allowParkour(),
+                    pos.getY(), policy().maxUpwardDeviation(), excludedEdges);
             // Break costs from the tools it carries (SMH plan 70, MA5.1).
             ctx.withBreakTimer(com.mineagent.engine.pathing.moves.ToolTimer.of(
                     TaskContext.serverPlayer(player)));
@@ -290,7 +299,7 @@ public class PathingCore {
         if (lastResult != null && lastResult.foundPath()) {
             PathBase path = lastResult.path();
             int requiredSupports = requiredSupportBlocks(path);
-            int availableSupports = Math.min(terrainPolicy.maxPlacedBlocks(),
+            int availableSupports = Math.min(policy().maxPlacedBlocks(),
                     com.mineagent.engine.act.Placement.supportBlockCount(
                             TaskContext.serverPlayer(player)));
             if (!bridgeDisabledForCurrentGoal
@@ -299,7 +308,7 @@ public class PathingCore {
                 // a bridge that cannot be completed before stepping over void
                 // or that exceeds the task's terrain-change budget.
                 bridgeDisabledForCurrentGoal = true;
-                lastFailureDetail = requiredSupports > terrainPolicy.maxPlacedBlocks()
+                lastFailureDetail = requiredSupports > policy().maxPlacedBlocks()
                         ? "PATH_EXCEEDS_PLACEMENT_BUDGET" : "INSUFFICIENT_SUPPORT_BLOCKS";
                 lastResult = null;
                 state = State.SEARCH;
@@ -308,7 +317,7 @@ public class PathingCore {
             }
             int requiredBreaks = requiredObstacleBreaks(path);
             if (!digDisabledForCurrentGoal
-                    && requiredBreaks > terrainPolicy.maxBrokenObstacles()) {
+                    && requiredBreaks > policy().maxBrokenObstacles()) {
                 digDisabledForCurrentGoal = true;
                 lastFailureDetail = "PATH_EXCEEDS_BREAK_BUDGET";
                 lastResult = null;
@@ -320,14 +329,54 @@ public class PathingCore {
             // Attach the cleanup contract before any movement can place a
             // support, keeping BuildTask output distinct from navigation aid.
             for (var movement : path.movements()) {
-                movement.configureSupportCleanup(terrainPolicy.cleanupMode());
+                movement.configureSupportCleanup(policy().cleanupMode());
             }
             executor = new PathExecutor(player, path);
             state = State.EXECUTE;
+        } else if (wayOut == null && (bridgeDisabledForCurrentGoal || digDisabledForCurrentGoal
+                || !terrainPolicy.allowPillar() || !terrainPolicy.allowBreakingObstacles()) && inAHole()) {
+            var sp = TaskContext.serverPlayer(player);
+            wayOut = new IntentContract.TerrainPolicy(true, true, true, false, 16, 24,
+                    Math.max(4, surfaceAround(sp) - sp.getBlockY() + 4), terrainPolicy.cleanupMode());
+            bridgeDisabledForCurrentGoal = false;
+            digDisabledForCurrentGoal = false;
+            lastFailureDetail = "NO_PATH_TRYING_THE_WAY_OUT";
+            lastResult = null;
+            state = State.SEARCH;
+            searchInitialized = false;
         } else {
             // No path found — give up
             state = State.IDLE;
         }
+    }
+
+    /** Its terrain rules for this goal: its task's, or the way out of a hole once those found none. */
+    private IntentContract.TerrainPolicy policy() {
+        return wayOut != null ? wayOut : terrainPolicy;
+    }
+
+    /**
+     * Two blocks or more below the ground round it: a pit or a shaft (open over its head, the ground at its sides
+     * higher) or a cave (the ground over its head).
+     */
+    private boolean inAHole() {
+        var sp = TaskContext.serverPlayer(player);
+        if (sp == null || !com.mineagent.engine.settings.Switches.wayOutOfHoles()) return false;
+        return surfaceAround(sp) - sp.getBlockY() >= 2;
+    }
+
+    /** The highest ground (its top's air) at its spot and the blocks two round it. */
+    private static int surfaceAround(net.minecraft.server.level.ServerPlayer sp) {
+        var level = sp.serverLevel();
+        int top = Integer.MIN_VALUE;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                int x = sp.getBlockX() + dx, z = sp.getBlockZ() + dz;
+                if (!level.hasChunk(x >> 4, z >> 4)) continue;
+                top = Math.max(top, level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z));
+            }
+        }
+        return top == Integer.MIN_VALUE ? sp.getBlockY() : top;
     }
 
     private void tickExecute() {

@@ -2685,6 +2685,93 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * Plan 70, MA8.3: night, its owner away, no blocks to wall in with: it digs two down and roofs the hole; in the
+     * morning the roof comes off and it climbs back up, a block under it at the top of each jump, the hole filled. (The
+     * third benchmark run's companion ended its first day in a hole it couldn't get out of.)
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_night_dig", timeoutTicks = 1600)
+    public void nightWithNoBlocksItDigsInAndClimbsOutInTheMorning(GameTestHelper helper) {
+        Scene s = scene(helper, "Burrower");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.DIRT, 2));
+        var level = helper.getLevel();
+        int[] groundY = {Integer.MIN_VALUE};
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(10, () -> {
+            groundY[0] = s.body().getBlockY();
+            level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L);
+        });
+        int[] dugAt = {-1};
+        BlockPos[] hole = {null};
+        helper.onEachTick(() -> {
+            trace(helper, s, "night dig");
+            if (groundY[0] == Integer.MIN_VALUE) return;
+            var body = s.body();
+            if (dugAt[0] < 0 && body.getBlockY() <= groundY[0] - 2) {
+                dugAt[0] = (int) helper.getTick();
+                hole[0] = body.blockPosition().immutable();
+            }
+            if (dugAt[0] > 0 && helper.getTick() == dugAt[0] + 200) {
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L); // the next morning
+            }
+            if (dugAt[0] > 0 && helper.getTick() > dugAt[0] + 220 && body.getBlockY() >= groundY[0] && body.onGround()) {
+                BlockPos top = new BlockPos(hole[0].getX(), groundY[0], hole[0].getZ());
+                boolean filled = !level.getBlockState(top.below()).isAir() && !level.getBlockState(top.below(2)).isAir();
+                tidy(s);
+                if (filled) helper.succeed();
+                else fail(helper, "out, but the hole is left open under " + rel(helper, top).toShortString());
+            } else if (helper.getTick() >= 1550) {
+                String how = "dug in at " + dugAt[0] + ", ground y " + groundY[0] + ", now y " + body.getBlockY() + ", blocks "
+                        + com.mineagent.engine.act.Placement.supportBlockCount(body) + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, and what the third benchmark run found (it mined down to coal five blocks under and never came back up:
+     * every walk after was under rules that neither dig nor pillar): walled in five high on every side, cows in the
+     * field outside, "make me 2 beef": its walk finds no way, it looks again digging and pillaring
+     * ({@code behaviour.wayOutOfHoles}), gets out, and hunts them.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_pit", timeoutTicks = 2400)
+    public void outOfAPitToHunt(GameTestHelper helper) {
+        Scene s = scene(helper, "Pitted");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        field(helper, 6);
+        for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) for (int y = 1; y <= 5; y++) {
+            if (x != 5 || z != 5) helper.setBlock(x, y, z, Blocks.STONE);
+        }
+        BlockPos in = helper.absolutePos(new BlockPos(5, 1, 5));
+        s.body().teleportTo(helper.getLevel(), in.getX() + 0.5, in.getY(), in.getZ() + 0.5, 0.0f, 0.0f);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(2, new ItemStack(Items.COBBLESTONE, 8));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me 2 beef"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "pit");
+            int beef = inv.countItem(Items.BEEF);
+            if (beef >= 2) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                String how = "beef " + beef + ", at " + rel(helper, s.body().blockPosition()).toShortString() + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * Plan 70, MA8.5, food that renews: "make me 2 bread" by a field of ripe wheat: it harvests what it needs, plants a
      * seed back in every cell it took, and bakes the bread at the table it carries.
      */

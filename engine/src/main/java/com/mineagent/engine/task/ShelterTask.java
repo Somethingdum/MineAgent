@@ -62,6 +62,10 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     private int jumpTicks;
     private boolean centred;
     private boolean begun;
+    /** Where it stood before it dug in, and the block it jumped from to put one under itself on the way back up. */
+    private BlockPos start;
+    private BlockPos jumpFrom;
+    private int climbTries;
     private String outcome = "";
 
     public ShelterTask(AgentPlayer player, ShelterRecord record) {
@@ -81,6 +85,7 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             long now = sp.level().getGameTime();
             record.extendDeadlineTo(Math.max(record.deadline(), now + LONGEST));
             feet = sp.blockPosition();
+            start = feet.immutable();
             int need = open(sp.serverLevel(), feet).size();
             phase = Placement.supportBlockCount(sp) >= need ? Phase.BUILD : canDig(sp) ? Phase.DIG : Phase.BUILD;
         }
@@ -250,7 +255,10 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
         ServerLevel level = sp.serverLevel();
         while (!placed.isEmpty() && level.getBlockState(placed.get(placed.size() - 1)).isAir()) placed.remove(placed.size() - 1);
         if (placed.isEmpty()) {
-            outcome = "out again";
+            // Dug in: back up to where it stood, a block put under it at the top of each jump (the dug blocks), which
+            // fills the hole as well. The third benchmark run sat in a hole from its first night on.
+            if (dug > 0 && start != null && sp.blockPosition().getY() < start.getY() && climbTries <= dug * 4) return climb(sp);
+            outcome = sp.blockPosition().getY() < (start == null ? Integer.MIN_VALUE : start.getY()) ? "out again but still in the hole" : "out again";
             return TaskState.SUCCESS;
         }
         BlockPos b = placed.get(placed.size() - 1);
@@ -267,6 +275,35 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             com.mineagent.engine.task.BlockDigger.abortBreaking(sp, b);
             placed.remove(placed.size() - 1);
             breaking = null;
+        }
+        return TaskState.RUNNING;
+    }
+
+    /** One step up out of its hole: a jump, and a block put where its feet were at the top of it. */
+    private TaskState climb(ServerPlayer sp) {
+        var input = TaskContext.inputDriver(player);
+        if (jumpFrom == null) {
+            if (!sp.onGround()) return TaskState.RUNNING;
+            if (Placement.supportBlockCount(sp) == 0) {
+                climbTries = Integer.MAX_VALUE; // nothing to climb with: its paths take it from here
+                return TaskState.RUNNING;
+            }
+            jumpFrom = sp.blockPosition().immutable();
+            climbTries++;
+            input.setJumping(true);
+            jumpTicks = 12;
+            return TaskState.RUNNING;
+        }
+        input.setJumping(false);
+        if (sp.getY() >= jumpFrom.getY() + 1.01 && Placement.placeAnySupportBlock(sp, jumpFrom)) {
+            jumpFrom = null;
+            jumpTicks = 0;
+            wait = 4;
+            return TaskState.RUNNING;
+        }
+        if (--jumpTicks <= 0) {
+            jumpFrom = null;
+            wait = 4;
         }
         return TaskState.RUNNING;
     }

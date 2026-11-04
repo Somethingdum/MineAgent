@@ -100,6 +100,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.afkImprove(), "its owner asked for it");
         assertTrue(d.takeTrapTnt(), "its owner asked for it");
         assertTrue(d.nightStopsWork(), "digging in at night stops its work by default");
+        assertTrue(d.wayOutOfHoles(), "digging out of a hole it is in is on by default");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

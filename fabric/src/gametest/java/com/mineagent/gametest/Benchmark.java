@@ -91,10 +91,52 @@ public final class Benchmark implements ModInitializer {
         if (elapsed - lastLine >= 1_200) {
             lastLine = elapsed;
             var s = state(server);
-            System.out.println("[BENCH] day " + String.format("%.2f", elapsed / 24_000.0) + ": " + s.get("summary"));
+            String day = String.format("%.2f", elapsed / 24_000.0);
+            System.out.println("[BENCH] day " + day + ": " + s.get("summary"));
             if (elapsed % 24_000 < 1_200) days.put("day " + (elapsed / 24_000), s);
+            stuckReport(server, day);
         }
         if (elapsed >= total) finish(server, elapsed);
+    }
+
+    private static BlockPos lastAt;
+    private static int stillLines;
+
+    /**
+     * Where it has stood still for three game minutes and more (the third run sat on one block from day 1.1, every hunt
+     * "getting nowhere"): what is round it, row by row from two over its head to under its feet (a letter a block, '.'
+     * air, '~' water), the blocks it carries to climb or bridge with, and what has its body. Then every five minutes
+     * while it stays.
+     */
+    private static void stuckReport(MinecraftServer server, String day) {
+        var sp = companion.serverPlayer();
+        if (sp == null) return;
+        BlockPos at = sp.blockPosition();
+        if (!at.equals(lastAt)) {
+            lastAt = at.immutable();
+            stillLines = 0;
+            return;
+        }
+        if (++stillLines < 3 || (stillLines - 3) % 5 != 0) return;
+        ServerLevel level = sp.serverLevel();
+        StringBuilder b = new StringBuilder("[BENCH] day " + day + " still at " + at.toShortString() + " for " + stillLines + " minutes; round it (x across, z down):");
+        for (int dy = 2; dy >= -1; dy--) {
+            b.append(" | y").append(dy >= 0 ? "+" : "").append(dy).append(':');
+            for (int dz = -2; dz <= 2; dz++) {
+                b.append(dz == -2 ? "" : "/");
+                for (int dx = -2; dx <= 2; dx++) {
+                    var st = level.getBlockState(at.offset(dx, dy, dz));
+                    String path = BuiltInRegistries.BLOCK.getKey(st.getBlock()).getPath();
+                    char c = st.isAir() ? '.' : !st.getFluidState().isEmpty() ? '~' : Character.toUpperCase(path.charAt(0));
+                    b.append(dx == 0 && dz == 0 && (dy == 0 || dy == 1) ? '@' : c);
+                }
+            }
+        }
+        b.append(" | sky ").append(level.canSeeSky(at.above())).append(", surface y ")
+                .append(level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, at.getX(), at.getZ()));
+        b.append(" | blocks it carries: ").append(com.mineagent.engine.act.Placement.supportBlockCount(sp));
+        b.append(" | body: ").append(MineAgentEngine.getCompanion(companion.companionId()).map(c -> c.auction.inControl()).orElse("gone"));
+        System.out.println(b);
     }
 
     /** How it stands now: the minimum and the rest. */
