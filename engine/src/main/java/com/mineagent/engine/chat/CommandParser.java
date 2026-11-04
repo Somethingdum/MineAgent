@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER, CHEST_PURPOSE, PUT_AWAY, TIDY, CHESTS_OK, CHESTS_NO, FIND_STRONGHOLD, APPLY_BOOK, PROTECTION, GOLEMS, ROLL_LIBRARIAN, BEST_ENCHANTS, GEAR_REPORT, BOSS_PREP, ON_ITS_OWN, SPEEDRUN, TRAIN_VILLAGERS }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -192,6 +192,8 @@ public final class CommandParser {
     /** "Speedrun", "let's speedrun" (on); "no more speedrunning", "stop speedrunning" (off). */
     private static final Pattern SPEEDRUN = Pattern.compile("^(?:let'?s )?speed ?run(?: mode)?(?: the game)?$");
     private static final Pattern SPEEDRUN_OFF = Pattern.compile("^(?:no more speed ?running|stop speed ?running|no speed ?run|speed ?run off)$");
+    /** "Train your villagers", "level up the villagers", "max out my villagers": its keepers traded with toward master. */
+    private static final Pattern TRAIN = Pattern.compile("^(?:train|level(?: up)?|max(?: out)?) (?:up )?(?:the|your|my|our) (?:kept )?villagers(?: up)?$");
     private static final Pattern BEAT_GAME = Pattern.compile("^(?:go )?(?:beat|finish|win) the game$");
     /** "Get ready for the dragon", "prepare for the wither", "gear up for the dragon fight": the kit for it made. */
     private static final Pattern BOSS_PREP = Pattern.compile("^(?:get (?:ready|prepared)|prepare|prep|gear up|stock up) for (?:the )?((?:ender )?dragon|wither|end)(?: fight| boss)?$");
@@ -335,6 +337,7 @@ public final class CommandParser {
         if (STRONGHOLD.matcher(t).matches()) return Optional.of(new Command(Kind.FIND_STRONGHOLD, null, null));
         if (CHESTS_NO.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_NO, null, null));
         if (CHESTS_OK.matcher(t).matches()) return Optional.of(new Command(Kind.CHESTS_OK, null, null));
+        if (TRAIN.matcher(t).matches()) return Optional.of(new Command(Kind.TRAIN_VILLAGERS, null, null));
         var best = BEST_ENCHANTS.matcher(t);
         if (best.matches()) {
             String what = null;

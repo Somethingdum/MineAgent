@@ -275,6 +275,9 @@ final class CommandParserTest {
         assertEquals("on", CommandParser.parse("let's speedrun", "Pal").orElseThrow().value());
         assertEquals(CommandParser.Kind.SPEEDRUN, CommandParser.parse("stop speedrunning", "Pal").orElseThrow().kind());
         assertEquals("off", CommandParser.parse("stop speedrunning", "Pal").orElseThrow().value());
+        assertEquals(CommandParser.Kind.TRAIN_VILLAGERS, CommandParser.parse("train your villagers", "Pal").orElseThrow().kind());
+        assertEquals(CommandParser.Kind.TRAIN_VILLAGERS, CommandParser.parse("max out my villagers", "Pal").orElseThrow().kind(),
+                "villagers maxed are trained, not enchanted");
         var beat = CommandParser.parse("beat the game", "Pal").orElseThrow();
         assertEquals(CommandParser.Kind.BOSS_PREP, beat.kind(), "only on an explicit order, and it gets ready first");
     }

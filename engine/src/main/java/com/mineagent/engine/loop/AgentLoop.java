@@ -984,6 +984,10 @@ public class AgentLoop {
             lastOrderNote = note != null && note.find() ? note.group(1) : message == null ? "" : message;
         }
         progress.action(taskName == null ? "task" : taskName, gameTick);
+        if (taskId != null) {
+            Runnable after = afterTask.remove(taskId);
+            if (after != null && state == TaskState.SUCCESS) afterReady.add(after); // on the next tick, the body free
+        }
         liveBodyState.set(new LiveBodyState(null, "idle", null, null,
                 "last_task=" + taskName + " state=" + state
                         + (message == null || message.isBlank()
@@ -1506,6 +1510,18 @@ public class AgentLoop {
                         + " and get my gear to god tier. I won't go after the dragon unless you tell me to."
                         : "Back with you. I'll keep my stockpile, and stay near.");
                 saveMemoryNow();
+                return true;
+            }
+            case TRAIN_VILLAGERS -> {
+                var trainer = self.serverPlayer();
+                if (trainer == null) return false;
+                journal.record("order", "train the villagers", currentGameTickSafe());
+                if (!trainKeepers(trainer, trainer.serverLevel())) {
+                    speakToOwner(keepers.isEmpty() ? "I keep no villagers yet: I roll and wall in a librarian first."
+                            : "None of my villagers near can be trained now: masters already, out of trades till they restock, or I've nothing to pay with.");
+                } else {
+                    speakToOwner("Training my villagers: their trades, a round at a time, till they're masters.");
+                }
                 return true;
             }
             case SPEEDRUN -> {
@@ -2965,6 +2981,7 @@ public class AgentLoop {
             if (gameTick % 2400L == 1500L) masterTrading(player);
             if (gameTick % (onItsOwn ? 600L : 2400L) == 300L) hoard(player);
             if (gameTick % 200L == 100L) surviveOnItsOwn(player);
+            for (Runnable afterRun; (afterRun = afterReady.poll()) != null; ) afterRun.run();
             if (gameTick % 20L == 0L) asking.tick(gameTick).ifPresent(st -> {
                 journal.record("assumed", st.key() + ": " + (st.yes() ? "yes" : "no"), gameTick);
                 speakToOwner("No answer, so I'm taking that as a " + (st.yes() ? "yes" : "no") + " for now.");
@@ -4349,17 +4366,94 @@ public class AgentLoop {
             if (!v.isBaby() && (prof == net.minecraft.world.entity.npc.VillagerProfession.NONE
                     || prof == net.minecraft.world.entity.npc.VillagerProfession.LIBRARIAN && v.getVillagerXp() == 0)) candidate = true;
         }
-        if (haveMending || !candidate) return;
-        var answer = answer("villagers");
-        if (answer.isEmpty()) {
-            ask("villagers", "There's a villager here I could make a Mending librarian: a lectern put down and rolled until it sells"
-                    + " Mending, one bought, and the villager walled in with it to trade from. Shall I?", true);
-            return;
+        if (!haveMending && candidate) {
+            var answer = answer("villagers");
+            if (answer.isEmpty()) {
+                ask("villagers", "There's a villager here I could make a Mending librarian: a lectern put down and rolled until it sells"
+                        + " Mending, one bought, and the villager walled in with it to trade from. Shall I?", true);
+                return;
+            }
+            if (answer.get()) {
+                journal.record("mastery", "rolling a librarian for Mending", currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LibrarianTask.RollRecord(
+                        "mastery-" + UUID.randomUUID(), "minecraft:mending"), reply -> { });
+                return;
+            }
         }
-        if (!answer.get()) return;
-        journal.record("mastery", "rolling a librarian for Mending", currentGameTickSafe());
-        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.LibrarianTask.RollRecord(
-                "mastery-" + UUID.randomUUID(), "minecraft:mending"), reply -> { });
+        trainKeepers(self, level);
+    }
+
+    /** What to run once a task it started for itself is done (by task id), and what is ready to run on the next tick. */
+    private final java.util.Map<String, Runnable> afterTask = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Queue<Runnable> afterReady = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    /** Keepers it has said are masters, so it says so once. */
+    private final java.util.Set<String> mastersSaid = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+
+    /**
+     * Its keepers trained to master over many trades (SMH plan 70: "max out their level over the course of many trades"):
+     * the first keeper near that isn't a master yet, traded with a round at a time ({@link
+     * com.mineagent.engine.villager.VillagerWorth#toTrain}): its cheap goods sold to it for emeralds (made first when it
+     * has none, from its own things), or emeralds spent above a reserve. A villager restocks at its job site, so the
+     * next round comes later.
+     */
+    private boolean trainKeepers(net.minecraft.server.level.ServerPlayer self, net.minecraft.server.level.ServerLevel level) {
+        java.util.Map<String, Integer> has = new java.util.HashMap<>();
+        var inv = self.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty()) has.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString(), st.getCount(), Integer::sum);
+        }
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+        var unseen = java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
+        java.util.Map<String, Boolean> makeable = new java.util.HashMap<>();
+        java.util.function.Predicate<String> canMake = item -> makeable.computeIfAbsent(item,
+                k -> com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, k, 16, unseen).possible());
+        for (var v : level.getEntitiesOfClass(net.minecraft.world.entity.npc.Villager.class, self.getBoundingBox().inflate(48, 12, 48),
+                net.minecraft.world.entity.npc.Villager::isAlive)) {
+            String id = v.getUUID().toString();
+            if (!keepers.contains(id)) continue;
+            if (v.getVillagerData().getLevel() >= 5) {
+                if (mastersSaid.add(id)) {
+                    String prof = v.getVillagerData().getProfession().name();
+                    speakToOwner("My " + (prof.isBlank() ? "villager" : prof) + " is a master now: every trade it has is open.");
+                    journal.record("mastery", "a keeper made master", currentGameTickSafe());
+                }
+                continue;
+            }
+            List<com.mineagent.engine.villager.VillagerWorth.Deal> deals = new ArrayList<>();
+            var offers = v.getOffers();
+            for (int i = 0; i < offers.size(); i++) {
+                var o = offers.get(i);
+                if (!o.getCostB().isEmpty() || o.getCostA().isEmpty()) continue; // two-item trades: not for training
+                deals.add(new com.mineagent.engine.villager.VillagerWorth.Deal(i,
+                        net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(o.getCostA().getItem()).toString(), o.getCostA().getCount(),
+                        net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(o.getResult().getItem()).toString(), o.getResult().getCount(),
+                        o.getXp(), o.getMaxUses() - o.getUses()));
+            }
+            var d = com.mineagent.engine.villager.VillagerWorth.toTrain(deals, has, canMake);
+            if (d == null) continue;
+            int xpLeft = com.mineagent.engine.villager.VillagerWorth.toMaster(v.getVillagerXp());
+            int times = com.mineagent.engine.villager.VillagerWorth.trainTimes(d, has, xpLeft);
+            if (times <= 0) continue;
+            UUID who = v.getUUID();
+            String what = com.mineagent.engine.planning.production.ProductionPlanner.plural(d.cost(), d.costCount() * times);
+            Runnable trade = () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.TradeTask.TradeRecord(
+                    "train-" + UUID.randomUUID(), d.result(), times, d.cost(), who), reply -> { });
+            int carried = has.getOrDefault(d.cost(), 0);
+            if (carried >= d.costCount() * times) {
+                journal.record("mastery", "training a keeper: " + times + " trades of " + what, currentGameTickSafe());
+                trade.run();
+            } else {
+                String job = "train-make-" + UUID.randomUUID();
+                afterTask.put(job, trade);
+                journal.record("mastery", "making " + (d.costCount() * times - carried) + " " + what + " to train a keeper", currentGameTickSafe());
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                        job, d.cost(), d.costCount() * times - carried, null, false, true), reply -> { });
+            }
+            return true;
+        }
+        return false;
     }
 
     /** Whether it steps in for its owner (unless told "don't protect me"). */

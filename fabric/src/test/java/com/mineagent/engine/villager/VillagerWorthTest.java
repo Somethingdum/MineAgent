@@ -42,4 +42,30 @@ class VillagerWorthTest {
         assertEquals(240, VillagerWorth.toMaster(10));
         assertEquals(0, VillagerWorth.toMaster(400));
     }
+
+    static VillagerWorth.Deal deal(int i, String cost, int n, String result, int xp, int uses) {
+        return new VillagerWorth.Deal(i, "minecraft:" + cost, n, "minecraft:" + result, 1, xp, uses);
+    }
+
+    @Test void aKeeperIsTrainedWithItsCheapGoodsFirst() {
+        var deals = List.of(
+                deal(0, "paper", 24, "emerald", 2, 16),            // a novice librarian buys paper
+                deal(1, "emerald", 9, "bookshelf", 1, 12),         // and sells bookshelves
+                deal(2, "diamond", 1, "emerald", 30, 12));         // never paid in diamonds, whatever it is worth
+        var has = java.util.Map.of("minecraft:emerald", 40);
+        var d = VillagerWorth.toTrain(deals, has, item -> item.equals("minecraft:paper"));
+        assertEquals(0, d.index(), "paper it can make, sold for emeralds");
+        assertEquals(12, VillagerWorth.trainTimes(d, has, 250), "a round's worth, all of it made");
+        assertEquals(1, VillagerWorth.trainTimes(d, has, 2), "no more than take it to master");
+        var some = java.util.Map.of("minecraft:paper", 50);
+        assertEquals(2, VillagerWorth.trainTimes(d, some, 250), "with the paper it carries: what that pays for");
+        assertNull(VillagerWorth.toTrain(deals, java.util.Map.of("minecraft:emerald", 20), item -> false),
+                "nothing it can make, and spending 9 would leave less than the reserve");
+        var spend = VillagerWorth.toTrain(deals, java.util.Map.of("minecraft:emerald", 40), item -> false);
+        assertEquals(1, spend.index(), "emeralds above the reserve: spent on a trade that trains it");
+        assertEquals(2, VillagerWorth.trainTimes(spend, java.util.Map.of("minecraft:emerald", 40), 250), "no deeper than the reserve");
+        assertNull(VillagerWorth.toTrain(List.of(deal(0, "paper", 24, "emerald", 2, 0)), some, item -> true), "no uses left: it restocks first");
+        assertEquals(0, VillagerWorth.trainTimes(d, has, 0), "a master needs no more");
+    }
 }
+

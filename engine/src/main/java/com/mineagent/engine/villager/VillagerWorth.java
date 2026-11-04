@@ -3,6 +3,7 @@ package com.mineagent.engine.villager;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * What a villager is worth keeping, by its offers (SMH plan 70, its owner: "trading MASTERY is required ... because OP
@@ -92,5 +93,70 @@ public final class VillagerWorth {
     /** Experience still to go to master. */
     public static int toMaster(int xp) {
         return Math.max(0, LEVEL_XP[LEVEL_XP.length - 1] - xp);
+    }
+
+    // ── Training a keeper to master (its owner: "max out their level over the course of many trades") ──
+
+    /**
+     * A trade a villager has on offer now: its place in the list, what it costs (one item kind; two-item trades are not
+     * used to train), what it gives, the experience the villager gets for it, and the uses left before it restocks.
+     */
+    public record Deal(int index, String cost, int costCount, String result, int resultCount, int xp, int usesLeft) {}
+
+    /** Emeralds kept back from training, for the books and gear it trades for. */
+    public static final int EMERALD_RESERVE = 16;
+
+    /** Trades in one round of training, at most (the villager restocks at its job site twice a day). */
+    public static final int ROUND = 12;
+
+    /** Never paid to train a villager: worth more than the levels. */
+    public static final Set<String> NEVER_PAY = Set.of("minecraft:diamond", "minecraft:netherite_ingot", "minecraft:netherite_scrap",
+            "minecraft:golden_apple", "minecraft:enchanted_golden_apple", "minecraft:totem_of_undying", "minecraft:nether_star",
+            "minecraft:elytra", "minecraft:enchanted_book", "minecraft:diamond_block", "minecraft:emerald_block");
+
+    /**
+     * The trade to train a villager with, or null for none: one it has uses left of that gives it experience, paid with
+     * something it carries or can make (never one of {@link #NEVER_PAY}). Its goods sold for emeralds first (they earn
+     * the emeralds the books cost, from cheap things: paper, sticks, coal, wheat), what it already carries before what it
+     * must make, the most experience a trade first; emeralds spent only above {@link #EMERALD_RESERVE}.
+     */
+    public static Deal toTrain(List<Deal> deals, Map<String, Integer> has, Predicate<String> canMake) {
+        Deal best = null;
+        int bestScore = Integer.MIN_VALUE;
+        int emeralds = has.getOrDefault("minecraft:emerald", 0);
+        for (Deal d : deals) {
+            if (d == null || d.usesLeft() <= 0 || d.xp() <= 0 || d.cost() == null || d.costCount() <= 0 || NEVER_PAY.contains(d.cost())) continue;
+            boolean carried = has.getOrDefault(d.cost(), 0) >= d.costCount();
+            int score;
+            if ("minecraft:emerald".equals(d.result()) && !"minecraft:emerald".equals(d.cost())) {
+                if (!carried && !canMake.test(d.cost())) continue;
+                score = 1_000 + d.xp() * 20 + (carried ? 300 : 0) - d.costCount();
+            } else if ("minecraft:emerald".equals(d.cost())) {
+                if (emeralds - d.costCount() < EMERALD_RESERVE) continue;
+                score = d.xp() * 20 - d.costCount() * 5;
+            } else {
+                if (!carried) continue; // a swap of one thing for another: only with what it has
+                score = d.xp() * 20 - 400;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = d;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * How many of that trade this round: no more than it has uses left, than take it to master, than {@link #ROUND}; paid
+     * in emeralds, no more than leave the reserve; with what it carries, no more than that pays for (what it must make is
+     * made for the whole round).
+     */
+    public static int trainTimes(Deal d, Map<String, Integer> has, int xpToMaster) {
+        if (d == null || xpToMaster <= 0) return 0;
+        int n = Math.min(Math.min(d.usesLeft(), ROUND), (xpToMaster + d.xp() - 1) / Math.max(1, d.xp()));
+        int carried = has.getOrDefault(d.cost(), 0);
+        if ("minecraft:emerald".equals(d.cost())) n = Math.min(n, Math.max(0, (carried - EMERALD_RESERVE) / d.costCount()));
+        else if (!"minecraft:emerald".equals(d.result()) || carried >= d.costCount()) n = Math.min(n, carried / d.costCount());
+        return Math.max(0, n);
     }
 }

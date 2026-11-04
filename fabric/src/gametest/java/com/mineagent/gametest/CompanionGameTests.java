@@ -3912,8 +3912,9 @@ public class CompanionGameTests implements FabricGameTest {
                         if (Math.max(Math.abs(p.getX() - other.getX()), Math.abs(p.getZ() - other.getZ())) < 3) near++;
                     }
                 }
-                int logs = s.body().getInventory().countItem(Items.OAK_LOG);
-                String how = standing + " logs still standing, " + logs + " carried, " + saplings + " planted (" + near
+                // The two asked for went to its owner; the rest of the tree it keeps.
+                int logs = s.body().getInventory().countItem(Items.OAK_LOG) + s.owner().getInventory().countItem(Items.OAK_LOG);
+                String how = standing + " logs still standing, " + logs + " carried or given, " + saplings + " planted (" + near
                         + " too close to the other); said: " + (done.isEmpty() ? lastSaid(s, "") : done);
                 tidy(s);
                 if (standing == 0 && logs >= 5 && saplings >= 1 && near == 0) helper.succeed();
@@ -4336,6 +4337,46 @@ public class CompanionGameTests implements FabricGameTest {
                 tidy(s);
                 villager.discard();
                 if (failed.isEmpty() && (!rolled.isEmpty() || !found.isEmpty())) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, trading mastery: a librarian it keeps, a novice buying 24 paper for an emerald, and 48 paper in its pack:
+     * "train your villagers" sells it the paper (two trades, its whole pack's worth), the villager's experience up by the
+     * trades' and the emeralds in the pack.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_train_keeper", timeoutTicks = 1400)
+    public void aKeptLibrarianIsTrainedWithPaper(GameTestHelper helper) {
+        Scene s = scene(helper, "Trainer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var villager = EntityType.VILLAGER.create(helper.getLevel());
+        BlockPos vAt = helper.absolutePos(new BlockPos(9, 1, 9));
+        villager.moveTo(vAt.getX() + 0.5, vAt.getY(), vAt.getZ() + 0.5, 0.0f, 0.0f);
+        villager.setVillagerData(villager.getVillagerData().setProfession(net.minecraft.world.entity.npc.VillagerProfession.LIBRARIAN).setLevel(1));
+        villager.setNoAi(true);
+        var offers = new net.minecraft.world.item.trading.MerchantOffers();
+        offers.add(new net.minecraft.world.item.trading.MerchantOffer(new net.minecraft.world.item.trading.ItemCost(Items.PAPER, 24),
+                new ItemStack(Items.EMERALD), 16, 2, 0.05f));
+        villager.setOffers(offers);
+        helper.getLevel().addFreshEntity(villager);
+        s.loop().keepVillager(villager.getUUID());
+        s.body().getInventory().setItem(1, new ItemStack(Items.PAPER, 48));
+        helper.runAfterDelay(10, () -> MineAgentEngine.onPlayerChat(s.owner(), "train your villagers"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "train keeper");
+            String done = lastSaid(s, "Traded");
+            String failed = lastSaid(s, "I couldn't trade");
+            String none = lastSaid(s, "can be trained now");
+            if (!done.isEmpty() || !failed.isEmpty() || !none.isEmpty() || helper.getTick() >= 1300) {
+                int xp = villager.getVillagerXp();
+                int emeralds = s.body().getInventory().countItem(Items.EMERALD);
+                String how = "villager xp " + xp + ", emeralds " + emeralds + ", paper left " + s.body().getInventory().countItem(Items.PAPER)
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                villager.discard();
+                if (xp >= 4 && emeralds >= 2) helper.succeed();
                 else fail(helper, how);
             }
         });
