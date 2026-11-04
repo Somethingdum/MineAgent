@@ -93,6 +93,16 @@ public final class TaskRegistration {
                 BrewTask::new
         );
 
+        // Anvils, grindstones and bartering (SMH plan 70, MA11.2, MA11.1)
+        CompanionTaskFactory.register(
+                AnvilTask.AnvilRecord.class,
+                AnvilTask::new
+        );
+        CompanionTaskFactory.register(
+                BarterTask.BarterRecord.class,
+                BarterTask::new
+        );
+
         // Fishing (SMH plan 70, MA8.5)
         CompanionTaskFactory.register(
                 FishTask.FishRecord.class,

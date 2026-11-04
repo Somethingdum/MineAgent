@@ -963,7 +963,7 @@ public class AgentLoop {
         if (taskId != null && (taskId.startsWith("produce-") || taskId.startsWith("mine-") || taskId.startsWith("give-")
                 || taskId.startsWith("build-") || taskId.startsWith("hunt-") || taskId.startsWith("light-") || taskId.startsWith("portal-")
                 || taskId.startsWith("enchant-") || taskId.startsWith("trade-") || taskId.startsWith("brew-") || taskId.startsWith("breed-")
-                || taskId.startsWith("fish-"))) {
+                || taskId.startsWith("fish-") || taskId.startsWith("anvil-") || taskId.startsWith("barter-"))) {
             lastOrderState = state;
             if (state == TaskState.SUCCESS) progress.goalDone(gameTick);
             else if (state == TaskState.FAILED) progress.goalFailed(gameTick);
@@ -1442,6 +1442,24 @@ public class AgentLoop {
                         "trade-" + UUID.randomUUID(), want, 8), reply -> { });
                 return true;
             }
+            case REPAIR, GRIND -> {
+                boolean grind = c.kind() == com.mineagent.engine.chat.CommandParser.Kind.GRIND;
+                String words = (grind ? "disenchant your " : "repair your ") + c.value();
+                journal.record("order", words, currentGameTickSafe());
+                orderGoal(words);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.AnvilTask.AnvilRecord(
+                        "anvil-" + UUID.randomUUID(), grind ? "grind" : "repair", c.value()), reply -> { });
+                return true;
+            }
+            case BARTER -> {
+                int n = c.count() == null || c.count() < 1 ? 64 : c.count();
+                String words = "barter " + (n >= 64 ? "all your" : String.valueOf(n)) + " gold with the piglins";
+                journal.record("order", words, currentGameTickSafe());
+                orderGoal(words);
+                com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BarterTask.BarterRecord(
+                        "barter-" + UUID.randomUUID(), n), reply -> { });
+                return true;
+            }
             case FISH -> {
                 int n = c.count() == null || c.count() < 1 ? 4 : c.count();
                 journal.record("order", "catch " + n + " fish", currentGameTickSafe());
@@ -1488,6 +1506,11 @@ public class AgentLoop {
                 return true;
             }
             case BREW -> {
+                // Asked in so many words: what it lacks that it can make (sugar, bottles, blaze powder) made first (MA11.4).
+                if (dispatchingGoal == null && fromOwner) {
+                    String first = brewNeeds(c.value());
+                    if (!first.isEmpty() && queueOrders(first + ", then brew a potion of " + c.value().replace('_', ' '))) return true;
+                }
                 journal.record("order", "brew " + c.value().replace('_', ' '), currentGameTickSafe());
                 orderGoal("brew a potion of " + c.value().replace('_', ' '));
                 com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.BrewTask.BrewRecord(
@@ -3088,6 +3111,35 @@ public class AgentLoop {
         visitorsSaid.clear();
     }
 
+    /**
+     * The orders that get what a brew lacks, by the production planner: its ingredient, blaze powder for the stand's
+     * fuel, and bottles to fill (water it fills them at itself); "" when it has them all. Nether wart comes from its
+     * chests if it has some stored, else the brew says it has none.
+     */
+    private String brewNeeds(String potion) {
+        if (!(companion instanceof com.mineagent.engine.entity.CompanionEntity self) || self.serverPlayer() == null) return "";
+        var sp = self.serverPlayer();
+        var ingredient = com.mineagent.engine.task.BrewTask.INGREDIENT.get(potion);
+        if (ingredient == null) return "";
+        List<String> make = new ArrayList<>();
+        java.util.function.ToIntFunction<net.minecraft.world.item.Item> has = item -> com.mineagent.engine.task.ProductionTask.count(sp, item);
+        boolean powderToo = ingredient == net.minecraft.world.item.Items.BLAZE_POWDER; // the ingredient and the fuel: one order for both
+        if (!powderToo && has.applyAsInt(ingredient) == 0) {
+            make.add("make me 1 " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(ingredient).getPath().replace('_', ' '));
+        }
+        if (has.applyAsInt(net.minecraft.world.item.Items.BLAZE_POWDER) < (powderToo ? 2 : 1)) make.add("make me " + (powderToo ? 2 : 1) + " blaze powder");
+        int water = 0;
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            var pc = st.get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+            if (st.is(net.minecraft.world.item.Items.POTION) && pc != null && pc.is(net.minecraft.world.item.alchemy.Potions.WATER)) water += st.getCount();
+        }
+        int bottles = has.applyAsInt(net.minecraft.world.item.Items.GLASS_BOTTLE);
+        if (water + bottles < 3) make.add("make me " + (3 - water) + " glass bottles");
+        return String.join(", then ", make);
+    }
+
     // ── The Nether (SMH plan 70, MA11.1) ──
 
     /**
@@ -3205,7 +3257,9 @@ public class AgentLoop {
             com.mineagent.engine.chat.CommandParser.Kind.TRADE, com.mineagent.engine.chat.CommandParser.Kind.BREW,
             com.mineagent.engine.chat.CommandParser.Kind.BREED, com.mineagent.engine.chat.CommandParser.Kind.FISH,
             com.mineagent.engine.chat.CommandParser.Kind.GUARD_HERE, com.mineagent.engine.chat.CommandParser.Kind.GOAL_ADD,
-            com.mineagent.engine.chat.CommandParser.Kind.FOOD_BOTH, com.mineagent.engine.chat.CommandParser.Kind.PATROL);
+            com.mineagent.engine.chat.CommandParser.Kind.FOOD_BOTH, com.mineagent.engine.chat.CommandParser.Kind.PATROL,
+            com.mineagent.engine.chat.CommandParser.Kind.REPAIR, com.mineagent.engine.chat.CommandParser.Kind.GRIND,
+            com.mineagent.engine.chat.CommandParser.Kind.BARTER);
     /** The running summary of talks in this world (MA10.2), fed the orders its owner gives. */
     private final com.mineagent.engine.chat.TalkSummary talkSummary = new com.mineagent.engine.chat.TalkSummary();
 
@@ -3797,6 +3851,8 @@ public class AgentLoop {
                 || k == com.mineagent.engine.chat.CommandParser.Kind.PORTAL || k == com.mineagent.engine.chat.CommandParser.Kind.ENCHANT
                 || k == com.mineagent.engine.chat.CommandParser.Kind.TRADE || k == com.mineagent.engine.chat.CommandParser.Kind.BREW
                 || k == com.mineagent.engine.chat.CommandParser.Kind.BREED || k == com.mineagent.engine.chat.CommandParser.Kind.FISH
+                || k == com.mineagent.engine.chat.CommandParser.Kind.REPAIR || k == com.mineagent.engine.chat.CommandParser.Kind.GRIND
+                || k == com.mineagent.engine.chat.CommandParser.Kind.BARTER
                 ? c : java.util.Optional.empty();
     }
 

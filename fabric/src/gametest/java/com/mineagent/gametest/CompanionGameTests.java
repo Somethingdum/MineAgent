@@ -3845,4 +3845,127 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /** Plan 70, MA11.2: "repair your pickaxe": the anvil it carries put down, a worn iron pickaxe mended with iron ingots. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_anvil", timeoutTicks = 600)
+    public void aWornPickaxeMendedAtTheAnvil(GameTestHelper helper) {
+        Scene s = scene(helper, "Smithy");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        ItemStack pick = new ItemStack(Items.IRON_PICKAXE);
+        pick.setDamageValue(200);
+        inv.setItem(1, pick);
+        inv.setItem(2, new ItemStack(Items.IRON_INGOT, 4));
+        inv.setItem(3, new ItemStack(Items.ANVIL));
+        s.body().giveExperienceLevels(10);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "repair your pickaxe"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "anvil");
+            String done = lastSaid(s, "Mended");
+            String failed = lastSaid(s, "I couldn't mend");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 560) {
+                int worn = -1;
+                for (int k = 0; k < inv.getContainerSize(); k++) if (inv.getItem(k).is(Items.IRON_PICKAXE)) worn = inv.getItem(k).getDamageValue();
+                int ingots = inv.countItem(Items.IRON_INGOT), levels = s.body().experienceLevel;
+                String how = "wear " + worn + " (was 200), " + ingots + " ingots left, " + levels + " levels; said: "
+                        + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (worn >= 0 && worn < 100 && ingots < 4 && levels < 10) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA11.2: "disenchant your sword": the grindstone it carries put down, Sharpness taken off. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_grindstone", timeoutTicks = 600)
+    public void aSwordsEnchantmentGroundOff(GameTestHelper helper) {
+        Scene s = scene(helper, "Grinder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        ItemStack sword = new ItemStack(Items.IRON_SWORD);
+        var sharp = helper.getLevel().registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .getHolderOrThrow(net.minecraft.world.item.enchantment.Enchantments.SHARPNESS);
+        sword.enchant(sharp, 2);
+        inv.setItem(1, sword);
+        inv.setItem(2, new ItemStack(Items.GRINDSTONE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "disenchant your sword"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "grindstone");
+            String done = lastSaid(s, "Ground");
+            String failed = lastSaid(s, "I couldn't grind");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 560) {
+                boolean plain = false, still = false;
+                for (int k = 0; k < inv.getContainerSize(); k++) {
+                    if (!inv.getItem(k).is(Items.IRON_SWORD)) continue;
+                    if (inv.getItem(k).isEnchanted()) still = true;
+                    else plain = true;
+                }
+                String how = "plain sword " + plain + ", still enchanted " + still + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (plain && !still) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** Plan 70, MA11.1: "barter 3 gold with the piglins": gold armour on, an ingot thrown to each, what comes back picked up. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_barter", timeoutTicks = 1600)
+    public void goldBarteredWithPiglins(GameTestHelper helper) {
+        Scene s = scene(helper, "Haggler");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.GOLDEN_HELMET));
+        s.body().getInventory().setItem(1, new ItemStack(Items.GOLD_INGOT, 3));
+        for (int k = 0; k < 2; k++) {
+            var pig = helper.spawn(EntityType.PIGLIN, new BlockPos(8 + k * 2, 1, 6));
+            pig.setImmuneToZombification(true); // the Overworld turns them in fifteen seconds
+            pig.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        }
+        helper.runAfterDelay(20, () -> MineAgentEngine.onPlayerChat(s.owner(), "barter 3 gold with the piglins"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "barter");
+            String done = lastSaid(s, "Bartered");
+            String failed = lastSaid(s, "I couldn't barter");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 1550) {
+                int gold = s.body().getInventory().countItem(Items.GOLD_INGOT);
+                String how = gold + " gold left; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (gold == 0 && !done.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 70, MA11.4, the ingredients got itself: "brew a potion of swiftness" with sugar cane, empty bottles and a pool:
+     * the sugar made, the bottles filled at the water, then brewed.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_brew_fill", timeoutTicks = 3200)
+    public void swiftnessFromCaneAndEmptyBottles(GameTestHelper helper) {
+        Scene s = scene(helper, "Alchemist");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 8; x <= 10; x++) for (int z = 6; z <= 8; z++) helper.setBlock(x, 0, z, Blocks.WATER);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.BREWING_STAND));
+        inv.setItem(2, new ItemStack(Items.BLAZE_POWDER));
+        inv.setItem(3, new ItemStack(Items.GLASS_BOTTLE, 3));
+        inv.setItem(4, new ItemStack(Items.NETHER_WART));
+        inv.setItem(5, new ItemStack(Items.SUGAR_CANE));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "brew a potion of swiftness"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "brew fill");
+            String done = lastSaid(s, "Brewed");
+            String failed = lastSaid(s, "I couldn't");
+            if (!done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 3150) {
+                int potions = 0;
+                for (int k = 0; k < inv.getContainerSize(); k++) {
+                    var c = inv.getItem(k).get(net.minecraft.core.component.DataComponents.POTION_CONTENTS);
+                    if (inv.getItem(k).is(Items.POTION) && c != null && c.is(net.minecraft.world.item.alchemy.Potions.SWIFTNESS)) potions += inv.getItem(k).getCount();
+                }
+                String how = potions + " potions of swiftness; queue: " + lastSaid(s, "Got it") + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                tidy(s);
+                if (potions >= 1) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
 }

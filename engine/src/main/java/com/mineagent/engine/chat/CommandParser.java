@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public final class CommandParser {
     public enum Kind { STOP, STAY, FOLLOW, COME, MODE, STATUS, CANCEL, EAT, DROP, GUARD_HERE, GUARD_PLAYER, GUARD_OFF,
         GOAL_ADD, RESUME, AFK, BACK, PRODUCE, HOME_HERE, REMEMBER_PLACE, GO_PLACE, WHERE_PLACE, WAY_BACK, WHERE_SEEN, WHERE_PUT,
-        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH }
+        WHAT_HAPPENED, FIND_PLACE, MINE_ORE, WHATS_NEXT, WHY, NEEDS, GIVE, FOOD_BOTH, BUILD, LIGHT, PRIME, HUNT_PLAYER, PROGRESS, PROTECT, UNPROTECT, PORTAL, ENCHANT, TRADE, BREW, BREED, PATROL, FISH, REPAIR, GRIND, BARTER }
 
     /**
      * {@code value}: the mode for MODE, the item id for DROP, the player for GUARD_PLAYER, the goal's words for
@@ -123,6 +123,14 @@ public final class CommandParser {
             + "|explore for|go and find|hunt for)(?: me| us)? (?:a |an |the |some |another )?([a-z][a-z ]{2,24})$");
     private static final Pattern EXPLORE = Pattern.compile("^(?:explore|go exploring|scout around|explore around|explore a bit)$");
     private static final Pattern WHAT_MISSED = Pattern.compile("^(?:what did i miss|catch me up|recap|fill me in)$");
+    /** "Repair your pickaxe", "fix my sword", "mend your gear" (MA11.2): an anvil, and what mends it. */
+    private static final Pattern REPAIR = Pattern.compile("^(?:repair|fix|mend)(?: up)? (?:your |my |the |some |a )?(gear|stuff|things|tools|armou?r|[a-z ]{3,20}?)(?: at the anvil| on the anvil)?$");
+    /** "Disenchant your bow", "grind the enchantments off my sword" (MA11.2): a grindstone. */
+    private static final Pattern GRIND = Pattern.compile("^(?:disenchant|grind(?: the enchantments? off)?|take the enchantments? off|strip the enchantments? (?:off|from)"
+            + "|remove the enchantments? (?:from|off)) (?:your |my |the |a )?([a-z ]{3,20}?)(?: at the grindstone| on the grindstone)?$");
+    /** "Barter 8 gold with the piglins", "barter with the piglins" (MA11.1): gold thrown to piglins, what comes back. */
+    private static final Pattern BARTER = Pattern.compile("^(?:barter|trade|swap)(?: (\\d{1,2}|some|all(?: (?:your|my|the|of your))?)(?: of (?:your|my|the))?)?(?: gold(?: ingots?)?)?"
+            + "(?: with (?:the |some )?piglins?)?$");
     /** "Enchant your pickaxe", "enchant your gear" (MA11.2): the table, its shelves, and the best enchantment it can pay for. */
     private static final Pattern ENCHANT = Pattern.compile("^enchant (?:your |my |the |some |a )?(gear|stuff|things|tools|[a-z ]{3,20}?)$");
     /** "Trade for emeralds", "sell your wheat for emeralds", "buy bread from the villager" (MA11.3). */
@@ -196,6 +204,18 @@ public final class CommandParser {
         if (breed.matches()) return Optional.of(new Command(Kind.BREED, breed.group(1).strip(), null));
         var brew = BREW.matcher(t);
         if (brew.matches()) return Optional.of(new Command(Kind.BREW, brew.group(1).replace("speed", "swiftness").replace(' ', '_'), null));
+        var repair = REPAIR.matcher(t);
+        if (repair.matches()) {
+            String what = repair.group(1).strip();
+            return Optional.of(new Command(Kind.REPAIR, java.util.Set.of("gear", "stuff", "things", "tools", "armor", "armour").contains(what) ? "gear" : what, null));
+        }
+        var grind = GRIND.matcher(t);
+        if (grind.matches()) return Optional.of(new Command(Kind.GRIND, grind.group(1).strip(), null));
+        var barter = BARTER.matcher(t);
+        if (barter.matches() && (t.contains("gold") || t.contains("piglin"))) {
+            String n = barter.group(1);
+            return Optional.of(new Command(Kind.BARTER, null, n == null || !n.matches("\\d+") ? 64 : Integer.parseInt(n)));
+        }
         var ench = ENCHANT.matcher(t);
         if (ench.matches()) {
             String what = ench.group(1).strip();

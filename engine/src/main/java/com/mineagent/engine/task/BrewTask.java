@@ -47,9 +47,14 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
             "fire_resistance", Potions.FIRE_RESISTANCE, "healing", Potions.HEALING,
             "strength", Potions.STRENGTH, "swiftness", Potions.SWIFTNESS);
 
-    private enum Phase { STAND, LOAD, BREW, TAKE, DONE, FAILED }
+    private enum Phase { FILL, STAND, LOAD, BREW, TAKE, DONE, FAILED }
 
     private Phase phase = Phase.STAND;
+    /** Its empty bottles filled at water near before it brews (the ingredients got itself, MA11.4). */
+    private boolean filled;
+    private BlockPos water;
+    private int fillTicks;
+    private com.mineagent.engine.pathing.execute.PlayerNav nav;
     private BlockPos stand;
     private int step, tries, bottles;
     private long brewStart;
@@ -71,8 +76,41 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
         if (ingredient == null) return end(false, "I don't know how to brew " + record.potion.replace('_', ' '));
         try {
             switch (phase) {
+                case FILL -> {
+                    if (nav == null) nav = new com.mineagent.engine.pathing.execute.PlayerNav(player, TaskContext.navCaches(player));
+                    if (waterBottles(sp) >= 3 || ProductionTask.count(sp, Items.GLASS_BOTTLE) == 0 || ++fillTicks > 1_200) {
+                        filled = true;
+                        nav.cancel();
+                        TaskContext.inputDriver(player).clear();
+                        phase = Phase.STAND;
+                        return TaskState.RUNNING;
+                    }
+                    if (water == null || !level.getFluidState(water).isSourceOfType(net.minecraft.world.level.material.Fluids.WATER)) water = nearWater(level, sp);
+                    if (water == null) {
+                        filled = true;
+                        phase = Phase.STAND;
+                        return TaskState.RUNNING;
+                    }
+                    if (water.distToCenterSqr(sp.getEyePosition()) > 4.0 * 4.0) {
+                        if (fillTicks % 20 == 1) nav.navigateNear(water.getX(), water.getY(), water.getZ(), 2);
+                        nav.tick();
+                        return TaskState.RUNNING;
+                    }
+                    nav.cancel();
+                    TaskContext.inputDriver(player).clear();
+                    if (TaskContext.selectInventoryItemForHand(player, "minecraft:glass_bottle", net.minecraft.world.InteractionHand.MAIN_HAND)) {
+                        sp.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, net.minecraft.world.phys.Vec3.atCenterOf(water).add(0, 0.4, 0));
+                        com.mineagent.engine.act.Interaction.useItem(sp, net.minecraft.world.InteractionHand.MAIN_HAND);
+                        TaskContext.syncInventory(sp);
+                    }
+                    return TaskState.RUNNING;
+                }
                 case STAND -> {
-                    if (waterBottles(sp) == 0) return end(false, "I have no water bottles");
+                    if (!filled && waterBottles(sp) < 3 && ProductionTask.count(sp, Items.GLASS_BOTTLE) > 0) {
+                        phase = Phase.FILL; // empty bottles: filled at water near first
+                        return TaskState.RUNNING;
+                    }
+                    if (waterBottles(sp) == 0) return end(false, "I have no water bottles" + (filled ? " and no water near to fill some" : ""));
                     if (ProductionTask.count(sp, Items.NETHER_WART) == 0) return end(false, "I have no nether wart");
                     if (ProductionTask.count(sp, ingredient) == 0) return end(false, "I have no " + name(ingredient));
                     if (ProductionTask.count(sp, Items.BLAZE_POWDER) == 0) return end(false, "I have no blaze powder for the stand's fuel");
@@ -185,6 +223,22 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
         return c != null && c.is(Potions.WATER);
     }
 
+    /** Still water within 16 blocks, open above, to fill a bottle from. */
+    private static BlockPos nearWater(ServerLevel level, ServerPlayer sp) {
+        BlockPos at = sp.blockPosition();
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-16, -4, -16), at.offset(16, 4, 16))) {
+            if (!level.getFluidState(p).isSourceOfType(net.minecraft.world.level.material.Fluids.WATER) || !level.getBlockState(p.above()).isAir()) continue;
+            double d = p.distSqr(at);
+            if (d < bestD) {
+                bestD = d;
+                best = p.immutable();
+            }
+        }
+        return best;
+    }
+
     private static int waterBottles(ServerPlayer sp) {
         int n = 0;
         var inv = sp.getInventory();
@@ -230,6 +284,7 @@ public class BrewTask extends CompanionTask<BrewTask.BrewRecord> {
 
     @Override
     protected void onInterrupt() {
+        if (nav != null) nav.cancel();
         TaskContext.inputDriver(player).clear();
     }
 
