@@ -1736,6 +1736,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 // walled in, behind a fence, up out of a hole it dug: one of its own, put down here, instead. (A wider
                 // "in reach" here than the tool's had it walking to a table it was already by, for ever.)
                 if (inCraftRange(sp, table)) return "";
+                if (Boolean.getBoolean("mineagent.traceWork")) {
+                    System.out.println("[MineAgent] production: the table at " + table.toShortString() + " out of reach from " + sp.blockPosition().toShortString()
+                            + String.format(" (%.1f off)", Math.sqrt(table.distToCenterSqr(sp.position()))) + " after " + softTicks + " ticks, path "
+                            + nav.core().state() + ", " + nav.core().lastFailureDetail() + ", sky " + sp.serverLevel().canSeeSky(sp.blockPosition().above()));
+                }
                 tablesOutOfReach.add(table);
             }
             if (count(sp, net.minecraft.world.item.Items.CRAFTING_TABLE) == 0) {
