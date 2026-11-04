@@ -58,9 +58,9 @@ public final class GameKnowledge {
     /** Buckets filled as the game fills them: water from a source block, milk from a grown cow, mooshroom or goat. */
     static final List<Recipe> FILLS = List.of(
             new Recipe(Production.FILL + "minecraft:water", Kind.FILL, "minecraft:water_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
-            new Recipe(Production.FILL + ENTITY + "minecraft:cow", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
-            new Recipe(Production.FILL + ENTITY + "minecraft:mooshroom", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
-            new Recipe(Production.FILL + ENTITY + "minecraft:goat", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0));
+            new Recipe(Production.FILL + Production.ENTITY + "minecraft:cow", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
+            new Recipe(Production.FILL + Production.ENTITY + "minecraft:mooshroom", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0),
+            new Recipe(Production.FILL + Production.ENTITY + "minecraft:goat", Kind.FILL, "minecraft:milk_bucket", 1, List.of(new Need(List.of("minecraft:bucket"), 1)), false, 0));
 
     public static Book book(ServerPlayer sp) {
         Book b = recipesAndDrops(sp).with(FILLS);
