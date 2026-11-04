@@ -203,7 +203,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     return TaskState.RUNNING;
                 }
                 case WAIT -> {
-                    BlockPos cell = at(layout.cell()), door = at(layout.door());
+                    BlockPos cell = at(layout.cell()), door = at(layout.door()), way = at(layout.way());
                     // Shoving it in: to the way in (ten seconds at most), against it there a moment, then back to its
                     // spot by the door.
                     if (nudging > 0) {
@@ -224,7 +224,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                         nav.cancel();
                         TaskContext.inputDriver(player).clear();
                     }
-                    boolean inCell = v.blockPosition().equals(cell);
+                    // In: in the cell or the way in, both walled; the door two out from its job site.
+                    boolean inCell = v.blockPosition().equals(cell) || v.blockPosition().equals(way);
                     // In, all of it: the game puts no block where a body reaches, and one coming in or turning round
                     // reaches over into the way in.
                     boolean clear = !v.getBoundingBox().intersects(new net.minecraft.world.phys.AABB(door))
@@ -273,7 +274,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     if (doorSpots == null) doorSpots = doorSpots(level);
                     if (waitAt == null) waitAt = doorSpots.isEmpty() ? waitSpot(level, layout) : doorSpots.get(0);
                     // Not got to in ten seconds: the next spot by the door.
-                    boolean away = sp.blockPosition().distSqr(waitAt) > 2 || sp.blockPosition().equals(door) || sp.blockPosition().equals(cell);
+                    boolean away = sp.blockPosition().distSqr(waitAt) > 2 || sp.blockPosition().equals(door) || sp.blockPosition().equals(cell)
+                            || sp.blockPosition().equals(way);
                     if (away && ++blockingTicks > 200 && !doorSpots.isEmpty()) {
                         waitAt = doorSpots.get(++waitIndex % doorSpots.size());
                         blockingTicks = 0;
@@ -282,7 +284,8 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
                     }
                     BlockPos waitAt = this.waitAt;
                     // On its spot, or by it; never in the way in or the cell, whatever is near.
-                    boolean onSpot = sp.blockPosition().distSqr(waitAt) <= 2 && !sp.blockPosition().equals(door) && !sp.blockPosition().equals(cell);
+                    boolean onSpot = sp.blockPosition().distSqr(waitAt) <= 2 && !sp.blockPosition().equals(door) && !sp.blockPosition().equals(cell)
+                            && !sp.blockPosition().equals(way);
                     if (!onSpot) {
                         if (ticks % 40 == 1 || !nav.isNavigating()) nav.navigateNear(waitAt.getX(), waitAt.getY(), waitAt.getZ(), 0);
                         nav.tick();
@@ -312,7 +315,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
         for (int[] d : VillagerCell.DIRECTIONS) {
             var l = VillagerCell.plan(job.getX(), job.getY(), job.getZ(), d[0], d[1]);
             if (at(l.cell()).equals(villager) || at(l.way()).equals(villager)) continue; // not where it stands
-            if (!open(level, at(l.cell())) || !open(level, at(l.way())) || !open(level, at(l.tradeFrom()))) continue;
+            if (!open(level, at(l.cell())) || !open(level, at(l.way())) || !open(level, at(l.door())) || !open(level, at(l.tradeFrom()))) continue;
             int cost = 0;
             boolean ok = true;
             for (var w : l.walls()) {
@@ -343,11 +346,12 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
 
     /** Open spots on firm ground with the door in reach (3.8 from the middle), none a wall, the way in, the cell or the job site; nearest the door first. */
     private java.util.List<BlockPos> doorSpots(ServerLevel level) {
-        BlockPos door = at(layout.door()), cell = at(layout.cell());
+        BlockPos door = at(layout.door()), cell = at(layout.cell()), way = at(layout.way());
         java.util.List<BlockPos> out = new java.util.ArrayList<>();
         for (BlockPos p : BlockPos.betweenClosed(door.offset(-3, -1, -3), door.offset(3, 1, 3))) {
             var pos = new VillagerCell.Pos(p.getX(), p.getY(), p.getZ());
-            if (p.equals(door) || p.equals(cell) || layout.walls().contains(pos) || pos.equals(layout.jobSite()) || !open(level, p)) continue;
+            if (p.equals(door) || p.equals(cell) || p.equals(way) || layout.walls().contains(pos) || pos.equals(layout.jobSite())
+                    || !open(level, p)) continue;
             double eye = net.minecraft.world.phys.Vec3.atBottomCenterOf(p).add(0, 1.62, 0).distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(door));
             if (eye <= 3.8 * 3.8) out.add(p.immutable());
         }
@@ -401,7 +405,7 @@ public class TrapVillagerTask extends CompanionTask<TrapVillagerTask.TrapRecord>
         int dx = villager.getX() - job.getX(), dz = villager.getZ() - job.getZ();
         if (villager.getY() != job.getY() || Math.abs(dx) + Math.abs(dz) != 1) return null;
         var l = VillagerCell.plan(job.getX(), job.getY(), job.getZ(), dx, dz);
-        if (!open(level, at(l.way())) || !open(level, at(l.tradeFrom()))) return null;
+        if (!open(level, at(l.way())) || !open(level, at(l.door())) || !open(level, at(l.tradeFrom()))) return null;
         return l;
     }
 

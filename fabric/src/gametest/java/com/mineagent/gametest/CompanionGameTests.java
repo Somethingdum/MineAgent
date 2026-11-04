@@ -4239,7 +4239,8 @@ public class CompanionGameTests implements FabricGameTest {
     /**
      * SMH plan 70, trapping villagers ("They move too much to block in easily."): a villager with no job wanders the field;
      * a lectern stands off by itself. The cell is built round the lectern first, open at one end; the villager comes to
-     * take the lectern as villagers do, steps into the only spot beside it, and one block shuts it in. It stays in.
+     * take the lectern as villagers do, steps into the only spot beside it, and one block shuts it in, two out (the cell
+     * and the way in are all it has). It stays in.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_trap_villager", timeoutTicks = 8000)
     public void aWanderingVillagerWalksIntoItsCellAndIsShutIn(GameTestHelper helper) {
@@ -4268,16 +4269,23 @@ public class CompanionGameTests implements FabricGameTest {
             // Shut in, and still in a hundred ticks on.
             if (shutAt[0] >= 0 && helper.getTick() >= shutAt[0] + 100 || !failed.isEmpty() || helper.getTick() >= 7900) {
                 var cellNow = rel(helper, villager.blockPosition());
-                boolean besideLectern = Math.abs(cellNow.getX() - lectern.getX()) + Math.abs(cellNow.getZ() - lectern.getZ()) == 1;
-                // Every way out of where it stands is a block (or the lectern), at its feet.
-                int open = 0;
-                for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
-                    BlockPos n = villager.blockPosition().relative(d);
-                    if (helper.getLevel().getBlockState(n).getCollisionShape(helper.getLevel(), n).isEmpty()) open++;
+                // Where it can walk to from where it stands (no block at its feet), at most two cells (the cell and
+                // the way in), one of them beside the lectern.
+                java.util.Set<BlockPos> inside = new java.util.HashSet<>();
+                java.util.ArrayDeque<BlockPos> todo = new java.util.ArrayDeque<>(java.util.List.of(villager.blockPosition()));
+                while (!todo.isEmpty() && inside.size() <= 6) {
+                    BlockPos p = todo.poll();
+                    if (!inside.add(p)) continue;
+                    for (var d : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                        BlockPos n = p.relative(d);
+                        if (!inside.contains(n) && helper.getLevel().getBlockState(n).getCollisionShape(helper.getLevel(), n).isEmpty()) todo.add(n);
+                    }
                 }
-                String how = "shut in " + (shutAt[0] >= 0) + "; the villager at " + cellNow.toShortString() + " beside the lectern " + besideLectern
-                        + ", ways out at its feet " + open + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
-                boolean ok = shutAt[0] >= 0 && besideLectern && open == 0;
+                BlockPos lecternAt = helper.absolutePos(lectern);
+                boolean besideLectern = inside.stream().anyMatch(p -> Math.abs(p.getX() - lecternAt.getX()) + Math.abs(p.getZ() - lecternAt.getZ()) == 1);
+                String how = "shut in " + (shutAt[0] >= 0) + "; the villager at " + cellNow.toShortString() + ", room to walk " + inside.size()
+                        + (inside.size() > 6 ? "+" : "") + " cells, beside the lectern " + besideLectern + "; said: " + (failed.isEmpty() ? lastSaid(s, "") : failed);
+                boolean ok = shutAt[0] >= 0 && besideLectern && inside.size() <= 2;
                 villager.discard();
                 tidy(s);
                 if (ok) helper.succeed();

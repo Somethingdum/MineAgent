@@ -15,16 +15,18 @@ class VillagerCellTest {
     @Test void shutInItCanGoNowhere() {
         for (int[] d : VillagerCell.DIRECTIONS) {
             var l = VillagerCell.plan(0, 64, 0, d[0], d[1]);
-            var c = l.cell();
-            // Every way out of the cell, at feet and head: a wall, the job site, or the door (feet) and the gap over it,
-            // a block high, too low for a villager.
-            for (int[] n : VillagerCell.DIRECTIONS) {
-                var feet = new VillagerCell.Pos(c.x() + n[0], c.y(), c.z() + n[1]);
-                var head = new VillagerCell.Pos(c.x() + n[0], c.y() + 1, c.z() + n[1]);
-                assertTrue(blocked(l, feet, true), "its feet can't go " + n[0] + "," + n[1]);
-                if (!feet.equals(l.door()) && !feet.equals(l.jobSite())) assertTrue(blocked(l, head, true), "nor its head");
+            // Inside are the cell and the way in; every way out of either, at feet and head: a wall, the job site, the
+            // other of the two, or the door (feet) and the gap over it, a block high, too low for a villager.
+            for (var c : java.util.List.of(l.cell(), l.way())) {
+                for (int[] n : VillagerCell.DIRECTIONS) {
+                    var feet = new VillagerCell.Pos(c.x() + n[0], c.y(), c.z() + n[1]);
+                    var head = new VillagerCell.Pos(c.x() + n[0], c.y() + 1, c.z() + n[1]);
+                    if (feet.equals(l.cell()) || feet.equals(l.way())) continue; // still inside
+                    assertTrue(blocked(l, feet, true), "its feet can't go " + n[0] + "," + n[1] + " from " + c);
+                    if (!feet.equals(l.door()) && !feet.equals(l.jobSite())) assertTrue(blocked(l, head, true), "nor its head");
+                }
+                assertTrue(l.walls().contains(new VillagerCell.Pos(c.x(), c.y() + 2, c.z())), "a roof over " + c);
             }
-            assertTrue(l.walls().contains(new VillagerCell.Pos(c.x(), c.y() + 2, c.z())), "a roof");
             assertTrue(l.walls().contains(new VillagerCell.Pos(l.door().x(), l.door().y() + 2, l.door().z())),
                     "nothing to climb out on over the door block");
             assertTrue(l.walls().contains(new VillagerCell.Pos(l.jobSite().x(), l.jobSite().y() + 1, l.jobSite().z())),
@@ -36,9 +38,11 @@ class VillagerCellTest {
         var l = VillagerCell.plan(10, 64, 10, 1, 0);
         assertEquals(new VillagerCell.Pos(11, 64, 10), l.cell());
         assertEquals(new VillagerCell.Pos(12, 64, 10), l.way());
-        assertFalse(blocked(l, l.way(), false), "the way in is open till it is in");
-        assertFalse(l.walls().contains(new VillagerCell.Pos(12, 65, 10)), "and two high");
-        assertEquals(new VillagerCell.Pos(13, 64, 10), l.tradeFrom(), "traded with from outside the door");
+        assertEquals(new VillagerCell.Pos(13, 64, 10), l.door(), "the door two out from where it works: its body never reaches it");
+        assertFalse(blocked(l, l.way(), false), "the way in is open");
+        assertFalse(blocked(l, l.door(), false), "and the door's spot till it is in");
+        assertFalse(l.walls().contains(new VillagerCell.Pos(12, 65, 10)) || l.walls().contains(new VillagerCell.Pos(13, 65, 10)), "and two high");
+        assertEquals(new VillagerCell.Pos(14, 64, 10), l.tradeFrom(), "traded with from outside the door");
     }
 
     @Test void itCanWorkFromNowhereElse() {
@@ -48,7 +52,7 @@ class VillagerCellTest {
         for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) if (x != 0 || z != 0) round.add(new VillagerCell.Pos(j.x() + x, j.y(), j.z() + z));
         round.remove(l.cell());
         for (var p : round) assertTrue(l.walls().contains(p), "no other spot by its job site: " + p);
-        assertEquals(18, l.walls().size(), "seven cells walled two high, two roofs and the block they hang from, one on the job site");
+        assertEquals(23, l.walls().size(), "nine cells walled two high, three roofs and the block they hang from, one on the job site");
     }
 
     @Test void eachBlockGoesAgainstOneAlreadyThere() {

@@ -9,12 +9,13 @@ import java.util.List;
  * round its job site, open at one end, and the villager comes to work at its job site as villagers do; standing in
  * the cell, one block shuts it in.
  *
- * <p>Along one direction {@code d} from the job site J: the cell C (beside J, where it stands to work), then the way in E.
- * Walls at feet and head on C's two sides and on every other cell round J it could work from (behind J and its four
- * corners), a roof over C and over E (so it can't climb on the door block and out), hung from a block over C's side
- * wall, and a block on J (no standing on it; each block goes against one already there, in the order given). The door is E's
- * feet block, one placement; E's head stays open, a gap one high that a villager can't get through and that it is
- * traded with through, from outside E. Pure.
+ * <p>Along one direction {@code d} from the job site J: the cell C (beside J, where it stands to work), the way in E,
+ * then the door D. Walls at feet and head on C's and E's two sides and on every other cell round J it could work from
+ * (behind J and its four corners), a roof over C, E and D (so it can't climb on the door block and out), hung from a
+ * block over C's side wall, and a block on J (no standing on it; each block goes against one already there, in the order
+ * given). The cell is two long, C and E: at work by J the villager's body reaches over into E, and the game puts no block
+ * where a body reaches; D, two out, is always clear of it. The door is D's feet block, one placement; D's head stays
+ * open, a gap one high that a villager can't get through and that it is traded with through, from outside D. Pure.
  */
 public final class VillagerCell {
     private VillagerCell() {}
@@ -28,8 +29,8 @@ public final class VillagerCell {
 
     /**
      * A cell's layout: {@code walls} put down first (one already solid stays as it is), {@code door} put down once it
-     * stands in {@code cell}; it comes in by {@code way}; it is traded with from {@code tradeFrom}, through the gap over
-     * the door.
+     * is in ({@code cell} or {@code way}); it comes in by {@code way}; it is traded with from {@code tradeFrom}, through
+     * the gap over the door.
      */
     public record Layout(Pos jobSite, Pos cell, Pos way, Pos door, Pos tradeFrom, List<Pos> walls) {}
 
@@ -39,11 +40,13 @@ public final class VillagerCell {
         Pos j = new Pos(jx, jy, jz);
         Pos c = j.plus(dx, 0, dz);
         Pos e = c.plus(dx, 0, dz);
+        Pos door = e.plus(dx, 0, dz);
         int sx = dz, sz = dx; // a side, square to d
         List<Pos> walls = new ArrayList<>();
-        // The cell's sides, and every other cell round the job site a villager could work from.
-        for (Pos p : List.of(c.plus(sx, 0, sz), c.plus(-sx, 0, -sz), j.plus(-dx, 0, -dz), j.plus(sx, 0, sz), j.plus(-sx, 0, -sz),
-                j.plus(-dx + sx, 0, -dz + sz), j.plus(-dx - sx, 0, -dz - sz))) {
+        // The cell's sides, the way in's (inside the cell: at work by its job site its body reaches over into the way
+        // in, never as far as the door), and every other cell round the job site a villager could work from.
+        for (Pos p : List.of(c.plus(sx, 0, sz), c.plus(-sx, 0, -sz), e.plus(sx, 0, sz), e.plus(-sx, 0, -sz), j.plus(-dx, 0, -dz),
+                j.plus(sx, 0, sz), j.plus(-sx, 0, -sz), j.plus(-dx + sx, 0, -dz + sz), j.plus(-dx - sx, 0, -dz - sz))) {
             walls.add(p);
             walls.add(p.plus(0, 1, 0));
         }
@@ -55,7 +58,8 @@ public final class VillagerCell {
         walls.add(c.plus(0, 2, 0));
         walls.add(j.plus(0, 1, 0));
         walls.add(e.plus(0, 2, 0));
-        return new Layout(j, c, e, e, e.plus(dx, 0, dz), List.copyOf(walls));
+        walls.add(door.plus(0, 2, 0));
+        return new Layout(j, c, e, door, door.plus(dx, 0, dz), List.copyOf(walls));
     }
 
     /** The four flat directions, as {@code (dx, dz)}. */
