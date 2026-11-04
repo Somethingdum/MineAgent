@@ -1622,18 +1622,31 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
      * Toward {@code p}, to within {@code radius}: false on the way, true when there or when there is no way (the caller
      * looks which), never failing the job.
      */
+    /** The nearest it got on this walk (squared), and when (in its ticks). */
+    private double softClosest = Double.MAX_VALUE;
+    private int softGainedAt;
+
     private boolean walkSoftly(BlockPos p, int radius) {
         if (walkingTo == null || !walkingTo.equals(p)) {
             walkingTo = p.immutable();
             arrived = false;
             navFailed = false;
             softTicks = 0;
+            softClosest = Double.MAX_VALUE;
+            softGainedAt = 0;
             nav.navigateNear(p.getX(), p.getY(), p.getZ(), radius);
             return false;
         }
         // Twenty seconds round and round it (the way there keeps being found and lost): there as near as it gets; the
-        // caller sees whether that is in reach.
-        if (navFailed || arrived && !nav.isNavigating() || ++softTicks > 400) {
+        // caller sees whether that is in reach. Longer while it is still getting nearer, two minutes at most: up out of
+        // its mine to its table, digging the way, takes more than twenty seconds (the benchmark: twelve below it).
+        double d = p.distSqr(sp().blockPosition());
+        if (d < softClosest - 0.5) {
+            softClosest = d;
+            softGainedAt = softTicks;
+        }
+        boolean gaining = softTicks - softGainedAt < 200 && softTicks < 2_400;
+        if (navFailed || arrived && !nav.isNavigating() || ++softTicks > 400 && !gaining) {
             if (softTicks > 400) nav.cancel();
             walkingTo = null;
             navFailed = false;
