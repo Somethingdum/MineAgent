@@ -1207,6 +1207,10 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     return TaskState.RUNNING;
                 }
                 chase(herdSeen, 4);
+                if (Boolean.getBoolean("mineagent.traceWork") && level.getGameTime() % 200 == 0) {
+                    System.out.println("[MineAgent] hunt: no " + kind + " in sight; going for the herd seen at " + herdSeen.toShortString()
+                            + " from " + sp.blockPosition().toShortString() + ", path " + nav.core().state() + ", " + nav.core().lastFailureDetail());
+                }
                 return TaskState.RUNNING;
             }
         }

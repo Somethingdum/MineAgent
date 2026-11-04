@@ -362,10 +362,11 @@ public class PathingCore {
     }
 
     /**
-     * In a hole in the ground: two blocks or more below the ground round it (a pit, a shaft, a dig beside a hill, a
-     * cave), with nothing someone built beside it at its head or over it. What someone built (its own villager cell, a
-     * hut, a roof) is no hole: walking in and round those is its task's own business. (The ninth benchmark run dug for
-     * stone five below its crafting table beside a hill, open on one side, and no longer counted as in a hole.)
+     * In a hole in the ground: two blocks or more below the natural ground round it (a pit, a shaft, a dig beside a
+     * hill, a cave), open over its head or with the ground over it, not a roof. Blocks it put down near it (what is
+     * left of a night's shelter) don't make it less of a hole: the twelfth benchmark run stood four under its hut's
+     * site beside its shelter's leftovers, and never climbed up. The way out never breaks what someone built, and its
+     * villager cell and mining's tunnels opt out.
      */
     private boolean inAHole() {
         var sp = TaskContext.serverPlayer(player);
@@ -376,15 +377,7 @@ public class PathingCore {
         if (surfaceAround(sp) - sp.getBlockY() < 2) return false;
         var level = sp.serverLevel();
         var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
-        var feet = sp.blockPosition();
-        var head = feet.above();
-        if (placed.isPlaced(feet.getX(), feet.getY() - 1, feet.getZ())) return false; // on something built
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                var p = head.offset(dx, 0, dz);
-                if (placed.isPlaced(p.getX(), p.getY(), p.getZ()) || placed.isPlaced(p.getX(), p.getY() - 1, p.getZ())) return false;
-            }
-        }
+        var head = sp.blockPosition().above();
         for (int dy = 1; dy <= 24; dy++) {
             var p = head.above(dy);
             var st = level.getBlockState(p);
