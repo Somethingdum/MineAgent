@@ -23,6 +23,19 @@ public record Blueprint(String name, int width, int depth, int height, List<Bloc
         return out;
     }
 
+    /** The same blueprint without the blocks of these items (fittings it went without: a door, a table, a furnace). */
+    public Blueprint without(java.util.Set<String> items) {
+        List<Block> kept = new java.util.ArrayList<>();
+        for (Block b : blocks) if (!items.contains(item(b.id()))) kept.add(b);
+        return new Blueprint(name, width, depth, height, List.copyOf(kept), insideX, insideZ, doorX, doorZ);
+    }
+
+    /** A fitting rather than the shell: a door, a crafting table, a furnace, a torch. A hut stands without them. */
+    public static boolean fitting(String item) {
+        String i = item == null ? "" : item;
+        return i.endsWith("_door") || i.endsWith(":crafting_table") || i.endsWith(":furnace") || i.endsWith(":torch");
+    }
+
     /** What to carry for a block: a door is one item for two halves; wall torches are torches. */
     static String item(String id) {
         return id.replace("wall_torch", "torch");

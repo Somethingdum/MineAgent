@@ -680,6 +680,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 mineProgressAt = now;
             }
             if (now - mineProgressAt > (branchMining ? 6_000 : 1_200)) {
+                keepUnreachable();
                 sub.interrupt();
                 sub = null;
                 mineProgressAt = now;
@@ -689,6 +690,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             }
             TaskState st = sub.tick();
             if (st == TaskState.RUNNING) return TaskState.RUNNING;
+            keepUnreachable();
             sub = null;
             int after = count(sp, item(step.item())) - itemBefore;
             if (st != TaskState.SUCCESS && after <= lastGot) {
@@ -720,7 +722,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         int n = Math.min(64, step.count() - got);
         sub = new MineBlockTask(player, new com.mineagent.tools.block.AutoMineTool.MineBlockTaskRecord(
-                record.toolCallId() + ":mine", step.block(), n, 32));
+                record.toolCallId() + ":mine", step.block(), n, 32)).avoiding(mineAvoid);
         sub.start();
         lastGot = got;
         mineProgressAt = sp.level().getGameTime();
@@ -1640,6 +1642,16 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     private int craftReplans;
     /** Times the rest was planned again for a tool worn through with no spare planned. */
     private int toolReplans;
+    /**
+     * Blocks its mining tries in this job couldn't get to (under water, up a cliff), kept from one try to the next:
+     * each try a minute, and a new try started over on the same nearest blocks, three minutes going nowhere (runs
+     * four to six of the benchmark, two stone for a sword).
+     */
+    private final java.util.Set<BlockPos> mineAvoid = new java.util.HashSet<>();
+
+    private void keepUnreachable() {
+        if (sub instanceof MineBlockTask m && mineAvoid.size() < 1_024) mineAvoid.addAll(m.unreachable());
+    }
 
     /**
      * One call of its craft tool: "ok" when it crafted, "" when it is first getting to a table (or putting one down),

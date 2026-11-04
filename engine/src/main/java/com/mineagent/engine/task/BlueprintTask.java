@@ -86,7 +86,7 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             print = switch (record.name == null ? "hut" : record.name) {
                 case "dirt_shelter" -> com.mineagent.engine.planning.building.MindcraftBlueprints.dirtShelter();
                 case "small_wood_house" -> com.mineagent.engine.planning.building.MindcraftBlueprints.smallWoodHouse(record.wall, record.door);
-                case "hut_home" -> Blueprint.homeHut(record.wall, record.door);
+                case "hut_home" -> Blueprint.homeHut(wallNow = record.wall, record.door);
                 default -> Blueprint.hut(record.wall, record.door);
             };
         }
@@ -290,6 +290,24 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
 
     /** How many times it has asked for each material: twice and still short, it says so instead of asking again. */
     private final java.util.Map<String, Integer> asked = new java.util.HashMap<>();
+    /** The material it is making now, and the fittings it goes without (none of them to be had here). */
+    private String making;
+    private final java.util.Set<String> goneWithout = new java.util.LinkedHashSet<>();
+    /** What its home hut's walls are of now: the stone asked for, or dirt when no stone is to be had. */
+    private String wallNow;
+
+    /**
+     * Its own home hut's walls of dirt, when the stone for them can't be had (dug anywhere, by hand if need be): true
+     * when it switched, before anything was built.
+     */
+    private boolean wallsOfDirt(String short_) {
+        if (!"hut_home".equals(record.name) || wallNow == null || !wallNow.equals(short_) || "minecraft:dirt".equals(wallNow)) return false;
+        wallNow = "minecraft:dirt";
+        asked.clear();
+        print = Blueprint.homeHut(wallNow, record.door).without(goneWithout);
+        say("There's no more stone to be had here: the hut's walls are dirt.");
+        return true;
+    }
 
     /** The materials for the blocks not yet where the blueprint has them. */
     private Map<String, Integer> stillNeeded(ServerLevel level) {
@@ -314,15 +332,34 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             TaskState st = sub.tick();
             if (st == TaskState.RUNNING) return TaskState.RUNNING;
             sub = null;
-            if (st != TaskState.SUCCESS) return fail("I couldn't get the materials");
+            if (st != TaskState.SUCCESS) {
+                // A fitting (a door, the table, the furnace, the torch) none of which is to be had here (the sixth
+                // benchmark run: no wood left near its base for a door, and no hut at all): the hut goes up without
+                // it; the shell itself it can't do without.
+                if (!Blueprint.fitting(making)) {
+                    if (wallsOfDirt(making)) return TaskState.RUNNING;
+                    return fail("I couldn't get the materials");
+                }
+                goneWithout.add(making);
+                print = print.without(goneWithout);
+            }
         }
         // What the blocks not yet in place need (a build picked up again needs only the rest), and a job to have that
         // many in its pack: a production job's count is how many to have, not how many more to make.
         for (Map.Entry<String, Integer> e : stillNeeded(sp.serverLevel()).entrySet()) {
             int have = ProductionTask.count(sp, ProductionTask.item(e.getKey()));
             if (have >= e.getValue()) continue;
-            if (asked.getOrDefault(e.getKey(), 0) >= 2) return fail("I couldn't get " + e.getValue() + " " + ProductionPlanner.plural(e.getKey(), e.getValue()));
+            if (asked.getOrDefault(e.getKey(), 0) >= 2) {
+                if (!Blueprint.fitting(e.getKey())) {
+                    if (wallsOfDirt(e.getKey())) return TaskState.RUNNING;
+                    return fail("I couldn't get " + e.getValue() + " " + ProductionPlanner.plural(e.getKey(), e.getValue()));
+                }
+                goneWithout.add(e.getKey());
+                print = print.without(goneWithout);
+                return TaskState.RUNNING;
+            }
             asked.merge(e.getKey(), 1, Integer::sum);
+            making = e.getKey();
             sub = new ProductionTask(player, new ProductionTask.ProduceRecord(record.toolCallId() + ":" + e.getKey(), e.getKey(),
                     e.getValue(), null));
             sub.start();
@@ -480,8 +517,11 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
             }
             where.add(ProductionPlanner.name(b.id()) + " at " + b.x() + "," + b.y() + "," + b.z());
         }
+        List<String> without = new ArrayList<>();
+        for (String w : goneWithout) without.add(ProductionPlanner.name(w));
+        String still = without.isEmpty() ? "" : " It has no " + String.join(" or ", without) + " yet: none to be had here.";
         String line = missing.isEmpty()
-                ? "Built the " + shown() + " at " + corner.toShortString() + ": " + materialsLine() + "; every block checked."
+                ? "Built the " + shown() + " at " + corner.toShortString() + ": " + materialsLine() + "; every block checked." + still
                 : "Built the " + shown() + " at " + corner.toShortString() + ", but " + missing.size()
                         + " blocks are missing; I couldn't place them (" + String.join("; ", where) + ").";
         say(line);
@@ -489,7 +529,7 @@ public class BlueprintTask extends CompanionTask<BlueprintTask.BlueprintRecord> 
         if (loop != null) {
             loop.journal().record("built", line, level.getGameTime());
             // The blueprint kept with where it stands, so "repair the hut" builds it back from it (MA9.1).
-            loop.placeKeeper().memory().name("build", record.name + "|" + record.wall.replace("minecraft:", "") + "|" + record.door.replace("minecraft:", ""),
+            loop.placeKeeper().memory().name("build", record.name + "|" + (wallNow == null ? record.wall : wallNow).replace("minecraft:", "") + "|" + record.door.replace("minecraft:", ""),
                     new com.mineagent.engine.world.RouteMemory.Point(level.dimension().location().toString(), corner.getX(), corner.getY(), corner.getZ()),
                     level.getGameTime());
         }

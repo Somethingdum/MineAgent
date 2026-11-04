@@ -38,6 +38,19 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
     private String failReason;
     private String lastNavigationFailure;
     private final Set<BlockPos> unreachableBlocks = new HashSet<>();
+    /** Blocks an earlier try of the same job found it couldn't get to: not tried again. */
+    private final Set<BlockPos> avoid = new HashSet<>();
+
+    /** Skip these (an earlier try's unreachable ones). */
+    public MineBlockTask avoiding(java.util.Collection<BlockPos> blocks) {
+        avoid.addAll(blocks);
+        return this;
+    }
+
+    /** The blocks it found it couldn't get to, for the next try. */
+    public Set<BlockPos> unreachable() {
+        return Set.copyOf(unreachableBlocks);
+    }
     private BlockScanner.ScanSession scanSession;
     private long lastProgressTick;
     private long progressRevision;
@@ -60,6 +73,7 @@ public class MineBlockTask extends CompanionTask<AutoMineTool.MineBlockTaskRecor
         failReason = null;
         lastNavigationFailure = null;
         unreachableBlocks.clear();
+        unreachableBlocks.addAll(avoid);
         long now = TaskContext.serverPlayer(player).level().getGameTime();
         lastProgressTick = now;
         progressRevision = 1L;

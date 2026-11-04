@@ -2969,6 +2969,36 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 70, and what the sixth benchmark run found (no wood left near its base: "I couldn't get the materials", and
+     * no hut in three days): "build a home hut" with cobblestone and nothing else, no tree for a door or a table: the
+     * hut goes up without its fittings, every block of the shell checked, and it says what it has no way to make here.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_bare_hut", timeoutTicks = 3000)
+    public void aHomeHutWithNoWoodGoesUpWithoutItsFittings(GameTestHelper helper) {
+        Scene s = scene(helper, "Bare");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(1, new ItemStack(Items.COBBLESTONE, 64));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "build a home hut"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "bare hut");
+            String built = lastSaid(s, "Built the hut at ");
+            if (!built.isEmpty()) {
+                String dim = helper.getLevel().dimension().location().toString();
+                boolean kept = s.loop().hutNear(dim, s.body().blockPosition());
+                tidy(s);
+                if (built.contains("every block checked") && built.contains("It has no") && kept) helper.succeed();
+                else fail(helper, "kept as its hut " + kept + "; said: " + built);
+            } else if (helper.getTick() >= 2900) {
+                String how = "cobblestone left " + inv.countItem(Items.COBBLESTONE) + ", at " + rel(helper, s.body().blockPosition()).toShortString()
+                        + "; said: " + lastSaid(s, "");
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4: "light up the area": torches down until no spot within 8 blocks a mob could stand on is dark. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_light", timeoutTicks = 1600)
     public void anAreaLitUntilNoSpotIsDark(GameTestHelper helper) {
