@@ -78,7 +78,7 @@ public final class UnstuckChain implements TaskChain {
      */
     private final UnstuckDetector stuckDetector;
 
-    private enum Phase { IDLE, WIGGLE, BREAK, BACK_AWAY, GIVE_UP }
+    private enum Phase { IDLE, WIGGLE, BREAK, BACK_AWAY, MOVE_AWAY, GIVE_UP }
     private Phase phase = Phase.IDLE;
     private int stuckTicks = 0;
     private int actionTicks = 0;
@@ -135,7 +135,7 @@ public final class UnstuckChain implements TaskChain {
             // escape sequence (WIGGLE/BREAK/BACK_AWAY/GIVE_UP) would be
             // cut off the moment the post-trigger cooldown starts.
             if (phase == Phase.WIGGLE || phase == Phase.BREAK
-                    || phase == Phase.BACK_AWAY || phase == Phase.GIVE_UP) {
+                    || phase == Phase.BACK_AWAY || phase == Phase.MOVE_AWAY || phase == Phase.GIVE_UP) {
                 return PRIORITY;
             }
 
@@ -346,13 +346,22 @@ public final class UnstuckChain implements TaskChain {
                         }
                     }
 
-                    // After 20 ticks of backing away, give up and let the
-                    // LLM decide what to do next (it will see the body log
-                    // and can choose to place blocks, dig, or change goals).
+                    // After 20 ticks of backing away: Mindcraft's last resort
+                    // before anyone is asked (its unstuck mode, skills.moveAway):
+                    // a walk somewhere a few blocks off, digging and pillaring
+                    // allowed, never through what someone built.
                     if (actionTicks > 20) {
-                        phase = Phase.GIVE_UP;
+                        phase = Phase.MOVE_AWAY;
                         actionTicks = 0;
+                        moveAwayFrom = sp.blockPosition().immutable();
+                        moveAwayStarted = false;
                     }
+                }
+                case MOVE_AWAY -> {
+                    actionTicks++;
+                    if (moveAway(sp)) return;
+                    phase = Phase.GIVE_UP;
+                    actionTicks = 0;
                 }
                 case GIVE_UP -> {
                     // Stop all input — let the LLM's higher-level reasoning
@@ -384,10 +393,58 @@ public final class UnstuckChain implements TaskChain {
         reset();
     }
 
+    /** Where it was stuck when it set out to walk away, and its walk (digging and pillaring allowed). */
+    private BlockPos moveAwayFrom;
+    private boolean moveAwayStarted;
+    private com.mineagent.engine.pathing.execute.PlayerNav awayNav;
+    /** How far it walks away (Mindcraft's moveAway(bot, 5)), and how long it tries. */
+    static final int MOVE_AWAY = 5, MOVE_AWAY_TICKS = 300;
+
+    /**
+     * One tick of the walk away; true while it goes on. To any open ground at least {@link #MOVE_AWAY} off, the nearest
+     * of eight ways first, under rules that may dig, pillar and bridge (as Mindcraft's pathfinder may by default).
+     */
+    private boolean moveAway(ServerPlayer sp) {
+        if (moveAwayFrom == null) return false;
+        if (sp.blockPosition().distSqr(moveAwayFrom) >= MOVE_AWAY * MOVE_AWAY) {
+            bodyLog.report("walked away from where I was stuck");
+            reset();
+            return true;
+        }
+        if (actionTicks > MOVE_AWAY_TICKS) {
+            if (awayNav != null) awayNav.cancel();
+            return false;
+        }
+        if (awayNav == null) {
+            awayNav = new com.mineagent.engine.pathing.execute.PlayerNav(companion,
+                    com.mineagent.engine.task.TaskContext.navCaches(companion),
+                    new com.mineagent.engine.planning.IntentContract.TerrainPolicy(true, true, true, false, 16, 24, 6,
+                            com.mineagent.engine.planning.IntentContract.CleanupMode.CONTEXTUAL));
+        }
+        if (!moveAwayStarted || !awayNav.isNavigating() && actionTicks % 60 == 0) {
+            moveAwayStarted = true;
+            var level = sp.serverLevel();
+            double turn = (actionTicks / 60) * 0.785;
+            for (int i = 0; i < 8; i++) {
+                double a = turn + Math.PI * 2 * i / 8;
+                int x = moveAwayFrom.getX() + (int) Math.round(Math.cos(a) * (MOVE_AWAY + 1));
+                int z = moveAwayFrom.getZ() + (int) Math.round(Math.sin(a) * (MOVE_AWAY + 1));
+                if (!level.hasChunk(x >> 4, z >> 4)) continue;
+                int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                if (Math.abs(y - moveAwayFrom.getY()) > 8) y = moveAwayFrom.getY(); // a cave or a cliff: on its own level
+                awayNav.navigateNear(x, y, z, 2);
+                break;
+            }
+        }
+        awayNav.tick();
+        return true;
+    }
+
     private void reset() {
         try {
             ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
             abortActiveBreak(sp);
+            if (awayNav != null) awayNav.cancel();
             ((CompanionEntity) companion).inputDriver().clear();
         } catch (Exception ignored) {
             // Cleanup can race entity teardown during despawn.

@@ -397,6 +397,9 @@ public class AStarPathFinder {
     private void expandPillar(PathNode current, Goal goal, Favoring favoring,
                                CalculationContext ctx) {
         int ny = current.y + 1;
+        // Not built up far over where it started (its task's semantic bound: a pillar to a tree's top, a tower for
+        // nothing); walking up the land is not bounded.
+        if (!ctx.isWithinVerticalPolicy(ny)) return;
         double cost = calculatePillarCost(current.x, current.y, current.z, ctx);
         if (cost < Double.POSITIVE_INFINITY) {
             considerNode(current, current.x, ny, current.z, cost, goal, favoring);
@@ -510,7 +513,9 @@ public class AStarPathFinder {
         if (moveCost <= 0) return;
         // Cells near a hostile mob cost more (SMH plan 70, MA5.10).
         if (currentCtx != null) moveCost += currentCtx.dangerCost(x, y, z);
-        if (currentCtx != null && !currentCtx.isWithinVerticalPolicy(y)) return;
+        // The height limit bounds pillaring only (expandPillar): over the land itself it walks up any hill, as Baritone
+        // does. Bounding every step held each walk under the default rules to two blocks over where it started (a
+        // tree four up a slope was "no more spruce logs near here"; a home up a hill "no way").
         // Re-running an unchanged A* search after an execution timeout used to
         // return the identical path up to five times. Exclude only the exact
         // directed edge that produced grounded failure evidence; every other

@@ -6837,11 +6837,12 @@ public class AgentLoop {
      * queue moves on.
      */
     private boolean recover(com.mineagent.engine.planning.GoalBook.Goal g, String note) {
-        // Food or a bed it couldn't make for want of animals here (none in sight it may hunt, or the ones it went for
-        // gone): new ground looked over first, and the order again, once (a player wanders till they find a herd).
+        // Anything it couldn't make for want of it here (the logs, the stone, the herd near here gone or out of reach):
+        // new ground looked over first, and the order again, once. AltoClef's ResourceTask does the same: a resource
+        // not found near is searched for (SearchChunkForBlockTask, its wander), never given up there and then.
         String failed = com.mineagent.engine.goal.Orders.withoutMark(g.text()).toLowerCase(java.util.Locale.ROOT);
         String why = note == null ? "" : note.toLowerCase(java.util.Locale.ROOT);
-        if ((failed.endsWith(" food") || failed.endsWith(" bed") || failed.endsWith(" beds"))
+        if ((failed.startsWith("make me") || failed.startsWith("mine ")) && !failed.contains("chest")
                 && (why.contains("no animals i may hunt") || why.contains("near here")) && exploredFor.add(g.id())) {
             try {
                 goalBook.chain(List.of("explore"), "recovery", currentGameTickSafe());
