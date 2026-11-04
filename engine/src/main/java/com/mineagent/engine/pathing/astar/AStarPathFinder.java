@@ -578,6 +578,9 @@ public class AStarPathFinder {
         return PathCalcResult.success(path, nodesExplored);
     }
 
+    /** The shortest partial path worth walking, in blocks from where it starts (Baritone's MIN_DIST_PATH). */
+    static final int MIN_DIST_PATH = 5;
+
     /**
      * Build a cutoff result (partial path) when the search is interrupted.
      */
@@ -595,6 +598,13 @@ public class AStarPathFinder {
 
         if (bestNode == null || bestNode.parent == null) {
             return PathCalcResult.failure(PathCalcResult.FailureReason.CANCELLED, nodesExplored);
+        }
+        // As Baritone has it (AbstractNodeCostSearch.MIN_DIST_PATH): a partial path that gets it no more than five
+        // blocks from where it stands is no path. Walked, it ends at the same wall each time and the walk begins again
+        // (the three-world run's companion at a cliff's edge); said, its walk's rules can look again with more allowed.
+        long dx = bestNode.x - startX, dy = bestNode.y - startY, dz = bestNode.z - startZ;
+        if (dx * dx + dy * dy + dz * dz <= MIN_DIST_PATH * MIN_DIST_PATH) {
+            return PathCalcResult.failure(PathCalcResult.FailureReason.NO_PATH, nodesExplored);
         }
 
         // Build a partial path to the best node

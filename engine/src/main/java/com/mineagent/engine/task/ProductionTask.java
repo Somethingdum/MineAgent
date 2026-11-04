@@ -270,7 +270,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (FOOD.equals(itemId) && chestPos == null && com.mineagent.engine.settings.Switches.reactiveFood()) {
             // Food for itself: decided again and again from what is there, not planned ahead from what it remembers
             // (AltoClef's way, behaviour.reactiveFood). A chest to fill with food is still planned.
-            foodTask = new CollectFoodTask(player, new CollectFoodTask.FoodRecord(record.toolCallId() + ":food", record.count == 0 ? 16 : record.count));
+            foodTask = new CollectFoodTask(player, new CollectFoodTask.FoodRecord(record.toolCallId() + ":food", record.count == 0 ? 16 : record.count,
+                    record.onlySeen));
             foodTask.start();
             phase = Phase.FOOD;
             return TaskState.RUNNING;

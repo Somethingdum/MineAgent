@@ -48,10 +48,17 @@ public class CollectFoodTask extends CompanionTask<CollectFoodTask.FoodRecord> {
     public static final class FoodRecord extends TaskRecord {
         /** How many more pieces of food it should have on it at the end. */
         public final int count;
+        /** Only what is in sight now (food for a trip, got before it sets out): no walks to new ground. */
+        public final boolean onlyInSight;
 
         public FoodRecord(String toolCallId, int count) {
+            this(toolCallId, count, false);
+        }
+
+        public FoodRecord(String toolCallId, int count, boolean onlyInSight) {
             super(toolCallId);
             this.count = Math.max(1, count);
+            this.onlyInSight = onlyInSight;
         }
     }
 
@@ -212,8 +219,12 @@ public class CollectFoodTask extends CompanionTask<CollectFoodTask.FoodRecord> {
         }
         BlockPos bush = nearest(sp, BERRIES, 6, (p, st) -> ProductionTask.ripeBerries(st) != null);
         if (bush != null) return go(Doing.BERRIES, bush, "ripe berries");
-        // None of it in sight: new ground, and look again (AltoClef's wander).
+        // None of it in sight: new ground, and look again (AltoClef's wander); for a trip's food, what it has.
         looked.add(at);
+        if (record.onlyInSight) {
+            outcome = "none in sight here";
+            return gained(sp) > 0 ? startCooking(sp) : TaskState.FAILED;
+        }
         if (++wanders > WANDERS) {
             outcome = "no food to be had within " + (int) Math.sqrt(startAt.distSqr(at)) + " blocks of where I set out, after "
                     + WANDERS + " walks looking";

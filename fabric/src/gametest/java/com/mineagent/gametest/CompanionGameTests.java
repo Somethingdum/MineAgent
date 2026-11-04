@@ -3291,9 +3291,10 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
-     * The one way out of anywhere (AltoClef's progress checkers, Mindcraft's unstuck mode): penned in by fences it can't
-     * step over, not a hole and not a tree, a cow outside. Its walks to the cow find no way; the second time here, the
-     * next looks again breaking what is in the way, and it gets out and gets its food.
+     * The one way out of anywhere (AltoClef's progress checkers, Mindcraft's unstuck mode): penned in by leaves two high
+     * (the land's own, as a thicket: fences would be someone's build, never broken), not a hole and not a tree, cows
+     * outside. Its walks to them find no way; the second time here, the next looks again breaking what is in the way,
+     * and it gets out and gets its food.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_penned", timeoutTicks = 2400)
     public void pennedInItBreaksOutTheSecondTime(GameTestHelper helper) {
@@ -3301,7 +3302,8 @@ public class CompanionGameTests implements FabricGameTest {
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
         BlockPos in = helper.absolutePos(new BlockPos(5, 1, 5));
         s.body().teleportTo(helper.getLevel(), in.getX() + 0.5, in.getY(), in.getZ() + 0.5, 0.0f, 0.0f);
-        for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) if (x != 5 || z != 5) helper.setBlock(x, 1, z, Blocks.OAK_FENCE);
+        var leaves = Blocks.OAK_LEAVES.defaultBlockState().setValue(net.minecraft.world.level.block.LeavesBlock.PERSISTENT, true);
+        for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) for (int y = 1; y <= 2; y++) if (x != 5 || z != 5) helper.setBlock(x, y, z, leaves);
         s.body().getInventory().setItem(0, new ItemStack(Items.STONE_AXE));
         helper.spawn(EntityType.COW, new BlockPos(12, 1, 12));
         helper.spawn(EntityType.COW, new BlockPos(13, 1, 10));
@@ -3317,8 +3319,8 @@ public class CompanionGameTests implements FabricGameTest {
                 helper.succeed();
             } else if (helper.getTick() >= 2300) {
                 int fences = 0;
-                for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) if (is(helper, x, 1, z, Blocks.OAK_FENCE)) fences++;
-                String how = "at " + at.toShortString() + ", out " + out + ", fences standing " + fences + ", beef " + inv.countItem(Items.BEEF) + ", "
+                for (int x = 4; x <= 6; x++) for (int z = 4; z <= 6; z++) if (is(helper, x, 1, z, Blocks.OAK_LEAVES)) fences++;
+                String how = "at " + at.toShortString() + ", out " + out + ", leaves standing " + fences + ", beef " + inv.countItem(Items.BEEF) + ", "
                         + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
                         + "; said: " + lastSaid(s, "");
                 tidy(s);
