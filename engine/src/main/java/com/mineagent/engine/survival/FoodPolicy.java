@@ -97,12 +97,20 @@ public final class FoodPolicy {
      *   <li>Safety tier (safe > caution > dangerous)</li>
      * </ul>
      */
+    /** A golden apple or an enchanted one. */
+    public static boolean isGoldenApple(Item item) {
+        return item == Items.GOLDEN_APPLE || item == Items.ENCHANTED_GOLDEN_APPLE;
+    }
+
     public static float scoreFood(ItemStack stack, int currentHunger) {
         if (!isEdible(stack)) return Float.NEGATIVE_INFINITY;
 
         Item item = stack.getItem();
         FoodProperties food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
         if (food == null) return Float.NEGATIVE_INFINITY;
+        // Golden apples are kept for when its life depends on them (a fight going badly, fire, lava): never eaten for
+        // hunger while anything else will do, and then only when it is starving.
+        if (isGoldenApple(item)) return currentHunger <= 6 ? 1.0f : Float.NEGATIVE_INFINITY;
 
         float nutrition = food.nutrition();
         float saturation = food.saturation();

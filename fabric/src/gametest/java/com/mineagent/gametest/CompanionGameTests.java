@@ -4353,6 +4353,59 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70: in the middle of a wide lava pool with an enchanted golden apple and no potion: the apple eaten at once
+     * (it gives fire resistance; swimming out first would burn it to death), then out, alive.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_lava_gapple", timeoutTicks = 300)
+    public void inLavaItEatsAnEnchantedGoldenApple(GameTestHelper helper) {
+        Scene s = scene(helper, "Phoenix");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 5; x <= 9; x++) for (int z = 5; z <= 9; z++) helper.setBlock(x, 0, z, Blocks.LAVA);
+        s.body().getInventory().setItem(4, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE));
+        s.body().getInventory().setItem(5, new ItemStack(Items.GOLDEN_APPLE, 3));
+        BlockPos in = helper.absolutePos(new BlockPos(7, 0, 7));
+        s.body().teleportTo(helper.getLevel(), in.getX() + 0.5, in.getY(), in.getZ() + 0.5, 0.0f, 0.0f);
+        helper.onEachTick(() -> {
+            trace(helper, s, "lava gapple");
+            var body = s.body();
+            boolean resisting = body.hasEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
+            if (body.isDeadOrDying() || resisting && !body.isInLava() || helper.getTick() >= 280) {
+                String how = "dead " + body.isDeadOrDying() + ", fire resistance " + resisting + ", in lava " + body.isInLava()
+                        + ", health " + body.getHealth() + ", golden apples left " + body.getInventory().countItem(Items.GOLDEN_APPLE);
+                tidy(s);
+                if (!body.isDeadOrDying() && resisting && !body.isInLava()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** SMH plan 70: hungry, with bread and golden apples on it, it eats the bread; the golden apples are kept for the worst. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_keep_gapples", timeoutTicks = 400)
+    public void hungryItEatsBreadNotItsGoldenApples(GameTestHelper helper) {
+        Scene s = scene(helper, "Saver");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(3, new ItemStack(Items.GOLDEN_APPLE, 3));
+        s.body().getInventory().setItem(4, new ItemStack(Items.BREAD, 4));
+        s.body().getFoodData().setFoodLevel(8);
+        helper.onEachTick(() -> {
+            trace(helper, s, "keep gapples");
+            int apples = s.body().getInventory().countItem(Items.GOLDEN_APPLE);
+            int bread = s.body().getInventory().countItem(Items.BREAD);
+            if (apples < 3) {
+                tidy(s);
+                fail(helper, "it ate a golden apple for hunger (" + bread + " bread left)");
+            } else if (bread < 4 && s.body().getFoodData().getFoodLevel() > 8) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 380) {
+                String how = "food " + s.body().getFoodData().getFoodLevel() + ", bread " + bread;
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4, leaving no trace: three holes it dug in the ground near home, filled when it has nothing to do. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_fill_holes", timeoutTicks = 1000)
     public void holesItDugNearHomeAreFilled(GameTestHelper helper) {

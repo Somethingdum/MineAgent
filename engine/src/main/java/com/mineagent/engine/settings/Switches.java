@@ -71,6 +71,7 @@ public final class Switches {
     public static boolean huntMonsters() { return b().huntMonsters(); }
     public static boolean gearGoal() { return b().gearGoal(); }
     public static boolean bowAtRange() { return b().bowAtRange(); }
+    public static boolean kitGoal() { return b().kitGoal(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {

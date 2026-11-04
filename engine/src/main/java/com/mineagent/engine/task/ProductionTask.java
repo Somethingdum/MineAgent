@@ -1265,7 +1265,18 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         if (smeltStage == 0) {
             // Where it works: by the furnaces it has near (put down for the last job), else here; back here after.
             if (workSpot == null) workSpot = byFurnaces(sp, level);
-            if (!standing(sp).equals(workSpot)) return walkTo(workSpot, 0);
+            if (!standing(sp).equals(workSpot)) {
+                if (navFailed && workSpot.equals(walkingTo)) {
+                    // No way to the spot by those furnaces (shut in, or something in the way): they are out of reach for
+                    // this job, and it works by others, or after three such tries from where it stands.
+                    walkingTo = null;
+                    navFailed = false;
+                    if (workFurnace != null) furnacesOutOfReach.add(workFurnace);
+                    workSpot = ++workSpotMisses >= 3 ? standing(sp) : null;
+                    return TaskState.RUNNING;
+                }
+                return walkTo(workSpot, 0);
+            }
             var station = station(sp);
             furnaces.removeIf(f -> !level.getBlockState(f).is(station) || furnacesOutOfReach.contains(f));
             for (BlockPos p : ring(workSpot, 2)) {
@@ -1485,6 +1496,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 }
             }
         }
+        workFurnace = nearest;
         if (nearest == null || best <= 12 * 12 || count(sp, station.asItem()) >= step.furnaces()) return here;
         for (BlockPos c : ring(nearest, 1)) {
             if (BlockHelper.isPassable(level.getBlockState(c)) && BlockHelper.isPassable(level.getBlockState(c.above()))
@@ -1501,6 +1513,9 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Times its only furnace was out of reach and it set up again. */
     private int resetups;
+    /** The furnace its work spot is by, and the work spots it could not get to. */
+    private BlockPos workFurnace;
+    private int workSpotMisses;
 
     /** Furnaces it couldn't get to in this job. */
     private final java.util.Set<BlockPos> furnacesOutOfReach = new java.util.HashSet<>();

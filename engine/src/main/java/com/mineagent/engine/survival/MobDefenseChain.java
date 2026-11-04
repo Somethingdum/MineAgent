@@ -457,7 +457,7 @@ public final class MobDefenseChain implements TaskChain {
 
     /** Away from the danger: straight away when it is close (a fusing creeper cannot wait for a path), else a path. */
     private void flee(Snapshot s, Mob from, ServerPlayer sp, InputDriver input, Action act) {
-        shield(act.shield(), sp);
+        if (!eatingApple(sp, from)) shield(act.shield(), sp);
         if (from == null) {
             stop(input, sp);
             return;
@@ -508,6 +508,29 @@ public final class MobDefenseChain implements TaskChain {
             repath = 0;
         }
         n.tick();
+    }
+
+    /**
+     * Low and getting away with room to do it: a golden apple eaten on the run (regeneration and absorption; an enchanted
+     * one, kept for the worst, adds resistance and fire resistance). True while it eats one.
+     */
+    private boolean eatingApple(ServerPlayer sp, Mob from) {
+        if (sp.isUsingItem() && FoodPolicy.isGoldenApple(sp.getUseItem().getItem())) return true;
+        if (sp.getHealth() > 8.0f || sp.hasEffect(net.minecraft.world.effect.MobEffects.REGENERATION)
+                || sp.hasEffect(net.minecraft.world.effect.MobEffects.ABSORPTION)) return false;
+        if (from != null && from.distanceTo(sp) < 4.0) return false;
+        var inv = sp.getInventory();
+        boolean plain = inv.countItem(net.minecraft.world.item.Items.GOLDEN_APPLE) > 0;
+        boolean enchanted = inv.countItem(net.minecraft.world.item.Items.ENCHANTED_GOLDEN_APPLE) > 0;
+        String pick = enchanted && (sp.getHealth() <= 5.0f || !plain) ? "minecraft:enchanted_golden_apple"
+                : plain ? "minecraft:golden_apple" : null;
+        if (pick == null) return false;
+        if (sp.isUsingItem()) sp.stopUsingItem();
+        if (!TaskContext.selectInventoryItemForHand(companion, pick, InteractionHand.MAIN_HAND)) return false;
+        Interaction.useItem(sp, InteractionHand.MAIN_HAND);
+        if (sp.isUsingItem()) SurvivalBuiltin.bodyLog(companion).report("low and getting away: eating "
+                + (pick.contains("enchanted") ? "an enchanted golden apple" : "a golden apple"));
+        return sp.isUsingItem();
     }
 
     /** Back to the post (or the ward, or the work spot), by a path. */

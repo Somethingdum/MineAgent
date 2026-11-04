@@ -77,20 +77,52 @@ public final class LavaFireChain implements TaskChain {
                 return;
             }
             ServerLevel level = sp.serverLevel();
-            // Fire resistance first (MA11.1): a potion of it drunk as it gets out; with it, lava and fire don't hurt.
+            // Fire resistance first (MA11.1): a potion of it drunk, or an enchanted golden apple eaten (it gives five
+            // minutes of fire resistance too), as it gets out; with it, lava and fire don't hurt. A plain golden apple
+            // gives none: it is eaten once out of the lava, still burning and hurt (regeneration and absorption buy time).
             if ((sp.isInLava() || sp.isOnFire()) && !sp.hasEffect(MobEffects.FIRE_RESISTANCE)) {
-                boolean drinking = sp.isUsingItem() && fireResistance(sp.getUseItem());
-                if (!drinking) {
+                boolean drinking = sp.isUsingItem() && (fireResistance(sp.getUseItem()) || sp.getUseItem().is(Items.ENCHANTED_GOLDEN_APPLE)
+                        || sp.getUseItem().is(Items.GOLDEN_APPLE) && !sp.isInLava());
+                // Lava is swum at under half a block a second while it burns 8 health a second: unless the bank is the
+                // very next block (a jump out), the drink or the apple comes first, where it is; on the bank it drinks
+                // there (the burning it carries out still hurts for seconds).
+                if (sp.isInLava() && (goal == null || goalAge > 20 || !standable(level, goal))) {
+                    goal = nearest(level, sp.blockPosition(), false);
+                    goalAge = 0;
+                }
+                boolean escapeFirst = sp.isInLava() && goal != null
+                        && Math.hypot(goal.getX() + 0.5 - sp.getX(), goal.getZ() + 0.5 - sp.getZ()) <= 1.1;
+                if (!drinking && !escapeFirst) {
                     int potion = fireResistanceSlot(sp);
+                    String what = "drinking a potion of fire resistance";
+                    if (potion < 0) {
+                        potion = slotOf(sp, Items.ENCHANTED_GOLDEN_APPLE);
+                        what = "eating an enchanted golden apple";
+                    }
+                    if (potion < 0 && !sp.isInLava() && sp.getHealth() <= 10.0f && !sp.hasEffect(MobEffects.REGENERATION)) {
+                        potion = slotOf(sp, Items.GOLDEN_APPLE);
+                        what = "eating a golden apple";
+                    }
                     if (potion >= 0) {
+                        if (sp.isUsingItem()) sp.stopUsingItem();
                         hold(sp, potion);
                         Interaction.useItem(sp, InteractionHand.MAIN_HAND);
                         drinking = sp.isUsingItem();
-                        if (drinking) SurvivalBuiltin.bodyLog(companion).report("in the fire: drinking a potion of fire resistance");
+                        if (drinking) SurvivalBuiltin.bodyLog(companion).report("in the fire: " + what);
                     }
                 }
                 if (drinking && !sp.isInLava()) {
-                    input.clear(); // out of the lava already: the drink finishes, and the fire can't hurt then
+                    // Out of the lava already: the drink finishes, and the fire can't hurt then. A plain golden apple
+                    // gives no such cover: it is eaten walking out of the fire it stands in.
+                    BlockPos feet = sp.blockPosition();
+                    if (sp.getUseItem().is(Items.GOLDEN_APPLE) && level.getBlockState(feet).getBlock() instanceof BaseFireBlock) {
+                        BlockPos out = nearest(level, feet, false);
+                        if (out != null) {
+                            walkAt(sp, input, Vec3.atBottomCenterOf(out));
+                            return;
+                        }
+                    }
+                    input.clear();
                     return;
                 }
                 if (drinking) {

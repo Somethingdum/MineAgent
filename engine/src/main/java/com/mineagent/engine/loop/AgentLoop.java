@@ -2862,6 +2862,7 @@ public class AgentLoop {
             if (gameTick % 100L == 0L) stayNearHome(player);
             if (gameTick % 200L == 0L) fillHolesWhenIdle(player);
             if (gameTick % 1200L == 600L) gearGoal(player);
+            if (gameTick % 1200L == 900L) kitGoal(player);
             goalHeartbeat(player);
             watchCloseCalls(player);
             if (gameTick % 20L == 0L) noteHostiles(player);
@@ -3669,6 +3670,50 @@ public class AgentLoop {
                     "gear-" + UUID.randomUUID(), id, 1, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
             return;
         }
+    }
+
+    // ── The kit it keeps: a shield and golden apples (SMH plan 70) ──
+
+    /** Golden apples it keeps on it, made in free time. */
+    public static final int KIT_APPLES = 4;
+
+    /**
+     * In any world, with nothing to do, it makes what saves a life and keeps it on it: a shield (into the off hand), then
+     * golden apples up to {@link #KIT_APPLES}, from what it has and has seen ({@code behaviour.kitGoal}). An enchanted
+     * golden apple can't be made: it is kept when found. Its owner's orders always come first.
+     */
+    private void kitGoal(net.minecraft.server.level.ServerPlayer self) {
+        if (self == null || suspended || !com.mineagent.engine.settings.Switches.kitGoal()) return;
+        if (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.PARKED) return;
+        LiveBodyState body = liveBodyState.get();
+        if (body != null && body.taskId() != null || goalBook.active().isPresent() || guarding() || skillRuntime.active()) return;
+        var inv = self.getInventory();
+        boolean shield = self.getOffhandItem().is(net.minecraft.world.item.Items.SHIELD) || inv.countItem(net.minecraft.world.item.Items.SHIELD) > 0;
+        int apples = inv.countItem(net.minecraft.world.item.Items.GOLDEN_APPLE);
+        String id;
+        int want;
+        if (!shield) {
+            id = "minecraft:shield";
+            want = 1;
+        } else if (apples < KIT_APPLES) {
+            id = "minecraft:golden_apple";
+            want = KIT_APPLES - apples;
+        } else {
+            return;
+        }
+        var book = com.mineagent.engine.planning.production.GameKnowledge.book(self);
+        var have = com.mineagent.engine.planning.production.GameKnowledge.have(self, this, null);
+        var unseen = java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
+        var plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, want, unseen);
+        if (!plan.possible() && want > 1) {
+            want = 1;
+            plan = com.mineagent.engine.planning.production.ProductionPlanner.plan(book, have, id, want, unseen);
+        }
+        if (!plan.possible()) return;
+        journal.record("kit", "free time: making " + (want > 1 ? want + " " : "") + com.mineagent.engine.planning.production.ProductionPlanner.name(id)
+                + (want > 1 ? "s" : "") + " to keep on me", currentGameTickSafe());
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(companion, new com.mineagent.engine.task.ProductionTask.ProduceRecord(
+                "kit-" + UUID.randomUUID(), id, want, null, false, true), reply -> com.mineagent.engine.survival.GearUp.run(self));
     }
 
     // ── Leaving no trace: holes near home filled (SMH plan 70, MA9.4) ──
