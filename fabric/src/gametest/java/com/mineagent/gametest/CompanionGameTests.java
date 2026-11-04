@@ -2746,18 +2746,22 @@ public class CompanionGameTests implements FabricGameTest {
             setting(helper, "behaviour.primeMeat", "64");
             setting(helper, "behaviour.primeTorches", "32");
         };
+        long[] primeDoneAt = {-1};
         helper.onEachTick(() -> {
             if (helper.getTick() % 400 == 0) trace(helper, s, "prime");
             // Its owner is there throughout (a real one moves now and then): never taken for AFK by the idle timer.
             if (helper.getTick() % 200 == 0) s.owner().resetLastActionTime();
             var owner = s.owner();
             int helmets = owner.getInventory().countItem(Items.IRON_HELMET), beds = owner.getInventory().countItem(Items.WHITE_BED);
-            for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, owner.getBoundingBox().inflate(4))) {
+            // What it handed over lies where it landed (the stand-in owner doesn't pick up): within 10 blocks of them.
+            for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, owner.getBoundingBox().inflate(10))) {
                 if (e.getItem().is(Items.IRON_HELMET)) helmets += e.getItem().getCount();
                 if (e.getItem().is(Items.WHITE_BED)) beds += e.getItem().getCount();
             }
             boolean hut = !lastSaid(s, "Built the hut at ").isEmpty() && lastSaid(s, "Built the hut at ").contains("every block checked");
-            boolean done = s.loop().goalBook().active().isEmpty() && !lastSaid(s, "Got it").isEmpty() && helper.getTick() > 100;
+            boolean queueDone = s.loop().goalBook().active().isEmpty() && !lastSaid(s, "Got it").isEmpty() && helper.getTick() > 100;
+            if (queueDone && primeDoneAt[0] < 0) primeDoneAt[0] = helper.getTick();
+            boolean done = primeDoneAt[0] >= 0 && helper.getTick() >= primeDoneAt[0] + 40; // the last throw landed
             if (done) {
                 int mine = s.body().getInventory().countItem(Items.IRON_HELMET);
                 String how = "hut " + hut + ", helmets: owner " + helmets + ", its own " + mine + "; beds to owner " + beds + "; said: " + lastSaid(s, "");
