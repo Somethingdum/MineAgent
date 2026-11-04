@@ -1017,12 +1017,26 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         sp.setXRot(90.0f);
         TaskContext.inputDriver(player).clear();
-        com.mineagent.engine.task.BlockDigger.startBreaking(sp, under);
+        // A dig is started once and runs on, as a held mouse button does (starting it again each tick starts it over).
+        if (!under.equals(digging) || ++digTicks > 400) {
+            if (digging != null) com.mineagent.engine.task.BlockDigger.abortBreaking(sp, digging);
+            digging = com.mineagent.engine.task.BlockDigger.startBreaking(sp, under) ? under.immutable() : null;
+            digTicks = 0;
+            if (digging == null) { // it can't dig it (out of reach, held back): it jumps down instead
+                pillared = 0;
+                return false;
+            }
+        }
         if (sp.level().getBlockState(under).isAir()) {
+            digging = null;
             if (--pillared <= 0) pillarTicks = 0;
         }
         return true;
     }
+
+    /** The pillar block it is digging out, and for how long. */
+    private BlockPos digging;
+    private int digTicks;
 
     /** How near it has got to its prey, and the ticks since it last got nearer. */
     private double preyClosest = Double.MAX_VALUE;
