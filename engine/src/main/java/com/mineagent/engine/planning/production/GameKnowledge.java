@@ -364,6 +364,19 @@ public final class GameKnowledge {
     /** Adults of a kind it leaves where it hunts, so they breed back. */
     public static final int LEAVE = 2;
 
+    /** Half its hunger bar gone or more, and nothing it carries to eat. */
+    static boolean starving(ServerPlayer sp) {
+        if (sp == null || sp.getFoodData().getFoodLevel() > 10) return false;
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty() && st.get(net.minecraft.core.component.DataComponents.FOOD) != null
+                    && !st.is(net.minecraft.world.item.Items.ROTTEN_FLESH) && !st.is(net.minecraft.world.item.Items.SPIDER_EYE)
+                    && !st.is(net.minecraft.world.item.Items.POISONOUS_POTATO)) return false;
+        }
+        return true;
+    }
+
     /**
      * What each animal drops (MA7.1: "mob drops from loot tables rolled in memory"): its own loot table rolled for a
      * kill by the companion, a few times, in memory; nothing spawned. Animals only: it hunts for food and materials,
@@ -641,6 +654,9 @@ public final class GameKnowledge {
         // Animals near (more than the two of a kind it leaves), then ones it has seen, for what they drop.
         Map<String, Integer> herd = new HashMap<>();
         Map<String, Integer> herdAt = new HashMap<>();
+        // Hungry with nothing to eat, the last two of a herd are food as well, as for any player (its owner: "It just
+        // needs ENOUGH food to survive until morning"); fed, it leaves two of each kind to breed.
+        final int leave = starving(sp) ? 0 : LEAVE;
         for (var e : level.getEntities((net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(at).inflate(48), GameKnowledge::huntable)) {
             String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(e.getType());
             herd.merge(key, 1, Integer::sum);
@@ -676,10 +692,10 @@ public final class GameKnowledge {
             }
         }
         herd.forEach((key, n) -> {
-            if (n > LEAVE) {
+            if (n > leave) {
                 where.put(key, Where.KNOWN);
                 distance.put(key, herdAt.get(key));
-                limited.put(key, n - LEAVE); // how many it may take: the rest of the herd stays to breed
+                limited.put(key, n - leave); // how many it may take: the rest of the herd stays to breed
             }
         });
         // Hostile mobs in sight whose drops an order may need: all of them, none left (MA11.1); a village's golems too.
@@ -706,11 +722,11 @@ public final class GameKnowledge {
                 var near = loop.placeKeeper().sightings().nearest(what, dim, at.getX(), at.getY(), at.getZ(), 1, 96);
                 // A herd it remembers: as many as it saw there, less the two of a kind it leaves (one seen once: none).
                 if (!near.isEmpty() && near.get(0).sighting().kind() == com.mineagent.engine.memory.Sightings.Kind.ANIMAL
-                        && near.get(0).sighting().count() > LEAVE) {
+                        && near.get(0).sighting().count() > leave) {
                     String key = ENTITY + BuiltInRegistries.ENTITY_TYPE.getKey(type);
                     where.put(key, Where.KNOWN);
                     distance.put(key, (int) near.get(0).distance());
-                    limited.put(key, near.get(0).sighting().count() - LEAVE);
+                    limited.put(key, near.get(0).sighting().count() - leave);
                 }
             }
         }

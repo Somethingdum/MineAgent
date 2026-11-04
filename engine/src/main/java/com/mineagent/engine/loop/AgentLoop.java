@@ -3268,7 +3268,8 @@ public class AgentLoop {
             measureEpisodes(player, goalVerified, gameTick);
             practice(player, goalVerified, gameTick);
             if (gameTick % 20L == 0L) orderHeartbeat(player);
-            if (gameTick % 100L == 0L) nightCare(player);
+            // Every second (a hut goes up in five, and dusk comes on its own clock): the beds round it looked for every five.
+            if (gameTick % 20L == 0L) nightCare(player, gameTick % 100L == 0L);
             if (gameTick % 20L == 0L) lookAfterOwner(player);
             if (gameTick % 20L == 0L) notePlayers(player);
             if (gameTick % 100L == 0L) guardWatch(player);
@@ -6823,6 +6824,22 @@ public class AgentLoop {
      * queue moves on.
      */
     private boolean recover(com.mineagent.engine.planning.GoalBook.Goal g, String note) {
+        // Food or a bed it couldn't make for want of animals here (none in sight it may hunt, or the ones it went for
+        // gone): new ground looked over first, and the order again, once (a player wanders till they find a herd).
+        String failed = com.mineagent.engine.goal.Orders.withoutMark(g.text()).toLowerCase(java.util.Locale.ROOT);
+        String why = note == null ? "" : note.toLowerCase(java.util.Locale.ROOT);
+        if ((failed.endsWith(" food") || failed.endsWith(" bed") || failed.endsWith(" beds"))
+                && (why.contains("no animals i may hunt") || why.contains("near here")) && exploredFor.add(g.id())) {
+            try {
+                goalBook.chain(List.of("explore"), "recovery", currentGameTickSafe());
+                journal.record("recovery", "explore first for \"" + failed + "\": " + truncateForLog(note, 160), currentGameTickSafe());
+                saveMemoryNow();
+                speakToOwner("None to be had near here for that: looking over new ground first, then I'll try again.");
+                return true;
+            } catch (RuntimeException full) {
+                // its book is full: on to the ladder
+            }
+        }
         var f = com.mineagent.engine.goal.RecoveryLadder.classify(note, g.text());
         int tried = orderRungs.getOrDefault(g.id(), 0);
         var self = companion instanceof com.mineagent.engine.entity.CompanionEntity e ? e : null;
@@ -6950,6 +6967,9 @@ public class AgentLoop {
         return task && (orderGoalId != null || goalBook.active().isPresent());
     }
 
+    /** A bed within reach of it when it last looked (every five seconds). */
+    private volatile boolean bedNearLately;
+
     /** The night it last sheltered for, and the day it last tried to make a bed (MA8.3). */
     private long shelteredNight = -1, bedTriedDay = -1;
     /** The night its work was last stopped for a shelter, and how many times that night. */
@@ -7045,6 +7065,9 @@ public class AgentLoop {
         return true;
     }
 
+    /** The goals it explored new ground for once already, before trying them again. */
+    private final java.util.Set<String> exploredFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     /** Its night's shelter, sent and not yet finished; when it was sent (game ticks); seen at work since. */
     private volatile String nightTaskId;
     private volatile long nightTaskAt;
@@ -7058,7 +7081,7 @@ public class AgentLoop {
      * and the job goes on in the morning ({@code behaviour.nightStopsWork}). By day, with no bed, it makes one as soon
      * as it has what it takes here (a bed of the wool it carries or sheep in sight), once a day.
      */
-    private void nightCare(net.minecraft.server.level.ServerPlayer player) {
+    private void nightCare(net.minecraft.server.level.ServerPlayer player, boolean lookForBeds) {
         if (player == null || !com.mineagent.engine.settings.Switches.sleepWhenAway() || !(ownerActivity.afk() || onItsOwn)) return;
         var level = player.serverLevel();
         if (!level.dimensionType().bedWorks() || guarding()) return;
@@ -7069,7 +7092,8 @@ public class AgentLoop {
         boolean hasBed = false;
         var inv = player.getInventory();
         for (int i = 0; i < inv.getContainerSize(); i++) if (inv.getItem(i).getItem() instanceof net.minecraft.world.item.BedItem) hasBed = true;
-        if (!hasBed) {
+        if (!hasBed && !lookForBeds) hasBed = bedNearLately;
+        else if (!hasBed) {
             var at = player.blockPosition();
             for (var p : net.minecraft.core.BlockPos.betweenClosed(at.offset(-24, -4, -24), at.offset(24, 4, 24))) {
                 if (level.getBlockState(p).getBlock() instanceof net.minecraft.world.level.block.BedBlock) {
@@ -7077,6 +7101,7 @@ public class AgentLoop {
                     break;
                 }
             }
+            bedNearLately = hasBed;
         }
         if (nightStopsDay != day) {
             nightStopsDay = day;

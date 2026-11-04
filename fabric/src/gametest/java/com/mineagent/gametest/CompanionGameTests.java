@@ -3217,6 +3217,44 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * The night on bare stone with nothing at all (no pickaxe, no blocks: after a death on a mountain): it can neither
+     * dig nor wall in there, so it goes to the patch of grass a few blocks off and digs in by hand there.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_night_stone", timeoutTicks = 2400)
+    public void onBareStoneItGoesToTheEarthToDigIn(GameTestHelper helper) {
+        Scene s = scene(helper, "Stranded");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        for (int x = 8; x <= 10; x++) for (int z = 8; z <= 10; z++) helper.setBlock(x, 0, z, Blocks.GRASS_BLOCK);
+        var level = helper.getLevel();
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
+        helper.runAfterDelay(10, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 13_000L));
+        long[] inAt = {-1};
+        helper.onEachTick(() -> {
+            trace(helper, s, "night stone");
+            var body = s.body();
+            BlockPos at = rel(helper, body.blockPosition());
+            boolean inPatch = at.getX() >= 8 && at.getX() <= 10 && at.getZ() >= 8 && at.getZ() <= 10;
+            boolean roofed = !level.canSeeSky(body.blockPosition().above());
+            if (inAt[0] < 0 && inPatch && at.getY() <= -1 && roofed) {
+                inAt[0] = helper.getTick();
+                helper.runAfterDelay(100, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 25_000L));
+            }
+            if (inAt[0] > 0 && helper.getTick() > inAt[0] + 120 && at.getY() >= 0 && body.onGround() && level.canSeeSky(body.blockPosition().above())) {
+                tidy(s);
+                helper.succeed();
+            } else if (helper.getTick() >= 2300) {
+                String how = "dug in at " + inAt[0] + ", at " + at.toShortString() + ", roofed " + roofed + ", blocks "
+                        + com.mineagent.engine.act.Placement.supportBlockCount(body) + ", "
+                        + MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone")
+                        + "; said: " + lastSaid(s, "");
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * SMH plan 70: its home dug into the hillside, then the evening (its owner away): it closes the doorway of the room
      * it dug from inside and waits there; in the morning the doorway is open again.
      */

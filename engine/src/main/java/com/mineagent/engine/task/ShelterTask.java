@@ -127,6 +127,9 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     private int walkTicks;
     private int walks;
     private boolean triedDig;
+    /** Gone to ground it could dig in, from where it couldn't (once). */
+    private boolean relocated;
+    private BlockPos relocateTo;
     private int holdTicks;
     private int backTicks;
     /** The block it is breaking is what stood in its own cell (snow, grass), not the ground under it. */
@@ -183,7 +186,7 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     private void decide(ServerPlayer sp) {
         ServerLevel level = sp.serverLevel();
         feet = sp.blockPosition();
-        if (start == null) start = feet.immutable();
+        start = feet.immutable(); // where it stands before it digs in (after a walk home or to earth, there)
         int have = Placement.supportBlockCount(sp);
         Enclosure.Room r = Enclosure.around(level, feet);
         int need = open(level, feet).size();
@@ -199,6 +202,15 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
         } else if (record.untilMorning && depth > 0) {
             digTo = depth;
             phase = Phase.DIG;
+        } else if (record.untilMorning && have < need && !relocated && (relocateTo = groundToDig(sp)) != null) {
+            // Nothing to dig here with what it has, too little to wall in with: to the earth near by, and in there.
+            relocated = true;
+            if (nav == null) newNav();
+            target = relocateTo;
+            walkTicks = 0;
+            navFailed = false;
+            nav.navigateTo(target.getX(), target.getY(), target.getZ());
+            phase = Phase.GO;
         } else {
             digTo = Math.max(depth, DIG_DEPTH);
             phase = have >= need ? Phase.BUILD : depth > 0 ? Phase.DIG : Phase.BUILD;
@@ -207,6 +219,7 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             System.out.println("[MineAgent] shelter: at " + feet.toShortString() + ", " + need + " cells open, " + have + " blocks, "
                     + (r == null ? "no room" : "a room of " + r.air().size() + " with " + r.openings().size() + " ways in") + ": " + phase
                     + (phase == Phase.DIG ? " " + digTo + " down" : "")
+                    + (phase == Phase.GO ? " to ground it can dig at " + relocateTo.toShortString() : "")
                     + (phase == Phase.BUILD && !roomMode && have < need ? " (no dig: under it " + level.getBlockState(feet.below()).getBlock()
                     + ", " + level.getBlockState(feet.below(2)).getBlock() + ", " + level.getBlockState(feet.below(3)).getBlock() + ")" : ""));
         }
@@ -216,13 +229,13 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
     private TaskState go(ServerPlayer sp) {
         ServerLevel level = sp.serverLevel();
         if (target == null) {
-            Enclosure.Room r = Enclosure.bestNear(level, record.home);
-            target = r != null ? r.stand() : record.home;
+            Enclosure.Room r = relocateTo == null ? Enclosure.bestNear(level, record.home) : null;
+            target = relocateTo != null ? relocateTo : r != null ? r.stand() : record.home;
             walkTicks = 0;
             navFailed = false;
             nav.navigateTo(target.getX(), target.getY(), target.getZ());
             if (trace()) System.out.println("[MineAgent] shelter: going home to " + target.toShortString() + " from "
-                    + sp.blockPosition().toShortString() + (r == null ? " (no room there now)" : ", a room of " + r.air().size()
+                    + sp.blockPosition().toShortString() + (relocateTo != null ? " (ground to dig in)" : r == null ? " (no room there now)" : ", a room of " + r.air().size()
                     + " with " + r.openings().size() + " ways in"));
         }
         nav.tick();
@@ -288,8 +301,11 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
      * dig with what it has (earth, sand or gravel by hand; stone only with a pickaxe that takes it).
      */
     private static boolean canDig(ServerPlayer sp, int depth) {
+        return canDigAt(sp, sp.blockPosition(), depth);
+    }
+
+    private static boolean canDigAt(ServerPlayer sp, BlockPos f, int depth) {
         ServerLevel level = sp.serverLevel();
-        BlockPos f = sp.blockPosition();
         var placed = com.mineagent.engine.world.PlacedBlocks.of(level);
         for (int i = 1; i <= depth; i++) {
             BlockPos p = f.below(i);
@@ -300,6 +316,25 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
             if (hardness > 0.8f && !(hardness <= 3.0f && canTake(sp, state))) return false;
         }
         return BlockHelper.canStandOn(level.getBlockState(f.below(depth + 1)));
+    }
+
+    /**
+     * The nearest cell within eight blocks it could dig in at, when it can't where it stands and has too little to wall
+     * in with (bare stone and no pickaxe): earth, sand or gravel near by, as a player runs to the dirt at dusk.
+     */
+    private static BlockPos groundToDig(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        BlockPos at = sp.blockPosition(), best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (BlockPos p : BlockPos.betweenClosed(at.offset(-8, -3, -8), at.offset(8, 3, 8))) {
+            if (!level.isLoaded(p) || !Enclosure.standable(level, p) || !canDigAt(sp, p, DIG_DEPTH)) continue;
+            double d = p.distSqr(at);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = p.immutable();
+            }
+        }
+        return best;
     }
 
     /** It carries a tool that takes this block (a pickaxe for stone). */
