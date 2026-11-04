@@ -7187,6 +7187,9 @@ public class AgentLoop {
                     new com.mineagent.engine.task.ShelterTask.ShelterRecord("night-" + UUID.randomUUID(), true), reply -> { });
             return;
         }
+        // Living on its own, its starter kit first (a bed is in it when there is wool to be had): the three-world run's
+        // second world spent its first morning after sheep for a bed, and had no tools at all by its first night.
+        if (onItsOwn && kitFirst(player)) return;
         var book = com.mineagent.engine.planning.production.GameKnowledge.book(player);
         var have = com.mineagent.engine.planning.production.GameKnowledge.have(player, this, null);
         var none = java.util.Set.of(com.mineagent.engine.planning.production.Production.UNSEEN);
