@@ -246,12 +246,7 @@ public class SlotHandler {
     }
 
     public void refreshInventory() {
-        if (AltoClef.getInstance().getPlayer() == null)
-            return;
-        for (int i = 0; i < AltoClef.getInstance().getPlayer().getInventory().items.size(); ++i) {
-            Slot slot = Slot.getFromCurrentScreenInventory(i);
-            clickSlotForce(slot, 0, ClickType.PICKUP);
-            clickSlotForce(slot, 0, ClickType.PICKUP);
-        }
+        // SMH: a client clicks every slot twice to have the server resend its inventory when the two disagree; the
+        // companion's inventory is the server's own, so there is nothing to bring back in step.
     }
 }

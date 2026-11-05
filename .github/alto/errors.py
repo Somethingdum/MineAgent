@@ -24,8 +24,13 @@ print('=' * 30, 'ALTO COMPILE ERRORS:', len(errs))
 by = collections.Counter(e[0] for e in errs)
 for f, n in by.most_common():
     print('%5d %s' % (n, f))
-print('=' * 30, 'ERRORS')
+# The same error in many places once, with where (most first): what is read back has to be short.
+groups = collections.OrderedDict()
 for rel, line, msg, extra in sorted(errs):
-    print('%s:%d: %s%s' % (rel, line, msg[:200], (' [' + extra[:240] + ']') if extra else ''))
+    key = (msg[:200], extra.split(' | location')[0][:200])
+    groups.setdefault(key, []).append('%s:%d' % (rel, line))
+print('=' * 30, 'ERRORS', len(groups), 'distinct')
+for (msg, extra), where in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:400]:
+    print('%dx %s%s @ %s' % (len(where), msg, (' [' + extra + ']') if extra else '', ' '.join(where[:4]) + (' ...' if len(where) > 4 else '')))
 tail = [l for l in log if 'BUILD SUCCESSFUL' in l or 'BUILD FAILED' in l or 'What went wrong' in l]
 print('=' * 30, *tail)

@@ -281,6 +281,21 @@ public class BlockScanner {
 
         scanning = true;
         forceStop = false;
+        // SMH: the loaded chunks round it, taken on the server thread without loading any (a client has these in its
+        // own world); the scan thread reads only these, never the server's chunk map, which belongs to its own thread.
+        java.util.Map<ChunkPos, LevelChunk> loaded = new java.util.HashMap<>();
+        ChunkPos at = mod.getPlayer().chunkPosition();
+        int view = Math.max(2, mod.getWorld().getServer().getPlayerList().getViewDistance());
+        for (int cx = at.x - view; cx <= at.x + view; cx++) {
+            for (int cz = at.z - view; cz <= at.z + view; cz++) {
+                LevelChunk c = mod.getWorld().getChunkSource().getChunkNow(cx, cz);
+                if (c != null) loaded.put(new ChunkPos(cx, cz), c);
+            }
+        }
+        snapshot = loaded;
+        snapshotPlayerChunk = at;
+        snapshotPlayerPos = mod.getPlayer().position();
+        snapshotTime = mod.getWorld().getGameTime();
         new Thread(() -> {
             try {
                 rescan(Integer.MAX_VALUE, Integer.MAX_VALUE);
@@ -339,11 +354,17 @@ public class BlockScanner {
         }
     }
 
+    // SMH: what the scan thread reads (set on the server thread before it starts).
+    private volatile java.util.Map<ChunkPos, LevelChunk> snapshot = java.util.Map.of();
+    private volatile ChunkPos snapshotPlayerChunk;
+    private volatile Vec3 snapshotPlayerPos;
+    private volatile long snapshotTime;
+
     private void rescan(int maxCount, int cutOffRadius) {
         long ms = System.currentTimeMillis();
 
-        ChunkPos playerChunkPos = mod.getPlayer().chunkPosition();
-        Vec3 playerPos = mod.getPlayer().position();
+        ChunkPos playerChunkPos = snapshotPlayerChunk;
+        Vec3 playerPos = snapshotPlayerPos;
 
         HashSet<ChunkPos> visited = new HashSet<>();
         Queue<Node> queue = new ArrayDeque<>();
@@ -352,11 +373,11 @@ public class BlockScanner {
         while (!queue.isEmpty() && visited.size() < maxCount && !forceStop) {
             Node node = queue.poll();
 
-            if (node.distance > cutOffRadius || visited.contains(node.pos) || !mod.getWorld().getChunkSource().hasChunk(node.pos.x, node.pos.z))
+            if (node.distance > cutOffRadius || visited.contains(node.pos) || !snapshot.containsKey(node.pos))
                 continue;
 
             boolean isPriorityChunk = getChunkDist(node.pos, playerChunkPos) <= 2;
-            if (!isPriorityChunk && scannedChunks.containsKey(node.pos) && mod.getWorld().getGameTime() - scannedChunks.get(node.pos) < RESCAN_TICK_DELAY)
+            if (!isPriorityChunk && scannedChunks.containsKey(node.pos) && snapshotTime - scannedChunks.get(node.pos) < RESCAN_TICK_DELAY)
                 continue;
 
             visited.add(node.pos);
@@ -427,8 +448,9 @@ public class BlockScanner {
      */
     private void scanChunk(ChunkPos chunkPos, ChunkPos playerChunkPos) {
         Level world = mod.getWorld();
-        LevelChunk chunk = mod.getWorld().getChunk(chunkPos.x, chunkPos.z);
-        scannedChunks.put(chunkPos, world.getGameTime());
+        LevelChunk chunk = snapshot.get(chunkPos);
+        if (chunk == null) return;
+        scannedChunks.put(chunkPos, snapshotTime);
 
         boolean isPriorityChunk = getChunkDist(chunkPos, playerChunkPos) <= 2;
 

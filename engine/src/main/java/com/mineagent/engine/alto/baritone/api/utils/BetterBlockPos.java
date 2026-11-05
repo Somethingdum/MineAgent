@@ -19,7 +19,6 @@
 
 package com.mineagent.engine.alto.baritone.api.utils;
 
-import javax.annotation.Nonnull;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;

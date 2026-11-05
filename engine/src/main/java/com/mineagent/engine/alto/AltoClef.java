@@ -108,6 +108,9 @@ public class AltoClef {
             botBehaviour = new BotBehaviour(this);
             extraController = new PlayerExtraController(this);
             userTaskChain = new UserTaskChain(taskRunner);
+            // AltoClef's hand fixes: the best tool equipped while it breaks a block, a stack left on the cursor put
+            // away, a container shut when it looks away (a chain that works out its priority and never runs).
+            new com.mineagent.engine.alto.chains.PlayerInteractionFixChain(taskRunner);
             mobDefenseChain = new MobDefenseChain();
             mlgBucketChain = new MLGBucketFallChain(this);
             foodChain = new FoodChain(this);
