@@ -1,0 +1,203 @@
+// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/tasks/CraftGenericWithRecipeBooksTask.java at commit
+// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+package com.mineagent.engine.alto.tasks;
+
+import com.mineagent.engine.alto.AltoClef;
+import com.mineagent.engine.alto.Debug;
+import com.mineagent.engine.alto.multiversion.recipemanager.WrappedRecipeEntry;
+import com.mineagent.engine.alto.tasks.slot.EnsureFreePlayerCraftingGridTask;
+import com.mineagent.engine.alto.tasks.slot.ReceiveCraftingOutputSlotTask;
+import com.mineagent.engine.alto.tasksystem.ITaskUsesCraftingGrid;
+import com.mineagent.engine.alto.tasksystem.Task;
+import com.mineagent.engine.alto.util.JankCraftingRecipeMapping;
+import com.mineagent.engine.alto.util.RecipeTarget;
+import com.mineagent.engine.alto.util.helpers.ItemHelper;
+import com.mineagent.engine.alto.util.helpers.StorageHelper;
+import com.mineagent.engine.alto.util.slots.CraftingTableSlot;
+import com.mineagent.engine.alto.util.slots.PlayerSlot;
+import com.mineagent.engine.alto.util.slots.Slot;
+import java.util.Optional;
+import net.minecraft.client.Minecraft;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.item.ItemStack;
+
+public class CraftGenericWithRecipeBooksTask extends Task implements ITaskUsesCraftingGrid {
+
+    private final RecipeTarget target;
+
+    public CraftGenericWithRecipeBooksTask(RecipeTarget target) {
+        this.target = target;
+    }
+
+    /**
+     * This method is called when the mod starts.
+     */
+    @Override
+    protected void onStart() {
+
+    }
+
+    /**
+     * This method handles the logic for the onTick event.
+     * It checks various conditions and performs actions accordingly.
+     *
+     * @return The next task to execute.
+     */
+    @Override
+    protected Task onTick() {
+        AltoClef mod = AltoClef.getInstance();
+
+        // Check if the big crafting UI or player inventory UI is open
+        boolean isBigCraftingOpen = StorageHelper.isBigCraftingOpen();
+        boolean isPlayerInventoryOpen = StorageHelper.isPlayerInventoryOpen();
+
+        // Get the item stack in the cursor slot
+        ItemStack cursorStack = StorageHelper.getItemStackInCursorSlot();
+
+        // Declare variables for the slots to move to and the garbage slot
+        Optional<Slot> moveTo;
+        Optional<Slot> garbage;
+
+        // Check if neither the big crafting UI nor the player inventory UI is open
+        if (!isBigCraftingOpen && !isPlayerInventoryOpen) {
+            // Check if the cursor stack is not empty
+            if (!cursorStack.isEmpty()) {
+                // Find a slot in the player's inventory to move the item to
+                moveTo = mod.getItemStorage().getSlotThatCanFitInPlayerInventory(cursorStack, false);
+                if (moveTo.isPresent()) {
+                    // Click the slot to move the item to the player's inventory
+                    mod.getSlotHandler().clickSlot(moveTo.get(), 0, ClickType.PICKUP);
+                    return null;
+                }
+                // Check if the item can be thrown away
+                if (ItemHelper.canThrowAwayStack(mod, cursorStack)) {
+                    // Click an undefined slot to throw away the item
+                    mod.getSlotHandler().clickSlot(Slot.UNDEFINED, 0, ClickType.PICKUP);
+                    return null;
+                }
+                // Find the garbage slot and click it to move the item there
+                garbage = StorageHelper.getGarbageSlot(mod);
+                if (garbage.isPresent()) {
+                    mod.getSlotHandler().clickSlot(garbage.get(), 0, ClickType.PICKUP);
+                }
+                // Click an undefined slot to clear the cursor stack
+                mod.getSlotHandler().clickSlot(Slot.UNDEFINED, 0, ClickType.PICKUP);
+            } else {
+                // Close the screen
+                StorageHelper.closeScreen();
+            }
+        }
+
+        // Determine the output slot based on whether the big crafting UI is open
+        Slot outputSlot = isBigCraftingOpen ? CraftingTableSlot.OUTPUT_SLOT : PlayerSlot.CRAFT_OUTPUT_SLOT;
+        // Get the item stack in the output slot
+        ItemStack output = StorageHelper.getItemStackInSlot(outputSlot);
+
+        // Check if the output item matches the target item and the target count has not been reached
+        if (target.getOutputItem() == output.getItem() && mod.getItemStorage().getItemCount(target.getOutputItem()) < target.getTargetCount()) {
+            // Return a task to receive the crafting output slot
+            return new ReceiveCraftingOutputSlotTask(outputSlot, target.getTargetCount());
+        }
+
+        // Check if the cursor stack is not empty
+        if (!cursorStack.isEmpty()) {
+            // Find a slot in the player's inventory to move the item to
+            moveTo = mod.getItemStorage().getSlotThatCanFitInPlayerInventory(cursorStack, false);
+            if (moveTo.isPresent()) {
+                // Click the slot to move the item to the player's inventory
+                mod.getSlotHandler().clickSlot(moveTo.get(), 0, ClickType.PICKUP);
+                return null;
+            }
+            // Check if the item can be thrown away
+            if (ItemHelper.canThrowAwayStack(mod, cursorStack)) {
+                // Click an undefined slot to throw away the item
+                mod.getSlotHandler().clickSlot(Slot.UNDEFINED, 0, ClickType.PICKUP);
+                return null;
+            }
+            // Find the garbage slot and click it to move the item there
+            garbage = StorageHelper.getGarbageSlot(mod);
+            garbage.ifPresent(slot -> mod.getSlotHandler().clickSlot(slot, 0, ClickType.PICKUP));
+            // Click an undefined slot to clear the cursor stack
+            mod.getSlotHandler().clickSlot(Slot.UNDEFINED, 0, ClickType.PICKUP);
+            return null;
+        }
+
+        // Check if neither the big crafting UI nor the player inventory UI is open
+        if (!isBigCraftingOpen) {
+            PlayerSlot[] playerInputSlots = PlayerSlot.CRAFT_INPUT_SLOTS;
+            for (PlayerSlot playerInputSlot : playerInputSlots) {
+                ItemStack playerInput = StorageHelper.getItemStackInSlot(playerInputSlot);
+                if (!playerInput.isEmpty()) {
+                    // Return a task to ensure a free player crafting grid
+                    return new EnsureFreePlayerCraftingGridTask();
+                }
+            }
+        }
+
+        Optional<WrappedRecipeEntry> recipeToSend = JankCraftingRecipeMapping.getMinecraftMappedRecipe(target.getRecipe(), target.getOutputItem());
+        if (recipeToSend.isPresent()) {
+            if (mod.getSlotHandler().canDoSlotAction()) {
+                ServerPlayer player = AltoClef.getInstance().getPlayer();
+                assert player != null;
+                // Click the recipe to send it
+                mod.getController().handlePlaceRecipe(player.containerMenu.containerId, recipeToSend.get().asRecipe(), true);
+                mod.getSlotHandler().registerSlotAction();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * This method is called when the task is interrupted.
+     *
+     * @param interruptTask The task that interrupted the current task.
+     */
+    @Override
+    protected void onStop(Task interruptTask) {
+
+    }
+
+    /**
+     * Checks if a given Task object is equal to this CraftGenericWithRecipeBooksTask object.
+     *
+     * @param other The Task object to compare with.
+     * @return True if the given Task is equal to this CraftGenericWithRecipeBooksTask, false otherwise.
+     */
+    @Override
+    protected boolean isEqual(Task other) {
+        // Check if the other Task is an instance of CraftGenericWithRecipeBooksTask
+        if (other instanceof CraftGenericWithRecipeBooksTask) {
+            CraftGenericWithRecipeBooksTask task = (CraftGenericWithRecipeBooksTask) other;
+
+            // Check if the target of the other task is equal to the target of this task
+            boolean isEqual = task.target.equals(target);
+
+            // Log a message if the targets are not equal
+            if (!isEqual) {
+                Debug.logInternal("Task targets are not equal");
+            }
+
+            // Return the result of the equality check
+            return isEqual;
+        }
+
+        // Log a message if the other Task is not an instance of CraftGenericWithRecipeBooksTask
+        Debug.logInternal("Task is not an instance of CraftGenericWithRecipeBooksTask");
+
+        // Return false if the other Task is not an instance of CraftGenericWithRecipeBooksTask
+        return false;
+    }
+
+    /**
+     * Returns a debug string representation of the object.
+     *
+     * @return The debug string representation.
+     */
+    @Override
+    protected String toDebugString() {
+        // Return the debug string.
+        return getClass().getSimpleName() + " (w/ RECIPE): " + target;
+    }
+}

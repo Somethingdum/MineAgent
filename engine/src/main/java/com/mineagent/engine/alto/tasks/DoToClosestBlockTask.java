@@ -1,0 +1,109 @@
+// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/tasks/DoToClosestBlockTask.java at commit
+// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+package com.mineagent.engine.alto.tasks;
+
+import com.mineagent.engine.alto.AltoClef;
+import com.mineagent.engine.alto.tasksystem.Task;
+import com.mineagent.engine.alto.util.helpers.WorldHelper;
+import java.util.Arrays;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.phys.Vec3;
+
+/**
+ * Finds the closest reachable block and runs a task on that block.
+ */
+public class DoToClosestBlockTask extends AbstractDoToClosestObjectTask<BlockPos> {
+
+    private final Block[] targetBlocks;
+
+    private final Supplier<Vec3> getOriginPos;
+    private final Function<Vec3, Optional<BlockPos>> getClosest;
+
+    private final Function<BlockPos, Task> getTargetTask;
+
+    private final Predicate<BlockPos> isValid;
+
+    public DoToClosestBlockTask(Supplier<Vec3> getOriginSupplier, Function<BlockPos, Task> getTargetTask, Function<Vec3, Optional<BlockPos>> getClosestBlock, Predicate<BlockPos> isValid, Block... blocks) {
+        getOriginPos = getOriginSupplier;
+        this.getTargetTask = getTargetTask;
+        getClosest = getClosestBlock;
+        this.isValid = isValid;
+        targetBlocks = blocks;
+    }
+
+    public DoToClosestBlockTask(Function<BlockPos, Task> getTargetTask, Function<Vec3, Optional<BlockPos>> getClosestBlock, Predicate<BlockPos> isValid, Block... blocks) {
+        this(null, getTargetTask, getClosestBlock, isValid, blocks);
+    }
+
+    public DoToClosestBlockTask(Function<BlockPos, Task> getTargetTask, Predicate<BlockPos> isValid, Block... blocks) {
+        this(null, getTargetTask, null, isValid, blocks);
+    }
+
+    public DoToClosestBlockTask(Function<BlockPos, Task> getTargetTask, Block... blocks) {
+        this(getTargetTask, null, blockPos -> true, blocks);
+    }
+
+    @Override
+    protected Vec3 getPos(AltoClef mod, BlockPos obj) {
+        return WorldHelper.toVec3d(obj);
+    }
+
+    @Override
+    protected Optional<BlockPos> getClosestTo(AltoClef mod, Vec3 pos) {
+        if (getClosest != null) {
+            return getClosest.apply(pos);
+        }
+        return mod.getBlockScanner().getNearestBlock(pos, isValid, targetBlocks);
+    }
+
+    @Override
+    protected Vec3 getOriginPos(AltoClef mod) {
+        if (getOriginPos != null) {
+            return getOriginPos.get();
+        }
+        return mod.getPlayer().position();
+    }
+
+    @Override
+    protected Task getGoalTask(BlockPos obj) {
+        return getTargetTask.apply(obj);
+    }
+
+    @Override
+    protected boolean isValid(AltoClef mod, BlockPos obj) {
+        // Assume we're valid since we're in the same chunk.
+        if (!mod.getChunkTracker().isChunkLoaded(obj)) return true;
+        // Our valid predicate
+        if (isValid != null && !isValid.test(obj)) return false;
+        // Correct block
+        return mod.getBlockScanner().isBlockAtPosition(obj, targetBlocks);
+    }
+
+    @Override
+    protected void onStart() {
+
+    }
+
+    @Override
+    protected void onStop(Task interruptTask) {
+
+    }
+
+    @Override
+    protected boolean isEqual(Task other) {
+        if (other instanceof DoToClosestBlockTask task) {
+            return Arrays.equals(task.targetBlocks, targetBlocks);
+        }
+        return false;
+    }
+
+    @Override
+    protected String toDebugString() {
+        return "Doing something to closest block...";
+    }
+}

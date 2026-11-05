@@ -1,0 +1,45 @@
+// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/util/SmeltTarget.java at commit
+// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+package com.mineagent.engine.alto.util;
+
+import java.util.Objects;
+import net.minecraft.world.item.Item;
+
+public class SmeltTarget {
+
+    private final ItemTarget item;
+    private final Item[] optionalMaterials;
+    private ItemTarget material;
+
+    public SmeltTarget(ItemTarget item, ItemTarget material, Item... optionalMaterials) {
+        this.item = item;
+        this.material = material;
+        this.material = new ItemTarget(material, this.item.getTargetCount());
+        this.optionalMaterials = optionalMaterials;
+    }
+
+    public ItemTarget getItem() {
+        return item;
+    }
+
+    public ItemTarget getMaterial() {
+        return material;
+    }
+
+    public Item[] getOptionalMaterials() {
+        return optionalMaterials;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        SmeltTarget that = (SmeltTarget) o;
+        return Objects.equals(material, that.material) && Objects.equals(item, that.item);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(material, item);
+    }
+}

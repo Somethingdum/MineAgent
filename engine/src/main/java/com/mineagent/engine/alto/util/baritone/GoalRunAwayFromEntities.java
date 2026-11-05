@@ -1,0 +1,93 @@
+// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/util/baritone/GoalRunAwayFromEntities.java at commit
+// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+package com.mineagent.engine.alto.util.baritone;
+
+import com.mineagent.engine.alto.AltoClef;
+import com.mineagent.engine.alto.util.helpers.BaritoneHelper;
+import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalXZ;
+import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalYLevel;
+import java.util.List;
+import net.minecraft.world.entity.Entity;
+
+public abstract class GoalRunAwayFromEntities implements Goal {
+
+    private final AltoClef mod;
+    private final double distance;
+    private final boolean xzOnly;
+
+    // Higher: We will move more directly away from each entity
+    // Too high: We will refuse to take alternative, faster paths and will dig straight away.
+    // Lower: We will in general move far away from an entity, allowing the ocassional closer traversal.
+    // Too low: We will just run straight into the entity to go past it.
+    private final double penaltyFactor;
+
+    public GoalRunAwayFromEntities(AltoClef mod, double distance, boolean xzOnly, double penaltyFactor) {
+        this.mod = mod;
+        this.distance = distance;
+        this.xzOnly = xzOnly;
+        this.penaltyFactor = penaltyFactor;
+    }
+
+    @Override
+    public boolean isInGoal(int x, int y, int z) {
+        List<Entity> entities = getEntities(mod);
+        synchronized (BaritoneHelper.MINECRAFT_LOCK) {
+            if (!entities.isEmpty()) {
+                for (Entity entity : entities) {
+                    if (entity == null || !entity.isAlive()) continue;
+                    double sqDistance;
+                    if (xzOnly) {
+                        sqDistance = entity.position().subtract(x, y, z).multiply(1, 0, 1).lengthSqr();
+                    } else {
+                        sqDistance = entity.distanceToSqr(x, y, z);
+                    }
+                    if (sqDistance < distance * distance) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public double heuristic(int x, int y, int z) {
+        // The lower the cost, the better.
+        double costSum = 0;
+        List<Entity> entities = getEntities(mod);
+        synchronized (BaritoneHelper.MINECRAFT_LOCK) {
+            int max = 10; // If we have 100 players, this will never calculate.
+            int counter = 0;
+            if (!entities.isEmpty()) {
+                for (Entity entity : entities) {
+                    counter++;
+                    if (entity == null || !entity.isAlive()) continue;
+                    double cost = getCostOfEntity(entity, x, y, z);
+                    if (cost != 0) {
+                        // We want the CLOSER entities to have a bigger weight than the further ones.
+                        costSum += 1 / cost;
+                    } else {
+                        // Bad >:(
+                        costSum += 1000;
+                    }
+                    if (counter >= max) break;
+                }
+            }
+            if (counter > 0) {
+                costSum /= counter;
+            }
+            return costSum * penaltyFactor;
+        }
+    }
+
+    protected abstract List<Entity> getEntities(AltoClef mod);
+
+    // Virtual
+    protected double getCostOfEntity(Entity entity, int x, int y, int z) {
+        double heuristic = 0;
+        if (!xzOnly) {
+            heuristic += GoalYLevel.calculate(entity.blockPosition().getY(), y);
+        }
+        heuristic += GoalXZ.calculate(entity.blockPosition().getX() - x, entity.blockPosition().getZ() - z);
+        return heuristic; //entity.squaredDistanceTo(x, y, z);
+    }
+}

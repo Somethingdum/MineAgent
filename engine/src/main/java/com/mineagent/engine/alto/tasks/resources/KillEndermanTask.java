@@ -1,0 +1,103 @@
+// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/tasks/resources/KillEndermanTask.java at commit
+// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+package com.mineagent.engine.alto.tasks.resources;
+
+import com.mineagent.engine.alto.AltoClef;
+import com.mineagent.engine.alto.tasks.ResourceTask;
+import com.mineagent.engine.alto.tasks.entity.KillEntitiesTask;
+import com.mineagent.engine.alto.tasks.entity.KillEntityTask;
+import com.mineagent.engine.alto.tasks.movement.GetWithinRangeOfBlockTask;
+import com.mineagent.engine.alto.tasks.movement.TimeoutWanderTask;
+import com.mineagent.engine.alto.tasksystem.Task;
+import com.mineagent.engine.alto.util.Dimension;
+import com.mineagent.engine.alto.util.ItemTarget;
+import com.mineagent.engine.alto.util.helpers.WorldHelper;
+import com.mineagent.engine.alto.util.time.TimerGame;
+import java.util.Optional;
+import java.util.function.Predicate;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.EnderMan;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+
+public class KillEndermanTask extends ResourceTask {
+
+    private final int _count;
+
+    private final TimerGame _lookDelay = new TimerGame(0.2);
+
+    public KillEndermanTask(int count) {
+        super(new ItemTarget(Items.ENDER_PEARL, count));
+        _count = count;
+        forceDimension(Dimension.NETHER);
+    }
+
+    @Override
+    protected boolean shouldAvoidPickingUp(AltoClef mod) {
+        return false;
+    }
+
+    @Override
+    protected void onResourceStart(AltoClef mod) {
+
+    }
+
+    @Override
+    protected Task onResourceTick(AltoClef mod) {
+        // Dimension
+        if (!mod.getEntityTracker().entityFound(EnderMan.class)) {
+            if (WorldHelper.getCurrentDimension() != Dimension.NETHER) {
+                return getToCorrectDimensionTask(mod);
+            }
+            //nearest warped forest related block
+            Optional<BlockPos> nearest = mod.getBlockScanner().getNearestBlock(Blocks.TWISTING_VINES, Blocks.TWISTING_VINES_PLANT, Blocks.WARPED_HYPHAE, Blocks.WARPED_NYLIUM);
+            if (nearest.isPresent()) {
+                if (WorldHelper.inRangeXZ(nearest.get(), mod.getPlayer().blockPosition(), 40)) {
+                    setDebugState("Waiting for endermen to spawn...");
+                    return null;
+                }
+
+                setDebugState("Getting to warped forest biome");
+                return new GetWithinRangeOfBlockTask(nearest.get(), 35);
+            }
+
+            setDebugState("Warped forest biome not found");
+            return new TimeoutWanderTask();
+        }
+
+
+        Predicate<Entity> belowNetherRoof = (entity) -> WorldHelper.getCurrentDimension() != Dimension.NETHER || entity.getY() < 125;
+        final int TOO_FAR_AWAY = WorldHelper.getCurrentDimension() == Dimension.NETHER ? 10 : 256;
+
+
+        // Kill the angry one
+        for (EnderMan entity : mod.getEntityTracker().getTrackedEntities(EnderMan.class)) {
+
+            if (belowNetherRoof.test(entity) && entity.isCreepy() && entity.position().closerThan(mod.getPlayer().position(), TOO_FAR_AWAY)) {
+                return new KillEntityTask(entity);
+            }
+        }
+
+        // Attack the closest one
+        return new KillEntitiesTask(belowNetherRoof, EnderMan.class);
+    }
+
+    @Override
+    protected void onResourceStop(AltoClef mod, Task interruptTask) {
+
+    }
+
+    @Override
+    protected boolean isEqualResource(ResourceTask other) {
+        if (other instanceof KillEndermanTask task) {
+            return task._count == _count;
+        }
+        return false;
+    }
+
+    @Override
+    protected String toDebugStringName() {
+        return "Hunting endermen for pearls - " + AltoClef.getInstance().getItemStorage().getItemCount(Items.ENDER_PEARL) + "/" + _count;
+    }
+}
