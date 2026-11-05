@@ -20,6 +20,7 @@
 package com.mineagent.engine.baritone.utils;
 
 import com.mineagent.engine.baritone.Baritone;
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
 import com.mineagent.engine.baritone.api.BaritoneAPI;
 import com.mineagent.engine.baritone.api.event.events.TickEvent;
 import com.mineagent.engine.baritone.api.utils.IInputOverrideHandler;
@@ -89,6 +90,10 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     public final void onTick(TickEvent event) {
         if (event.getType() == TickEvent.Type.OUT) {
             return;
+        }
+        if (AltoClefSettings.getInstance().isInteractionPaused()) {
+            setInputForceState(Input.CLICK_LEFT, false);
+            setInputForceState(Input.CLICK_RIGHT, false);
         }
         if (isInputForcedDown(Input.CLICK_LEFT)) {
             setInputForceState(Input.CLICK_RIGHT, false);

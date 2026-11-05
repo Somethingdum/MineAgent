@@ -20,6 +20,7 @@
 package com.mineagent.engine.baritone.pathing.movement;
 
 import com.mineagent.engine.baritone.Baritone;
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
 import com.mineagent.engine.baritone.api.IBaritone;
 import com.mineagent.engine.baritone.api.pathing.movement.ActionCosts;
 import com.mineagent.engine.baritone.pathing.precompute.PrecomputedData;
@@ -38,6 +39,7 @@ import net.minecraft.world.item.enchantment.*;
 import net.minecraft.world.item.enchantment.effects.EnchantmentAttributeEffect;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.EndPortalFrameBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -99,11 +101,11 @@ public class CalculationContext {
         this.world = baritone.getPlayerContext().world();
         this.bsi = new BlockStateInterface(baritone.getPlayerContext(), forUseOnAnotherThread);
         this.toolSet = new ToolSet(player);
-        this.hasThrowaway = Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
+        this.hasThrowaway = !AltoClefSettings.getInstance().isInteractionPaused() && Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
         this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER;
         this.canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
         this.placeBlockCost = Baritone.settings().blockPlacementPenalty.value;
-        this.allowBreak = Baritone.settings().allowBreak.value;
+        this.allowBreak = !AltoClefSettings.getInstance().isInteractionPaused() && Baritone.settings().allowBreak.value;
         this.allowBreakAnyway = new ArrayList<>(Baritone.settings().allowBreakAnyway.value);
         this.allowParkour = Baritone.settings().allowParkour.value;
         this.allowParkourPlace = Baritone.settings().allowParkourPlace.value;
@@ -196,6 +198,9 @@ public class CalculationContext {
         if (!Baritone.settings().allowPlaceInFluidsFlow.value && !current.getFluidState().isEmpty() && !current.getFluidState().isSource()) {
             return COST_INF;
         }
+        if (AltoClefSettings.getInstance().shouldAvoidPlacingAt(x, y, z)) {
+            return COST_INF;
+        }
         return placeBlockCost;
     }
 
@@ -204,6 +209,9 @@ public class CalculationContext {
             return COST_INF;
         }
         if (isPossiblyProtected(x, y, z)) {
+            return COST_INF;
+        }
+        if (AltoClefSettings.getInstance().shouldAvoidBreaking(new BlockPos(x, y, z)) || current.getBlock() instanceof EndPortalFrameBlock) {
             return COST_INF;
         }
         return 1;

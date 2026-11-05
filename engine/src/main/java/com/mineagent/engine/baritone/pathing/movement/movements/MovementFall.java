@@ -19,6 +19,7 @@
 
 package com.mineagent.engine.baritone.pathing.movement.movements;
 
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
 import com.mineagent.engine.baritone.api.IBaritone;
 import com.mineagent.engine.baritone.api.pathing.movement.MovementStatus;
 import com.mineagent.engine.baritone.api.utils.BetterBlockPos;
@@ -102,7 +103,7 @@ public class MovementFall extends Movement {
         }
 
         boolean isWater = destState.getFluidState().getType() instanceof WaterFluid;
-        if (!isWater && willPlaceBucket() && !playerFeet.equals(dest)) {
+        if (!isWater && willPlaceBucket() && !playerFeet.equals(dest) && !AltoClefSettings.getInstance().shouldNotPlaceBucketButStillFall()) {
             if (!Inventory.isHotbarSlot(ctx.player().getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) || ctx.world().dimension() == Level.NETHER) {
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }

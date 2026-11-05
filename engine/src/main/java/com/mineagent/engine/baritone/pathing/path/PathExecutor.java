@@ -20,6 +20,7 @@
 package com.mineagent.engine.baritone.pathing.path;
 
 import com.mineagent.engine.baritone.Baritone;
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
 import com.mineagent.engine.baritone.api.pathing.calc.IPath;
 import com.mineagent.engine.baritone.api.pathing.movement.ActionCosts;
 import com.mineagent.engine.baritone.api.pathing.movement.IMovement;
@@ -574,6 +575,10 @@ public class PathExecutor implements IPathExecutor, Helper {
             }
         }
         if (MovementHelper.avoidWalkingInto(ctx.world().getBlockState(current.getSrc().above(3)))) {
+            return false;
+        }
+        if (AltoClefSettings.getInstance().shouldAvoidWalkThroughForce(current.getSrc().above(3))
+                || AltoClefSettings.getInstance().shouldAvoidWalkThroughForce(current.getSrc().above(2))) {
             return false;
         }
         return !MovementHelper.avoidWalkingInto(ctx.world().getBlockState(next.getDest().above(2))); // codacy smh my head

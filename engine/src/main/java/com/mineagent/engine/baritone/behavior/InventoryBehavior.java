@@ -20,6 +20,7 @@
 package com.mineagent.engine.baritone.behavior;
 
 import com.mineagent.engine.baritone.Baritone;
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
 import com.mineagent.engine.baritone.api.event.events.TickEvent;
 import com.mineagent.engine.baritone.api.utils.Helper;
 import com.mineagent.engine.baritone.utils.ToolSet;
@@ -56,7 +57,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
     @Override
     public void onTick(TickEvent event) {
-        if (!Baritone.settings().allowInventory.value) {
+        if (!Baritone.settings().allowInventory.value || AltoClefSettings.getInstance().isInteractionPaused()) {
             return;
         }
         if (event.getType() == TickEvent.Type.OUT) {
@@ -83,6 +84,8 @@ public final class InventoryBehavior extends Behavior implements Helper {
     }
 
     public boolean attemptToPutOnHotbar(int inMainInvy, Predicate<Integer> disallowedHotbar) {
+        if (AltoClefSettings.getInstance().isInteractionPaused()) return false;
+
         OptionalInt destination = getTempHotbarSlot(disallowedHotbar);
         if (destination.isPresent()) {
             if (!requestSwapWithHotBar(inMainInvy, destination.getAsInt())) {
@@ -123,6 +126,8 @@ public final class InventoryBehavior extends Behavior implements Helper {
             logDebug("Inventory move requested but delaying until stationary");
             return false;
         }
+        if (AltoClefSettings.getInstance().isInteractionPaused()) return false;
+
         ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, inInventory < 9 ? inInventory + 36 : inInventory, inHotbar, ClickType.SWAP, ctx.player());
         ticksSinceLastInventoryMove = 0;
         lastTickRequestedMove = null;
@@ -132,8 +137,12 @@ public final class InventoryBehavior extends Behavior implements Helper {
     private int firstValidThrowaway() { // TODO offhand idk
         NonNullList<ItemStack> invy = ctx.player().getInventory().items;
         for (int i = 0; i < invy.size(); i++) {
-            if (Baritone.settings().acceptableThrowawayItems.value.contains(invy.get(i).getItem())) {
-                return i;
+            Item item = invy.get(i).getItem();
+
+            if (Baritone.settings().acceptableThrowawayItems.value.contains(item)) {
+                if (!AltoClefSettings.getInstance().isItemProtected(item)) {
+                    return i;
+                }
             }
         }
         return -1;
@@ -164,6 +173,8 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
     public boolean hasGenericThrowaway() {
         for (Item item : Baritone.settings().acceptableThrowawayItems.value) {
+            if (AltoClefSettings.getInstance().isItemProtected(item)) continue;
+
             if (throwaway(false, stack -> item.equals(stack.getItem()))) {
                 return true;
             }
@@ -172,6 +183,9 @@ public final class InventoryBehavior extends Behavior implements Helper {
     }
 
     public boolean selectThrowawayForLocation(boolean select, int x, int y, int z) {
+        if (AltoClefSettings.getInstance().isInteractionPaused()) return false;
+        if (AltoClefSettings.getInstance().shouldAvoidPlacingAt(x, y, z)) return false;
+
         BlockState maybe = baritone.getBuilderProcess().placeAt(x, y, z, baritone.bsi.get0(x, y, z));
         if (maybe != null && throwaway(select, stack -> stack.getItem() instanceof BlockItem && maybe.equals(((BlockItem) stack.getItem()).getBlock().getStateForPlacement(new BlockPlaceContext(new UseOnContext(ctx.world(), ctx.player(), InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(ctx.player().position().x, ctx.player().position().y, ctx.player().position().z), Direction.UP, ctx.playerFeet(), false)) {}))))) {
             return true; // gotem
@@ -180,6 +194,8 @@ public final class InventoryBehavior extends Behavior implements Helper {
             return true;
         }
         for (Item item : Baritone.settings().acceptableThrowawayItems.value) {
+            if (AltoClefSettings.getInstance().isItemProtected(item)) continue;
+
             if (throwaway(select, stack -> item.equals(stack.getItem()))) {
                 return true;
             }
@@ -192,6 +208,8 @@ public final class InventoryBehavior extends Behavior implements Helper {
     }
 
     public boolean throwaway(boolean select, Predicate<? super ItemStack> desired, boolean allowInventory) {
+        if (AltoClefSettings.getInstance().isInteractionPaused()) return false;
+
         ServerPlayer p = ctx.player();
         NonNullList<ItemStack> inv = p.getInventory().items;
         for (int i = 0; i < 9; i++) {
