@@ -182,7 +182,8 @@ public class CollectFoodTask extends Task {
       for (CookableFoodTarget cookable : COOKABLE_FOODS) {
          int rawCount = controller.getItemStorage().getItemCount(cookable.getRaw());
          if (rawCount > 0) {
-            return new SmeltTarget(new ItemTarget(cookable.getCooked(), rawCount), new ItemTarget(cookable.getRaw(), rawCount));
+            int toSmelt = rawCount + controller.getItemStorage().getItemCount(cookable.getCooked()); // SMH: AltoClef's own
+            return new SmeltTarget(new ItemTarget(cookable.getCooked(), toSmelt), new ItemTarget(cookable.getRaw(), rawCount));
          }
       }
 

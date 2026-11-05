@@ -23,6 +23,13 @@ HOOKS = 'com.mineagent.sbe.common.ServerHooks'
 
 # (file, old, new): each old must occur exactly once in the renamed file.
 PATCHES = [
+    # Cook up to what it has cooked already and the raw on top (AltoClef's own getBestSmeltTarget: toSmelt = raw +
+    # cooked); SecondBrainEngine asked for only as many cooked as it had raw, so with that many cooked in hand the
+    # smoking was done before it began and CollectFoodTask handed it back every tick (a world-3 run sat on it 16,000).
+    ('altoclef/tasks/resources/CollectFoodTask.java',
+     '''            return new SmeltTarget(new ItemTarget(cookable.getCooked(), rawCount), new ItemTarget(cookable.getRaw(), rawCount));''',
+     '''            int toSmelt = rawCount + controller.getItemStorage().getItemCount(cookable.getCooked()); // SMH: AltoClef's own
+            return new SmeltTarget(new ItemTarget(cookable.getCooked(), toSmelt), new ItemTarget(cookable.getRaw(), rawCount));'''),
     # A tracker refreshed on the server thread only; asked from Baritone's path workers it answers from its last state
     # (at most a tick old: TrackerManager marks every tracker dirty each tick). A refresh reads the world, and on a
     # server a read from another thread waits for the server thread, which can be waiting on the lock the refresh holds

@@ -21,7 +21,10 @@ public final class NpcData {
 
     public final List<Goal> goals = new ArrayList<>();
     public Goal currGoal;
+    /** Its builds by name, where each stands (Mindcraft's built: kept from the first step, so it goes back to the same place). */
     public final Map<String, Built> built = new LinkedHashMap<>();
+    /** SMH: the builds that stand as their blueprints ask (told once each, see onBuilt). */
+    public final java.util.Set<String> standing = new java.util.LinkedHashSet<>();
     public String home;
     public boolean doRoutine;
     public boolean doSetGoal;

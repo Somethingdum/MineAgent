@@ -139,15 +139,21 @@ public class NpcRoutineTask extends Task {
             BuildGoalTask b = build(goal.name());
             b.controller = controller;
             Task step = b.plan();
+            // Mindcraft: where it builds is kept from its first step (data.built), so a build taken up again after a
+            // night or an interruption goes on where it stood, not somewhere new.
+            data.built.putIfAbsent(goal.name(), new NpcData.Built(goal.name(), b.position(), b.orientation()));
             if (step != null) {
                 setDebugState("Goal: the " + goal.name());
                 return b;
             }
+            if (b.unseen() && b.position() != null) {
+                // SMH: too far to see all of it from here (its chunks not loaded): back to it, then on with it.
+                setDebugState("Back to its " + goal.name());
+                return new GetToBlockTask(b.position());
+            }
             if (b.built()) {
-                boolean first = !data.built.containsKey(goal.name());
-                data.built.putIfAbsent(goal.name(), new NpcData.Built(goal.name(), b.position(), b.orientation()));
                 if (data.home == null) data.home = goal.name(); // SMH: its home once it stands (Mindcraft: once nothing is missing)
-                if (first && data.onBuilt != null) data.onBuilt.accept(data.built.get(goal.name()));
+                if (data.standing.add(goal.name()) && data.onBuilt != null) data.onBuilt.accept(data.built.get(goal.name()));
                 continue;
             }
             // Short of blocks: those first (Mindcraft's temp goals).

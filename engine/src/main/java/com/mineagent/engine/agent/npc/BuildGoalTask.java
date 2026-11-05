@@ -130,6 +130,11 @@ public class BuildGoalTask extends Task {
     }
 
     /** Built as the blueprint asks: nothing left to break or place. */
+    /** Whether the last walk met a part of it in a chunk not loaded (too far to see from here). */
+    public boolean unseen() {
+        return unseen;
+    }
+
     public boolean built() {
         return !acted && missing.isEmpty() && !unseen;
     }
