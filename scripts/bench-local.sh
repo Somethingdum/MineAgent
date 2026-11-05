@@ -35,6 +35,7 @@ online-mode=false
 view-distance=10
 simulation-distance=10
 max-tick-time=-1
+server-port=$((25564 + slot))
 spawn-monsters=true
 spawn-animals=true
 generate-structures=true
@@ -53,4 +54,6 @@ echo "[bench-local] exit $status" >> "$log"
 [ -f "$run/report.json" ] && cp "$run/report.json" "$logs/$label.report.json"
 [ -d "$run/stalls" ] && rm -rf "$logs/$label-stalls" && cp -r "$run/stalls" "$logs/$label-stalls"
 line=$(grep -E "\[BENCH\] done after|\[BENCH\] hung: no server" "$log" | tail -1 | sed 's/.*\[STDOUT\]: //')
+# A server that never started (a port taken, a crash at start) still lets Gradle exit 0: said as such, not as a result.
+grep -q "Failed to initialize server\|Address already in use" "$log" && line="the server did not start; see $log"
 echo "$label: ${line:-no result (exit $status); see $log}"

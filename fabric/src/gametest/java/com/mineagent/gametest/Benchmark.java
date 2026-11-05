@@ -424,14 +424,16 @@ public final class Benchmark implements ModInitializer {
     }
 
     /**
-     * A stall (SMH plan 71, §7.13): in daylight after the mobs have burned (time of day 1,000 to 12,000; waiting out the
-     * night inside is the owner's own rule, not a stall), five game minutes running with it never more than two blocks
-     * from where it was and nothing gained or lost. The first one leaves a snapshot a scene can rebuild. No change at
-     * all, day or night, for a whole game day ends the run, failed.
+     * A stall (SMH plan 71, §7.13): while the minimum is not met (resting once it is, as its owner allows, is not a
+     * stall: a run on Nov 5 met it at day 0.35, rested in its hut, and was wrongly ended at day 1.5), in daylight after
+     * the mobs have burned (time of day 1,000 to 12,000; waiting out the night inside is the owner's own rule), five
+     * game minutes running with it never more than two blocks from where it was and nothing gained or lost. The first
+     * one leaves a snapshot a scene can rebuild. No change at all, day or night, for a whole game day while the minimum
+     * is not met ends the run, failed.
      */
     private static void stallCheck(MinecraftServer server, long elapsed, String day, Map<String, Object> s) {
         var sp = companion.serverPlayer();
-        if (sp == null || !sp.isAlive()) {
+        if (sp == null || !sp.isAlive() || Boolean.TRUE.equals(s.get("minimum"))) {
             stillFrom = null;
             stillDaytimeMinutes = 0;
             lastChange = elapsed;
