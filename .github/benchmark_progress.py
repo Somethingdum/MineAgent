@@ -14,7 +14,8 @@ REPO = os.environ["GITHUB_REPOSITORY"]
 SHA = os.environ["GITHUB_SHA"]
 TOKEN = os.environ["GITHUB_TOKEN"]
 # One check run a world: "Benchmark progress (smh-benchmark-2)".
-NAME = "Benchmark progress" + (" (%s)" % os.environ["SEED"] if os.environ.get("SEED") else "")
+NAME = "Benchmark progress" + (" (%s)" % os.environ["SEED"] if os.environ.get("SEED") else "") \
+    + (" [%s]" % os.environ["WAY"] if os.environ.get("WAY") and os.environ.get("WAY") != "as set" else "")
 API = "https://api.github.com/repos/%s/check-runs" % REPO
 
 

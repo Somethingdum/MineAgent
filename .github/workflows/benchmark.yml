@@ -24,7 +24,7 @@ jobs:
   benchmark:
     # Three worlds at once (its owner: "consistently achieve minimum met by day 3. At least 3 times in a row"): the
     # same code on three seeds, each its own job and its own progress check run.
-    name: Three days on its own (${{ matrix.seed }})
+    name: Three days on its own (${{ matrix.seed }}${{ matrix.way != 'as set' && format(', {0}', matrix.way) || '' }})
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[benchmark]')
     runs-on: ubuntu-latest
     timeout-minutes: 340
@@ -32,6 +32,8 @@ jobs:
       fail-fast: false
       matrix:
         seed: ${{ fromJSON(github.event.inputs.seed && format('["{0}"]', github.event.inputs.seed) || '["smh-benchmark-1","smh-benchmark-2","smh-benchmark-3"]') }}
+        # [compare]: each world twice, as the config has it and with AltoClef's switches on, side by side on one commit.
+        way: ${{ fromJSON(contains(github.event.head_commit.message, '[compare]') && '["as set","altoclef"]' || '["as set"]') }}
     permissions:
       contents: read
       checks: write
@@ -39,7 +41,8 @@ jobs:
       DAYS: ${{ github.event.inputs.days || '3' }}
       SEED: ${{ matrix.seed }}
       # A [benchmark] push whose message also says [alto] runs AltoClef's tasks and life; [alto+] its survival chains too.
-      SWITCHES: ${{ github.event.inputs.switches || (contains(github.event.head_commit.message, '[alto+]') && 'altoTasks,altoLife,altoSurvival' || contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
+      SWITCHES: ${{ matrix.way == 'altoclef' && 'altoTasks,altoLife,altoSurvival' || github.event.inputs.switches || (contains(github.event.head_commit.message, '[alto+]') && 'altoTasks,altoLife,altoSurvival' || contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
+      WAY: ${{ matrix.way }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -83,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-report-${{ matrix.seed }}
+          name: benchmark-report-${{ matrix.seed }}-${{ matrix.way == 'altoclef' && 'altoclef' || 'as-set' }}
           path: |
             fabric/build/benchmark/report.json
             benchmark.log
