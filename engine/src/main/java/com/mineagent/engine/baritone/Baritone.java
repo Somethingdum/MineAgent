@@ -42,7 +42,14 @@ public class Baritone implements IBaritone {
     private static final ThreadPoolExecutor threadPool;
 
     static {
-        threadPool = new ThreadPoolExecutor(4, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<>());
+        // SMH: daemon threads. A client's game ends its process however it stops; a server's ends only when no other
+        // thread is left, and Baritone's four core threads never time out, so a stopped server never exited.
+        java.util.concurrent.atomic.AtomicInteger made = new java.util.concurrent.atomic.AtomicInteger();
+        threadPool = new ThreadPoolExecutor(4, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<>(), run -> {
+            Thread t = new Thread(run, "MineAgent Baritone " + made.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     private final AgentPlayer agent;

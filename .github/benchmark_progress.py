@@ -46,11 +46,22 @@ def read():
         if t in traced:
             traced.remove(t)
         traced.append(t)
+    # What went wrong, if anything did: exceptions, a crash, the server stopping, memory running out.
+    errs = ("Exception", "Error", "Caused by", "\tat com.mineagent", "crash", "Crash", "Stopping server", "Stopping the server",
+            "OutOfMemory", "Can't keep up", "WARN]")
+    errors = []
+    for l in lines:
+        if any(e in l for e in errs) and "LLM call" not in l and "transport failure" not in l and "Lesson failed" not in l:
+            t = l.split("[STDOUT]: ", 1)[-1].split("[STDERR]: ", 1)[-1]
+            if t in errors:
+                errors.remove(t)
+            errors.append(t)
     finished = [l for l in bench if "[BENCH] done" in l]
     done = bool(finished)
     shown = [l for l in bench if l.strip() != "[BENCH] report"]
     title = (finished[-1] if finished else shown[-1] if shown else "[BENCH] Starting").replace("[BENCH] ", "", 1)
-    summary = "\n".join(["Status:"] + shown[-12:] + ["", "What it said lately:"] + said[-40:]
+    summary = "\n".join(["Status:"] + shown[-12:] + ["", "Errors and warnings, last:"] + [e[:300] for e in errors[-30:]]
+                        + ["", "What it said lately:"] + said[-40:]
                         + ["", "Its work, traced:"] + [t[:1500 if "food to make" in t else 400] for t in traced[-60:]])
     return title[:250], summary[:60000], done
 

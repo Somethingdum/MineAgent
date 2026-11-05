@@ -107,7 +107,9 @@ public final class Benchmark implements ModInitializer {
             lastLine = elapsed;
             var s = state(server);
             String day = String.format("%.2f", elapsed / 24_000.0);
-            System.out.println("[BENCH] day " + day + ": " + s.get("summary"));
+            Runtime rt = Runtime.getRuntime();
+            System.out.println("[BENCH] day " + day + ": " + s.get("summary") + " | memory "
+                    + (rt.totalMemory() - rt.freeMemory()) / 1_048_576 + " of " + rt.maxMemory() / 1_048_576 + " MB");
             if (elapsed % 24_000 < 1_200) days.put("day " + (elapsed / 24_000), s);
             if (firstMet < 0 && Boolean.TRUE.equals(s.get("minimum"))) firstMet = elapsed / 24_000.0;
             stuckReport(server, day);
