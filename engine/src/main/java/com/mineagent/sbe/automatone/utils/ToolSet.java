@@ -25,6 +25,8 @@ import com.mineagent.sbe.altoclef.multiversion.PlayerInventoryVer;
 import com.mineagent.sbe.altoclef.multiversion.item.ToolItemVer;
 import com.mineagent.sbe.automatone.api.BaritoneAPI;
 import com.mineagent.sbe.automatone.api.IBaritone;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -33,6 +35,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.HashMap;
@@ -102,11 +105,9 @@ public class ToolSet {
 
     
     private static int getEnchantmentLevel(ResourceKey<Enchantment> enchantmentKey, ItemStack stack, Entity entity) {
-        Enchantment enchantment = /^? >=1.21.8 {^/
-                /^entity.getRegistryManager().getOrThrow(RegistryKeys.ENCHANTMENT).get(enchantmentKey);
-                ^//^?} else {^/ entity.getRegistryManager().get(RegistryKeys.ENCHANTMENT).get(enchantmentKey); /^?}^/
-        ItemEnchantmentsComponent component = stack.getEnchantments();
-        Optional<RegistryEntry<Enchantment>> enchantmentHolder = component.getEnchantments().stream().filter(holder -> holder.value().equals(enchantment)).findFirst();
+        Enchantment enchantment =  entity.registryAccess().registryOrThrow(Registries.ENCHANTMENT).get(enchantmentKey); 
+        ItemEnchantments component = stack.getEnchantments();
+        Optional<Holder<Enchantment>> enchantmentHolder = component.keySet().stream().filter(holder -> holder.value().equals(enchantment)).findFirst();
         return enchantmentHolder.map(component::getLevel).orElse(0);
     }
     

@@ -115,6 +115,12 @@ the player and the items tossed there, or from where its walk got no closer, the
 
 - `engine/src/main/java/com/mineagent/engine/task/GiveTask.java`
 
+Its NPC controller (`src/agent/npc/`, at `e1c1fc3`): the construction blueprints (`construction/*.json`, copied to
+`engine/src/main/resources/mineagent/blueprints/`) as `controller.js` reads them, and `utils.js` with the lists from
+`src/utils/mcdata.js`. Into:
+
+- `engine/src/main/java/com/mineagent/engine/agent/npc/`
+
 ```
 MIT License
 

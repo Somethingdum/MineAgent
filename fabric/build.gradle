@@ -35,6 +35,7 @@ sourceSets {
             srcDir project(':tools').file('src/main/java')
         }
         resources {
+            srcDir project(':engine').file('src/main/resources')
             srcDir project(':engine').file('src/client/resources')
             srcDir project(':tools').file('src/main/resources')
         }
