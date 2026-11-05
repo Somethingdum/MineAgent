@@ -37,6 +37,8 @@ import java.util.Map;
  */
 public final class Benchmark implements ModInitializer {
     private static long total = -1, startedAt = -1, lastLine = -1;
+    /** The day the minimum was first met, or -1. */
+    private static double firstMet = -1;
     private static ServerPlayer owner;
     private static CompanionEntity companion;
     private static final Map<String, Object> days = new LinkedHashMap<>();
@@ -107,6 +109,7 @@ public final class Benchmark implements ModInitializer {
             String day = String.format("%.2f", elapsed / 24_000.0);
             System.out.println("[BENCH] day " + day + ": " + s.get("summary"));
             if (elapsed % 24_000 < 1_200) days.put("day " + (elapsed / 24_000), s);
+            if (firstMet < 0 && Boolean.TRUE.equals(s.get("minimum"))) firstMet = elapsed / 24_000.0;
             stuckReport(server, day);
             deathReport(day);
         }
@@ -308,10 +311,14 @@ public final class Benchmark implements ModInitializer {
         report.put("days", elapsed / 24_000.0);
         report.put("seed", server.overworld().getSeed());
         report.put("passed", s.get("minimum"));
+        report.put("minimumFirstMetDay", firstMet);
+        report.put("switchesOn", System.getProperty("mineagent.benchmark.switches", ""));
         report.put("end", s);
         report.put("byDay", days);
         String json = new GsonBuilder().setPrettyPrinting().create().toJson(report);
-        System.out.println("[BENCH] done after " + elapsed + " ticks: " + s.get("summary"));
+        System.out.println("[BENCH] done after " + elapsed + " ticks: " + s.get("summary") + " | minimum first met on day "
+                + (firstMet < 0 ? "never" : String.format("%.2f", firstMet)) + " | switches on: "
+                + System.getProperty("mineagent.benchmark.switches", "none"));
         System.out.println("[BENCH] report\n" + json);
         String path = System.getProperty("mineagent.benchmark.report");
         if (path != null) {
