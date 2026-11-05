@@ -23,6 +23,12 @@ HOOKS = 'com.mineagent.sbe.common.ServerHooks'
 
 # (file, old, new): each old must occur exactly once in the renamed file.
 PATCHES = [
+    # AltoClef's game timers on the game's time again, ticks / 20 as AltoClef's own TimerGame counts it (the client
+    # world's time); SecondBrainEngine counted the wall clock, so a server faster than real time (a sprint, the game
+    # tests) waited thousands of ticks on a 2-second craft, and one slower hurried.
+    ('altoclef/util/time/TimerGame.java',
+     '''         return (double) System.currentTimeMillis() / 1000;''',
+     '''         return (double) ''' + HOOKS + '''.ticks() / 20.0; // SMH: the game's time, as AltoClef's own'''),
     # 1.21.1's LootContext.Builder.create takes an Optional (its random sequence), not a nullable name: null threw on the
     # first block's drops, so every mine, clear and build stopped (upstream's own line, SecondBrainEngine at 1712b17e).
     ('automatone/api/utils/BlockOptionalMeta.java',

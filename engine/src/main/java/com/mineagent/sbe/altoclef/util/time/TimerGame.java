@@ -19,7 +19,7 @@ public class TimerGame extends BaseTimer {
          Debug.logError("Running game timer while not in game.");
          return 0.0;
       } else {
-         return (double) System.currentTimeMillis() / 1000;
+         return (double) com.mineagent.sbe.common.ServerHooks.ticks() / 20.0; // SMH: the game's time, as AltoClef's own
       }
    }
 }

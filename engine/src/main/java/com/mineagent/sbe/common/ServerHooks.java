@@ -43,6 +43,12 @@ public final class ServerHooks {
         UNLOADS.clear();
     }
 
+    /** The server's ticks so far (AltoClef's game timers: the game's own time, however fast the server runs). */
+    public static long ticks() {
+        MinecraftServer s = server;
+        return s == null ? 0 : s.getTickCount();
+    }
+
     /** The game's directory (Fabric's getGameDir, NeoForge's FMLPaths.GAMEDIR: both the server's own directory). */
     public static Path gameDir() {
         MinecraftServer s = server;
