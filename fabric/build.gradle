@@ -88,6 +88,8 @@ loom {
             source sourceSets.gametest
             vmArg "-Dfabric-api.gametest"
             vmArg "-Dfabric-api.gametest.report-file=${project.buildDir}/gametest/junit.xml"
+            // Every exception with its stack (the JVM otherwise drops it from one thrown often at the same place).
+            vmArg "-XX:-OmitStackTraceInFastThrow"
             runDir "build/gametest"
         }
         // ./gradlew :fabric:runBenchmark (SMH plan 70): a real world, a fresh companion on its own, sprinted through
@@ -102,6 +104,7 @@ loom {
             vmArg "-Dmineagent.benchmark.switches=${project.findProperty('benchmarkSwitches') ?: ''}"
             // Its work traced (what it is stuck on, and why), for the progress posted as it runs.
             vmArg "-Dmineagent.traceWork=true"
+            vmArg "-XX:-OmitStackTraceInFastThrow"
             programArgs "nogui"
             runDir "build/benchmark"
         }

@@ -102,6 +102,16 @@ public class CompanionGameTests implements FabricGameTest {
         return new Scene(owner, companion, companion.serverPlayer(), loop);
     }
 
+    /** A second companion for the same owner, beside a scene's own (a new scene starts clean: it would despawn the first). */
+    private static Scene beside(Scene first, String name) {
+        CompanionEntity companion = MineAgentEngine.spawnCompanion(first.owner(), name, "openai-compatible", "test",
+                "gametest-" + name.toLowerCase(), NO_MODEL, 0.2, null, false);
+        if (companion == null) throw new IllegalStateException("the second companion did not spawn");
+        AgentLoop loop = TaskContext.agentLoop(companion);
+        if (loop == null) throw new IllegalStateException("the second companion has no loop");
+        return new Scene(first.owner(), companion, companion.serverPlayer(), loop);
+    }
+
     private static void armed(ServerPlayer body) {
         body.getInventory().setItem(0, new ItemStack(Items.IRON_SWORD));
         body.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
@@ -5552,7 +5562,7 @@ public class CompanionGameTests implements FabricGameTest {
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_agent_two", timeoutTicks = 1600)
     public void twoAgentsWorkAtOnce(GameTestHelper helper) {
         Scene a = scene(helper, "Firstling");
-        Scene b = scene(helper, "Secondling", true, a.owner());
+        Scene b = beside(a, "Secondling");
         for (Scene s : List.of(a, b)) {
             MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
             s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));

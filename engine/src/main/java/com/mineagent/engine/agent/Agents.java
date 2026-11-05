@@ -74,10 +74,36 @@ public final class Agents {
         Agent a = AGENTS.get(companionId);
         if (a == null) return "(no agent)";
         var runner = a.controller().getTaskRunner();
-        var chain = runner.getCurrentTaskChain();
         var body = a.body();
-        return runner.statusReport + " at " + body.blockPosition().toShortString() + " health " + (int) body.getHealth()
-                + " food " + body.getFoodData().getFoodLevel() + (chain == null ? "" : " || " + chain);
+        var path = a.baritone().getPathingBehavior();
+        StringBuilder out = new StringBuilder(runner.statusReport).append(" at ").append(body.blockPosition().toShortString())
+                .append(" health ").append((int) body.getHealth()).append(" food ").append(body.getFoodData().getFoodLevel())
+                .append("; baritone goal ").append(path.getGoal()).append(path.isPathing() ? ", pathing" : "")
+                .append(path.getPath().map(p -> ", path of " + p.length()).orElse(", no path"))
+                .append(", keys ").append(String.format("%.1f/%.1f", body.zza, body.xxa)).append(" ||");
+        // The user task tree, root to leaf (each task's own debug line), as AltoClef's own status shows it.
+        Object task = field(a.controller().getUserTaskChain(), "mainTask");
+        for (int depth = 0; task != null && depth < 12; depth++) {
+            out.append(depth == 0 ? " " : " > ").append(task);
+            task = field(task, "sub");
+        }
+        return out.toString();
+    }
+
+    /** A field read off one of the ported classes (its task tree and chain keep them private). */
+    private static Object field(Object on, String name) {
+        for (Class<?> c = on.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                var f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f.get(on);
+            } catch (NoSuchFieldException e) {
+                // up to its parent class
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /** One tick of the companion's layers (the engine calls it from the companion's own tick while they have the body). */
