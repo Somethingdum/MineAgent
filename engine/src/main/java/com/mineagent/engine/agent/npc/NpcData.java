@@ -29,6 +29,8 @@ public final class NpcData {
     public volatile boolean idle;
     /** SMH: told when the goal the model set is met (the curriculum's verdict: what the game shows, as Voyager's critic). */
     public transient java.util.function.Consumer<Goal> onCurrGoalMet;
+    /** SMH: told once when a build first stands as its blueprint asks (the companion keeps it in its journal and places). */
+    public transient java.util.function.Consumer<Built> onBuilt;
     /** SMH: kills of a kind of mob when its kill goal was set, by the game's own statistics (kill goals count from there). */
     public final Map<String, Integer> killsAtStart = new LinkedHashMap<>();
 }

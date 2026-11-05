@@ -39,6 +39,8 @@ public class BuildGoalTask extends Task {
     private final Map<String, Integer> missing = new LinkedHashMap<>();
     /** Whether the last walk found anything to do (Mindcraft's res.acted). */
     private boolean acted = true;
+    /** SMH: whether the last walk met a part of it in a chunk not loaded (not known to stand, so not built). */
+    private boolean unseen;
 
     public BuildGoalTask(Blueprint goal, BlockPos position, Integer orientation) {
         this.goal = goal;
@@ -129,7 +131,7 @@ public class BuildGoalTask extends Task {
 
     /** Built as the blueprint asks: nothing left to break or place. */
     public boolean built() {
-        return !acted && missing.isEmpty();
+        return !acted && missing.isEmpty() && !unseen;
     }
 
     @Override
@@ -158,6 +160,7 @@ public class BuildGoalTask extends Task {
         Map<String, Integer> inventory = NpcUtils.inventoryCounts(player);
         missing.clear();
         acted = false;
+        unseen = false;
         int sizeX = goal.sizeX(), sizeZ = goal.sizeZ(), sizeY = goal.sizeY();
         for (int y = goal.offset(); y < sizeY + goal.offset(); y++) {
             for (int z = 0; z < sizeZ; z++) {
@@ -167,7 +170,10 @@ public class BuildGoalTask extends Task {
                     String blockName = goal.blocks()[ry][r[1]][r[0]];
                     if (blockName == null || blockName.isEmpty()) continue;
                     BlockPos worldPos = position.offset(x, y, z);
-                    if (level.getChunkSource().getChunkNow(worldPos.getX() >> 4, worldPos.getZ() >> 4) == null) continue;
+                    if (level.getChunkSource().getChunkNow(worldPos.getX() >> 4, worldPos.getZ() >> 4) == null) {
+                        unseen = true;
+                        continue;
+                    }
                     BlockState current = level.getBlockState(worldPos);
                     if (satisfied(blockName, current, level, worldPos)) continue;
                     acted = true;

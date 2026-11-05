@@ -336,7 +336,10 @@ public final class Benchmark implements ModInitializer {
         out.put("hutKind", hutKind);
         out.put("summary", (minimum ? "MINIMUM MET" : "not yet") + " | hut " + hut + (hutKind.isEmpty() ? "" : " (" + hutKind + ")") + ", furnace " + furnace + ", table " + table + ", food " + food
                 + " (" + foodPoints + " points, hunger " + hunger + (fedByPack ? ", fed: food carried" : fed ? ", fed: on its hunger bar" : ", not fed") + "), bed " + bed + ", fuel " + fuel + ", tools " + tools + " | " + dim + " " + sp.blockPosition().toShortString() + ", health "
-                + String.format("%.0f", sp.getHealth()) + ", deaths " + deaths + ", doing: " + loop.doing());
+                + String.format("%.0f", sp.getHealth()) + ", deaths " + deaths + ", doing: " + loop.doing()
+                // The one agent's own state when it has the body: its chain, Baritone's goal and its task tree, root to leaf.
+                + (com.mineagent.engine.agent.Agents.existing(companion.companionId()) != null ? " | agent: "
+                        + com.mineagent.engine.agent.Agents.describe(companion.companionId()) : ""));
         return out;
     }
 

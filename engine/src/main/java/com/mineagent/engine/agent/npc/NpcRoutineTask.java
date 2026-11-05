@@ -144,8 +144,10 @@ public class NpcRoutineTask extends Task {
                 return b;
             }
             if (b.built()) {
+                boolean first = !data.built.containsKey(goal.name());
                 data.built.putIfAbsent(goal.name(), new NpcData.Built(goal.name(), b.position(), b.orientation()));
                 if (data.home == null) data.home = goal.name(); // SMH: its home once it stands (Mindcraft: once nothing is missing)
+                if (first && data.onBuilt != null) data.onBuilt.accept(data.built.get(goal.name()));
                 continue;
             }
             // Short of blocks: those first (Mindcraft's temp goals).

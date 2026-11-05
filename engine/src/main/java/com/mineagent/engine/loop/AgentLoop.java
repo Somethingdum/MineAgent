@@ -5191,6 +5191,9 @@ public class AgentLoop {
                 agentLife = com.mineagent.engine.agent.npc.NpcPresets.firstDays();
                 journal.record("survive", "my life on my own, by the one agent: " + agentLife.goals.size() + " goals, my day's routine", now);
             }
+            // Its builds kept as the companion keeps its own (AltoLifeTask.recordHut, BlueprintTask): in its journal and
+            // among its places, so its nights, its base, its owner's questions and the benchmark find them.
+            agentLife.onBuilt = b -> recordAgentBuild(self, b);
             afterTaskAlways.put(id, () -> agentLifeTaskId = null);
             com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
                     com.mineagent.engine.agent.AgentTask.AgentRecord.life(id, agentLife), reply -> { });
@@ -5512,6 +5515,18 @@ public class AgentLoop {
     }
 
     /** A hut it built (kept with the world as a build) within 64 blocks of {@code at}. */
+    /** A build of the one agent's that stands, kept as its own builds are (a hut as "built the hut", a "hut_..." place). */
+    private void recordAgentBuild(net.minecraft.server.level.ServerPlayer self, com.mineagent.engine.agent.npc.NpcData.Built b) {
+        if (b == null || b.position() == null) return;
+        String dim = self.level().dimension().location().toString();
+        long now = self.level().getGameTime();
+        boolean hut = b.name().contains("hut") || b.name().contains("house") || b.name().contains("shelter");
+        String what = hut ? "the hut" : "the " + b.name().replace('_', ' ');
+        journal.record("built", "built " + what + " (Mindcraft's " + b.name() + " blueprint) at " + b.position().toShortString(), now);
+        placeKeeper.memory().name("build", (hut ? "hut_" : "build_") + b.name() + "|blueprint|door",
+                new com.mineagent.engine.world.RouteMemory.Point(dim, b.position().getX(), b.position().getY(), b.position().getZ()), now);
+    }
+
     public boolean hutNear(String dim, net.minecraft.core.BlockPos at) {
         var point = new com.mineagent.engine.world.RouteMemory.Point(dim, at.getX(), at.getY(), at.getZ());
         for (var p : placeKeeper.memory().places()) {
@@ -7266,7 +7281,11 @@ public class AgentLoop {
         // Its first days by AltoClef's priorities (behaviour.altoLife) have their own night: home to its hut at dusk, its
         // bed or a wait there till the mobs have burned, its hut first if it isn't up. Stopping them for a shelter here
         // lost the hut it was building (the benchmark's first world, dug in beside it, began another in the morning).
-        if (altoLifeTaskId != null || agentLifeTaskId != null) return;
+        if (altoLifeTaskId != null) return;
+        // The one agent's routine has its own night once it has a home (Mindcraft's: home through its door, to bed or a
+        // wait); without one yet, its night is the companion's: its work stopped and dug in till morning (ShelterTask,
+        // the planner's shelter that kept it alive in all three worlds), its routine taken up again after.
+        if (agentLifeTaskId != null && (agentLife == null || agentLife.home != null)) return;
         var level = player.serverLevel();
         if (!level.dimensionType().bedWorks() || guarding()) return;
         LiveBodyState body = liveBodyState.get();
