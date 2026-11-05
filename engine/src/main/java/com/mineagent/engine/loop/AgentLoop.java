@@ -5087,6 +5087,19 @@ public class AgentLoop {
     private volatile int afkKitTries;
     private volatile long afkKitAt = Long.MIN_VALUE / 2;
 
+    /** The dirt shelter its first days built (AltoLifeTask keeps it among its places), nearest within 128, or null. */
+    private net.minecraft.core.BlockPos altoHut(net.minecraft.server.level.ServerPlayer self) {
+        String dim = self.serverLevel().dimension().location().toString();
+        var here = new com.mineagent.engine.world.RouteMemory.Point(dim, self.getBlockX(), self.getBlockY(), self.getBlockZ());
+        com.mineagent.engine.world.RouteMemory.Point best = null;
+        for (var p : placeKeeper.memory().places()) {
+            if (!"build".equals(p.kind()) || p.name() == null || !p.name().startsWith("hut_dirt_shelter") || !p.at().dim().equals(dim)) continue;
+            if (p.at().distance(here) > 128.0) continue;
+            if (best == null || p.at().distance(here) < best.distance(here)) best = p.at();
+        }
+        return best == null ? null : new net.minecraft.core.BlockPos(best.x(), best.y(), best.z());
+    }
+
     /** Its first days by AltoClef's priorities (behaviour.altoLife): done once, the one running, and when it was started. */
     private volatile boolean altoLifeDone;
     private volatile String altoLifeTaskId;
@@ -5142,8 +5155,9 @@ public class AgentLoop {
                     curriculum.abandon();
                 }
             });
+            // The hut it built before (kept among its places when it stood), so a restart goes on from it.
             com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
-                    new com.mineagent.engine.alto.AltoLifeTask.LifeRecord(id, null), reply -> { });
+                    new com.mineagent.engine.alto.AltoLifeTask.LifeRecord(id, altoHut(self)), reply -> { });
             return;
         }
         // From nothing: a starter kit first (stone tools, a little fuel, food for the road), only what it lacks. It

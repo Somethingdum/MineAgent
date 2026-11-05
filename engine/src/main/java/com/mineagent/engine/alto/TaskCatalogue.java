@@ -733,7 +733,20 @@ public class TaskCatalogue {
         } else if (target.getMatches().length == 1) {
             return getItemTask(target.getMatches()[0], target.getTargetCount());
         } else {
-            return getSquashedItemTask(target);
+            // SMH: a target of several items with no catalogue name squashed into a task for itself, which asked for its
+            // own task again without end (a stack overflow that stops the server). The catalogue entry with exactly its
+            // items is used ("log" for every log); else the first of its items the catalogue has.
+            java.util.Set<Item> want = new java.util.HashSet<>(java.util.Arrays.asList(target.getMatches()));
+            for (var entry : nameToItemMatches.entrySet()) {
+                if (entry.getValue() != null && new java.util.HashSet<>(java.util.Arrays.asList(entry.getValue())).equals(want)) {
+                    return getItemTask(entry.getKey(), target.getTargetCount());
+                }
+            }
+            for (Item item : target.getMatches()) {
+                if (taskExists(item)) return getItemTask(item, target.getTargetCount());
+            }
+            Debug.logWarning("No task for any of " + target + ".");
+            return null;
         }
     }
 

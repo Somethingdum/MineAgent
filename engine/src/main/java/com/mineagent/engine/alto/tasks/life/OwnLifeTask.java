@@ -163,13 +163,18 @@ public class OwnLifeTask extends Task {
                 a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.CRAFTING_TABLE)
                         && !hutHas(a, Blocks.CRAFTING_TABLE),
                 ItemTarget.of(Items.CRAFTING_TABLE)));
-        // The rest of its stone tools, as BeatMinecraftTask.addStoneToolsTasks (its shovel too: "at least stone tools").
-        wants.add(new CraftItemPriorityTask(300, recipe(Items.STONE_SWORD),
-                a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD)));
-        wants.add(new CraftItemPriorityTask(300, recipe(Items.STONE_AXE),
-                a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.STONE_AXE, Items.IRON_AXE, Items.DIAMOND_AXE)));
-        wants.add(new CraftItemPriorityTask(290, recipe(Items.STONE_SHOVEL),
-                a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.STONE_SHOVEL, Items.IRON_SHOVEL, Items.DIAMOND_SHOVEL)));
+        // The rest of its stone tools, as BeatMinecraftTask.addStoneToolsTasks gets them (a ResourcePriorityTask: again
+        // whenever one is missing, as a worn-out tool is; a CraftItemPriorityTask is done once only), its shovel too
+        // ("at least stone tools").
+        wants.add(new ResourcePriorityTask(StaticItemPriorityCalculator.of(300),
+                a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD),
+                ItemTarget.of(Items.STONE_SWORD)));
+        wants.add(new ResourcePriorityTask(StaticItemPriorityCalculator.of(300),
+                a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.STONE_AXE, Items.IRON_AXE, Items.DIAMOND_AXE),
+                ItemTarget.of(Items.STONE_AXE)));
+        wants.add(new ResourcePriorityTask(StaticItemPriorityCalculator.of(290),
+                a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && !hasAny(a, Items.STONE_SHOVEL, Items.IRON_SHOVEL, Items.DIAMOND_SHOVEL),
+                ItemTarget.of(Items.STONE_SHOVEL)));
         // Its hut: after its pickaxe and table, then its fittings (the table and furnace it carries put in); its walls,
         // roof and door before anything else once the day turns to evening.
         wants.add(new ActionPriorityTask(a -> {
@@ -194,7 +199,7 @@ public class OwnLifeTask extends Task {
             int want = FUEL - fuel(a);
             if (want <= 0) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             Task smelt = new SmeltInFurnaceTask(new SmeltTarget(new ItemTarget(Items.CHARCOAL, a.getItemStorage().getItemCount(Items.CHARCOAL) + want),
-                    new ItemTarget(ItemHelper.LOG, want)));
+                    new ItemTarget("log", want)));
             return new Pair<>(smelt, 120d);
         }, a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && fuel(a) < FUEL, true, false, false));
         // Food, as BeatMinecraftTask.addCollectFoodTask (enough for its night), and cooked, as its addCookFoodTasks.

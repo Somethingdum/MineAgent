@@ -142,7 +142,10 @@ public class PriorityAuction {
                 publishProgress(false);
                 if (state != TaskState.RUNNING) finishCurrentTask(state, null);
             } catch (Exception error) {
-                System.err.println("[MineAgent] Task tick error: " + error.getMessage());
+                System.err.println("[MineAgent] Task tick error: " + error);
+                // Where it came from, briefly (the benchmark's progress and the scenes' logs show these lines).
+                StackTraceElement[] at = error.getStackTrace();
+                for (int i = 0; i < Math.min(8, at.length); i++) System.err.println("[MineAgent] Task tick error   at " + at[i]);
                 finishCurrentTask(TaskState.FAILED, error);
             }
         } else {
