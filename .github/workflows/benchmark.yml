@@ -32,7 +32,6 @@ jobs:
       fail-fast: false
       matrix:
         seed: ${{ fromJSON(github.event.inputs.seed && format('["{0}"]', github.event.inputs.seed) || '["smh-benchmark-1","smh-benchmark-2","smh-benchmark-3"]') }}
-        # [compare]: each world twice, as the config has it and with AltoClef's switches on, side by side on one commit.
         # [compare]: each world twice, as the config has it and with the one agent ([compare-alto]: AltoClef's switches).
         way: ${{ fromJSON(contains(github.event.head_commit.message, '[compare-alto]') && '["as set","altoclef"]' || contains(github.event.head_commit.message, '[compare]') && '["as set","agent"]' || '["as set"]') }}
     permissions:
