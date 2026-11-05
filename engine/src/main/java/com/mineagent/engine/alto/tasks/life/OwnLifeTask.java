@@ -272,6 +272,9 @@ public class OwnLifeTask extends Task {
         if (!words.equals(modelWords)) {
             modelWords = words;
             modelTask = ModelWants.taskFor(mod, ModelWants.read(words));
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                System.out.println("[MineAgent] alto: the model's task \"" + words + "\" read as " + ModelWants.read(words) + ", done by " + modelTask);
+            }
             if (modelTask == null) {
                 mod.log("The model's task \"" + words + "\" is none I can do: told it so.");
                 ModelWants.finish(id, words, false);
@@ -280,6 +283,10 @@ public class OwnLifeTask extends Task {
         }
         if (modelTask.isFinished()) {
             mod.log("Done what the model proposed: " + words);
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                System.out.println("[MineAgent] alto: the model's task \"" + words + "\" judged done: " + modelTask + " finished, active "
+                        + modelTask.isActive() + ", logs carried " + mod.getItemStorage().getItemCount(com.mineagent.engine.alto.util.helpers.ItemHelper.LOG));
+            }
             ModelWants.finish(id, words, true);
             modelWords = null;
             modelTask = null;
