@@ -87,7 +87,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     /** Up to 16 hours of game time for one order (a chest of stone bricks is about one). */
     static final long LONGEST = 16 * 72_000L;
 
-    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, BACK, FOOD, DONE, FAILED }
+    private enum Phase { START, ASK, ROUND, STEPS, DEPOSIT, BACK, FOOD, ALTO, DONE, FAILED }
 
     private Phase phase = Phase.START;
     private boolean begun;
@@ -206,6 +206,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         }
         if (sub != null) sub.resume();
         if (foodTask != null) foodTask.resume();
+        if (altoTask != null) altoTask.resume();
     }
 
     @Override
@@ -223,6 +224,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                 case DEPOSIT -> deposit();
                 case BACK -> backForFood();
                 case FOOD -> foodByWhatIsThere();
+                case ALTO -> byAltoClef();
                 case DONE -> TaskState.SUCCESS;
                 case FAILED -> TaskState.FAILED;
             };
@@ -274,6 +276,15 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
                     record.onlySeen));
             foodTask.start();
             phase = Phase.FOOD;
+            return TaskState.RUNNING;
+        }
+        if (!record.onlySeen && com.mineagent.engine.settings.Switches.altoTasks()
+                && com.mineagent.engine.alto.AltoTreeTask.takes(record)) {
+            // An item kept on it, one AltoClef's catalogue knows: AltoClef's own task for it, deciding again every tick
+            // from what is there (behaviour.altoTasks; SMH plan 70, port the best existing code).
+            altoTask = new com.mineagent.engine.alto.AltoTreeTask(player, record);
+            altoTask.start();
+            phase = Phase.ALTO;
             return TaskState.RUNNING;
         }
         if (FOOD.equals(itemId)) {
@@ -562,6 +573,8 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
 
     /** Its food got by what is there now (behaviour.reactiveFood). */
     private CollectFoodTask foodTask;
+    /** The order done by AltoClef's task for its item (behaviour.altoTasks). */
+    private com.mineagent.engine.alto.AltoTreeTask altoTask;
 
     private TaskState foodByWhatIsThere() {
         TaskState st = foodTask.tick();
@@ -577,6 +590,24 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
             return TaskState.SUCCESS;
         }
         return fail(why.isEmpty() ? "I couldn't get any food" : "I couldn't get any food: " + why);
+    }
+
+    private TaskState byAltoClef() {
+        TaskState st = altoTask.tick();
+        if (st == TaskState.RUNNING) return TaskState.RUNNING;
+        int got = altoTask.got();
+        String why = altoTask.outcome();
+        altoTask.interrupt();
+        altoTask = null;
+        delivered = got;
+        if (st == TaskState.SUCCESS && got > 0) {
+            long minutes = Math.max(1, (sp().level().getGameTime() - startedAt) / 1_200L);
+            say(why + " About " + minutes + (minutes == 1 ? " minute." : " minutes."));
+            outcome = "done";
+            phase = Phase.DONE;
+            return TaskState.SUCCESS;
+        }
+        return fail(why.replaceAll("[.]$", ""));
     }
 
     /** Where a food order set out from, and how far from it a failed hunt may leave it before it walks back. */
@@ -2569,6 +2600,7 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
     protected void onInterrupt() {
         if (sub != null) sub.interrupt();
         if (foodTask != null) foodTask.interrupt();
+        if (altoTask != null) altoTask.interrupt();
         if (tradeSub != null) {
             tradeSub.interrupt(); // the menu closed; the trading starts again when it carries on
             tradeSub = null;

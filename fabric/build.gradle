@@ -33,9 +33,6 @@ sourceSets {
             // loading while giving Fabric and NeoForge one visual codebase.
             srcDir project(':engine').file('src/client/java')
             srcDir project(':tools').file('src/main/java')
-            // SMH plan 70: AltoClef's tasks while they are ported (engine/.../alto); compiled only with -Palto
-            // (.github/workflows/alto-compile.yml) until they build, then always.
-            if (!project.hasProperty('alto')) exclude 'com/mineagent/engine/alto/**'
         }
         resources {
             srcDir project(':engine').file('src/client/resources')
@@ -120,9 +117,4 @@ processResources {
     filesMatching("fabric.mod.json") {
         expand "version": project.version
     }
-}
-
-// SMH plan 70: every compile error of the AltoClef port at once, while it is ported (-Palto).
-if (project.hasProperty('alto')) {
-    tasks.withType(JavaCompile).configureEach { options.compilerArgs += ['-Xmaxerrs', '5000'] }
 }

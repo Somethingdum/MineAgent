@@ -5162,6 +5162,69 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, orders done by AltoClef's own tasks ({@code behaviour.altoTasks}): with nothing on it, a small oak
+     * and the stone floor, "make me a stone pickaxe" is AltoClef's catalogue task for it: the logs felled, planks,
+     * sticks and a table made, a wooden pickaxe, cobblestone mined with it, and the stone pickaxe crafted, each step
+     * chosen again every tick from what it has and sees.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_pickaxe", timeoutTicks = 3600)
+    public void altoClefMakesAStonePickaxeFromATree(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoTasksOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Altoist");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(8, 0, 6, Blocks.DIRT);
+        for (int y = 1; y <= 5; y++) helper.setBlock(8, y, 6, Blocks.OAK_LOG);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a stone pickaxe"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto pickaxe");
+            String done = lastSaid(s, "Done");
+            String failed = lastSaid(s, "I couldn't");
+            var inv = s.body().getInventory();
+            if (inv.countItem(Items.STONE_PICKAXE) >= 1 || !done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 3550) {
+                String how = "stone pickaxes " + inv.countItem(Items.STONE_PICKAXE) + ", wooden " + inv.countItem(Items.WOODEN_PICKAXE)
+                        + ", cobblestone " + inv.countItem(Items.COBBLESTONE) + ", logs " + inv.countItem(Items.OAK_LOG)
+                        + ", planks " + inv.countItem(Items.OAK_PLANKS) + ", sticks " + inv.countItem(Items.STICK)
+                        + ", tables " + inv.countItem(Items.CRAFTING_TABLE) + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                boolean ok = inv.countItem(Items.STONE_PICKAXE) >= 1;
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoTasksOverride = null;
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, orders done by AltoClef's own tasks: a furnace with a wooden pickaxe on it and the stone floor:
+     * eight cobblestone mined, a table made from the logs it carries, the furnace crafted in it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_furnace", timeoutTicks = 2400)
+    public void altoClefMakesAFurnace(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoTasksOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Smelter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(0, new ItemStack(Items.WOODEN_PICKAXE));
+        s.body().getInventory().setItem(1, new ItemStack(Items.OAK_LOG, 2));
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "make me a furnace"));
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto furnace");
+            String done = lastSaid(s, "Done");
+            String failed = lastSaid(s, "I couldn't");
+            var inv = s.body().getInventory();
+            if (inv.countItem(Items.FURNACE) >= 1 || !done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2350) {
+                String how = "furnaces " + inv.countItem(Items.FURNACE) + ", cobblestone " + inv.countItem(Items.COBBLESTONE)
+                        + ", tables " + inv.countItem(Items.CRAFTING_TABLE) + ", planks " + inv.countItem(Items.OAK_PLANKS)
+                        + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                boolean ok = inv.countItem(Items.FURNACE) >= 1;
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoTasksOverride = null;
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4, leaving no trace: it fells a small oak for logs, an oak sapling on it, and plants it where the trunk stood. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_replant", timeoutTicks = 900)
     public void aFelledTreeIsReplanted(GameTestHelper helper) {

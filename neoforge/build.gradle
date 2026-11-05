@@ -33,9 +33,6 @@ sourceSets {
             // engine module and dedicated-server sources do not.
             srcDir project(':engine').file('src/client/java')
             srcDir project(':tools').file('src/main/java')
-            // SMH plan 70: AltoClef's tasks while they are ported (engine/.../alto); compiled only with -Palto
-            // (.github/workflows/alto-compile.yml) until they build, then always.
-            if (!project.hasProperty('alto')) exclude 'com/mineagent/engine/alto/**'
         }
         resources {
             srcDir project(':engine').file('src/client/resources')

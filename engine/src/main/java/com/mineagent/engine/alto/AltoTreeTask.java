@@ -132,6 +132,16 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
         return failureMessage();
     }
 
+    /** How many more it has than when the order began. */
+    public int got() {
+        return item == null || startCount < 0 ? 0 : Math.max(0, ProductionTask.count(sp(), item) - startCount);
+    }
+
+    /** What it says of how the order went. */
+    public String outcome() {
+        return outcome;
+    }
+
     /** What it is doing, for the order's progress (the deepest task's debug state, AltoClef's own words). */
     public String doing() {
         return root == null ? "" : root.toString();
