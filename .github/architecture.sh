@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The architecture checks (SMH plan 71, §6.8 invariant I6, §10): one implementation per behaviour, each grep enforced
-# from the phase it belongs to. The current phase is in .github/phase; a gate that passes raises it. The switch count is
+# from the phase it belongs to: .github/phase holds the last phase whose gate has passed, so a check "from phase 1"
+# is enforced once phase 1's gate has passed (the gate is where it must first hold). The switch count is
 # in .github/switch-count: a new switch is a deliberate change to that file, with its line in plan 71's record.
 # Run from the repository root; exits non-zero on the first broken rule, after printing every one.
 set -u
