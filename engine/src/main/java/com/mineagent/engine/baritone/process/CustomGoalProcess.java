@@ -59,13 +59,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
     public void setGoal(Goal goal) {
         this.goal = goal;
         this.mostRecentGoal = goal;
-        if (baritone.getElytraProcess().isActive()) {
-            try {
-                baritone.getElytraProcess().pathTo(goal);
-            } catch (IllegalArgumentException e) {
-                logDirect("Failed to update elytra goal because: " + e.getMessage(), ChatFormatting.RED);
-            }
-        }
+        // SMH: no elytra flight to send the goal to.
         if (this.state == State.NONE) {
             this.state = State.GOAL_SET;
         }

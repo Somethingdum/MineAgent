@@ -1,50 +1,32 @@
-// Ported from Baritone (LGPL-3.0, the licence of this mod; see THIRD_PARTY_NOTICES.md): src/main/java/baritone/Baritone.java at commit 11ea66c
-// (branch 1.21.1). Changes for the companion's server-side body are marked SMH.
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
+// Ported from Baritone (LGPL-3.0, the licence of this mod; see THIRD_PARTY_NOTICES.md): src/main/java/baritone/Baritone.java
+// at commit 11ea66c (branch 1.21.1). SMH: one Baritone for each companion's server-side body, with Baritone's own
+// behaviours and processes in Baritone's order; no world cache, commands, waypoints, elytra or click GUI. The engine
+// ticks it (tick()) each server tick, as a client's tick event does.
 package com.mineagent.engine.baritone;
 
+import com.mineagent.api.entity.AgentPlayer;
 import com.mineagent.engine.baritone.api.BaritoneAPI;
 import com.mineagent.engine.baritone.api.IBaritone;
 import com.mineagent.engine.baritone.api.Settings;
 import com.mineagent.engine.baritone.api.behavior.IBehavior;
+import com.mineagent.engine.baritone.api.event.events.PlayerUpdateEvent;
+import com.mineagent.engine.baritone.api.event.events.SprintStateEvent;
+import com.mineagent.engine.baritone.api.event.events.TickEvent;
+import com.mineagent.engine.baritone.api.event.events.type.EventState;
 import com.mineagent.engine.baritone.api.event.listener.IEventBus;
 import com.mineagent.engine.baritone.api.process.IBaritoneProcess;
-import com.mineagent.engine.baritone.api.process.IElytraProcess;
 import com.mineagent.engine.baritone.api.utils.IPlayerContext;
 import com.mineagent.engine.baritone.behavior.*;
-import com.mineagent.engine.baritone.cache.WorldProvider;
-import com.mineagent.engine.baritone.command.manager.CommandManager;
 import com.mineagent.engine.baritone.event.GameEventHandler;
 import com.mineagent.engine.baritone.process.*;
 import com.mineagent.engine.baritone.selection.SelectionManager;
 import com.mineagent.engine.baritone.utils.BlockStateInterface;
-import com.mineagent.engine.baritone.utils.GuiClick;
 import com.mineagent.engine.baritone.utils.InputOverrideHandler;
 import com.mineagent.engine.baritone.utils.PathingControlManager;
 import com.mineagent.engine.baritone.utils.player.BaritonePlayerContext;
-import net.minecraft.client.Minecraft;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
+import net.minecraft.server.level.ServerPlayer;
+
 import java.util.concurrent.Executor;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -63,9 +45,7 @@ public class Baritone implements IBaritone {
         threadPool = new ThreadPoolExecutor(4, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<>());
     }
 
-    private final Minecraft mc;
-    private final Path directory;
-
+    private final AgentPlayer agent;
     private final GameEventHandler gameEventHandler;
 
     private final PathingBehavior pathingBehavior;
@@ -81,37 +61,26 @@ public class Baritone implements IBaritone {
     private final ExploreProcess exploreProcess;
     private final FarmProcess farmProcess;
     private final InventoryPauserProcess inventoryPauserProcess;
-    private final IElytraProcess elytraProcess;
 
     private final PathingControlManager pathingControlManager;
     private final SelectionManager selectionManager;
-    private final CommandManager commandManager;
 
-    private final IPlayerContext playerContext;
-    private final WorldProvider worldProvider;
+    private final BaritonePlayerContext playerContext;
 
     public BlockStateInterface bsi;
 
-    Baritone(Minecraft mc) {
-        this.mc = mc;
+    public Baritone(AgentPlayer agent, ServerPlayer player) {
+        this.agent = agent;
         this.gameEventHandler = new GameEventHandler(this);
 
-        this.directory = mc.gameDirectory.toPath().resolve("baritone");
-        if (!Files.exists(this.directory)) {
-            try {
-                Files.createDirectories(this.directory);
-            } catch (IOException ignored) {}
-        }
-
         // Define this before behaviors try and get it, or else it will be null and the builds will fail!
-        this.playerContext = new BaritonePlayerContext(this, mc);
+        this.playerContext = new BaritonePlayerContext(this, player);
 
         {
             this.lookBehavior         = this.registerBehavior(LookBehavior::new);
             this.pathingBehavior      = this.registerBehavior(PathingBehavior::new);
             this.inventoryBehavior    = this.registerBehavior(InventoryBehavior::new);
             this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
-            this.registerBehavior(WaypointBehavior::new);
         }
 
         this.pathingControlManager = new PathingControlManager(this);
@@ -124,13 +93,49 @@ public class Baritone implements IBaritone {
             this.exploreProcess          = this.registerProcess(ExploreProcess::new);
             this.farmProcess             = this.registerProcess(FarmProcess::new);
             this.inventoryPauserProcess  = this.registerProcess(InventoryPauserProcess::new);
-            this.elytraProcess           = this.registerProcess(ElytraProcess::create);
             this.registerProcess(BackfillProcess::new);
         }
 
-        this.worldProvider = new WorldProvider(this);
         this.selectionManager = new SelectionManager(this);
-        this.commandManager = new CommandManager(this);
+    }
+
+    /**
+     * SMH: one server tick, as a client's mixins drive Baritone: the tick (PRE), the player's update (PRE: where it looks
+     * is set), whether it sprints, the update (POST), then the tick's end (POST).
+     */
+    public void tick() {
+        BaritoneProvider.as(this, () -> {
+            tickInner();
+            return null;
+        });
+    }
+
+    private void tickInner() {
+        var tickProvider = TickEvent.createNextProvider();
+        this.gameEventHandler.onTick(tickProvider.apply(EventState.PRE, TickEvent.Type.IN));
+        this.gameEventHandler.onPlayerUpdate(new PlayerUpdateEvent(EventState.PRE));
+        SprintStateEvent sprint = new SprintStateEvent();
+        this.gameEventHandler.onPlayerSprintState(sprint);
+        if (sprint.getState() != null) {
+            var driver = com.mineagent.engine.task.TaskContext.inputDriver(agent);
+            if (driver != null) driver.setSprinting(sprint.getState());
+        }
+        this.gameEventHandler.onPlayerUpdate(new PlayerUpdateEvent(EventState.POST));
+        this.gameEventHandler.onPostTick(tickProvider.apply(EventState.POST, TickEvent.Type.IN));
+    }
+
+    /** SMH: the companion's new body after a respawn. */
+    public void setPlayer(ServerPlayer player) {
+        this.playerContext.setPlayer(player);
+    }
+
+    public AgentPlayer getAgent() {
+        return agent;
+    }
+
+    /** SMH: the Baritone settings (one set for every companion). */
+    public Settings getSettings() {
+        return BaritoneAPI.getSettings();
     }
 
     public void registerBehavior(IBehavior behavior) {
@@ -223,39 +228,11 @@ public class Baritone implements IBaritone {
     }
 
     @Override
-    public WorldProvider getWorldProvider() {
-        return this.worldProvider;
-    }
-
-    @Override
     public IEventBus getGameEventHandler() {
         return this.gameEventHandler;
     }
 
-    @Override
-    public CommandManager getCommandManager() {
-        return this.commandManager;
-    }
-
-    @Override
-    public IElytraProcess getElytraProcess() {
-        return this.elytraProcess;
-    }
-
-    @Override
-    public void openClick() {
-        new Thread(() -> {
-            try {
-                Thread.sleep(100);
-                mc.execute(() -> mc.setScreen(new GuiClick()));
-            } catch (Exception ignored) {}
-        }).start();
-    }
-
-    public Path getDirectory() {
-        return this.directory;
-    }
-
+    /** SMH: the settings of the companion whose Baritone is ticking, else Baritone's defaults. */
     public static Settings settings() {
         return BaritoneAPI.getSettings();
     }

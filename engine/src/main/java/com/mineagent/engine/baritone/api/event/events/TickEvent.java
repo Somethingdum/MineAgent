@@ -20,7 +20,6 @@
 package com.mineagent.engine.baritone.api.event.events;
 
 import com.mineagent.engine.baritone.api.event.events.type.EventState;
-import net.minecraft.client.Minecraft;
 
 import java.util.function.BiFunction;
 

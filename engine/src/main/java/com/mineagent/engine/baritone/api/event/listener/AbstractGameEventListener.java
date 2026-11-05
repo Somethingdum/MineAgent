@@ -42,10 +42,8 @@ public interface AbstractGameEventListener extends IGameEventListener {
     default void onPlayerUpdate(PlayerUpdateEvent event) {}
 
     @Override
-    default void onSendChatMessage(ChatEvent event) {}
 
     @Override
-    default void onPreTabComplete(TabCompleteEvent event) {}
 
     @Override
     default void onChunkEvent(ChunkEvent event) {}
@@ -54,7 +52,6 @@ public interface AbstractGameEventListener extends IGameEventListener {
     default void onBlockChange(BlockChangeEvent event) {}
 
     @Override
-    default void onRenderPass(RenderEvent event) {}
 
     @Override
     default void onWorldEvent(WorldEvent event) {}

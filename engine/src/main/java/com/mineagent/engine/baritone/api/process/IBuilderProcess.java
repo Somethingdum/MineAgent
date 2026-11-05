@@ -20,7 +20,6 @@
 package com.mineagent.engine.baritone.api.process;
 
 import com.mineagent.engine.baritone.api.schematic.ISchematic;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
 import net.minecraft.world.level.block.state.BlockState;
@@ -55,7 +54,7 @@ public interface IBuilderProcess extends IBaritoneProcess {
 
     @Deprecated
     default boolean build(String schematicFile, BlockPos origin) {
-        File file = new File(new File(Minecraft.getInstance().gameDirectory, "schematics"), schematicFile);
+        File file = new File(new File("schematics"), schematicFile) /* SMH: the server's own folder */;
         return build(schematicFile, file, origin);
     }
 

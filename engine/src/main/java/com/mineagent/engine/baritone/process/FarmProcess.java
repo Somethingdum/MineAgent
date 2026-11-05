@@ -217,7 +217,7 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
                 }
             }
 
-            Baritone.getExecutor().execute(() -> locations = BaritoneAPI.getProvider().getWorldScanner().scanChunkRadius(ctx, scan, Baritone.settings().farmMaxScanSize.value, 10, 10));
+            locations = BaritoneAPI.getProvider().getWorldScanner().scanChunkRadius(ctx, scan, Baritone.settings().farmMaxScanSize.value, 10, 10); // SMH: on the server thread, where its chunks may be read
         }
         if (locations == null) {
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);

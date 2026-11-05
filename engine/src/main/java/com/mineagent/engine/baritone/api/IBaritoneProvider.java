@@ -1,34 +1,13 @@
-// Ported from Baritone (LGPL-3.0, the licence of this mod; see THIRD_PARTY_NOTICES.md): src/api/java/baritone/api/IBaritoneProvider.java at commit 11ea66c
-// (branch 1.21.1). Changes for the companion's server-side body are marked SMH.
-/*
- * This file is part of Baritone.
- *
- * Baritone is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * Baritone is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
- */
-
+// Ported from Baritone (LGPL-3.0, the licence of this mod; see THIRD_PARTY_NOTICES.md): src/api/java/baritone/api/IBaritoneProvider.java
+// at commit 11ea66c (branch 1.21.1). SMH: one Baritone per companion, made by the engine with its body; no commands.
 package com.mineagent.engine.baritone.api;
 
 import com.mineagent.engine.baritone.api.cache.IWorldScanner;
-import com.mineagent.engine.baritone.api.command.ICommand;
-import com.mineagent.engine.baritone.api.command.ICommandSystem;
 import com.mineagent.engine.baritone.api.schematic.ISchematicSystem;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.server.level.ServerPlayer;
+
+import net.minecraft.world.entity.Entity;
 
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Provides the present {@link IBaritone} instances, as well as non-baritone instance related APIs.
@@ -38,32 +17,22 @@ import java.util.Objects;
 public interface IBaritoneProvider {
 
     /**
-     * Returns the primary {@link IBaritone} instance. This instance is persistent, and
-     * is represented by the local player that is created by the game itself, not a "bot"
-     * player through Baritone.
-     *
-     * @return The primary {@link IBaritone} instance.
+     * Returns the primary {@link IBaritone} instance. SMH: the companion whose Baritone is ticking.
      */
     IBaritone getPrimaryBaritone();
 
     /**
-     * Returns all of the active {@link IBaritone} instances. This includes the local one
-     * returned by {@link #getPrimaryBaritone()}.
-     *
-     * @return All active {@link IBaritone} instances.
-     * @see #getBaritoneForPlayer(ServerPlayer)
+     * Returns all of the active {@link IBaritone} instances.
      */
     List<IBaritone> getAllBaritones();
 
     /**
-     * Provides the {@link IBaritone} instance for a given {@link ServerPlayer}.
-     *
-     * @param player The player
-     * @return The {@link IBaritone} instance.
+     * Provides the {@link IBaritone} instance for a given player.
      */
-    default IBaritone getBaritoneForPlayer(ServerPlayer player) {
+    default IBaritone getBaritoneForPlayer(Entity player) {
         for (IBaritone baritone : this.getAllBaritones()) {
-            if (Objects.equals(player, baritone.getPlayerContext().player())) {
+            var p = baritone.getPlayerContext().player();
+            if (p == player || (p != null && player != null && p.getUUID().equals(player.getUUID()))) {
                 return baritone;
             }
         }
@@ -71,72 +40,17 @@ public interface IBaritoneProvider {
     }
 
     /**
-     * Provides the {@link IBaritone} instance for a given {@link Minecraft}.
-     *
-     * @param minecraft The minecraft
-     * @return The {@link IBaritone} instance.
-     */
-    default IBaritone getBaritoneForMinecraft(Minecraft minecraft) {
-        for (IBaritone baritone : this.getAllBaritones()) {
-            if (Objects.equals(minecraft, baritone.getPlayerContext().minecraft())) {
-                return baritone;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Provides the {@link IBaritone} instance for the player with the specified connection.
-     *
-     * @param connection The connection
-     * @return The {@link IBaritone} instance.
-     */
-    default IBaritone getBaritoneForConnection(ClientPacketListener connection) {
-        for (IBaritone baritone : this.getAllBaritones()) {
-            final ServerPlayer player = baritone.getPlayerContext().player();
-            if (player != null && player.connection == connection) {
-                return baritone;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Creates and registers a new {@link IBaritone} instance using the specified {@link Minecraft}. The existing
-     * instance is returned if already registered.
-     *
-     * @param minecraft The minecraft
-     * @return The {@link IBaritone} instance
-     */
-    IBaritone createBaritone(Minecraft minecraft);
-
-    /**
-     * Destroys and removes the specified {@link IBaritone} instance. If the specified instance is the
-     * {@link #getPrimaryBaritone() primary baritone}, this operation has no effect and will return {@code false}.
-     *
-     * @param baritone The baritone instance to remove
-     * @return Whether the baritone instance was removed
+     * Destroys a specified Baritone instance.
      */
     boolean destroyBaritone(IBaritone baritone);
 
     /**
-     * Returns the {@link IWorldScanner} instance. This is not a type returned by
-     * {@link IBaritone} implementation, because it is not linked with {@link IBaritone}.
-     *
-     * @return The {@link IWorldScanner} instance.
+     * Returns the {@link IWorldScanner} instance.
      */
     IWorldScanner getWorldScanner();
 
     /**
-     * Returns the {@link ICommandSystem} instance. This is not bound to a specific {@link IBaritone}
-     * instance because {@link ICommandSystem} itself controls global behavior for {@link ICommand}s.
-     *
-     * @return The {@link ICommandSystem} instance.
-     */
-    ICommandSystem getCommandSystem();
-
-    /**
-     * @return The {@link ISchematicSystem} instance.
+     * Returns the {@link ISchematicSystem} instance.
      */
     ISchematicSystem getSchematicSystem();
 }

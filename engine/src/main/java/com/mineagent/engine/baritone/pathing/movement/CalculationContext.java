@@ -22,7 +22,6 @@ package com.mineagent.engine.baritone.pathing.movement;
 import com.mineagent.engine.baritone.Baritone;
 import com.mineagent.engine.baritone.api.IBaritone;
 import com.mineagent.engine.baritone.api.pathing.movement.ActionCosts;
-import com.mineagent.engine.baritone.cache.WorldData;
 import com.mineagent.engine.baritone.pathing.precompute.PrecomputedData;
 import com.mineagent.engine.baritone.utils.BlockStateInterface;
 import com.mineagent.engine.baritone.utils.ToolSet;
@@ -57,7 +56,6 @@ public class CalculationContext {
     public final boolean safeForThreadedUse;
     public final IBaritone baritone;
     public final Level world;
-    public final WorldData worldData;
     public final BlockStateInterface bsi;
     public final ToolSet toolSet;
     public final boolean hasWaterBucket;
@@ -99,7 +97,6 @@ public class CalculationContext {
         this.baritone = baritone;
         ServerPlayer player = baritone.getPlayerContext().player();
         this.world = baritone.getPlayerContext().world();
-        this.worldData = (WorldData) baritone.getPlayerContext().worldData();
         this.bsi = new BlockStateInterface(baritone.getPlayerContext(), forUseOnAnotherThread);
         this.toolSet = new ToolSet(player);
         this.hasThrowaway = Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();

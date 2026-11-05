@@ -19,7 +19,6 @@
 
 package com.mineagent.engine.baritone.api.utils;
 
-import com.mineagent.engine.baritone.api.utils.accessor.IItemStack;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -80,7 +79,7 @@ public class BlockOptionalMetaLookup {
     }
 
     public boolean has(ItemStack stack) {
-        int hash = ((IItemStack) (Object) stack).getBaritoneHash();
+        int hash = BlockOptionalMeta.baritoneHash(stack);
         hash -= stack.getDamageValue();
         return stackHashes.contains(hash);
     }

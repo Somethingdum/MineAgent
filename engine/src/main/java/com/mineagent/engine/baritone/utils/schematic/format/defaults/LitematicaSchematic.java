@@ -32,7 +32,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import org.apache.commons.lang3.Validate;
 
-import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.Optional;
 
@@ -227,7 +226,7 @@ public final class LitematicaSchematic extends CompositeSchematic implements ISt
          */
         private final long arraySize;
 
-        public LitematicaBitArray(int bitsPerEntryIn, long arraySizeIn, @Nullable long[] longArrayIn) {
+        public LitematicaBitArray(int bitsPerEntryIn, long arraySizeIn, long[] longArrayIn) {
             Validate.inclusiveBetween(1L, 32L, bitsPerEntryIn);
             this.arraySize = arraySizeIn;
             this.bitsPerEntry = bitsPerEntryIn;

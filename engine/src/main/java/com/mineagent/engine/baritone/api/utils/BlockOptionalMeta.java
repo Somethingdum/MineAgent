@@ -19,12 +19,9 @@
 
 package com.mineagent.engine.baritone.api.utils;
 
-import com.mineagent.engine.baritone.api.utils.accessor.IItemStack;
-import com.mineagent.engine.baritone.api.utils.accessor.ILootTable;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.Util;
-import net.minecraft.client.Minecraft;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.LayeredRegistryAccess;
 import net.minecraft.core.RegistryAccess;
@@ -67,10 +64,7 @@ import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
-import sun.misc.Unsafe;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
@@ -91,7 +85,7 @@ public final class BlockOptionalMeta {
     private final ImmutableSet<Integer> stackHashes;
     private static Map<Block, List<Item>> drops = new HashMap<>();
 
-    public BlockOptionalMeta(@Nonnull Block block) {
+    public BlockOptionalMeta(Block block) {
         this.block = block;
         this.propertiesDescription = "{}";
         this.blockstates = getStates(block, Collections.emptyMap());
@@ -99,7 +93,7 @@ public final class BlockOptionalMeta {
         this.stackHashes = getStackHashes(blockstates);
     }
 
-    public BlockOptionalMeta(@Nonnull String selector) {
+    public BlockOptionalMeta(String selector) {
         Matcher matcher = PATTERN.matcher(selector);
 
         if (!matcher.find()) {
@@ -142,7 +136,7 @@ public final class BlockOptionalMeta {
         return builder.build();
     }
 
-    private static Set<BlockState> getStates(@Nonnull Block block, @Nonnull Map<Property<?>, ?> properties) {
+    private static Set<BlockState> getStates(Block block, Map<Property<?>, ?> properties) {
         return block.getStateDefinition().getPossibleStates().stream()
                 .filter(blockstate -> properties.entrySet().stream().allMatch(entry ->
                         blockstate.getValue(entry.getKey()) == entry.getValue()
@@ -166,27 +160,32 @@ public final class BlockOptionalMeta {
                                 .stream()
                                 .map(item -> new ItemStack(item, 1))
                         )
-                        .map(stack -> ((IItemStack) (Object) stack).getBaritoneHash())
+                        .map(stack -> baritoneHash(stack))
                         .toArray(Integer[]::new)
         );
+    }
+
+    /** SMH: what Baritone's ItemStack mixin adds (MixinItemStack): the item's hash and the stack's damage. */
+    public static int baritoneHash(ItemStack stack) {
+        return stack.isEmpty() ? -1 : stack.getItem().hashCode() + stack.getDamageValue();
     }
 
     public Block getBlock() {
         return block;
     }
 
-    public boolean matches(@Nonnull Block block) {
+    public boolean matches(Block block) {
         return block == this.block;
     }
 
-    public boolean matches(@Nonnull BlockState blockstate) {
+    public boolean matches(BlockState blockstate) {
         Block block = blockstate.getBlock();
         return block == this.block && stateHashes.contains(blockstate.hashCode());
     }
 
     public boolean matches(ItemStack stack) {
         //noinspection ConstantConditions
-        int hash = ((IItemStack) (Object) stack).getBaritoneHash();
+        int hash = baritoneHash(stack);
 
         hash -= stack.getDamageValue();
 
@@ -214,23 +213,6 @@ public final class BlockOptionalMeta {
         return stackHashes;
     }
 
-    private static Method getVanillaServerPack;
-
-    private static VanillaPackResources getVanillaServerPack() {
-        if (getVanillaServerPack == null) {
-            getVanillaServerPack = Arrays.stream(ServerPacksSource.class.getDeclaredMethods()).filter(field -> field.getReturnType() == VanillaPackResources.class).findFirst().orElseThrow();
-            getVanillaServerPack.setAccessible(true);
-        }
-
-        try {
-            return (VanillaPackResources) getVanillaServerPack.invoke(null);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return null;
-    }
-
     private static synchronized List<Item> drops(Block b) {
         return drops.computeIfAbsent(b, block -> {
             ResourceLocation lootTableLocation = block.getLootTable().location();
@@ -239,7 +221,8 @@ public final class BlockOptionalMeta {
             } else {
                 List<Item> items = new ArrayList<>();
                 try {
-                    ServerLevel lv2 = ServerLevelStub.fastCreate();
+                    // SMH: the companion's own world (Baritone makes a stub server world on a client to read loot).
+                    ServerLevel lv2 = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().world();
 
                     LootParams.Builder lv5 = new LootParams.Builder(lv2)
                         .withParameter(LootContextParams.ORIGIN, Vec3.ZERO)
@@ -260,97 +243,9 @@ public final class BlockOptionalMeta {
             return Collections.emptyList();
         } else {
             LootParams lv2 = params.withParameter(LootContextParams.BLOCK_STATE, state.defaultBlockState()).create(LootContextParamSets.BLOCK);
-            ServerLevelStub lv3 = (ServerLevelStub) lv2.getLevel();
-            LootTable lv4 = lv3.holder().getLootTable(lv);
-            return((ILootTable) lv4).invokeGetRandomItems(new LootContext.Builder(lv2).withOptionalRandomSeed(1).create(null));
+            LootTable lv4 = lv2.getLevel().getServer().reloadableRegistries().getLootTable(lv);
+            return lv4.getRandomItems(lv2, 1L);
         }
     }
 
-    public static class ServerLevelStub extends ServerLevel {
-        private static Minecraft client = Minecraft.getInstance();
-        private static Unsafe unsafe = getUnsafe();
-        private static CompletableFuture<RegistryAccess> registryAccess = load();
-
-        public ServerLevelStub(MinecraftServer $$0, Executor $$1, LevelStorageSource.LevelStorageAccess $$2, ServerLevelData $$3, ResourceKey<Level> $$4, LevelStem $$5, ChunkProgressListener $$6, boolean $$7, long $$8, List<CustomSpawner> $$9, boolean $$10, @Nullable RandomSequences $$11) {
-            super($$0, $$1, $$2, $$3, $$4, $$5, $$6, $$7, $$8, $$9, $$10, $$11);
-        }
-
-        @Override
-        public FeatureFlagSet enabledFeatures() {
-            assert client.level != null;
-            return client.level.enabledFeatures();
-        }
-
-        public static ServerLevelStub fastCreate() {
-            try {
-                return (ServerLevelStub) unsafe.allocateInstance(ServerLevelStub.class);
-            } catch (InstantiationException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
-        public RegistryAccess registryAccess() {
-            // Loot tables are populated only by the reloaded server registries built
-            // in load(). A client RegistryAccess never receives them, so sourcing the
-            // holder from client.level made every block resolve to zero drops, which
-            // silently broke #mine item pickup (regression from PR #5058).
-            return registryAccess.join();
-        }
-
-        public ReloadableServerRegistries.Holder holder() {
-            return new ReloadableServerRegistries.Holder(registryAccess().freeze());
-        }
-
-        public static Unsafe getUnsafe() {
-            try {
-                Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
-                theUnsafe.setAccessible(true);
-                return (Unsafe) theUnsafe.get(null);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        public static CompletableFuture<RegistryAccess> load() {
-            PackRepository packRepository = Minecraft.getInstance().getResourcePackRepository();
-            CloseableResourceManager closeableResourceManager = new MultiPackResourceManager(
-                PackType.SERVER_DATA,
-                List.of(packRepository.getPack(BuiltInPackSource.VANILLA_ID).open())
-            );
-            LayeredRegistryAccess<RegistryLayer> layeredRegistryAccess = loadAndReplaceLayer(
-                closeableResourceManager, RegistryLayer.createRegistryAccess(), RegistryLayer.WORLDGEN, RegistryDataLoader.WORLDGEN_REGISTRIES
-            );
-            return ReloadableServerResources.loadResources(
-                closeableResourceManager,
-                layeredRegistryAccess,
-                FeatureFlags.VANILLA_SET,
-                Commands.CommandSelection.INTEGRATED,
-                2,
-                Runnable::run,
-                Minecraft.getInstance()
-            ).thenApply(reloadableServerResources -> reloadableServerResources.fullRegistries().get());
-        }
-
-        private static LayeredRegistryAccess<RegistryLayer> loadAndReplaceLayer(
-            ResourceManager resourceManager,
-            LayeredRegistryAccess<RegistryLayer> registryAccess,
-            RegistryLayer registryLayer,
-            List<RegistryDataLoader.RegistryData<?>> registryData
-        ) {
-            RegistryAccess.Frozen frozen = loadLayer(resourceManager, registryAccess, registryLayer, registryData);
-            return registryAccess.replaceFrom(registryLayer, frozen);
-        }
-
-        private static RegistryAccess.Frozen loadLayer(
-            ResourceManager resourceManager,
-            LayeredRegistryAccess<RegistryLayer> registryAccess,
-            RegistryLayer registryLayer,
-            List<RegistryDataLoader.RegistryData<?>> registryData
-        ) {
-            RegistryAccess.Frozen frozen = registryAccess.getAccessForLoading(registryLayer);
-            return RegistryDataLoader.load(resourceManager, frozen, registryData);
-        }
-
-    }
 }

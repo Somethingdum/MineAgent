@@ -69,7 +69,9 @@ public class Avoidance {
         double mobSpawnerCoeff = Baritone.settings().mobSpawnerAvoidanceCoefficient.value;
         double mobCoeff = Baritone.settings().mobAvoidanceCoefficient.value;
         if (mobSpawnerCoeff != 1.0D) {
-            ctx.worldData().getCachedWorld().getLocationsOf("mob_spawner", 1, ctx.playerFeet().x, ctx.playerFeet().z, 2)
+            // SMH: the spawners in the loaded chunks round it (Baritone looks them up in its world cache).
+            com.mineagent.engine.baritone.cache.WorldScanner.INSTANCE.scanChunkRadius(ctx,
+                    new com.mineagent.engine.baritone.api.utils.BlockOptionalMetaLookup(net.minecraft.world.level.block.Blocks.SPAWNER), 16, -1, 4)
                     .forEach(mobspawner -> res.add(new Avoidance(mobspawner, mobSpawnerCoeff, Baritone.settings().mobSpawnerAvoidanceRadius.value)));
         }
         if (mobCoeff != 1.0D) {

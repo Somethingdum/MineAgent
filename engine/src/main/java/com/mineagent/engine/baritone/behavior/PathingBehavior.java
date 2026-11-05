@@ -35,8 +35,6 @@ import com.mineagent.engine.baritone.pathing.calc.AbstractNodeCostSearch;
 import com.mineagent.engine.baritone.pathing.movement.CalculationContext;
 import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
 import com.mineagent.engine.baritone.pathing.path.PathExecutor;
-import com.mineagent.engine.baritone.process.ElytraProcess;
-import com.mineagent.engine.baritone.utils.PathRenderer;
 import com.mineagent.engine.baritone.utils.PathingCommandContext;
 import com.mineagent.engine.baritone.utils.pathing.Favoring;
 import java.util.ArrayList;
@@ -159,9 +157,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                     logDebug("All done. At " + goal);
                     queuePathEvent(PathEvent.AT_GOAL);
                     next = null;
-                    if (Baritone.settings().disconnectOnArrival.value) {
-                        ctx.world().disconnect();
-                    }
+                    // SMH: a companion never disconnects on arrival (Baritone's disconnectOnArrival).
                     return;
                 }
                 if (next != null && !next.getPath().positions().contains(ctx.playerFeet()) && !next.getPath().positions().contains(expectedSegmentStart)) { // can contain either one
@@ -241,11 +237,8 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         if (current != null) {
             switch (event.getState()) {
                 case PRE:
-                    lastAutoJump = ctx.minecraft().options.autoJump().get();
-                    ctx.minecraft().options.autoJump().set(false);
-                    break;
                 case POST:
-                    ctx.minecraft().options.autoJump().set(lastAutoJump);
+                    // SMH: a client's auto-jump is turned off while it walks; the companion has none.
                     break;
                 default:
                     break;
@@ -312,7 +305,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
     public boolean isSafeToCancel() {
         if (current == null) {
-            return !baritone.getElytraProcess().isActive() || baritone.getElytraProcess().isSafeToCancel();
+            return true; // SMH: no elytra flight
         }
         return safeToCancel;
     }
@@ -574,8 +567,4 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
 
     }
 
-    @Override
-    public void onRenderPass(RenderEvent event) {
-        PathRenderer.render(event, this);
-    }
 }

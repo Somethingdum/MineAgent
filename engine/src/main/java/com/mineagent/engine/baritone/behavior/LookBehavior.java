@@ -304,7 +304,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
         private float mouseToAngle(double mouseDelta) {
             // casting float literals to double gets us the precise values used by mc
-            final double f = ctx.minecraft().options.sensitivity().get() * (double) 0.6f + (double) 0.2f;
+            final double f = 0.5 * (double) 0.6f + (double) 0.2f; // SMH: the default mouse sensitivity (a body has no mouse)
             return (float) (mouseDelta * f * f * f * 8.0d) * 0.15f; // yes, one double and one float scaling factor
         }
     }

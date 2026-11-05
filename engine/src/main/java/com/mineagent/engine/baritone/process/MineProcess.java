@@ -27,7 +27,6 @@ import com.mineagent.engine.baritone.api.process.PathingCommand;
 import com.mineagent.engine.baritone.api.process.PathingCommandType;
 import com.mineagent.engine.baritone.api.utils.*;
 import com.mineagent.engine.baritone.api.utils.input.Input;
-import com.mineagent.engine.baritone.cache.CachedChunk;
 import com.mineagent.engine.baritone.pathing.movement.CalculationContext;
 import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
 import com.mineagent.engine.baritone.utils.BaritoneProcessHelper;
@@ -361,22 +360,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     public static List<BlockPos> searchWorld(CalculationContext ctx, BlockOptionalMetaLookup filter, int max, List<BlockPos> alreadyKnown, List<BlockPos> blacklist, List<BlockPos> dropped) {
         List<BlockPos> locs = new ArrayList<>();
         List<Block> untracked = new ArrayList<>();
+        // SMH: no Baritone world cache: every block is found by scanning the loaded chunks round it.
         for (BlockOptionalMeta bom : filter.blocks()) {
-            Block block = bom.getBlock();
-            if (CachedChunk.BLOCKS_TO_KEEP_TRACK_OF.contains(block)) {
-                BetterBlockPos pf = ctx.baritone.getPlayerContext().playerFeet();
-
-                // maxRegionDistanceSq 2 means adjacent directly or adjacent diagonally; nothing further than that
-                locs.addAll(ctx.worldData.getCachedWorld().getLocationsOf(
-                        BlockUtils.blockToString(block),
-                        Baritone.settings().maxCachedWorldScanCount.value,
-                        pf.x,
-                        pf.z,
-                        2
-                ));
-            } else {
-                untracked.add(block);
-            }
+            untracked.add(bom.getBlock());
         }
 
         locs = prune(ctx, locs, filter, max, blacklist, dropped);

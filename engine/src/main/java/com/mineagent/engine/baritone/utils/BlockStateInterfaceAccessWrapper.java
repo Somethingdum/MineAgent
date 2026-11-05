@@ -19,7 +19,6 @@
 
 package com.mineagent.engine.baritone.utils;
 
-import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -39,7 +38,6 @@ public final class BlockStateInterfaceAccessWrapper implements BlockGetter {
         this.bsi = bsi;
     }
 
-    @Nullable
     @Override
     public BlockEntity getBlockEntity(BlockPos pos) {
         return null;

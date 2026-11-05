@@ -20,7 +20,6 @@
 package com.mineagent.engine.baritone.process;
 
 import com.mineagent.engine.baritone.Baritone;
-import com.mineagent.engine.baritone.api.cache.ICachedWorld;
 import com.mineagent.engine.baritone.api.pathing.goals.Goal;
 import com.mineagent.engine.baritone.api.pathing.goals.GoalComposite;
 import com.mineagent.engine.baritone.api.pathing.goals.GoalXZ;
@@ -29,7 +28,6 @@ import com.mineagent.engine.baritone.api.process.IExploreProcess;
 import com.mineagent.engine.baritone.api.process.PathingCommand;
 import com.mineagent.engine.baritone.api.process.PathingCommandType;
 import com.mineagent.engine.baritone.api.utils.MyChunkPos;
-import com.mineagent.engine.baritone.cache.CachedWorld;
 import com.mineagent.engine.baritone.utils.BaritoneProcessHelper;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -188,22 +186,22 @@ public final class ExploreProcess extends BaritoneProcessHelper implements IExpl
         int countRemain();
     }
 
+    /**
+     * SMH: Baritone's world cache knows what chunks it has seen; the companion's memory keeps the same (the ground it has
+     * looked over, world/ChunkSummaries), so a chunk it has a summary of is explored.
+     */
     private class BaritoneChunkCache implements IChunkFilter {
-
-        private final ICachedWorld cache = baritone.getWorldProvider().getCurrentWorld().getCachedWorld();
 
         @Override
         public Status isAlreadyExplored(int chunkX, int chunkZ) {
-            int centerX = chunkX << 4;
-            int centerZ = chunkZ << 4;
-            if (cache.isCached(centerX, centerZ)) {
+            var loop = com.mineagent.engine.task.TaskContext.agentLoop(baritone.getAgent());
+            if (loop == null) return Status.UNKNOWN;
+            String dim = ctx.world().dimension().location().toString();
+            if (loop.placeKeeper().chunks().seen(dim, chunkX, chunkZ)) {
                 return Status.EXPLORED;
             }
-            if (!((CachedWorld) cache).regionLoaded(centerX, centerZ)) {
-                Baritone.getExecutor().execute(() -> {
-                    ((CachedWorld) cache).tryLoadFromDisk(centerX >> 9, centerZ >> 9);
-                });
-                return Status.UNKNOWN; // we still need to load regions from disk in order to decide properly
+            if (ctx.world().getChunkSource().getChunkNow(chunkX, chunkZ) != null) {
+                return Status.EXPLORED; // loaded round it now: it is looking at it
             }
             return Status.NOT_EXPLORED;
         }

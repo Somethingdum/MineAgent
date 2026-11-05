@@ -22,8 +22,6 @@ package com.mineagent.engine.baritone.api.utils;
 import com.mineagent.engine.baritone.api.BaritoneAPI;
 import com.mineagent.engine.baritone.api.Settings;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.GuiMessageTag;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
@@ -44,18 +42,6 @@ public interface Helper {
      * Instance of {@link Helper}. Used for static-context reference.
      */
     Helper HELPER = new Helper() {};
-
-    /**
-     * The main game instance returned by {@link Minecraft#getInstance()}.
-     * Deprecated since {@link IPlayerContext#minecraft()} should be used instead (In the majority of cases).
-     */
-    @Deprecated
-    Minecraft mc = Minecraft.getInstance();
-
-    /**
-     * The tag to assign to chat messages when {@link Settings#useMessageTag} is {@code true}.
-     */
-    GuiMessageTag MESSAGE_TAG = new GuiMessageTag(0xFF55FF, null, Component.literal("Baritone message."), "Baritone");
 
     static Component getPrefix() {
         // Inner text component
@@ -81,7 +67,7 @@ public interface Helper {
      * @param message The message to display in the popup
      */
     default void logToast(Component title, Component message) {
-        Minecraft.getInstance().execute(() -> BaritoneAPI.getSettings().toaster.value.accept(title, message));
+        BaritoneAPI.getSettings().toaster.value.accept(title, message); // SMH: no client thread to hand it to
     }
 
     /**
@@ -142,7 +128,7 @@ public interface Helper {
      * @param error   Whether to log as an error
      */
     default void logNotificationDirect(String message, boolean error) {
-        Minecraft.getInstance().execute(() -> BaritoneAPI.getSettings().notifier.value.accept(message, error));
+        BaritoneAPI.getSettings().notifier.value.accept(message, error); // SMH: no client thread to hand it to
     }
 
     /**
@@ -177,7 +163,7 @@ public interface Helper {
         if (logAsToast) {
             logToast(getPrefix(), component);
         } else {
-            Minecraft.getInstance().execute(() -> BaritoneAPI.getSettings().logger.value.accept(component));
+            BaritoneAPI.getSettings().logger.value.accept(component); // SMH: no client thread to hand it to
         }
     }
 

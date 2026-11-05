@@ -26,8 +26,6 @@ import com.mineagent.engine.baritone.api.event.listener.IEventBus;
 import com.mineagent.engine.baritone.api.event.listener.IGameEventListener;
 import com.mineagent.engine.baritone.api.utils.Helper;
 import com.mineagent.engine.baritone.api.utils.Pair;
-import com.mineagent.engine.baritone.cache.CachedChunk;
-import com.mineagent.engine.baritone.cache.WorldProvider;
 import com.mineagent.engine.baritone.utils.BlockStateInterface;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -77,16 +75,6 @@ public final class GameEventHandler implements IEventBus, Helper {
     }
 
     @Override
-    public final void onSendChatMessage(ChatEvent event) {
-        listeners.forEach(l -> l.onSendChatMessage(event));
-    }
-
-    @Override
-    public void onPreTabComplete(TabCompleteEvent event) {
-        listeners.forEach(l -> l.onPreTabComplete(event));
-    }
-
-    @Override
     public void onChunkEvent(ChunkEvent event) {
         EventState state = event.getState();
         ChunkEvent.Type type = event.getType();
@@ -100,52 +88,20 @@ public final class GameEventHandler implements IEventBus, Helper {
                 && type == ChunkEvent.Type.UNLOAD
                 && world.getChunkSource().getChunk(event.getX(), event.getZ(), null, false) != null;
 
-        if (event.isPostPopulate() || isPreUnload) {
-            baritone.getWorldProvider().ifWorldLoaded(worldData -> {
-                LevelChunk chunk = world.getChunk(event.getX(), event.getZ());
-                worldData.getCachedWorld().queueForPacking(chunk);
-            });
-        }
-
+        // SMH: no Baritone world cache to pack chunks into.
 
         listeners.forEach(l -> l.onChunkEvent(event));
     }
 
     @Override
     public void onBlockChange(BlockChangeEvent event) {
-        if (Baritone.settings().repackOnAnyBlockChange.value) {
-            final boolean keepingTrackOf = event.getBlocks().stream()
-                    .map(Pair::second).map(BlockState::getBlock)
-                    .anyMatch(CachedChunk.BLOCKS_TO_KEEP_TRACK_OF::contains);
-
-            if (keepingTrackOf) {
-                baritone.getWorldProvider().ifWorldLoaded(worldData -> {
-                    final Level world = baritone.getPlayerContext().world();
-                    ChunkPos pos = event.getChunkPos();
-                    worldData.getCachedWorld().queueForPacking(world.getChunk(pos.x, pos.z));
-                });
-            }
-        }
-
+        // SMH: no Baritone world cache to repack.
         listeners.forEach(l -> l.onBlockChange(event));
     }
 
     @Override
-    public final void onRenderPass(RenderEvent event) {
-        listeners.forEach(l -> l.onRenderPass(event));
-    }
-
-    @Override
     public final void onWorldEvent(WorldEvent event) {
-        WorldProvider cache = baritone.getWorldProvider();
-
-        if (event.getState() == EventState.POST) {
-            cache.closeWorld();
-            if (event.getWorld() != null) {
-                cache.initWorld(event.getWorld());
-            }
-        }
-
+        // SMH: no Baritone world cache to open or close.
         listeners.forEach(l -> l.onWorldEvent(event));
     }
 

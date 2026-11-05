@@ -20,8 +20,6 @@
 package com.mineagent.engine.baritone.api.event.listener;
 
 import com.mineagent.engine.baritone.api.event.events.*;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.protocol.Packet;
@@ -59,21 +57,6 @@ public interface IGameEventListener {
     void onPlayerUpdate(PlayerUpdateEvent event);
 
     /**
-     * Runs whenever the client player sends a message to the server.
-     *
-     * @param event The event
-     * @see ServerPlayer#chat(String)
-     */
-    void onSendChatMessage(ChatEvent event);
-
-    /**
-     * Runs whenever the client player tries to tab complete in chat.
-     *
-     * @param event The event
-     */
-    void onPreTabComplete(TabCompleteEvent event);
-
-    /**
      * Runs before and after whenever a chunk is either loaded, unloaded, or populated.
      *
      * @param event The event
@@ -86,13 +69,6 @@ public interface IGameEventListener {
      * @param event The event
      */
     void onBlockChange(BlockChangeEvent event);
-
-    /**
-     * Runs once per world render pass.
-     *
-     * @param event The event
-     */
-    void onRenderPass(RenderEvent event);
 
     /**
      * Runs before and after whenever a new world is loaded

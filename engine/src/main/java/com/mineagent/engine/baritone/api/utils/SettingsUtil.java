@@ -21,7 +21,6 @@ package com.mineagent.engine.baritone.api.utils;
 
 import com.mineagent.engine.baritone.api.BaritoneAPI;
 import com.mineagent.engine.baritone.api.Settings;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Registry;
 import net.minecraft.core.Vec3i;
@@ -116,7 +115,7 @@ public class SettingsUtil {
     }
 
     private static Path settingsByName(String name) {
-        return Minecraft.getInstance().gameDirectory.toPath().resolve("baritone").resolve(name);
+        return java.nio.file.Paths.get("baritone").resolve(name); // SMH: the server's own folder (a client keeps it in its game folder)
     }
 
     public static List<Settings.Setting> modifiedSettings(Settings settings) {
