@@ -23,6 +23,47 @@ HOOKS = 'com.mineagent.sbe.common.ServerHooks'
 
 # (file, old, new): each old must occur exactly once in the renamed file.
 PATCHES = [
+    # DestroyBlockTask given back AltoClef's own way out of a block it can't get at (gaucho-matrero/altoclef
+    # DestroyBlockTask: a MovementProgressChecker; when it fails, the block requested unreachable and a short wander):
+    # SecondBrainEngine's left it all to Automatone's builder, which with no face in sight and no path waited for good
+    # (a world-3 run spent half a day under one spruce log behind leaves).
+    ('altoclef/tasks/construction/DestroyBlockTask.java',
+     '''   private boolean isClear;
+''',
+     '''   private boolean isClear;
+   // SMH: AltoClef's own (see port.py).
+   private final com.mineagent.sbe.altoclef.util.progresscheck.MovementProgressChecker moveChecker =
+      new com.mineagent.sbe.altoclef.util.progresscheck.MovementProgressChecker();
+   private final com.mineagent.sbe.altoclef.tasks.movement.TimeoutWanderTask wanderTask =
+      new com.mineagent.sbe.altoclef.tasks.movement.TimeoutWanderTask(5.0F);
+'''),
+    ('altoclef/tasks/construction/DestroyBlockTask.java',
+     '''      this.isClear = false;
+      IBuilderProcess builder = this.controller.getBaritone().getBuilderProcess();
+      builder.clearArea(this.pos, this.pos);''',
+     '''      this.isClear = false;
+      this.moveChecker.reset(); // SMH
+      IBuilderProcess builder = this.controller.getBaritone().getBuilderProcess();
+      builder.clearArea(this.pos, this.pos);'''),
+    ('altoclef/tasks/construction/DestroyBlockTask.java',
+     '''   protected Task onTick() {
+      IBuilderProcess builder = this.controller.getBaritone().getBuilderProcess();''',
+     '''   protected Task onTick() {
+      // SMH: AltoClef's own: no progress, so the block is marked unreachable and it wanders a little; the task asking
+      // for it picks another.
+      if (this.wanderTask.isActive() && !this.wanderTask.isFinished()) {
+         this.setDebugState("Can't get at it: wandering.");
+         this.moveChecker.reset();
+         return this.wanderTask;
+      }
+      if (!this.moveChecker.check(this.controller)) {
+         this.moveChecker.reset();
+         this.controller.getBlockScanner().requestBlockUnreachable(this.pos);
+         this.controller.getBaritone().getBuilderProcess().onLostControl();
+         this.setDebugState("Can't get at it: marked unreachable.");
+         return this.wanderTask;
+      }
+      IBuilderProcess builder = this.controller.getBaritone().getBuilderProcess();'''),
     # A crafting table a walk dearer than making one is passed over, as AltoClef's own DoStuffInContainerTask decides
     # with CraftInTableTask.getCostToMakeNew (none within 40 blocks, and logs or 4 planks in hand: 10; else 100):
     # SecondBrainEngine went to the nearest known table at any distance, and a world-1 run spent three days making for
