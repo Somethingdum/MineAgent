@@ -5265,6 +5265,42 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, the model's say in its first days (Voyager's curriculum, ModelWants): with its stone tools on it, the
+     * model's "Mine 3 oak logs" goes ahead of the rest of its list, is done by AltoClef's task for logs, and is judged
+     * done by the game (three more logs carried), which tells the model so.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_model_want", timeoutTicks = 1600)
+    public void theModelsTaskIsDoneByAltoClefAndJudgedByTheGame(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Pupil");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.STONE_AXE));
+        helper.setBlock(8, 0, 6, Blocks.DIRT);
+        for (int y = 1; y <= 5; y++) helper.setBlock(8, y, 6, Blocks.OAK_LOG);
+        Boolean[] verdict = {null};
+        helper.runAfterDelay(5, () -> {
+            com.mineagent.engine.alto.tasks.life.ModelWants.propose(s.companion().companionId(), "Mine 3 oak logs", done -> verdict[0] = done);
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                    new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-model", helper.absolutePos(new BlockPos(3, 1, 10))), reply -> { });
+        });
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto model want");
+            if (verdict[0] != null || helper.getTick() >= 1550) {
+                int logs = inv.countItem(Items.OAK_LOG);
+                String how = "verdict " + verdict[0] + ", logs " + logs
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
+                com.mineagent.engine.alto.tasks.life.ModelWants.clear(s.companion().companionId());
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoLifeOverride = null;
+                if (Boolean.TRUE.equals(verdict[0]) && logs >= 3) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4, leaving no trace: it fells a small oak for logs, an oak sapling on it, and plants it where the trunk stood. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_replant", timeoutTicks = 900)
     public void aFelledTreeIsReplanted(GameTestHelper helper) {

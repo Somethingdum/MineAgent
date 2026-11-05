@@ -1166,6 +1166,15 @@ public class AgentLoop {
     private void practice(net.minecraft.server.level.ServerPlayer player, boolean goalVerified, long gameTick) {
         if (player == null) return;
         if (curriculum.current() != null) {
+            if (curriculumToLife) {
+                // Its first days' want (ModelWants): judged there by the game; a death or its time up fails it here.
+                if (player.isDeadOrDying() || curriculum.overdue(gameTick)) {
+                    com.mineagent.engine.alto.tasks.life.ModelWants.clear(companion.companionId());
+                    curriculumToLife = false;
+                    curriculum.failed();
+                }
+                return;
+            }
             String goalNow = planner.exportState().goal();
             if (goalVerified && goalNow != null && !goalNow.equals(curriculumGoalAtBegin)) curriculum.verified();
             else if (player.isDeadOrDying() || curriculum.overdue(gameTick)) curriculum.failed();
@@ -1181,7 +1190,10 @@ public class AgentLoop {
         boolean auto = (agentSettings.workMode() == com.mineagent.engine.settings.WorkMode.AUTO || afkKeepBusy()) && !guarding();
         LiveBodyState body = liveBodyState.get();
         boolean taskRunning = body != null && body.taskId() != null; // an order it is doing (a chest to fill)
-        if (!curriculum.due(auto && agentSettings.curriculum(), inProgress || skillRuntime.active() || taskRunning, sinceOrder,
+        // Its first days by AltoClef's priorities (behaviour.altoLife): the model still proposes what it does next, as one
+        // of its wants (ModelWants), the fixed list beneath it as the floor.
+        boolean lifeRunning = altoLifeTaskId != null;
+        if (!curriculum.due(auto && agentSettings.curriculum(), (inProgress || skillRuntime.active() || taskRunning) && !lifeRunning, sinceOrder,
                 hostileNear, player.getHealth(), flee, now)) return;
         curriculum.asking(now);
         List<String> names = new ArrayList<>();
@@ -1207,7 +1219,21 @@ public class AgentLoop {
                 try {
                     var task = curriculum.parse(replyContent(sideCall(request)));
                     task.ifPresent(t -> Services.platform().scheduleOnServer(() -> {
-                        if (curriculum.current() != null || inProgress) return;
+                        if (curriculum.current() != null) return;
+                        if (altoLifeTaskId != null) {
+                            curriculum.begin(t, currentGameTickSafe());
+                            curriculumToLife = true;
+                            journal.record("practice", "the model proposed: " + t, currentGameTickSafe());
+                            com.mineagent.engine.alto.tasks.life.ModelWants.propose(companion.companionId(), t,
+                                    done -> Services.platform().scheduleOnServer(() -> {
+                                        if (!curriculumToLife) return;
+                                        curriculumToLife = false;
+                                        if (done) curriculum.verified();
+                                        else curriculum.failed();
+                                    }));
+                            return;
+                        }
+                        if (inProgress) return;
                         String goal = planner.exportState().goal();
                         curriculumGoalAtBegin = goal == null ? "" : goal;
                         curriculum.begin(t, currentGameTickSafe());
@@ -5065,6 +5091,8 @@ public class AgentLoop {
     private volatile boolean altoLifeDone;
     private volatile String altoLifeTaskId;
     private volatile long altoLifeAt = Long.MIN_VALUE / 2;
+    /** The curriculum's task now under way is one of its first days' wants (ModelWants), judged there. */
+    private volatile boolean curriculumToLife;
 
     /** On its own: the swamp it is going to for its base, once found (dimension, x, z). */
     private volatile com.mineagent.engine.world.RouteMemory.Point surviveAt;
@@ -5106,7 +5134,14 @@ public class AgentLoop {
             altoLifeTaskId = id;
             journal.record("survive", "my first days, by AltoClef's priorities", now);
             afterTask.put(id, () -> altoLifeDone = true);
-            afterTaskAlways.put(id, () -> altoLifeTaskId = null);
+            afterTaskAlways.put(id, () -> {
+                altoLifeTaskId = null;
+                com.mineagent.engine.alto.tasks.life.ModelWants.clear(companion.companionId());
+                if (curriculumToLife) {
+                    curriculumToLife = false;
+                    curriculum.abandon();
+                }
+            });
             com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
                     new com.mineagent.engine.alto.AltoLifeTask.LifeRecord(id, null), reply -> { });
             return;

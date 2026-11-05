@@ -227,6 +227,13 @@ public class OwnLifeTask extends Task {
             return new Pair<>(TaskCatalogue.getItemTask("bed", 1), wool ? 320d : 250d);
         }, a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && hasAny(a, Items.STONE_SWORD, Items.IRON_SWORD, Items.DIAMOND_SWORD),
                 false, true, false));
+        // What the model proposed (Voyager's curriculum, ModelWants): above all but its pickaxes and the night, done by
+        // AltoClef's task for it and judged by the game; one that gets nowhere is rested, and the model told it failed.
+        wants.add(new ActionPriorityTask(a -> {
+            Task t = modelTask(a);
+            if (t == null) return new Pair<>(null, Double.NEGATIVE_INFINITY);
+            return new Pair<>(t, MODEL_PRIORITY);
+        }, a -> true, false, true, false));
         // The night: home to its hut before dark; there, its bed (as BeatMinecraftTask.addSleepTask), else it waits.
         wants.add(new ActionPriorityTask(a -> {
             if (!mobsAbout(a) || !hutReady(a) || inHut(a)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
@@ -241,6 +248,39 @@ public class OwnLifeTask extends Task {
             if (WorldHelper.canSleep() && hasAny(a, ItemHelper.BED)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             return new Pair<>(new WaitInHutTask(), 1_050_000d);
         }, a -> true, false, true, true));
+    }
+
+    /** Where the model's proposal sits among its wants: above its tools, hut and food, below its pickaxes and the night. */
+    static final double MODEL_PRIORITY = 395;
+    private String modelWords;
+    private Task modelTask;
+
+    /** The task for the model's proposal now waiting, or null (none, unreadable, or done: then the model is told). */
+    private Task modelTask(AltoClef mod) {
+        java.util.UUID id = mod.getAgent().companionId();
+        String words = ModelWants.proposed(id);
+        if (words == null) {
+            modelWords = null;
+            modelTask = null;
+            return null;
+        }
+        if (!words.equals(modelWords)) {
+            modelWords = words;
+            modelTask = ModelWants.taskFor(mod, ModelWants.read(words));
+            if (modelTask == null) {
+                mod.log("The model's task \"" + words + "\" is none I can do: told it so.");
+                ModelWants.finish(id, words, false);
+                return null;
+            }
+        }
+        if (modelTask.isFinished()) {
+            mod.log("Done what the model proposed: " + words);
+            ModelWants.finish(id, words, true);
+            modelWords = null;
+            modelTask = null;
+            return null;
+        }
+        return modelTask;
     }
 
     /** A want that has run this long with nothing gained is left alone for a while (Voyager's "failed tasks"). */
@@ -278,6 +318,12 @@ public class OwnLifeTask extends Task {
         if (items == watchingItems && cur.calculatePriority(mod) < 900_000) {
             mod.log("Got nowhere on " + cur + " for five minutes: on to something else for a while.");
             selector.rest(cur, now + REST_TICKS);
+            // The model's proposal that got nowhere: it is told, and proposes something else.
+            if (modelWords != null && cur.calculatePriority(mod) == MODEL_PRIORITY) {
+                ModelWants.finish(mod.getAgent().companionId(), modelWords, false);
+                modelWords = null;
+                modelTask = null;
+            }
         }
         watchingSince = now;
         watchingItems = items;
@@ -286,6 +332,11 @@ public class OwnLifeTask extends Task {
     @Override
     protected void onStop(Task interruptTask) {
         selector.reset();
+    }
+
+    /** Whether it is on the model's proposal now (for its debug line). */
+    public String modelWords() {
+        return modelWords;
     }
 
     /** Done for now: its owner's minimum is there, and the mobs of the night have burned. */
