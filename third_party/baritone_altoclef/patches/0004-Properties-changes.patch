@@ -1,0 +1,51 @@
+From 811a0ff7f1817e1c4ceef36ee31cd330e2612647 Mon Sep 17 00:00:00 2001
+From: MiranCZ <miraancz@gmail.com>
+Date: Mon, 28 Apr 2025 17:42:50 +0200
+Subject: [PATCH] Properties changes
+
+---
+ build.gradle      | 14 +-------------
+ gradle.properties |  2 +-
+ 2 files changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/build.gradle b/build.gradle
+index 3efb3247..30a76e3f 100755
+--- a/build.gradle
++++ b/build.gradle
+@@ -22,19 +22,7 @@ allprojects {
+ 
+     archivesBaseName = rootProject.archives_base_name
+ 
+-    def vers = ""
+-    try {
+-        vers = 'git describe --always --tags --first-parent --dirty'.execute().text.trim()
+-    } catch (Exception e) {
+-        println "Version detection failed: " + e
+-    }
+-    if (!vers.startsWith("v")) {
+-        println "using version number: " + rootProject.mod_version
+-        version = rootProject.mod_version
+-    } else {
+-        version = vers.substring(1)
+-        println "Detected version " + version
+-    }
++    version = rootProject.mod_version
+     group = rootProject.maven_group
+ 
+     sourceCompatibility = targetCompatibility = JavaVersion.toVersion(project.java_version)
+diff --git a/gradle.properties b/gradle.properties
+index caa3abd8..4f2fd2f3 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -2,7 +2,7 @@ org.gradle.jvmargs=-Xmx4G
+ 
+ available_loaders=fabric,forge,neoforge,tweaker
+ 
+-mod_version=1.11.0
++mod_version=1.21.1
+ maven_group=baritone
+ archives_base_name=baritone
+ 
+-- 
+2.45.1.windows.1
+

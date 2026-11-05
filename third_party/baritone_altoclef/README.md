@@ -1,0 +1,1 @@
+This repository contains [AltoClef](https://github.com/MiranCZ/altoclef) patches for baritone.

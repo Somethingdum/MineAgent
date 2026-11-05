@@ -6,6 +6,24 @@ and keeping versions with a rollback to the better one (`learning/SkillRepair.ja
 MineAgent is licensed under LGPL-3.0-only (see `LICENSE`). The parts below were ported from other projects
 under their own licences, which are kept here as those licences require.
 
+## Source pins (SMH plan 71, §7.1, answered 2026-11-05)
+
+Every source the companion is built from, at one commit, with the checklist answered. A "no" on line 1 (source, not
+decompiled), 2 (a fork's diff read) or 5 (licence) stops a pull; lines 3, 4, 6 and 7 are recorded and change how it is
+handled. The decompiler check is `grep -rlE 'catch \([A-Za-z]* var[0-9]+\)' <tree> | wc -l`.
+
+| Source | Pin | 1 Source? | 2 Upstream or fork | 3 Alive? | 4 Runs on 1.21.1 in its own project? | 5 Licence | 6 Taken / left | 7 What it assumes that a server does not give |
+|---|---|---|---|---|---|---|---|---|
+| AltoClef, `MiranCZ/altoclef` | `1f8e038` (2025-05-20); `third_party/altoclef` | yes: the grep finds 0 of 429 files | the upstream line: not a fork on GitHub; the original (`gaucho-matrero/altoclef`) was archived in 2024 and this continues it | dormant since 2025-05: its fixes are ours, in the port script | yes, as a client mod | MIT (Adris Jautakas) | all that runs on a server (plan 71, decision 11.15); left: `butler`, `commands`, `commandsystem`, `ui`, 28 client mixins, two example tasks | one client player (`AltoClef.getInstance()`, 337 calls in the port), a client thread reading a client world, screens for containers, client mixins for its events |
+| AltoClef's Baritone patches, `MiranCZ/baritone_altoclef` | `a34f78a` (2025-04-28); `third_party/baritone_altoclef/patches` | yes: patch files | patches over Baritone's 1.21.1 line, read in full (plan 71, §3.8.1) | dormant since 2025-06 | yes, applied to Baritone, as a client mod | no licence file; they modify Baritone, LGPL-3.0, and are used under it | 0002 and 0003 (plan 71, step 1.5); left: 0001 (the settings class SecondBrainEngine already carries), 0004 (build properties) | `AltoClefSettings.getInstance()`, one static instance for one player |
+| Automatone, the tree kept: SecondBrainEngine's copy, `sailex428/SecondBrainEngine` | `1712b17e` (2026-04-18); `third_party/secondbrainengine` | source except two decompiled files, `automatone/api/Settings.java` and `mixins/MixinUtil.java`; both replaced from sailex's source at plan 71 step 1.2 | a fork of sailex's Automatone (below); its diff against it: 57 of 265 shared files differ, 5 added, 10 removed, classified at step 1.2 | dormant since 2026-04 | yes, on players, in its own project | LGPL-3.0 (its AltoClef half MIT) | its Automatone; its AltoClef half is decompiled and only a map (plan 71, §5.1), deleted at step 2.4 | static `BaritoneProvider` keyed by player (fine per body); vanilla's main-thread-only chunk lookup avoided by its own (plan 71, §3.8.2) |
+| Automatone, sailex's fork, `sailex428/automatone` | `b7953df8` (2025-09-12); reference, not copied | yes | a fork of Ladysnake's Automatone (below), ported to 1.21 | dormant since 2025-09 | 1.21, any living entity | LGPL-3.0 | the source for the two decompiled files above and for each behaviour line the step 1.2 ledger reverts | Cardinal Components for one Baritone per entity; client renderers |
+| Automatone, `Ladysnake/Automatone` | `545c552` (2023-11-01, 1.20.1); reference | yes | a fork of Baritone made server-side | dormant since 2023 | no (1.20.1) | LGPL-3.0 | nothing directly; the slab feet fix's upstream bug is here too (plan 71, §3.8.3) | as sailex's |
+| Baritone, `cabaletta/baritone` | `11ea66c` (2026-09-01, 1.21.1); reference | yes | the upstream | yes | yes, as a client mod | LGPL-3.0 | nothing in the mod after plan 71 phase 1; each Automatone patch cites it | a client player and world |
+| Mindcraft, `mindcraft-bots/mindcraft` | `e1c1fc3` (2026-10-26); `third_party/mindcraft` | yes (JavaScript) | the upstream | yes | no: a Mineflayer bot in JavaScript; translated, its scenes are its check | MIT (Kolby Nottingham) | the NPC controller, blueprints, three modes, the commands as tools, the skill lookup, the self-prompter; left: `!newAction` (the model writing code) | a bot with its own client connection; saves no routine state (plan 71, §4) |
+| Voyager, `MineDojo/Voyager` | `55e45a8` (2023-07-27); `third_party/voyager` | yes (Python) | the upstream | dormant since 2023 | no: Python over Mineflayer; translated, its scenes are its check | MIT (MineDojo Team) | the curriculum, critic and skill descriptions; left: the action agent (code writing) and the embedding search (SMH rules 13, 16) | a model writing JavaScript skills; embeddings |
+| Carpet, `gnembon/fabric-carpet` | `1.4.147` (`e8ea849`, its release for 1.21, the line 1.21.1 is on); reference | yes | the upstream | yes | yes | MIT (gnembon) | nothing; the check for the body's fake player | |
+
 ## SecondBrainEngine
 
 From [SecondBrainEngine](https://github.com/sailex428/SecondBrainEngine) (sailex428, LGPL-3.0), at commit `1712b17e`:
@@ -125,6 +143,35 @@ Its NPC controller (`src/agent/npc/`, at `e1c1fc3`): the construction blueprints
 MIT License
 
 Copyright (c) 2024 Kolby Nottingham
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Voyager
+
+From [Voyager](https://github.com/MineDojo/Voyager) (MIT), at commit `55e45a8`, kept unchanged in `third_party/voyager`
+with its licence: the reference its learning loop is translated from (SMH plan 71, phase 4).
+
+```
+MIT License
+
+Copyright (c) 2023 MineDojo Team
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
