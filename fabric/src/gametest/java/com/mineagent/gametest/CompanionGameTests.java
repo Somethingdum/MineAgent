@@ -5304,6 +5304,89 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, AltoClef's own survival chains (behaviour.altoSurvival) while its life has the body: hungry (5 of 20)
+     * with bread on it, its food chain eats, ahead of whatever its life was doing, as AltoClef's does.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_eat", timeoutTicks = 900)
+    public void altoClefsFoodChainEatsWhenHungry(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+        com.mineagent.engine.settings.Switches.altoSurvivalOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Eater");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.BREAD, 4));
+        helper.runAfterDelay(5, () -> {
+            s.body().getFoodData().setFoodLevel(5);
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                    new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-eat", helper.absolutePos(new BlockPos(3, 1, 10))), reply -> { });
+        });
+        boolean[] chainAte = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto eat");
+            if (helper.getTick() > 6) {
+                var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+                chainAte[0] |= host.getTaskRunner().getCurrentTaskChain() == host.getFoodChain();
+            }
+            int food = s.body().getFoodData().getFoodLevel();
+            boolean ate = helper.getTick() > 10 && food > 5 && inv.countItem(Items.BREAD) < 4 && chainAte[0];
+            if (ate || helper.getTick() >= 850) {
+                String how = "food " + food + ", bread " + inv.countItem(Items.BREAD) + ", AltoClef's food chain had it " + chainAte[0]
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoLifeOverride = null;
+                com.mineagent.engine.settings.Switches.altoSurvivalOverride = null;
+                if (ate) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * SMH plan 70, AltoClef's own mob defence (behaviour.altoSurvival) while its life has the body: a husk comes at it,
+     * with a stone sword on it; AltoClef judges it can deal with one (its armour, sword and shield against the mobs'
+     * danger) and kills it, as AltoClef's does.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_defend", timeoutTicks = 1800)
+    public void altoClefsMobDefenceKillsAHusk(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+        com.mineagent.engine.settings.Switches.altoSurvivalOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Defender");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(2, new ItemStack(Items.BREAD, 8));
+        Husk[] husk = {null};
+        helper.runAfterDelay(5, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-defend", helper.absolutePos(new BlockPos(3, 1, 10))), reply -> { }));
+        helper.runAfterDelay(40, () -> {
+            husk[0] = helper.spawn(EntityType.HUSK, new BlockPos(8, 1, 8));
+            husk[0].setTarget(s.body());
+        });
+        boolean[] chainFought = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto defend");
+            Husk h = husk[0];
+            if (h == null) return;
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            chainFought[0] |= host.getTaskRunner().getCurrentTaskChain() == host.getMobDefenseChain();
+            boolean killed = !h.isAlive() && h.getLastHurtByMob() == s.body() && chainFought[0];
+            if (killed || !s.body().isAlive() || (!h.isAlive() && !killed) || helper.getTick() >= 1750) {
+                String how = String.format("husk alive %b (health %.0f, %.1f blocks away, last hurt by it %b), companion alive %b"
+                        + " (health %.0f), AltoClef's mob defence had it %b", h.isAlive(), h.getHealth(), h.distanceTo(s.body()),
+                        h.getLastHurtByMob() == s.body(), s.body().isAlive(), s.body().getHealth(), chainFought[0])
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoLifeOverride = null;
+                com.mineagent.engine.settings.Switches.altoSurvivalOverride = null;
+                if (killed) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4, leaving no trace: it fells a small oak for logs, an oak sapling on it, and plants it where the trunk stood. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_replant", timeoutTicks = 900)
     public void aFelledTreeIsReplanted(GameTestHelper helper) {
