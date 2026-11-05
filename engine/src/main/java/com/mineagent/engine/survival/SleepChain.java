@@ -288,6 +288,12 @@ public final class SleepChain implements TaskChain {
         if (put != null) {
             placedBed = put;
             bodyLog.report("put my bed down for the night");
+            // Traced for the scenes (the bed-at-home scene finds its home's bed taken back up in the morning now and then).
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                System.out.println("[MineAgent] shelter: the sleep chain put its own bed down at " + put.toShortString() + " (sealed at home "
+                        + com.mineagent.engine.task.ShelterTask.sealedAtHome(sp.getUUID()) + ", going home "
+                        + com.mineagent.engine.task.ShelterTask.goingHome(sp.getUUID()) + ", day time " + sp.serverLevel().getDayTime() % 24_000L + ")");
+            }
         }
         return put;
     }
