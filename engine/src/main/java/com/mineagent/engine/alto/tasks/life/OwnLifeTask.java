@@ -149,6 +149,10 @@ public class OwnLifeTask extends Task {
     @Override
     protected void onStart() {
         AltoClef mod = AltoClef.getInstance();
+        // Its hut kept standing while it lives there: no want of blocks takes them from its walls (as AltoClef keeps a
+        // portal's frame, ConstructNetherPortalObsidianTask).
+        mod.getBehaviour().push();
+        mod.getBehaviour().avoidBlockBreaking(pos -> { BlockPos h = hut; return h != null && BuildHutTask.isPartOf(h, pos); });
         if (!wants.isEmpty()) return;
 
         // Its pickaxes, as BeatMinecraftTask.addPickaxeTasks: a wooden one when it has none, then a stone one.
@@ -344,6 +348,7 @@ public class OwnLifeTask extends Task {
     @Override
     protected void onStop(Task interruptTask) {
         selector.reset();
+        AltoClef.getInstance().getBehaviour().pop();
     }
 
     /** Whether it is on the model's proposal now (for its debug line). */

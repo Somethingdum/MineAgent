@@ -136,6 +136,17 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
         return missing;
     }
 
+    /**
+     * Whether {@code pos} is one of the walls, floor or roof of the hut at {@code place}. Kept from being broken while it
+     * builds and lives there (the nearest dirt to a hut is the hut: its material task mined its own walls), as AltoClef's
+     * ConstructNetherPortalObsidianTask keeps its frame (avoidBlockBreaking). By its place alone, with no look at the
+     * world: Baritone asks this from its path threads too. Baritone's builder breaks a wrong block in it by its own rules.
+     */
+    public static boolean isPartOf(BlockPos place, BlockPos pos) {
+        int x = pos.getX() - place.getX(), y = pos.getY() - place.getY() - OFFSET, z = pos.getZ() - place.getZ();
+        return x >= 0 && y >= 0 && z >= 0 && x < SIZE_X && y < SIZE_Y && z < SIZE_Z && cell(x, y, z).equals("dirt");
+    }
+
     private static boolean roomClear(AltoClef mod, BlockPos place) {
         return roomLeft(mod, place) == 0;
     }
@@ -174,10 +185,14 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
 
     @Override
     protected void onStart() {
+        AltoClef mod = AltoClef.getInstance();
         progressChecker.reset();
         building = false;
         lastMissing = Integer.MAX_VALUE;
-        lastGainTick = AltoClef.getInstance().getWorld().getGameTime();
+        lastGainTick = mod.getWorld().getGameTime();
+        // AltoClef's way of keeping what it builds (ConstructNetherPortalObsidianTask): its walls not broken for blocks.
+        mod.getBehaviour().push();
+        mod.getBehaviour().avoidBlockBreaking(pos -> isPartOf(place, pos));
     }
 
     @Override
@@ -258,6 +273,7 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
     @Override
     protected void onStop(Task interruptTask) {
         stopBuilder(AltoClef.getInstance());
+        AltoClef.getInstance().getBehaviour().pop();
     }
 
     @Override

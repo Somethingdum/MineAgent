@@ -3127,6 +3127,8 @@ public class CompanionGameTests implements FabricGameTest {
         helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "going afk"));
         helper.runAfterDelay(20, () -> level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 10_990L));
         long[] closedAt = {-1}, sleptAt = {-1};
+        int[] bedsBefore = {0};
+        String[] bedGone = {""};
         helper.onEachTick(() -> {
             trace(helper, s, "home bed");
             if (closedAt[0] < 0 && inTheHut(helper, s) && waysIn(helper, s) == 0) {
@@ -3148,11 +3150,17 @@ public class CompanionGameTests implements FabricGameTest {
                 }
             }
             String control = MineAgentEngine.getCompanion(s.companion().companionId()).map(c -> c.auction.inControl()).orElse("gone");
+            // What had the body when its bed went (the scene fails now and then with the bed gone in the morning).
+            if (bedsBefore[0] > 0 && beds < bedsBefore[0] && bedGone[0].isEmpty()) {
+                bedGone[0] = "bed went at tick " + helper.getTick() + " under " + control + ", beds carried " + inv.countItem(Items.WHITE_BED)
+                        + ", said: " + lastSaid(s, "");
+            }
+            bedsBefore[0] = beds;
             boolean open = is(helper, 10, 1, 7, Blocks.AIR) && is(helper, 10, 2, 7, Blocks.AIR);
             if (sleptAt[0] > 0 && helper.getTick() > sleptAt[0] + 100 && !s.body().isSleeping() && open && !control.contains("ShelterTask")) {
                 tidy(s);
                 if (beds == 2 && !bedInDoorway) helper.succeed();
-                else fail(helper, "up and out, but the bed: " + beds + " halves in the hut, in the doorway " + bedInDoorway);
+                else fail(helper, "up and out, but the bed: " + beds + " halves in the hut, in the doorway " + bedInDoorway + "; " + bedGone[0]);
             } else if (helper.getTick() >= 2300) {
                 String how = "closed in at " + closedAt[0] + ", slept at " + sleptAt[0] + ", bed halves in the hut " + beds + ", beds carried "
                         + inv.countItem(Items.WHITE_BED) + ", ways in " + waysIn(helper, s) + ", " + control + ", day time "
@@ -5266,6 +5274,64 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * SMH plan 70, what the benchmark's first world found (its hut "4 blocks to go" all day: short of blocks, it mined the
+     * nearest dirt, its own walls): evening, too little dirt for its hut, a stone pickaxe for more. Its walls are kept from
+     * its own block-getting (as AltoClef keeps a portal's frame), no wall it put up comes down, and the hut stands.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_hut_kept", timeoutTicks = 4800)
+    public void altoClefsHutWallsAreNotTakenForItsBlocks(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Keeper");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.DIRT, 20));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.STONE_SHOVEL));
+        inv.setItem(4, new ItemStack(Items.CRAFTING_TABLE));
+        long now = helper.getLevel().getDayTime();
+        helper.getLevel().setDayTime(now - now % 24_000L + 11_600L);
+        BlockPos place = helper.absolutePos(new BlockPos(8, 1, 8));
+        helper.runAfterDelay(5, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-kept", place), reply -> { }));
+        java.util.Set<BlockPos> stood = new java.util.HashSet<>();
+        String[] lost = {""};
+        boolean[] kept = {false};
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto hut kept");
+            var level = helper.getLevel();
+            // Every wall of its hut that has stood: none comes down again.
+            for (BlockPos p : BlockPos.betweenClosed(place.offset(0, -2, 0), place.offset(4, 1, 5))) {
+                if (!com.mineagent.engine.alto.tasks.construction.BuildHutTask.isPartOf(place, p)) continue;
+                boolean wall = !level.getBlockState(p).isAir() && level.getBlockState(p).isCollisionShapeFullBlock(level, p);
+                if (wall) stood.add(p.immutable());
+                else if (stood.contains(p) && lost[0].isEmpty()) lost[0] = "its wall at " + p.toShortString() + " came down at tick " + helper.getTick();
+            }
+            if (helper.getTick() == 200) {
+                var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+                BlockPos wallCell = place.offset(0, -1, 0), outside = place.offset(8, -1, 0);
+                kept[0] = host.within(() -> com.mineagent.engine.alto.AltoClef.getInstance().getExtraBaritoneSettings().shouldAvoidBreaking(wallCell)
+                        && !com.mineagent.engine.alto.AltoClef.getInstance().getExtraBaritoneSettings().shouldAvoidBreaking(outside));
+            }
+            var host = helper.getTick() > 5 ? com.mineagent.engine.alto.AltoClef.of(s.companion()) : null;
+            var hut = new com.mineagent.engine.alto.tasks.construction.BuildHutTask(place);
+            boolean shell = host != null && host.within(() -> com.mineagent.engine.alto.tasks.construction.BuildHutTask.shellStands(
+                    com.mineagent.engine.alto.AltoClef.getInstance(), place));
+            boolean door = host != null && host.within(() -> hut.doorIn(com.mineagent.engine.alto.AltoClef.getInstance()));
+            boolean done = shell && door && helper.getTick() > 200;
+            if (done || !lost[0].isEmpty() || helper.getTick() >= 4700) {
+                String how = "shell " + shell + ", door " + door + ", walls kept from its block-getting " + kept[0] + (lost[0].isEmpty() ? "" : ", " + lost[0])
+                        + ", dirt " + inv.countItem(Items.DIRT) + ", cobblestone " + inv.countItem(Items.COBBLESTONE)
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoLifeOverride = null;
+                if (done && lost[0].isEmpty() && kept[0]) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
      * SMH plan 70, the model's say in its first days (Voyager's curriculum, ModelWants): with its stone tools on it, the
      * model's "Mine 3 cobblestone" goes ahead of the rest of its list, is done by AltoClef's task for cobblestone on the
      * stone floor, and is judged done by the game (three more carried), which tells the model so.
@@ -5327,7 +5393,8 @@ public class CompanionGameTests implements FabricGameTest {
             trace(helper, s, "alto eat");
             if (helper.getTick() > 6) {
                 var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
-                chainAte[0] |= host.getTaskRunner().getCurrentTaskChain() == host.getFoodChain();
+                // AltoClef's food chain eats on the side, from its priority, whichever chain has the body (as AltoClef's does).
+                chainAte[0] |= host.getFoodChain().isTryingToEat();
             }
             int food = s.body().getFoodData().getFoodLevel();
             boolean ate = helper.getTick() > 10 && food > 5 && inv.countItem(Items.BREAD) < 4 && chainAte[0];

@@ -7209,6 +7209,10 @@ public class AgentLoop {
      */
     private void nightCare(net.minecraft.server.level.ServerPlayer player, boolean lookForBeds) {
         if (player == null || !com.mineagent.engine.settings.Switches.sleepWhenAway() || !(ownerActivity.afk() || onItsOwn)) return;
+        // Its first days by AltoClef's priorities (behaviour.altoLife) have their own night: home to its hut at dusk, its
+        // bed or a wait there till the mobs have burned, its hut first if it isn't up. Stopping them for a shelter here
+        // lost the hut it was building (the benchmark's first world, dug in beside it, began another in the morning).
+        if (altoLifeTaskId != null) return;
         var level = player.serverLevel();
         if (!level.dimensionType().bedWorks() || guarding()) return;
         LiveBodyState body = liveBodyState.get();
