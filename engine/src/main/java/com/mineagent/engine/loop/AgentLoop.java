@@ -5061,6 +5061,11 @@ public class AgentLoop {
     private volatile int afkKitTries;
     private volatile long afkKitAt = Long.MIN_VALUE / 2;
 
+    /** Its first days by AltoClef's priorities (behaviour.altoLife): done once, the one running, and when it was started. */
+    private volatile boolean altoLifeDone;
+    private volatile String altoLifeTaskId;
+    private volatile long altoLifeAt = Long.MIN_VALUE / 2;
+
     /** On its own: the swamp it is going to for its base, once found (dimension, x, z). */
     private volatile com.mineagent.engine.world.RouteMemory.Point surviveAt;
     private volatile boolean surviveFailed;
@@ -5089,6 +5094,21 @@ public class AgentLoop {
                 return;
             }
             keepBaseUp(self, dim, now); // kept up
+            return;
+        }
+        // Its first days by AltoClef's priority tasks (behaviour.altoLife): stone tools, its hut with its crafting table
+        // and furnace in it, fuel, food, a bed if it can, the night in its hut, each chosen again every tick from what is
+        // there (AltoLifeTask). Once that is done it makes its base at its hut, as below.
+        if (com.mineagent.engine.settings.Switches.altoLife() && !altoLifeDone) {
+            if (altoLifeTaskId != null || now - altoLifeAt < 600) return;
+            altoLifeAt = now;
+            String id = "life-" + UUID.randomUUID();
+            altoLifeTaskId = id;
+            journal.record("survive", "my first days, by AltoClef's priorities", now);
+            afterTask.put(id, () -> altoLifeDone = true);
+            afterTaskAlways.put(id, () -> altoLifeTaskId = null);
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                    new com.mineagent.engine.alto.AltoLifeTask.LifeRecord(id, null), reply -> { });
             return;
         }
         // From nothing: a starter kit first (stone tools, a little fuel, food for the road), only what it lacks. It

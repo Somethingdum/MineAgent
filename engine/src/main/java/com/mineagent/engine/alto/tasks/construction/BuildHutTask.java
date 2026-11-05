@@ -101,6 +101,11 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
         return at(DOOR_AT);
     }
 
+    /** Whether its door is in. */
+    public boolean doorIn(AltoClef mod) {
+        return mod.getWorld().getBlockState(door()).getBlock() instanceof DoorBlock;
+    }
+
     private BlockPos at(int[] xyz) {
         return place.offset(xyz[0], xyz[1] + OFFSET, xyz[2]);
     }

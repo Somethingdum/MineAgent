@@ -95,36 +95,7 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
         if (!sp.isAlive()) return TaskState.RUNNING;
         AltoClef host = AltoClef.of(player);
         host.tick(root);
-        if (++ticks % 40 == 0) {
-            // AltoClef's task chain as it ran this tick, outermost first, each with its own debug state.
-            StringBuilder chain = new StringBuilder();
-            java.util.List<Task> tasks = host.getUserTaskChain().getTasks();
-            if (tasks.size() > 4) chain.append("(").append(tasks.size() - 4).append(" more) ");
-            for (Task t : tasks.subList(Math.max(0, tasks.size() - 4), tasks.size())) {
-                if (chain.length() > 0 && !chain.toString().endsWith(") ")) chain.append(" > ");
-                chain.append(host.within(t::toString));
-            }
-            // What the body showed: the chain in control, the open menu, the cursor and the 2x2 grid, the clicks.
-            StringBuilder grid = new StringBuilder();
-            var made = sp.inventoryMenu.getSlot(0).getItem();
-            grid.append(made.isEmpty() ? "-" : made.getCount() + " " + BuiltInRegistries.ITEM.getKey(made.getItem()).getPath()).append(" <= ");
-            for (int i = 1; i <= 4; i++) {
-                var st = sp.inventoryMenu.getSlot(i).getItem();
-                grid.append(st.isEmpty() ? "-" : st.getCount() + " " + BuiltInRegistries.ITEM.getKey(st.getItem()).getPath()).append(i < 4 ? "," : "");
-            }
-            var carried = sp.containerMenu.getCarried();
-            String body = " | " + host.getTaskRunner().statusReport + "; menu " + sp.containerMenu.getClass().getSimpleName()
-                    + " " + sp.containerMenu.containerId + "; cursor " + (carried.isEmpty() ? "-" : carried.getCount() + " "
-                    + BuiltInRegistries.ITEM.getKey(carried.getItem()).getPath()) + "; grid " + grid + "; free "
-                    + sp.getInventory().getFreeSlot() + "; clicks " + host.getSlotHandler().clicksAsked + "/"
-                    + host.getSlotHandler().clicksHeld + "/" + host.getSlotHandler().clicksSent + "/"
-                    + host.getController().clicked + (host.getController().refused.isEmpty() ? "" : " (" + host.getController().refused + ")")
-                    + (host.getPlayer() == sp ? "" : "; HOST BODY STALE");
-            LAST_CHAIN.put(player.companionId(), "tick " + ticks + " at " + sp.blockPosition().toShortString() + body + " || " + chain);
-            if (Boolean.getBoolean("mineagent.traceWork") && ticks % 200 == 0) {
-                System.out.println("[MineAgent] alto: " + LAST_CHAIN.get(player.companionId()));
-            }
-        }
+        if (++ticks % 40 == 0) remember(player.companionId(), host, sp, ticks);
         int have = ProductionTask.count(sp, item);
         final Task tree = root;
         if (host.within(tree::isFinished) || have >= target) {
@@ -140,6 +111,63 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
             return finish(TaskState.FAILED);
         }
         return TaskState.RUNNING;
+    }
+
+    /**
+     * Each 40 ticks: AltoClef's task chain as it ran (outermost last four, each with its debug state), with what the body
+     * showed (the chain in control, its menu, cursor and 2x2 grid, the clicks) and Baritone's state; kept for a scene's
+     * failure, and printed each 200 ticks when its work is traced.
+     */
+    static void remember(java.util.UUID companionId, AltoClef host, ServerPlayer sp, int ticks) {
+        // AltoClef's task chain as it ran this tick, outermost first, each with its own debug state.
+        StringBuilder chain = new StringBuilder();
+        java.util.List<Task> tasks = host.getUserTaskChain().getTasks();
+        if (tasks.size() > 4) chain.append("(").append(tasks.size() - 4).append(" more) ");
+        for (Task t : tasks.subList(Math.max(0, tasks.size() - 4), tasks.size())) {
+            if (chain.length() > 0 && !chain.toString().endsWith(") ")) chain.append(" > ");
+            chain.append(host.within(t::toString));
+        }
+        // What the body showed: the chain in control, the open menu, the cursor and the 2x2 grid, the clicks.
+        StringBuilder grid = new StringBuilder();
+        var made = sp.inventoryMenu.getSlot(0).getItem();
+        grid.append(made.isEmpty() ? "-" : made.getCount() + " " + BuiltInRegistries.ITEM.getKey(made.getItem()).getPath()).append(" <= ");
+        for (int i = 1; i <= 4; i++) {
+            var st = sp.inventoryMenu.getSlot(i).getItem();
+            grid.append(st.isEmpty() ? "-" : st.getCount() + " " + BuiltInRegistries.ITEM.getKey(st.getItem()).getPath()).append(i < 4 ? "," : "");
+        }
+        var carried = sp.containerMenu.getCarried();
+        String body = " | " + host.getTaskRunner().statusReport + "; menu " + sp.containerMenu.getClass().getSimpleName()
+                + " " + sp.containerMenu.containerId + "; cursor " + (carried.isEmpty() ? "-" : carried.getCount() + " "
+                + BuiltInRegistries.ITEM.getKey(carried.getItem()).getPath()) + "; grid " + grid + "; free "
+                + sp.getInventory().getFreeSlot() + "; clicks " + host.getSlotHandler().clicksAsked + "/"
+                + host.getSlotHandler().clicksHeld + "/" + host.getSlotHandler().clicksSent + "/"
+                + host.getController().clicked + (host.getController().refused.isEmpty() ? "" : " (" + host.getController().refused + ")")
+                + (host.getPlayer() == sp ? "" : "; HOST BODY STALE") + baritoneState(host, sp);
+        LAST_CHAIN.put(companionId, "tick " + ticks + " at " + sp.blockPosition().toShortString() + body + " || " + chain);
+        if (Boolean.getBoolean("mineagent.traceWork") && ticks % 200 == 0) {
+            System.out.println("[MineAgent] alto: " + LAST_CHAIN.get(companionId));
+        }
+    }
+
+    /** Baritone as it stands: its goal, its path and the move on it, whether it steers, the keys on the body, and its speed. */
+    static String baritoneState(AltoClef host, ServerPlayer sp) {
+        var pb = host.getClientBaritone().getPathingBehavior();
+        var cur = pb.getCurrent();
+        StringBuilder b = new StringBuilder("; baritone ");
+        b.append(pb.getGoal() == null ? "no goal" : pb.getGoal().toString());
+        if (pb.isPathing()) b.append(", pathing");
+        if (pb.getInProgress().isPresent()) b.append(", calculating");
+        if (cur != null) {
+            var moves = cur.getPath().movements();
+            int at = Math.min(cur.getPosition(), moves.size() - 1);
+            b.append(", move ").append(cur.getPosition()).append('/').append(moves.size());
+            if (at >= 0) b.append(' ').append(moves.get(at).getClass().getSimpleName()).append(' ').append(moves.get(at).getDest().toShortString());
+        }
+        if (host.getClientBaritone().getInputOverrideHandler().isInControl()) b.append(", steers");
+        b.append(", keys ").append(String.format(java.util.Locale.ROOT, "%.2f/%.2f", sp.zza, sp.xxa));
+        b.append(", speed ").append(String.format(java.util.Locale.ROOT, "%.3f", sp.getDeltaMovement().horizontalDistance()));
+        b.append(", yaw ").append(Math.round(sp.getYRot()));
+        return b.toString();
     }
 
     private TaskState finish(TaskState state) {

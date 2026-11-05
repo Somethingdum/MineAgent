@@ -5227,6 +5227,44 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 70, its first days by AltoClef's priorities (behaviour.altoLife): evening, with a stone pickaxe, a crafting
+     * table, dirt and a door on it, and no hut: the hut comes first. Mindcraft's dirt shelter, built by Baritone's builder,
+     * stands with its door in before dark.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_hut", timeoutTicks = 3000)
+    public void altoClefBuildsItsHutAtDusk(GameTestHelper helper) {
+        com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+        Scene s = scene(helper, "Hutter");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.DIRT, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.STONE_SHOVEL));
+        long now = helper.getLevel().getDayTime();
+        helper.getLevel().setDayTime(now - now % 24_000L + 11_600L);
+        BlockPos place = helper.absolutePos(new BlockPos(8, 1, 8));
+        helper.runAfterDelay(5, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-scene", place), reply -> { }));
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto hut");
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            var hut = new com.mineagent.engine.alto.tasks.construction.BuildHutTask(place);
+            boolean shell = host.within(() -> com.mineagent.engine.alto.tasks.construction.BuildHutTask.shellStands(
+                    com.mineagent.engine.alto.AltoClef.getInstance(), place));
+            boolean door = host.within(() -> hut.doorIn(com.mineagent.engine.alto.AltoClef.getInstance()));
+            if ((shell && door) || helper.getTick() >= 2950) {
+                String how = "shell " + shell + ", door " + door + ", dirt left " + inv.countItem(Items.DIRT)
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
+                tidy(s);
+                com.mineagent.engine.settings.Switches.altoLifeOverride = null;
+                if (shell && door) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4, leaving no trace: it fells a small oak for logs, an oak sapling on it, and plants it where the trunk stood. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_replant", timeoutTicks = 900)
     public void aFelledTreeIsReplanted(GameTestHelper helper) {

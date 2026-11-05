@@ -94,6 +94,9 @@ public final class Switches {
     public static boolean dugoutHomes() { return b().dugoutHomes(); }
     public static boolean homeAtNight() { return b().homeAtNight(); }
     public static boolean reactiveFood() { return b().reactiveFood(); }
+    public static boolean altoLife() { return altoLifeOverride != null ? altoLifeOverride : b().altoLife(); }
+    /** A game scene's own setting of altoLife (null: the config's). */
+    public static volatile Boolean altoLifeOverride;
     public static boolean altoTasks() { return altoTasksOverride != null ? altoTasksOverride : b().altoTasks(); }
     /** A game scene's own setting of altoTasks (null: the config's), so one scene can run its order both ways. */
     public static volatile Boolean altoTasksOverride;

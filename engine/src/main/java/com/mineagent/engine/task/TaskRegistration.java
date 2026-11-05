@@ -61,6 +61,12 @@ public final class TaskRegistration {
                 ProductionTask::new
         );
 
+        // Its first days on its own by AltoClef's priority tasks (SMH plan 70, behaviour.altoLife)
+        CompanionTaskFactory.register(
+                com.mineagent.engine.alto.AltoLifeTask.LifeRecord.class,
+                com.mineagent.engine.alto.AltoLifeTask::new
+        );
+
         // Lighting an area until no spot is dark (SMH plan 70, MA9.4)
         CompanionTaskFactory.register(
                 LightTask.LightRecord.class,

@@ -61,6 +61,7 @@ public class AltoClef {
 
     /** Every companion's host, by its body's id: Baritone's "baritone for this player". */
     private static final Map<UUID, AltoClef> HOSTS = new ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicInteger BARITONE_LINES = new java.util.concurrent.atomic.AtomicInteger();
     /** The host whose tick (or construction) is running: AltoClef's static getInstance(). Server thread only. */
     private static AltoClef current;
 
@@ -142,6 +143,14 @@ public class AltoClef {
                     || SmhRules.afkFarm(this.player.serverLevel(), blockPos));
             getExtraBaritoneSettings().avoidBlockPlace(blockPos -> SmhRules.afkFarm(this.player.serverLevel(), blockPos));
             TaskCatalogue.init();
+            if (Boolean.getBoolean("mineagent.traceWork")) {
+                // The scenes: Baritone's own messages (its debug ones too), the first 120 of them.
+                getClientBaritoneSettings().chatDebug.value = true;
+                java.util.function.Consumer<net.minecraft.network.chat.Component> log = message -> {
+                    if (BARITONE_LINES.incrementAndGet() <= 120) System.out.println("[MineAgent] alto: baritone: " + message.getString());
+                };
+                getClientBaritoneSettings().logger.value = log;
+            }
             taskRunner.enable();
         } finally {
             current = before;
