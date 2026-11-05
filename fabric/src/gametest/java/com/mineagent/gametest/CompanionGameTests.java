@@ -5279,16 +5279,21 @@ public class CompanionGameTests implements FabricGameTest {
         inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
         inv.setItem(1, new ItemStack(Items.STONE_AXE));
         Boolean[] verdict = {null};
+        int[] atVerdict = {-1};
         helper.runAfterDelay(5, () -> {
-            com.mineagent.engine.alto.tasks.life.ModelWants.propose(s.companion().companionId(), "Mine 3 cobblestone", done -> verdict[0] = done);
+            // What it carried when it was judged (its next want may use them at once: its table, its tools).
+            com.mineagent.engine.alto.tasks.life.ModelWants.propose(s.companion().companionId(), "Mine 3 cobblestone", done -> {
+                verdict[0] = done;
+                atVerdict[0] = inv.countItem(Items.COBBLESTONE);
+            });
             com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
                     new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-model", helper.absolutePos(new BlockPos(3, 1, 10))), reply -> { });
         });
         helper.onEachTick(() -> {
             trace(helper, s, "alto model want");
             if (verdict[0] != null || helper.getTick() >= 1550) {
-                int logs = inv.countItem(Items.COBBLESTONE);
-                String how = "verdict " + verdict[0] + ", cobblestone " + logs
+                int logs = atVerdict[0];
+                String how = "verdict " + verdict[0] + ", cobblestone when judged " + logs
                         + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
                 com.mineagent.engine.alto.tasks.life.ModelWants.clear(s.companion().companionId());
                 tidy(s);
