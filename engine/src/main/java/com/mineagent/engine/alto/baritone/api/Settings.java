@@ -133,6 +133,15 @@ public final class Settings {
     /** Treat every liquid next to a block as one that would flow in when it is broken. Enable for mods' own fluid physics. */
     public final Setting<Boolean> strictLiquidCheck = new Setting<>(false);
 
+    /** If you have Fire Resistance and Jesus then I guess you could turn this on lol. */
+    public final Setting<Boolean> assumeWalkOnLava = new Setting<>(false);
+
+    /** Censor coordinates in goals and block positions. */
+    public final Setting<Boolean> censorCoordinates = new Setting<>(false);
+
+    /** The actual GoalNear is set in this distance away from the entity you're following. */
+    public final Setting<Double> followOffsetDistance = new Setting<>(0D);
+
     /** A setting: its value, and the value it started with. */
     public static final class Setting<T> {
         public T value;

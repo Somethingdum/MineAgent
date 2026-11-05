@@ -118,6 +118,11 @@ public class InputControls {
         boolean rightNew = clicked.contains(Input.CLICK_RIGHT)
                 || (now.contains(Input.CLICK_RIGHT) && !applied.contains(Input.CLICK_RIGHT));
         if (rightNew) {
+            // The block a right click opens, as AltoClef's client mixin on interactBlock announces it.
+            if (driver.pick() instanceof net.minecraft.world.phys.BlockHitResult hit
+                    && hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                com.mineagent.engine.alto.eventbus.EventBus.publish(new com.mineagent.engine.alto.eventbus.events.BlockInteractEvent(hit));
+            }
             driver.rightClick();
         } else if (!now.contains(Input.CLICK_RIGHT) && applied.contains(Input.CLICK_RIGHT) && player.isUsingItem()) {
             player.releaseUsingItem();

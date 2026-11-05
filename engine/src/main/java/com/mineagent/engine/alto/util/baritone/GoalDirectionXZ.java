@@ -30,7 +30,7 @@ public class GoalDirectionXZ implements Goal {
     }
 
     private static String maybeCensor(double value) {
-        return Baritone.settings().censorCoordinates.value ? "<censored>" : Double.toString(value);
+        return com.mineagent.engine.alto.baritone.api.BaritoneAPI.getSettings().censorCoordinates.value ? "<censored>" : Double.toString(value);
     }
 
     public boolean isInGoal(int x, int y, int z) {
