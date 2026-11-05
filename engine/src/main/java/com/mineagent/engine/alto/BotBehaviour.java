@@ -3,9 +3,9 @@
 package com.mineagent.engine.alto;
 
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.alto.baritone.altoclef.AltoClefSettings;
-import com.mineagent.engine.alto.baritone.api.Settings;
-import com.mineagent.engine.alto.baritone.api.utils.RayTraceUtils;
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
+import com.mineagent.engine.baritone.api.Settings;
+import com.mineagent.engine.baritone.api.utils.RayTraceUtils;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;

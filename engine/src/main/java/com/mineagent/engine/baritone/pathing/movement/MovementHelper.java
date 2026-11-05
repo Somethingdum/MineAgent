@@ -615,6 +615,14 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     static double getMiningDurationTicks(CalculationContext context, int x, int y, int z, BlockState state, boolean includeFalling) {
+        return getMiningDurationTicks(context, x, y, z, state, includeFalling, true);
+    }
+
+    /**
+     * SMH: {@code toPass} when the block would be broken to get somewhere (a path's cost), not because it was the block
+     * asked for (MineProcess.plausibleToBreak): only then are the companion's never-break-to-pass kinds left alone.
+     */
+    static double getMiningDurationTicks(CalculationContext context, int x, int y, int z, BlockState state, boolean includeFalling, boolean toPass) {
         Block block = state.getBlock();
         if (!canWalkThrough(context, x, y, z, state)) {
             if (!state.getFluidState().isEmpty()) {
@@ -625,6 +633,9 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return COST_INF;
             }
             if (avoidBreaking(context.bsi, x, y, z, state)) {
+                return COST_INF;
+            }
+            if (toPass && com.mineagent.engine.baritone.utils.SmhRules.neverBreakToPass(state)) {
                 return COST_INF;
             }
             double strVsBlock = context.toolSet.getStrVsBlock(state);
@@ -640,7 +651,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             if (includeFalling) {
                 BlockState above = context.get(x, y + 1, z);
                 if (above.getBlock() instanceof FallingBlock) {
-                    result += getMiningDurationTicks(context, x, y + 1, z, above, true);
+                    result += getMiningDurationTicks(context, x, y + 1, z, above, true, toPass);
                 }
             }
             return result;

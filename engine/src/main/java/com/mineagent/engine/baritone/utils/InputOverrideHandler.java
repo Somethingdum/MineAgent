@@ -117,6 +117,11 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
     }
 
+    /** SMH: whether Baritone steers the body this tick (its movement put on the driver), for AltoClef's own keys. */
+    public boolean isInControl() {
+        return inControl();
+    }
+
     private boolean inControl() {
         for (Input input : new Input[]{Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP}) {
             if (isInputForcedDown(input)) {

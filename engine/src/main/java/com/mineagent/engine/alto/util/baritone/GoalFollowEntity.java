@@ -2,8 +2,8 @@
 // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
 package com.mineagent.engine.alto.util.baritone;
 
-import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalBlock;
+import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.baritone.api.pathing.goals.GoalBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 

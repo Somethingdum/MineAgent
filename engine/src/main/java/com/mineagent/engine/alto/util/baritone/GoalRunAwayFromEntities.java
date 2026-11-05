@@ -4,9 +4,9 @@ package com.mineagent.engine.alto.util.baritone;
 
 import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.util.helpers.BaritoneHelper;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalXZ;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalYLevel;
+import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.baritone.api.pathing.goals.GoalXZ;
+import com.mineagent.engine.baritone.api.pathing.goals.GoalYLevel;
 import java.util.List;
 import net.minecraft.world.entity.Entity;
 

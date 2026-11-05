@@ -1057,6 +1057,8 @@ public final class MineAgentEngine {
 
             // Fire the despawn lifecycle event
             state.lifecycle.onDespawn(state.companion);
+            // Its AltoClef host and Baritone let go (SMH plan 70).
+            com.mineagent.engine.alto.AltoClef.remove(companionId);
 
             // Unregister the fake player from the server
             FakePlayerFactory.unregister(

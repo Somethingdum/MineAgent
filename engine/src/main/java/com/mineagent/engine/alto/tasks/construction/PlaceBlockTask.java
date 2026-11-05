@@ -14,10 +14,10 @@ import com.mineagent.engine.alto.util.ItemTarget;
 import com.mineagent.engine.alto.util.helpers.ItemHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
-import com.mineagent.engine.alto.baritone.api.schematic.AbstractSchematic;
-import com.mineagent.engine.alto.baritone.api.schematic.ISchematic;
-import com.mineagent.engine.alto.baritone.api.utils.BlockOptionalMeta;
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.schematic.AbstractSchematic;
+import com.mineagent.engine.baritone.api.schematic.ISchematic;
+import com.mineagent.engine.baritone.api.utils.BlockOptionalMeta;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.util.Arrays;

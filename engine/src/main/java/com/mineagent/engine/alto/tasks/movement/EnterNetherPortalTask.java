@@ -10,7 +10,7 @@ import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.Dimension;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import java.util.Objects;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;

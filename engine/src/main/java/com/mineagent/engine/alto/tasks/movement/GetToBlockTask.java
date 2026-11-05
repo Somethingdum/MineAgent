@@ -9,8 +9,8 @@ import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.Dimension;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalBlock;
+import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.baritone.api.pathing.goals.GoalBlock;
 import net.minecraft.core.BlockPos;
 
 public class GetToBlockTask extends CustomBaritoneGoalTask implements ITaskRequiresGrounded {

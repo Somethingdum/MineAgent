@@ -50,6 +50,11 @@ public final class BaritoneProvider implements IBaritoneProvider {
         return baritone != null && all.remove(baritone);
     }
 
+    /** SMH: the Baritone ticking (or searching) on this thread now, or null. */
+    public static Baritone current() {
+        return CURRENT.get();
+    }
+
     /** SMH: this Baritone is the primary one while {@code run} runs (its tick, a task's call into it). */
     public static <T> T as(Baritone baritone, java.util.function.Supplier<T> run) {
         Baritone before = CURRENT.get();

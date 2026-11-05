@@ -485,7 +485,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         BlockState state = ctx.bsi.get0(pos);
-        if (MovementHelper.getMiningDurationTicks(ctx, pos.getX(), pos.getY(), pos.getZ(), state, true) >= COST_INF) {
+        // SMH: the block asked for, not one broken to pass (MovementHelper's toPass).
+        if (MovementHelper.getMiningDurationTicks(ctx, pos.getX(), pos.getY(), pos.getZ(), state, true, false) >= COST_INF) {
             return false;
         }
         if (MovementHelper.avoidBreaking(ctx.bsi, pos.getX(), pos.getY(), pos.getZ(), state)) {

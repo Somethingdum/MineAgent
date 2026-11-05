@@ -13,7 +13,7 @@ import com.mineagent.engine.alto.util.helpers.ItemHelper;
 import com.mineagent.engine.alto.util.helpers.LookHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import java.util.Arrays;
 import java.util.List;
 import net.minecraft.core.BlockPos;

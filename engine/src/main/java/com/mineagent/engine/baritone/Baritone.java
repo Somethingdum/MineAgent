@@ -69,6 +69,8 @@ public class Baritone implements IBaritone {
 
     public BlockStateInterface bsi;
 
+    private final com.mineagent.engine.baritone.altoclef.AltoClefSettings altoClefSettings = new com.mineagent.engine.baritone.altoclef.AltoClefSettings();
+
     public Baritone(AgentPlayer agent, ServerPlayer player) {
         this.agent = agent;
         this.gameEventHandler = new GameEventHandler(this);
@@ -238,6 +240,17 @@ public class Baritone implements IBaritone {
     }
 
     public static Executor getExecutor() {
-        return threadPool;
+        // SMH: a search or scan runs as the companion's Baritone that started it (its own AltoClef settings and rules).
+        Baritone owner = BaritoneProvider.current();
+        if (owner == null) return threadPool;
+        return run -> threadPool.execute(() -> BaritoneProvider.as(owner, () -> {
+            run.run();
+            return null;
+        }));
+    }
+
+    /** SMH: this companion's own AltoClef settings (its fork's hooks: what not to break or place, tools to save). */
+    public com.mineagent.engine.baritone.altoclef.AltoClefSettings getAltoClefSettings() {
+        return altoClefSettings;
     }
 }

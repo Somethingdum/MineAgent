@@ -14,7 +14,7 @@ import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;

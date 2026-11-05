@@ -4,7 +4,7 @@
 // its body each tick by apply(), together with what Baritone's input override forces.
 package com.mineagent.engine.alto.control;
 
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import com.mineagent.engine.entity.CompanionInputDriver;
 
 import net.minecraft.server.level.ServerPlayer;
@@ -32,9 +32,14 @@ public class InputControls {
     private final Set<Input> clicked = EnumSet.noneOf(Input.class);
     // SMH: what the body had last tick, to send a release when a key comes up.
     private final Set<Input> applied = EnumSet.noneOf(Input.class);
-    private final ServerPlayer player;
+    private ServerPlayer player;
 
     public InputControls(ServerPlayer player) {
+        this.player = player;
+    }
+
+    /** SMH: the companion's new body after a respawn. */
+    public void setPlayer(ServerPlayer player) {
         this.player = player;
     }
 

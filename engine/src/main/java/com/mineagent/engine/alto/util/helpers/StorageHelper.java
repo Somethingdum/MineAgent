@@ -18,7 +18,7 @@ import com.mineagent.engine.alto.util.slots.CraftingTableSlot;
 import com.mineagent.engine.alto.util.slots.CursorSlot;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.alto.baritone.utils.ToolSet;
+import com.mineagent.engine.baritone.utils.ToolSet;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;

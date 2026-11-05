@@ -6,7 +6,7 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.baritone.GoalChunk;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.baritone.api.pathing.goals.Goal;
 import net.minecraft.world.level.ChunkPos;
 
 public class GetToChunkTask extends CustomBaritoneGoalTask {

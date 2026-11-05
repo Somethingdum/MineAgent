@@ -54,6 +54,12 @@ public class AltoClefSettings {
     private boolean canWalkOnEndPortal = false;
 
     public static AltoClefSettings getInstance() {
+        // SMH: each companion's Baritone has its own: the one ticking or searching on this thread, else the first.
+        com.mineagent.engine.baritone.Baritone now = com.mineagent.engine.baritone.BaritoneProvider.current();
+        if (now != null) return now.getAltoClefSettings();
+        if (com.mineagent.engine.baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone() instanceof com.mineagent.engine.baritone.Baritone first) {
+            return first.getAltoClefSettings();
+        }
         return _instance;
     }
 

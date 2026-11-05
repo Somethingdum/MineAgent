@@ -4,8 +4,8 @@ package com.mineagent.engine.alto.tasks.movement;
 
 import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.tasksystem.Task;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalNear;
+import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.baritone.api.pathing.goals.GoalNear;
 import net.minecraft.core.BlockPos;
 
 public class GetWithinRangeOfBlockTask extends CustomBaritoneGoalTask {

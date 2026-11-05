@@ -6,7 +6,7 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.tasks.InteractWithBlockTask;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.ItemTarget;
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;

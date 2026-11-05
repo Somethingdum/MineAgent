@@ -5,9 +5,12 @@
 package com.mineagent.engine.alto;
 
 import com.mineagent.api.entity.AgentPlayer;
-import com.mineagent.engine.alto.baritone.Baritone;
-import com.mineagent.engine.alto.baritone.altoclef.AltoClefSettings;
-import com.mineagent.engine.alto.baritone.api.Settings;
+import com.mineagent.engine.baritone.Baritone;
+import com.mineagent.engine.baritone.BaritoneProvider;
+import com.mineagent.engine.baritone.api.BaritoneAPI;
+import com.mineagent.engine.baritone.utils.SmhRules;
+import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
+import com.mineagent.engine.baritone.api.Settings;
 import com.mineagent.engine.alto.chains.FoodChain;
 import com.mineagent.engine.alto.chains.MLGBucketFallChain;
 import com.mineagent.engine.alto.chains.MobDefenseChain;
@@ -100,7 +103,8 @@ public class AltoClef {
         AltoClef before = current;
         current = this;
         try {
-            this.baritone = new Baritone(agent, player);
+            // Baritone's engine (engine/.../baritone, AltoClef's own fork of it), one for each companion's body.
+            this.baritone = BaritoneAPI.getProvider().createBaritone(agent, player);
             settings = new com.mineagent.engine.alto.Settings();
             initializeBaritoneSettings();
             taskRunner = new TaskRunner(this);
@@ -131,6 +135,12 @@ public class AltoClef {
             getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
             getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
             getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
+            // SMH plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a
+            // farm whose player is AFK (the companion's own rules; the kinds of block it never breaks to get
+            // somewhere are kept in Baritone's path costs, SmhRules.neverBreakToPass).
+            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> SmhRules.placedByAPerson(this.player.serverLevel(), blockPos)
+                    || SmhRules.afkFarm(this.player.serverLevel(), blockPos));
+            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> SmhRules.afkFarm(this.player.serverLevel(), blockPos));
             TaskCatalogue.init();
             taskRunner.enable();
         } finally {
@@ -142,7 +152,11 @@ public class AltoClef {
     public static AltoClef of(AgentPlayer agent) {
         ServerPlayer sp = TaskContext.serverPlayer(agent);
         AltoClef host = HOSTS.computeIfAbsent(agent.companionId(), id -> new AltoClef(agent, sp));
-        if (host.player != sp) host.player = sp; // respawned: a new body, the same companion
+        if (host.player != sp) { // respawned: a new body, the same companion
+            host.player = sp;
+            host.baritone.setPlayer(sp);
+            host.inputControls.setPlayer(sp);
+        }
         return host;
     }
 
@@ -157,7 +171,11 @@ public class AltoClef {
 
     /** The companion's host let go of (it left). */
     public static void remove(UUID companionId) {
-        HOSTS.remove(companionId);
+        AltoClef host = HOSTS.remove(companionId);
+        if (host != null) {
+            host.baritone.getPathingBehavior().forceCancel();
+            BaritoneAPI.getProvider().destroyBaritone(host.baritone);
+        }
     }
 
     /** Something of AltoClef's done as this host's (its tasks reach for AltoClef.getInstance() when made and asked). */
@@ -165,7 +183,8 @@ public class AltoClef {
         AltoClef before = current;
         current = this;
         try {
-            return what.get();
+            // Its Baritone is the primary one meanwhile (AltoClef's helpers ask BaritoneAPI for it).
+            return BaritoneProvider.as(baritone, what);
         } finally {
             current = before;
         }
@@ -221,9 +240,15 @@ public class AltoClef {
      * put on the body.
      */
     public void tick(Task root) {
-        AltoClef before = current;
-        current = this;
-        try {
+        within(() -> {
+            tickInner(root);
+            return null;
+        });
+    }
+
+    private void tickInner(Task root) {
+        {
+            SmhRules.prime(player.serverLevel());
             inputControls.onTickPre();
             publishBodyEvents();
             storageTracker.setDirty();
@@ -234,29 +259,35 @@ public class AltoClef {
             foodChain.update();
             userTaskChain.setTask(root);
             taskRunner.tick();
-            baritone.tick(inputControls, driver());
+            // Baritone's tick, as its client mixins drive it: its processes, the path, what it presses and where it
+            // looks; then the task tree's own keys (its movement keys only while Baritone isn't steering).
+            baritone.tick();
+            CompanionInputDriver driver = driver();
+            if (driver != null) {
+                inputControls.apply(driver, java.util.Set.of(), baritone.getInputOverrideHandler().isInControl());
+            }
             inputControls.onTickPost();
-        } finally {
-            current = before;
         }
     }
 
     /** The task tree and every key and walk let go (its order ended, or another took the body). */
     public void stop(Task root, Task interruptedBy) {
-        AltoClef before = current;
-        current = this;
-        try {
+        within(() -> {
             if (root != null) {
                 if (interruptedBy == null) root.stop();
                 else root.interrupt(interruptedBy);
             }
             userTaskChain.setTask(null);
-            baritone.stopAll();
-            inputControls.releaseAll(driver());
+            // Baritone let go: every process, the path now, and the keys it forces.
+            baritone.getPathingBehavior().cancelEverything();
+            baritone.getPathingBehavior().forceCancel();
+            baritone.getInputOverrideHandler().clearAllKeys();
+            CompanionInputDriver driver = driver();
+            inputControls.releaseAll(driver);
+            if (driver != null) driver.clear(); // what Baritone's walk left on it too
             if (player.containerMenu != player.inventoryMenu) player.closeContainer();
-        } finally {
-            current = before;
-        }
+            return null;
+        });
     }
 
     /** SMH: the client's events, from what the body did (a screen opened or shut; a block being broken or let go). */
@@ -360,11 +391,11 @@ public class AltoClef {
     }
 
     public Settings getClientBaritoneSettings() {
-        return baritone.settings();
+        return BaritoneAPI.getSettings();
     }
 
     public AltoClefSettings getExtraBaritoneSettings() {
-        return baritone.getExtraSettings();
+        return baritone.getAltoClefSettings();
     }
 
     public com.mineagent.engine.alto.Settings getModSettings() {

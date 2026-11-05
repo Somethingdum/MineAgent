@@ -32,8 +32,7 @@ movement, construction, containers, entities, the speedrun tasks), 1f8e038 in Mo
 (`third_party/altoclef`, made by Loom's `migrateMappings`), with only the changes a body without a client needs, each
 marked `SMH` in the file, which also names the AltoClef file it came from, into:
 
-- `engine/src/main/java/com/mineagent/engine/alto/` (all but `alto/AltoTreeTask.java`, `alto/control/ServerGameMode.java`
-  and `alto/baritone/`)
+- `engine/src/main/java/com/mineagent/engine/alto/` (all but `alto/AltoTreeTask.java` and `alto/control/ServerGameMode.java`)
 
 `third_party/altoclef/` keeps the copy they are made from, with AltoClef's `LICENSE`.
 
@@ -71,13 +70,15 @@ blocks). Rewritten for the mod's own pathing, into:
 - `engine/src/main/java/com/mineagent/engine/pathing/moves/movements/MovementDownward.java`
 - `engine/src/main/java/com/mineagent/engine/pathing/astar/AStarPathFinder.java` (`MIN_DIST_PATH`)
 
-And the parts of Baritone AltoClef's tasks call, from Baritone 1.21.1 (commit `11ea66c`): its goals, rotations, ray
-traces, inputs, schematics, the checks of what not to break and what a block can be placed against, the tool speed rule
-and the settings with their defaults; with `AltoClefSettings` and AltoClef's changes to them from AltoClef's own fork
-of Baritone ([baritone_altoclef](https://github.com/MiranCZ/baritone_altoclef), branch `1.21.1`, LGPL-3.0). Each file
-names the Baritone file it came from; changes for the companion's server-side body are marked `SMH`. Into:
+And Baritone's engine itself, from Baritone 1.21.1 (commit `11ea66c`), one for each companion's server-side body
+(SMH plan 70): its path search, movements and costs, the path executor, its behaviours (pathing, looking, inventory,
+the input override) and processes (custom goal, get to block, mine, follow, explore, farm, build, backfill), goals,
+rotations, ray traces, schematics and settings with their defaults; with AltoClef's own fork of Baritone applied
+([baritone_altoclef](https://github.com/MiranCZ/baritone_altoclef), branch `1.21.1`, LGPL-3.0: its `AltoClefSettings`
+and the hooks that ask it). No world cache, commands, waypoints, elytra or rendering. Each file names the Baritone file
+it came from; changes for the companion's server-side body are marked `SMH`. Into:
 
-- `engine/src/main/java/com/mineagent/engine/alto/baritone/`
+- `engine/src/main/java/com/mineagent/engine/baritone/` (all but `baritone/utils/SmhRules.java`, the mod's own)
 
 Baritone is licensed under the GNU Lesser General Public License, version 3, the same licence as this mod (see
 `LICENSE`).

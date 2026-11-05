@@ -8,7 +8,7 @@ import com.mineagent.engine.alto.tasks.construction.PlaceStructureBlockTask;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.helpers.LookHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.alto.baritone.api.utils.input.Input;
+import com.mineagent.engine.baritone.api.utils.input.Input;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;

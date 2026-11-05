@@ -6,8 +6,8 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.Dimension;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.alto.baritone.api.pathing.goals.GoalYLevel;
+import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.engine.baritone.api.pathing.goals.GoalYLevel;
 
 public class GetToYTask extends CustomBaritoneGoalTask {
 
