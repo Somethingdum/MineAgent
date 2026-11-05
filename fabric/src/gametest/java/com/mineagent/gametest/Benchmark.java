@@ -46,6 +46,17 @@ public final class Benchmark implements ModInitializer {
         String ticks = System.getProperty("mineagent.benchmark");
         if (ticks == null || ticks.isBlank()) return;
         total = Long.parseLong(ticks.trim());
+        // The switches this run turns on over the config's (-PbenchmarkSwitches, "altoTasks,altoLife"): the same worlds
+        // run both ways, so a switch is kept on only where it helped.
+        for (String sw : System.getProperty("mineagent.benchmark.switches", "").split(",")) {
+            switch (sw.trim()) {
+                case "altoTasks" -> com.mineagent.engine.settings.Switches.altoTasksOverride = Boolean.TRUE;
+                case "altoLife" -> com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+                case "" -> { }
+                default -> System.out.println("[BENCH] no such switch to turn on: " + sw.trim());
+            }
+        }
+        System.out.println("[BENCH] switches on over the config: " + System.getProperty("mineagent.benchmark.switches", "none"));
         ServerLifecycleEvents.SERVER_STARTED.register(Benchmark::start);
         ServerTickEvents.END_SERVER_TICK.register(Benchmark::tick);
     }

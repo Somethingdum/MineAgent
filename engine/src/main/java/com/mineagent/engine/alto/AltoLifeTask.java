@@ -61,7 +61,10 @@ public class AltoLifeTask extends CompanionTask<AltoLifeTask.LifeRecord> {
         if (!sp.isAlive()) return TaskState.RUNNING;
         AltoClef host = AltoClef.of(player);
         host.tick(root);
-        if (++ticks % 40 == 0) AltoTreeTask.remember(player.companionId(), host, sp, ticks);
+        if (++ticks % 40 == 0) {
+            AltoTreeTask.remember(player.companionId(), host, sp, ticks);
+            recordHut(host, sp);
+        }
         final OwnLifeTask tree = root;
         if (host.within(tree::isFinished)) {
             outcome = "Done: my tools, a hut with its crafting table and furnace, fuel and food" + (tree.hut() == null ? "." : ", at " + tree.hut().toShortString() + ".");
@@ -85,6 +88,26 @@ public class AltoLifeTask extends CompanionTask<AltoLifeTask.LifeRecord> {
         } else {
             host.stop(root, root);
         }
+    }
+
+    private boolean hutRecorded;
+
+    /**
+     * Its hut, once it stands, kept as a hut it built is (BlueprintTask): in its journal ("built the hut") and among its
+     * places, so its nights, its base and its owner's questions find it.
+     */
+    private void recordHut(AltoClef host, ServerPlayer sp) {
+        final OwnLifeTask tree = root;
+        if (hutRecorded || tree == null || tree.hut() == null) return;
+        BlockPos at = tree.hut();
+        if (!host.within(() -> com.mineagent.engine.alto.tasks.construction.BuildHutTask.shellStands(AltoClef.getInstance(), at))) return;
+        hutRecorded = true;
+        var loop = TaskContext.agentLoop(player);
+        if (loop == null) return;
+        String dim = sp.level().dimension().location().toString();
+        loop.journal().record("built", "built the hut (Mindcraft's dirt shelter) at " + at.toShortString(), sp.level().getGameTime());
+        loop.placeKeeper().memory().name("build", "hut_dirt_shelter|dirt|oak_door",
+                new com.mineagent.engine.world.RouteMemory.Point(dim, at.getX(), at.getY(), at.getZ()), sp.level().getGameTime());
     }
 
     /** Where its hut is, once chosen, or null. */

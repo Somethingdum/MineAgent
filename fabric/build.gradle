@@ -96,6 +96,7 @@ loom {
             source sourceSets.gametest
             vmArg "-Dmineagent.benchmark=${project.findProperty('benchmarkTicks') ?: '72000'}"
             vmArg "-Dmineagent.benchmark.report=${project.buildDir}/benchmark/report.json"
+            vmArg "-Dmineagent.benchmark.switches=${project.findProperty('benchmarkSwitches') ?: ''}"
             // Its work traced (what it is stuck on, and why), for the progress posted as it runs.
             vmArg "-Dmineagent.traceWork=true"
             programArgs "nogui"

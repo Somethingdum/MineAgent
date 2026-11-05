@@ -238,12 +238,44 @@ public class OwnLifeTask extends Task {
         }, a -> true, false, true, true));
     }
 
+    /** A want that has run this long with nothing gained is left alone for a while (Voyager's "failed tasks"). */
+    private static final long NO_GAIN_TICKS = 6_000L, REST_TICKS = 2_400L;
+    private PriorityTask watching;
+    private long watchingSince;
+    private int watchingItems = -1;
+
     @Override
     protected Task onTick() {
         AltoClef mod = AltoClef.getInstance();
         Task next = selector.choose(mod, wants);
+        noGainCheck(mod);
         setDebugState(selector.debug());
         return next;
+    }
+
+    /**
+     * SMH (after Voyager's curriculum, MIT, which keeps the tasks that failed and proposes others meanwhile): the want it
+     * is on, watched by what it carries. Five minutes on one with nothing gained or spent, and it is rested for two while
+     * the next best is done; the night's wants are never rested.
+     */
+    private void noGainCheck(AltoClef mod) {
+        PriorityTask cur = selector.current();
+        long now = mod.getWorld().getGameTime();
+        int items = 0;
+        for (var stack : mod.getPlayer().getInventory().items) items += stack.getCount();
+        if (cur != watching) {
+            watching = cur;
+            watchingSince = now;
+            watchingItems = items;
+            return;
+        }
+        if (cur == null || now - watchingSince < NO_GAIN_TICKS) return;
+        if (items == watchingItems && cur.calculatePriority(mod) < 900_000) {
+            mod.log("Got nowhere on " + cur + " for five minutes: on to something else for a while.");
+            selector.rest(cur, now + REST_TICKS);
+        }
+        watchingSince = now;
+        watchingItems = items;
     }
 
     @Override

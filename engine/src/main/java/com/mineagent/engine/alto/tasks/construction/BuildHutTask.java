@@ -77,6 +77,9 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
 
     private final BlockPos place;
     private final MovementProgressChecker progressChecker = new MovementProgressChecker();
+    /** SMH: the walls still to go up when it last saw them go up, and when that was (a builder places from where it stands). */
+    private int lastMissing = Integer.MAX_VALUE;
+    private long lastGainTick;
     private final TimeoutWanderTask wanderTask = new TimeoutWanderTask(5f);
     private Task materialTask;
     private boolean building;
@@ -134,17 +137,23 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
     }
 
     private static boolean roomClear(AltoClef mod, BlockPos place) {
+        return roomLeft(mod, place) == 0;
+    }
+
+    /** How many blocks of its room and doorway are still to be cleared. */
+    private static int roomLeft(AltoClef mod, BlockPos place) {
+        int left = 0;
         for (int y = 0; y < SIZE_Y; y++) {
             for (int z = 0; z < SIZE_Z; z++) {
                 for (int x = 0; x < SIZE_X; x++) {
                     String want = cell(x, y, z);
                     if (want.isEmpty() || want.equals("dirt")) continue;
                     BlockState now = mod.getWorld().getBlockState(place.offset(x, y + OFFSET, z));
-                    if (!now.isAir() && !isFitting(now)) return false;
+                    if (!now.isAir() && !isFitting(now)) left++;
                 }
             }
         }
-        return true;
+        return left;
     }
 
     private static boolean isWall(BlockState state, AltoClef mod, BlockPos pos) {
@@ -167,6 +176,8 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
     protected void onStart() {
         progressChecker.reset();
         building = false;
+        lastMissing = Integer.MAX_VALUE;
+        lastGainTick = AltoClef.getInstance().getWorld().getGameTime();
     }
 
     @Override
@@ -192,8 +203,20 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
                 progressChecker.reset();
                 return materialTask;
             }
-            if (!progressChecker.check(mod)) {
+            // AltoClef's PlaceBlockTask wanders when it got nowhere; a hut is many blocks placed from a few places, so here
+            // nowhere is half a minute with no wall gone up and no step taken (its own progress check, while it walks).
+            long now = mod.getWorld().getGameTime();
+            int toGo = missing + roomLeft(mod, place);
+            if (toGo < lastMissing) {
+                lastMissing = toGo;
+                lastGainTick = now;
+                progressChecker.reset();
+            }
+            boolean walking = mod.getClientBaritone().getPathingBehavior().isPathing();
+            if (walking ? !progressChecker.check(mod) : now - lastGainTick > 600) {
                 stopBuilder(mod);
+                lastGainTick = now;
+                lastMissing = Integer.MAX_VALUE;
                 return wanderTask;
             }
             setDebugState("Letting Baritone build the hut (" + missing + " blocks to go)");

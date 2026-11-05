@@ -14,6 +14,9 @@ on:
       seed:
         description: The world's seed
         default: "smh-benchmark-1"
+      switches:
+        description: Switches turned on over the config (comma separated, as altoTasks,altoLife)
+        default: ""
   push:
     branches: [smh-companion]
 
@@ -35,6 +38,8 @@ jobs:
     env:
       DAYS: ${{ github.event.inputs.days || '3' }}
       SEED: ${{ matrix.seed }}
+      # A [benchmark] push whose message also says [alto] runs AltoClef's tasks and life.
+      SWITCHES: ${{ github.event.inputs.switches || (contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -70,7 +75,7 @@ jobs:
           touch benchmark.log
           python3 .github/benchmark_progress.py benchmark.log &
           status=0
-          ./gradlew --no-daemon :fabric:runBenchmark -PbenchmarkTicks=$(( DAYS * 24000 )) > benchmark.log 2>&1 || status=$?
+          ./gradlew --no-daemon :fabric:runBenchmark -PbenchmarkTicks=$(( DAYS * 24000 )) "-PbenchmarkSwitches=${SWITCHES}" > benchmark.log 2>&1 || status=$?
           sleep 70 # the last progress posted, and the check run closed
           grep "\[BENCH\]" benchmark.log | cut -c 1-600 | tail -400 || true
           exit $status
