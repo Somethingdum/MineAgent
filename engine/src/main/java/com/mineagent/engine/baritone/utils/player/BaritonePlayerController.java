@@ -22,7 +22,10 @@ import net.minecraft.world.phys.BlockHitResult;
 public final class BaritonePlayerController implements IPlayerController {
 
     private final BaritonePlayerContext ctx;
+    /** The block being broken (the client's destroyBlockPos), kept until it breaks or the break is let go. */
     private BlockPos destroying;
+    /** The client's isDestroying: Baritone sets it each tick from its own record of whether it is still hitting. */
+    private boolean hitting;
 
     public BaritonePlayerController(BaritonePlayerContext ctx) {
         this.ctx = ctx;
@@ -33,7 +36,12 @@ public final class BaritonePlayerController implements IPlayerController {
     }
 
     private boolean breaking() {
-        return player().gameMode instanceof FakePlayerGameMode fake ? fake.automaticDestroyPos() != null : destroying != null;
+        if (player().gameMode instanceof FakePlayerGameMode fake) {
+            BlockPos at = fake.automaticDestroyPos();
+            if (at == null) destroying = null;
+            return at != null;
+        }
+        return destroying != null;
     }
 
     @Override
@@ -46,16 +54,22 @@ public final class BaritonePlayerController implements IPlayerController {
         return !breaking();
     }
 
+    /**
+     * The client's continueDestroyBlock: the same block it is breaking goes on breaking (the game mode carries the break
+     * on each tick, as a client's progress does); another block, or none being broken, is started.
+     */
     @Override
     public boolean onPlayerDamageBlock(BlockPos pos, Direction side) {
-        if (!pos.equals(destroying) || !breaking()) {
-            return clickBlock(pos, side);
+        if (breaking() && pos.equals(destroying)) {
+            hitting = true;
+            return true;
         }
-        return true;
+        return clickBlock(pos, side);
     }
 
     @Override
     public void resetBlockRemoving() {
+        hitting = false;
         if (destroying == null) return;
         if (player().gameMode instanceof FakePlayerGameMode fake) fake.abortCurrentDestroy();
         else player().gameMode.handleBlockBreakAction(destroying, ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
@@ -95,12 +109,18 @@ public final class BaritonePlayerController implements IPlayerController {
                 player().serverLevel().getMaxBuildHeight(), 0);
         player().swing(InteractionHand.MAIN_HAND);
         destroying = player().serverLevel().getBlockState(loc).isAir() ? null : loc.immutable();
+        hitting = destroying != null;
         return true;
     }
 
+    /**
+     * SMH: the client's isDestroying flag only. Baritone clears it at the end of every tick it hits (the client's mouse
+     * handling would, it notes) and sets it back at the start of the next; the block being broken is kept meanwhile, as
+     * the client's destroyBlockPos is, so a break goes on instead of starting over each tick.
+     */
     @Override
     public void setHittingBlock(boolean hittingBlock) {
-        if (!hittingBlock) destroying = null;
+        hitting = hittingBlock;
     }
 
     @Override
