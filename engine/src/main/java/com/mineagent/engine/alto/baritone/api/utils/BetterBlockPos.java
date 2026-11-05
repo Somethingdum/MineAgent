@@ -221,7 +221,6 @@ public final class BetterBlockPos extends BlockPos {
     }
 
     @Override
-    @Nonnull
     public String toString() {
         return String.format(
                 "BetterBlockPos{x=%s,y=%s,z=%s}",
