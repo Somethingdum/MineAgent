@@ -23,6 +23,11 @@ HOOKS = 'com.mineagent.sbe.common.ServerHooks'
 
 # (file, old, new): each old must occur exactly once in the renamed file.
 PATCHES = [
+    # 1.21.1's LootContext.Builder.create takes an Optional (its random sequence), not a nullable name: null threw on the
+    # first block's drops, so every mine, clear and build stopped (upstream's own line, SecondBrainEngine at 1712b17e).
+    ('automatone/api/utils/BlockOptionalMeta.java',
+     '''                            .create(null),''',
+     '''                            .create(java.util.Optional.empty()), // SMH: 1.21.1 takes an Optional'''),
     # The companion's own tick drives it (the engine ticks each controller), not a Fabric server-tick listener.
     ('common/ServerTickable.java',
      '''    default void registerTickListener() {

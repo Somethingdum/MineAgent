@@ -159,7 +159,7 @@ public final class BlockOptionalMeta {
                             .withParameter(LootContextParams.BLOCK_STATE, block.defaultBlockState())
                             .create(LootContextParamSets.BLOCK))
                             .withOptionalRandomSeed(world.getSeed())
-                            .create(null),
+                            .create(java.util.Optional.empty()), // SMH: 1.21.1 takes an Optional
                     stack -> items.add(stack.getItem())
                 );
                 return items;
