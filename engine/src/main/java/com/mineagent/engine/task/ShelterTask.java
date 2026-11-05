@@ -316,7 +316,9 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
                 return TaskState.RUNNING;
             }
             nav.cancel();
-            GOING_HOME.remove(sp.getUUID());
+            // Got home: still on its way in until it is closed in there (the sleep chain waits, then lies down in the bed
+            // at home, which it leaves there; a bed it put down in the gap between was taken back up in the morning).
+            if (!there) GOING_HOME.remove(sp.getUUID());
             if (trace() && !there) System.out.println("[MineAgent] shelter: didn't get home (" + (navFailed ? "no way" : "too long")
                     + "), at " + sp.blockPosition().toShortString() + "; sheltering here");
             decide(sp);
@@ -565,6 +567,7 @@ public class ShelterTask extends CompanionTask<ShelterTask.ShelterRecord> {
                 AT_HOME.add(sp.getUUID());
                 putBedDown(sp, room, placed);
             }
+            GOING_HOME.remove(sp.getUUID());
             holdTicks = 0;
             phase = Phase.HOLD;
             outcome = gaps == 0 ? "walled in" : "walled in but for " + gaps + (gaps == 1 ? " gap" : " gaps");
