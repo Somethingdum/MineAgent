@@ -3072,6 +3072,11 @@ public class AgentLoop {
             journal.record("death", cause + (type.isEmpty() || !cause.endsWith(" died") ? "" : " (last hurt by " + type.replace("minecraft:", "") + ")")
                     + " at " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), tick,
                     body.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
+            // What AltoClef had the body doing when it died (its last chain, wants and tasks), for the benchmark's log.
+            if (altoLifeTaskId != null) {
+                System.out.println("[MineAgent] alto: died (" + truncateForLog(cause, 120) + ") while "
+                        + com.mineagent.engine.alto.AltoTreeTask.lastChain(companion.companionId()));
+            }
             // Three deaths here in 15 minutes: a place to keep away from (MA8.6).
             var zone = com.mineagent.engine.learning.DangerZones.of(body.getUUID()).died(
                     body.serverLevel().dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ(), body.level().getGameTime());
