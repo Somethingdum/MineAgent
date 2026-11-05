@@ -46,8 +46,6 @@ import com.mineagent.engine.baritone.utils.PathingCommandContext;
 import com.mineagent.engine.baritone.utils.schematic.MapArtSchematic;
 import com.mineagent.engine.baritone.utils.schematic.SelectionSchematic;
 import com.mineagent.engine.baritone.utils.schematic.SchematicSystem;
-import com.mineagent.engine.baritone.utils.schematic.litematica.LitematicaHelper;
-import com.mineagent.engine.baritone.utils.schematic.schematica.SchematicaHelper;
 import com.google.common.collect.ImmutableSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
@@ -216,36 +214,14 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
 
     @Override
     public void buildOpenSchematic() {
-        if (SchematicaHelper.isSchematicaPresent()) {
-            Optional<Tuple<IStaticSchematic, BlockPos>> schematic = SchematicaHelper.getOpenSchematic();
-            if (schematic.isPresent()) {
-                IStaticSchematic raw = schematic.get().getA();
-                BlockPos origin = schematic.get().getB();
-                ISchematic schem = applyMapArtAndSelection(origin, raw);
-                this.build(raw.toString(), schem, origin);
-            } else {
-                logDirect("No schematic currently open");
-            }
-        } else {
-            logDirect("Schematica is not present");
-        }
+        // SMH: Schematica is a client mod; a server-side body has no schematic open in it.
+        logDirect("Schematica is not present");
     }
 
     @Override
     public void buildOpenLitematic(int i) {
-        if (LitematicaHelper.isLitematicaPresent()) {
-            //if java.lang.NoSuchMethodError is thrown see comment in SchematicPlacementManager
-            if (LitematicaHelper.hasLoadedSchematic(i)) {
-                Tuple<IStaticSchematic, Vec3i> schematic = LitematicaHelper.getSchematic(i);
-                Vec3i correctedOrigin = schematic.getB();
-                ISchematic schematic2 = applyMapArtAndSelection(correctedOrigin, schematic.getA());
-                build(schematic.getA().toString(), schematic2, correctedOrigin);
-            } else {
-                logDirect(String.format("List of placements has no entry %s", i + 1));
-            }
-        } else {
-            logDirect("Litematica is not present");
-        }
+        // SMH: Litematica is a client mod; a server-side body has no placements in it.
+        logDirect("Litematica is not present");
     }
 
     public void clearArea(BlockPos corner1, BlockPos corner2) {
