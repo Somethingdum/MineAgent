@@ -33,6 +33,9 @@ sourceSets {
             // engine module and dedicated-server sources do not.
             srcDir project(':engine').file('src/client/java')
             srcDir project(':tools').file('src/main/java')
+            // SMH plan 70: Baritone's engine while it is ported (engine/.../baritone); compiled only with -Pport
+            // (.github/workflows/port-compile.yml) until it builds, then always.
+            if (!project.hasProperty('port')) exclude 'com/mineagent/engine/baritone/**'
         }
         resources {
             srcDir project(':engine').file('src/client/resources')

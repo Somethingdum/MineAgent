@@ -160,6 +160,17 @@ public class AltoClef {
         HOSTS.remove(companionId);
     }
 
+    /** Something of AltoClef's done as this host's (its tasks reach for AltoClef.getInstance() when made and asked). */
+    public <T> T within(java.util.function.Supplier<T> what) {
+        AltoClef before = current;
+        current = this;
+        try {
+            return what.get();
+        } finally {
+            current = before;
+        }
+    }
+
     /** The host ticking now, or null. */
     public static AltoClef current() {
         return current;

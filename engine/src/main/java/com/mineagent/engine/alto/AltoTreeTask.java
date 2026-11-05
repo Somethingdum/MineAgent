@@ -29,6 +29,7 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
     private boolean ended;
     private int startCount = -1;
     private String outcome = "";
+    private int ticks;
 
     public AltoTreeTask(AgentPlayer player, ProductionTask.ProduceRecord record) {
         super(player, record);
@@ -67,14 +68,15 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
             record.extendDeadlineTo(Math.max(record.deadline(), sp.level().getGameTime() + 24_000L));
         }
         if (root == null) {
-            root = TaskCatalogue.getItemTask(name, target);
+            root = host.within(() -> TaskCatalogue.getItemTask(name, target));
         }
         if (root == null) {
             outcome = "I don't know how to get " + name.replace('_', ' ') + ".";
         }
         ended = false;
-        if (Boolean.getBoolean("mineagent.traceWork")) {
-            System.out.println("[MineAgent] alto: " + name + " x" + target + " (" + startCount + " carried): " + root);
+        if (Boolean.getBoolean("mineagent.traceWork") && root != null) {
+            final Task tree = root;
+            System.out.println("[MineAgent] alto: " + name + " x" + target + " (" + startCount + " carried): " + host.within(tree::toString));
         }
     }
 
@@ -85,16 +87,27 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
         if (!sp.isAlive()) return TaskState.RUNNING;
         AltoClef host = AltoClef.of(player);
         host.tick(root);
+        if (Boolean.getBoolean("mineagent.traceWork") && ++ticks % 200 == 0) {
+            // AltoClef's task chain as it ran this tick, outermost first, each with its own debug state.
+            StringBuilder chain = new StringBuilder();
+            for (Task t : host.getUserTaskChain().getTasks()) {
+                if (chain.length() > 0) chain.append(" > ");
+                chain.append(host.within(t::toString));
+            }
+            System.out.println("[MineAgent] alto: tick " + ticks + " at " + sp.blockPosition().toShortString() + ": " + chain);
+        }
         int have = ProductionTask.count(sp, item);
-        if (root.isFinished() || have >= target) {
+        final Task tree = root;
+        if (host.within(tree::isFinished) || have >= target) {
             int got = have - startCount;
             outcome = "Done: " + got + " " + name.replace('_', ' ') + (got == 1 ? "" : "s") + ".";
             return finish(TaskState.SUCCESS);
         }
         if (sp.level().getGameTime() > record.deadline()) {
             int got = Math.max(0, have - startCount);
+            String doing = host.within(tree::toString);
             outcome = "I couldn't make any " + name.replace('_', ' ') + " in time: I got " + got + " of " + record.count
-                    + (root != null ? " (" + root + ")" : "") + ".";
+                    + " (" + doing + ").";
             return finish(TaskState.FAILED);
         }
         return TaskState.RUNNING;
@@ -144,6 +157,7 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
 
     /** What it is doing, for the order's progress (the deepest task's debug state, AltoClef's own words). */
     public String doing() {
-        return root == null ? "" : root.toString();
+        final Task tree = root;
+        return tree == null ? "" : AltoClef.of(player).within(tree::toString);
     }
 }
