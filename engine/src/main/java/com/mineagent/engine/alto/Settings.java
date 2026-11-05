@@ -489,6 +489,16 @@ public class Settings {
         return minimumFoodAllowed;
     }
 
+    /**
+     * How the kill aura works when it pushes mobs away (AltoClef's setting, its default): SMART, the closest hostile at
+     * most every 0.2 seconds. FASTEST: every hostile, every frame; DELAY: the closest, with a charged sword; OFF.
+     */
+    private com.mineagent.engine.alto.control.KillAura.Strategy forceFieldStrategy = com.mineagent.engine.alto.control.KillAura.Strategy.SMART;
+
+    public com.mineagent.engine.alto.control.KillAura.Strategy getForceFieldStrategy() {
+        return forceFieldStrategy;
+    }
+
     public boolean isMobDefense() {
         return mobDefense;
     }
