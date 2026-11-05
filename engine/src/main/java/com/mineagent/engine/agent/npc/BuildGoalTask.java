@@ -53,6 +53,67 @@ public class BuildGoalTask extends Task {
         return missing;
     }
 
+    /** Where its inside is: the blueprint's open floor cell nearest its middle, at its lowest open layer. */
+    public BlockPos inside() {
+        if (position == null || orientation == null) return null;
+        int sizeX = goal.sizeX(), sizeZ = goal.sizeZ();
+        BlockPos best = null;
+        double bestD = Double.MAX_VALUE;
+        for (int ry = 1; ry < goal.sizeY() - 1 && best == null; ry++) {
+            for (int z = 0; z < sizeZ; z++) {
+                for (int x = 0; x < sizeX; x++) {
+                    int[] r = NpcUtils.rotateXZ(x, z, orientation, sizeX, sizeZ);
+                    String here = goal.blocks()[ry][r[1]][r[0]], under = goal.blocks()[ry - 1][r[1]][r[0]],
+                            over = goal.blocks()[ry + 1][r[1]][r[0]];
+                    if (!here.equals("air") || !over.equals("air") || under.isEmpty() || under.equals("air")) continue;
+                    double d = Math.pow(x - (sizeX - 1) / 2.0, 2) + Math.pow(z - (sizeZ - 1) / 2.0, 2);
+                    if (d < bestD) {
+                        bestD = d;
+                        best = position.offset(x, ry + goal.offset(), z);
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    /** Whether a spot is inside its walls (Mindcraft's currentBuilding: within the blueprint's bounds). */
+    public boolean holds(BlockPos p) {
+        if (position == null) return false;
+        int dx = p.getX() - position.getX(), dy = p.getY() - position.getY() - goal.offset(), dz = p.getZ() - position.getZ();
+        return dx >= 0 && dz >= 0 && dy >= 0 && dx < goal.sizeX() && dz < goal.sizeZ() && dy < goal.sizeY();
+    }
+
+    /** Whether a spot is one of its blocks that stands as the blueprint asks (kept from being broken for blocks). */
+    public boolean standingPart(ServerLevel level, BlockPos p) {
+        if (!holds(p) || orientation == null) return false;
+        int x = p.getX() - position.getX(), y = p.getY() - position.getY() - goal.offset(), z = p.getZ() - position.getZ();
+        int[] r = NpcUtils.rotateXZ(x, z, orientation, goal.sizeX(), goal.sizeZ());
+        String name = goal.blocks()[y][r[1]][r[0]];
+        if (name.isEmpty() || name.equals("air")) return false;
+        var chunk = level.getChunkSource().getChunkNow(p.getX() >> 4, p.getZ() >> 4);
+        return chunk != null && satisfied(name, chunk.getBlockState(p), level, p);
+    }
+
+    /** The door of the build, if its blueprint has one and it stands (Mindcraft's getBuildingDoor). */
+    public BlockPos door(ServerLevel level) {
+        if (position == null || orientation == null) return null;
+        for (int y = 0; y < goal.sizeY(); y++) {
+            for (int z = 0; z < goal.sizeZ(); z++) {
+                for (int x = 0; x < goal.sizeX(); x++) {
+                    int[] r = NpcUtils.rotateXZ(x, z, orientation, goal.sizeX(), goal.sizeZ());
+                    if (!goal.blocks()[y][r[1]][r[0]].equals("door")) continue;
+                    return position.offset(x, y + goal.offset(), z);
+                }
+            }
+        }
+        return null;
+    }
+
+    public Blueprint goal() {
+        return goal;
+    }
+
     /** Built as the blueprint asks: nothing left to break or place. */
     public boolean built() {
         return !acted && missing.isEmpty();
@@ -73,6 +134,12 @@ public class BuildGoalTask extends Task {
 
     @Override
     protected Task onTick() {
+        return plan();
+    }
+
+    /** The walk over the blueprint (Mindcraft's executeNext): the step to take now, or null; missing and acted set. */
+    public Task plan() {
+        if (position == null || orientation == null) onStart();
         ServerLevel level = controller.getWorld();
         ServerPlayer player = controller.getPlayer();
         Map<String, Integer> inventory = NpcUtils.inventoryCounts(player);

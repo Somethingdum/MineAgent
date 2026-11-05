@@ -69,6 +69,17 @@ public final class Agents {
         return a == null ? null : a.controller();
     }
 
+    /** What the companion's agent is doing now: its running chain and that chain's task tree, for the scenes' traces. */
+    public static String describe(UUID companionId) {
+        Agent a = AGENTS.get(companionId);
+        if (a == null) return "(no agent)";
+        var runner = a.controller().getTaskRunner();
+        var chain = runner.getCurrentTaskChain();
+        var body = a.body();
+        return runner.statusReport + " at " + body.blockPosition().toShortString() + " health " + (int) body.getHealth()
+                + " food " + body.getFoodData().getFoodLevel() + (chain == null ? "" : " || " + chain);
+    }
+
     /** One tick of the companion's layers (the engine calls it from the companion's own tick while they have the body). */
     public static void tick(AgentPlayer agent) {
         AltoClefController c = of(agent);

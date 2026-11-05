@@ -61,7 +61,10 @@ public class PriorityAuction {
     }
 
     private boolean altoKeepsItAlive() {
-        if (!com.mineagent.engine.settings.Switches.altoSurvival() || currentTask == null) return false;
+        if (currentTask == null) return false;
+        // The one agent's own chains look after the body while it has it (engine/agent/AgentTask).
+        if (currentTask instanceof com.mineagent.engine.agent.AgentTask) return true;
+        if (!com.mineagent.engine.settings.Switches.altoSurvival()) return false;
         return currentTask instanceof com.mineagent.engine.alto.AltoLifeTask
                 || currentTask instanceof com.mineagent.engine.task.ProductionTask p && p.onAltoClef();
     }

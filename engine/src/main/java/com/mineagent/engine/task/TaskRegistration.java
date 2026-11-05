@@ -61,6 +61,12 @@ public final class TaskRegistration {
                 ProductionTask::new
         );
 
+        // The one agent's work (SMH plan 70): an item, or its life on its own, done by its agent (engine/agent)
+        CompanionTaskFactory.register(
+                com.mineagent.engine.agent.AgentTask.AgentRecord.class,
+                com.mineagent.engine.agent.AgentTask::new
+        );
+
         // Its first days on its own by AltoClef's priority tasks (SMH plan 70, behaviour.altoLife)
         CompanionTaskFactory.register(
                 com.mineagent.engine.alto.AltoLifeTask.LifeRecord.class,

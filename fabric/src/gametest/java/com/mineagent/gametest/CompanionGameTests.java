@@ -5454,6 +5454,177 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    // ---- The one agent (SMH plan 70): SecondBrainEngine's AltoClef on Automatone's Baritone, for the companion's body.
+
+    private static void agentWork(GameTestHelper helper, Scene s, com.mineagent.engine.agent.AgentTask.AgentRecord record) {
+        helper.runAfterDelay(5, () -> com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(), record, reply -> { }));
+    }
+
+    private static String agentIs(Scene s) {
+        return com.mineagent.engine.agent.Agents.describe(s.companion().companionId());
+    }
+
+    /**
+     * The one agent gets an item from nothing: a small oak and the stone floor, "a stone pickaxe" is AltoClef's catalogue
+     * task, run by SecondBrainEngine's AltoClef on its Automatone Baritone through the companion's own input: logs felled,
+     * planks, sticks, a table, a wooden pickaxe, cobblestone, the stone pickaxe.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_agent_pickaxe", timeoutTicks = 3600)
+    public void theAgentMakesAStonePickaxeFromATree(GameTestHelper helper) {
+        Scene s = scene(helper, "Agent");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.setBlock(8, 0, 6, Blocks.DIRT);
+        for (int y = 1; y <= 5; y++) helper.setBlock(8, y, 6, Blocks.OAK_LOG);
+        agentWork(helper, s, com.mineagent.engine.agent.AgentTask.AgentRecord.item("agent-pickaxe", "stone_pickaxe", 1));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) System.out.println("[SCENE agent pickaxe] tick " + helper.getTick() + ": " + agentIs(s));
+            var inv = s.body().getInventory();
+            if (inv.countItem(Items.STONE_PICKAXE) >= 1 || helper.getTick() >= 3550) {
+                String how = "stone pickaxes " + inv.countItem(Items.STONE_PICKAXE) + ", wooden " + inv.countItem(Items.WOODEN_PICKAXE)
+                        + ", cobblestone " + inv.countItem(Items.COBBLESTONE) + ", logs " + inv.countItem(Items.OAK_LOG)
+                        + ", planks " + inv.countItem(Items.OAK_PLANKS) + ", sticks " + inv.countItem(Items.STICK)
+                        + "; the agent: " + agentIs(s);
+                boolean ok = inv.countItem(Items.STONE_PICKAXE) >= 1;
+                tidy(s);
+                if (ok) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** The one agent's own mob defence: a husk comes at it, a stone sword on it, while it works; it kills the husk. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_agent_defend", timeoutTicks = 1800)
+    public void theAgentKillsAHusk(GameTestHelper helper) {
+        Scene s = scene(helper, "Guardian");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_SWORD));
+        inv.setItem(1, new ItemStack(Items.STONE_PICKAXE));
+        agentWork(helper, s, com.mineagent.engine.agent.AgentTask.AgentRecord.item("agent-defend", "cobblestone", 32));
+        Husk[] husk = {null};
+        helper.runAfterDelay(40, () -> {
+            husk[0] = helper.spawn(EntityType.HUSK, new BlockPos(8, 1, 8));
+            husk[0].setTarget(s.body());
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) System.out.println("[SCENE agent defend] tick " + helper.getTick() + ": " + agentIs(s));
+            Husk h = husk[0];
+            if (h == null) return;
+            boolean killed = !h.isAlive() && h.getLastHurtByMob() == s.body();
+            if (killed || !s.body().isAlive() || !h.isAlive() || helper.getTick() >= 1750) {
+                String how = String.format("husk alive %b (health %.0f, last hurt by it %b), companion alive %b (health %.0f)",
+                        h.isAlive(), h.getHealth(), h.getLastHurtByMob() == s.body(), s.body().isAlive(), s.body().getHealth())
+                        + "; the agent: " + agentIs(s);
+                tidy(s);
+                if (killed) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /** The one agent's own food chain: hungry (5 of 20) while it works, bread on it: it eats. */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_agent_eat", timeoutTicks = 900)
+    public void theAgentEatsWhenHungry(GameTestHelper helper) {
+        Scene s = scene(helper, "Hungry");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.BREAD, 4));
+        helper.runAfterDelay(4, () -> s.body().getFoodData().setFoodLevel(5));
+        agentWork(helper, s, com.mineagent.engine.agent.AgentTask.AgentRecord.item("agent-eat", "cobblestone", 32));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) System.out.println("[SCENE agent eat] tick " + helper.getTick() + ": " + agentIs(s));
+            int food = s.body().getFoodData().getFoodLevel();
+            boolean ate = helper.getTick() > 10 && food > 5 && inv.countItem(Items.BREAD) < 4;
+            if (ate || helper.getTick() >= 850) {
+                String how = "food " + food + ", bread " + inv.countItem(Items.BREAD) + "; the agent: " + agentIs(s);
+                tidy(s);
+                if (ate) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Two companions, each with its own agent, at once: each mines its own cobblestone with the pickaxe it has, neither
+     * moved by the other's (one Baritone and one AltoClef each, nothing shared between them).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_agent_two", timeoutTicks = 1600)
+    public void twoAgentsWorkAtOnce(GameTestHelper helper) {
+        Scene a = scene(helper, "Firstling");
+        Scene b = scene(helper, "Secondling", true, a.owner());
+        for (Scene s : List.of(a, b)) {
+            MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+            s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        }
+        agentWork(helper, a, com.mineagent.engine.agent.AgentTask.AgentRecord.item("agent-two-a", "cobblestone", 3));
+        agentWork(helper, b, com.mineagent.engine.agent.AgentTask.AgentRecord.item("agent-two-b", "cobblestone", 3));
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) System.out.println("[SCENE agent two] tick " + helper.getTick() + ": " + agentIs(a) + " /// " + agentIs(b));
+            int ca = a.body().getInventory().countItem(Items.COBBLESTONE), cb = b.body().getInventory().countItem(Items.COBBLESTONE);
+            if (ca >= 3 && cb >= 3 || helper.getTick() >= 1550) {
+                String how = "cobblestone " + ca + " and " + cb + "; the agents: " + agentIs(a) + " /// " + agentIs(b);
+                tidy(a);
+                tidy(b);
+                if (ca >= 3 && cb >= 3) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Its life on its own by Mindcraft's routine (NpcRoutineTask): its one goal its hut (the companion's hut, from
+     * Mindcraft's dirt shelter), with dirt, a door, a crafting table and a furnace on it, in the evening: the hut goes up
+     * block by block as the blueprint asks, the table and furnace in their places, and at nightfall it is in it with its
+     * door shut.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_agent_hut", timeoutTicks = 4800)
+    public void theAgentBuildsItsHutAndSpendsTheNightInIt(GameTestHelper helper) {
+        Scene s = scene(helper, "Homebody");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var inv = s.body().getInventory();
+        inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        inv.setItem(1, new ItemStack(Items.DIRT, 64));
+        inv.setItem(2, new ItemStack(Items.OAK_DOOR));
+        inv.setItem(3, new ItemStack(Items.CRAFTING_TABLE));
+        inv.setItem(4, new ItemStack(Items.FURNACE));
+        inv.setItem(5, new ItemStack(Items.STONE_SHOVEL));
+        var data = new com.mineagent.engine.agent.npc.NpcData();
+        data.goals.add(new com.mineagent.engine.agent.npc.NpcData.Goal("companion_hut", 1));
+        data.doRoutine = true;
+        agentWork(helper, s, com.mineagent.engine.agent.AgentTask.AgentRecord.life("agent-hut", data));
+        long now = helper.getLevel().getDayTime();
+        helper.getLevel().setDayTime(now - now % 24_000L + 6_000L);
+        long[] builtAt = {-1};
+        helper.onEachTick(() -> {
+            if (helper.getTick() % 200 == 0) System.out.println("[SCENE agent hut] tick " + helper.getTick() + ": " + agentIs(s));
+            var level = helper.getLevel();
+            if (builtAt[0] < 0 && data.home != null) {
+                builtAt[0] = helper.getTick();
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 12_000L); // dusk
+            }
+            boolean in = false, doorShut = false;
+            if (data.home != null) {
+                var built = data.built.get(data.home);
+                var b = new com.mineagent.engine.agent.npc.BuildGoalTask(com.mineagent.engine.agent.npc.Blueprint.named(data.home), built.position(), built.orientation());
+                in = b.holds(s.body().blockPosition());
+                BlockPos door = b.door(level);
+                var d = door == null ? null : level.getBlockState(door);
+                doorShut = d != null && d.getBlock() instanceof net.minecraft.world.level.block.DoorBlock
+                        && !d.getValue(net.minecraft.world.level.block.DoorBlock.OPEN);
+            }
+            boolean done = data.home != null && in && doorShut && level.getDayTime() % 24_000L >= 12_000L;
+            if (done || helper.getTick() >= 4700) {
+                String how = "home " + data.home + ", built " + data.built + ", inside " + in + ", door shut " + doorShut
+                        + ", dirt left " + inv.countItem(Items.DIRT) + "; the agent: " + agentIs(s);
+                level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + 1_000L);
+                tidy(s);
+                if (done) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
     /** Plan 70, MA9.4, leaving no trace: it fells a small oak for logs, an oak sapling on it, and plants it where the trunk stood. */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_replant", timeoutTicks = 900)
     public void aFelledTreeIsReplanted(GameTestHelper helper) {
