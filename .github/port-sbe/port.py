@@ -23,6 +23,30 @@ HOOKS = 'com.mineagent.sbe.common.ServerHooks'
 
 # (file, old, new): each old must occur exactly once in the renamed file.
 PATCHES = [
+    # A crafting table a walk dearer than making one is passed over, as AltoClef's own DoStuffInContainerTask decides
+    # with CraftInTableTask.getCostToMakeNew (none within 40 blocks, and logs or 4 planks in hand: 10; else 100):
+    # SecondBrainEngine went to the nearest known table at any distance, and a world-1 run spent three days making for
+    # one 91 blocks under it (in a trial chamber) with no way there.
+    ('altoclef/tasks/container/CraftInTableTask.java',
+     '''            Optional<BlockPos> nearestTable = controller.getBlockScanner().getNearestBlock(Blocks.CRAFTING_TABLE);''',
+     '''            // SMH: AltoClef's own rule (DoStuffInContainerTask, CraftInTableTask.getCostToMakeNew).
+            net.minecraft.world.phys.Vec3 here = EntityVer.getPos(controller.getEntity());
+            double makeNew = controller.getItemStorage().hasItem(com.mineagent.sbe.altoclef.util.helpers.ItemHelper.LOG)
+                    || controller.getItemStorage().getItemCount(com.mineagent.sbe.altoclef.util.helpers.ItemHelper.PLANKS) >= 4 ? 10 : 100;
+            Optional<BlockPos> nearestTable = controller.getBlockScanner().getNearestBlock(Blocks.CRAFTING_TABLE)
+                    .filter(t -> t.closerToCenterThan(here, 40)
+                            || com.mineagent.sbe.altoclef.util.helpers.BaritoneHelper.calculateGenericHeuristic(here,
+                                    net.minecraft.world.phys.Vec3.atCenterOf(t)) <= makeNew);'''),
+    # Each wood's and each colour's entry named prefix + "_" + baseName, as AltoClef's own TaskCatalogue names them
+    # (gaucho-matrero/altoclef, colorfulTasks and woodTasks); SecondBrainEngine's copy has prefix + "_" + prefix, so
+    # "spruce_door", "white_bed", "oak_fence" and every other such item were not in the catalogue (the agent's hut,
+    # short of only its door, gave up on it: "Every goal met").
+    ('altoclef/TaskCatalogue.java',
+     '''         put(prefix + "_" + prefix, new Item[]{getMatch.apply(color)}, count -> getTask.apply(color, count));''',
+     '''         put(prefix + "_" + baseName, new Item[]{getMatch.apply(color)}, count -> getTask.apply(color, count)); // SMH: AltoClef's own'''),
+    ('altoclef/TaskCatalogue.java',
+     '''      return woodTasks(woodItem -> woodItem.prefix + "_" + woodItem.prefix, getMatch, getTask, requireNetherForNetherStuff);''',
+     '''      return woodTasks(woodItem -> woodItem.prefix + "_" + baseName, getMatch, getTask, requireNetherForNetherStuff); // SMH: AltoClef's own'''),
     # Cook up to what it has cooked already and the raw on top (AltoClef's own getBestSmeltTarget: toSmelt = raw +
     # cooked); SecondBrainEngine asked for only as many cooked as it had raw, so with that many cooked in hand the
     # smoking was done before it began and CollectFoodTask handed it back every tick (a world-3 run sat on it 16,000).

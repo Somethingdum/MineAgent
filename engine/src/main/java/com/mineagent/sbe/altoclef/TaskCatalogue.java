@@ -347,7 +347,7 @@ public class TaskCatalogue {
          MapColor mCol = dCol.getMapColor();
          ItemHelper.ColorfulItems color = ItemHelper.getColorfulItems(mCol);
          String prefix = color.colorName;
-         put(prefix + "_" + prefix, new Item[]{getMatch.apply(color)}, count -> getTask.apply(color, count));
+         put(prefix + "_" + baseName, new Item[]{getMatch.apply(color)}, count -> getTask.apply(color, count)); // SMH: AltoClef's own
       }
    }
 
@@ -383,7 +383,7 @@ public class TaskCatalogue {
       BiFunction<ItemHelper.WoodItems, Integer, ResourceTask> getTask,
       boolean requireNetherForNetherStuff
    ) {
-      return woodTasks(woodItem -> woodItem.prefix + "_" + woodItem.prefix, getMatch, getTask, requireNetherForNetherStuff);
+      return woodTasks(woodItem -> woodItem.prefix + "_" + baseName, getMatch, getTask, requireNetherForNetherStuff); // SMH: AltoClef's own
    }
 
    private static CataloguedResource[] woodTasks(

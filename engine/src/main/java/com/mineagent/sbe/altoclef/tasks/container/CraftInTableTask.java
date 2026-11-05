@@ -75,7 +75,14 @@ public class CraftInTableTask extends ResourceTask {
          return new CollectRecipeCataloguedResourcesTask(false, this.targets);
       } else {
          if (this.craftingTablePos == null || !controller.getWorld().getBlockState(this.craftingTablePos).is(Blocks.CRAFTING_TABLE)) {
-            Optional<BlockPos> nearestTable = controller.getBlockScanner().getNearestBlock(Blocks.CRAFTING_TABLE);
+            // SMH: AltoClef's own rule (DoStuffInContainerTask, CraftInTableTask.getCostToMakeNew).
+            net.minecraft.world.phys.Vec3 here = EntityVer.getPos(controller.getEntity());
+            double makeNew = controller.getItemStorage().hasItem(com.mineagent.sbe.altoclef.util.helpers.ItemHelper.LOG)
+                    || controller.getItemStorage().getItemCount(com.mineagent.sbe.altoclef.util.helpers.ItemHelper.PLANKS) >= 4 ? 10 : 100;
+            Optional<BlockPos> nearestTable = controller.getBlockScanner().getNearestBlock(Blocks.CRAFTING_TABLE)
+                    .filter(t -> t.closerToCenterThan(here, 40)
+                            || com.mineagent.sbe.altoclef.util.helpers.BaritoneHelper.calculateGenericHeuristic(here,
+                                    net.minecraft.world.phys.Vec3.atCenterOf(t)) <= makeNew);
             if (nearestTable.isPresent()) {
                this.craftingTablePos = nearestTable.get();
                this.setDebugState("Found crafting table: " + this.craftingTablePos.toShortString());
