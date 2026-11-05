@@ -39,6 +39,9 @@ public class GiveTask extends CompanionTask<GiveTask.GiveRecord> {
     private PlayerNav nav;
     private int ticks;
     private int repath;
+    /** The nearest it has got to them, and when (its walk getting no closer). */
+    private double closest = Double.MAX_VALUE;
+    private int closerAt;
     private String outcome = "";
 
     public GiveTask(AgentPlayer player, GiveRecord record) {
@@ -49,6 +52,8 @@ public class GiveTask extends CompanionTask<GiveTask.GiveRecord> {
     protected void onStart() {
         if (nav == null) nav = new PlayerNav(player, TaskContext.navCaches(player));
         repath = 0;
+        closest = Double.MAX_VALUE;
+        closerAt = ticks;
     }
 
     @Override
@@ -59,10 +64,15 @@ public class GiveTask extends CompanionTask<GiveTask.GiveRecord> {
         if (owner == null || owner.serverLevel() != sp.serverLevel()) return end(false, "you're not here to take them");
         if (loop != null && loop.ownerAfk()) return end(false, "you're away, and what I hand you would vanish before you're back");
         if (++ticks > 1_200) return end(false, "I couldn't get to you");
-        // Mindcraft's giveToPlayer (skills.js, MIT, Copyright (c) 2024 Kolby Nottingham): to within 3 blocks, and the
-        // items tossed to them from as far as 5 with them in sight, as a player tosses them over a gap or a wall's edge.
+        // Mindcraft's giveToPlayer (skills.js, MIT, Copyright (c) 2024 Kolby Nottingham): it goes to within 3 blocks and
+        // tosses them there; where the walk gets no closer (a gap, a wall's edge), it tosses from where it got to, the
+        // player in sight (Mindcraft tosses whether or not its walk arrived).
         double away = owner.distanceTo(sp);
-        boolean near = away <= 3.0 || away <= 5.0 && sp.hasLineOfSight(owner);
+        if (away < closest - 0.25) {
+            closest = away;
+            closerAt = ticks;
+        }
+        boolean near = away <= 3.0 || away <= 6.0 && ticks - closerAt > 100 && sp.hasLineOfSight(owner);
         if (!near) {
             if (repath-- <= 0) {
                 nav.navigateNear(owner.getBlockX(), owner.getBlockY(), owner.getBlockZ(), 2);
