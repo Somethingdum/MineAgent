@@ -116,7 +116,7 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
                     + host.getSlotHandler().clicksHeld + "/" + host.getSlotHandler().clicksSent + "/"
                     + host.getController().clicked + (host.getController().refused.isEmpty() ? "" : " (" + host.getController().refused + ")")
                     + (host.getPlayer() == sp ? "" : "; HOST BODY STALE");
-            LAST_CHAIN.put(player.companionId(), "tick " + ticks + " at " + sp.blockPosition().toShortString() + ": " + chain + body);
+            LAST_CHAIN.put(player.companionId(), "tick " + ticks + " at " + sp.blockPosition().toShortString() + body + " || " + chain);
             if (Boolean.getBoolean("mineagent.traceWork") && ticks % 200 == 0) {
                 System.out.println("[MineAgent] alto: " + LAST_CHAIN.get(player.companionId()));
             }
