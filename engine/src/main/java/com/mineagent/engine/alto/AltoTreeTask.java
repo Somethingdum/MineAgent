@@ -98,12 +98,16 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
         if (++ticks % 40 == 0) {
             // AltoClef's task chain as it ran this tick, outermost first, each with its own debug state.
             StringBuilder chain = new StringBuilder();
-            for (Task t : host.getUserTaskChain().getTasks()) {
-                if (chain.length() > 0) chain.append(" > ");
+            java.util.List<Task> tasks = host.getUserTaskChain().getTasks();
+            if (tasks.size() > 4) chain.append("(").append(tasks.size() - 4).append(" more) ");
+            for (Task t : tasks.subList(Math.max(0, tasks.size() - 4), tasks.size())) {
+                if (chain.length() > 0 && !chain.toString().endsWith(") ")) chain.append(" > ");
                 chain.append(host.within(t::toString));
             }
             // What the body showed: the chain in control, the open menu, the cursor and the 2x2 grid, the clicks.
             StringBuilder grid = new StringBuilder();
+            var made = sp.inventoryMenu.getSlot(0).getItem();
+            grid.append(made.isEmpty() ? "-" : made.getCount() + " " + BuiltInRegistries.ITEM.getKey(made.getItem()).getPath()).append(" <= ");
             for (int i = 1; i <= 4; i++) {
                 var st = sp.inventoryMenu.getSlot(i).getItem();
                 grid.append(st.isEmpty() ? "-" : st.getCount() + " " + BuiltInRegistries.ITEM.getKey(st.getItem()).getPath()).append(i < 4 ? "," : "");

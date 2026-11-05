@@ -82,9 +82,24 @@ public final class ServerGameMode {
             refused = "slot " + slot;
             return;
         }
+        String before = Boolean.getBoolean("mineagent.traceWork") && clicked < 60 ? what(menu, slot) : null;
         menu.clicked(slot, button, type, player);
         menu.broadcastChanges();
         clicked++;
+        if (before != null) {
+            // The first clicks of a companion's AltoClef, as they went: the slot, the click, and what it and the cursor held.
+            System.out.println("[MineAgent] alto: click " + clicked + " " + menu.getClass().getSimpleName() + " slot " + slot + " "
+                    + type + " " + button + ": " + before + " -> " + what(menu, slot) + "; made " + stack(menu.getSlot(0).getItem()));
+        }
+    }
+
+    private static String what(net.minecraft.world.inventory.AbstractContainerMenu menu, int slot) {
+        String in = slot >= 0 && slot < menu.slots.size() ? stack(menu.getSlot(slot).getItem()) : "outside";
+        return in + " (cursor " + stack(menu.getCarried()) + ")";
+    }
+
+    private static String stack(net.minecraft.world.item.ItemStack st) {
+        return st.isEmpty() ? "-" : st.getCount() + " " + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).getPath();
     }
 
     /** SMH: the clicks done, and why the last one refused was, for the scenes' traces. */
