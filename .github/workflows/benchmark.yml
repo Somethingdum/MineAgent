@@ -38,8 +38,8 @@ jobs:
     env:
       DAYS: ${{ github.event.inputs.days || '3' }}
       SEED: ${{ matrix.seed }}
-      # A [benchmark] push whose message also says [alto] runs AltoClef's tasks and life.
-      SWITCHES: ${{ github.event.inputs.switches || (contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
+      # A [benchmark] push whose message also says [alto] runs AltoClef's tasks and life; [alto+] its survival chains too.
+      SWITCHES: ${{ github.event.inputs.switches || (contains(github.event.head_commit.message, '[alto+]') && 'altoTasks,altoLife,altoSurvival' || contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4

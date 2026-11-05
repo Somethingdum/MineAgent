@@ -60,11 +60,28 @@ public class PriorityAuction {
         return "idle";
     }
 
+    private boolean altoKeepsItAlive() {
+        if (!com.mineagent.engine.settings.Switches.altoSurvival() || currentTask == null) return false;
+        return currentTask instanceof com.mineagent.engine.alto.AltoLifeTask
+                || currentTask instanceof com.mineagent.engine.task.ProductionTask p && p.onAltoClef();
+    }
+
+    /** The companion's chains that AltoClef's own chains do the work of: food, mobs, falls, lava and fire, air, stuck. */
+    private static boolean altoCovers(TaskChain chain) {
+        return chain instanceof com.mineagent.engine.survival.FoodChain || chain instanceof com.mineagent.engine.survival.MobDefenseChain
+                || chain instanceof com.mineagent.engine.survival.MLGChain || chain instanceof com.mineagent.engine.survival.LavaFireChain
+                || chain instanceof com.mineagent.engine.survival.BreathChain || chain instanceof com.mineagent.engine.survival.UnstuckChain;
+    }
+
     /** Run one deterministic server-tick auction. */
     public TaskChain tick() {
         TaskChain winner = null;
         float bestPriority = Float.NEGATIVE_INFINITY;
+        boolean altoKeepsItAlive = altoKeepsItAlive();
         for (TaskChain chain : chains) {
+            // With AltoClef's own survival chains on (behaviour.altoSurvival), they look after the body while one of its
+            // tasks has it; the companion's chains for the same things stand down meanwhile.
+            if (altoKeepsItAlive && altoCovers(chain)) continue;
             try {
                 float priority = chain.getPriority(companion);
                 if (Float.isFinite(priority) && priority > bestPriority) {

@@ -116,9 +116,17 @@ public class AltoClef {
             // AltoClef's hand fixes: the best tool equipped while it breaks a block, a stack left on the cursor put
             // away, a container shut when it looks away (a chain that works out its priority and never runs).
             new com.mineagent.engine.alto.chains.PlayerInteractionFixChain(taskRunner);
-            mobDefenseChain = new MobDefenseChain();
-            mlgBucketChain = new MLGBucketFallChain(this);
-            foodChain = new FoodChain(this);
+            // AltoClef's own survival chains, in its order (behaviour.altoSurvival): mob defence, the MLG bucket, getting
+            // unstuck, equipping ahead, lava, fire and drowning, eating; each by priority over the task tree, as AltoClef
+            // runs them. Off, they are made on a runner that never runs (its tasks still ask them what they know), and the
+            // companion's own chains look after it instead.
+            TaskRunner survival = com.mineagent.engine.settings.Switches.altoSurvival() ? taskRunner : new TaskRunner(this);
+            mobDefenseChain = new MobDefenseChain(survival);
+            mlgBucketChain = new MLGBucketFallChain(survival);
+            new com.mineagent.engine.alto.chains.UnstuckChain(survival);
+            new com.mineagent.engine.alto.chains.PreEquipItemChain(survival);
+            new com.mineagent.engine.alto.chains.WorldSurvivalChain(survival);
+            foodChain = new FoodChain(survival);
             storageTracker = new ItemStorageTracker(this, trackerManager, container -> containerSubTracker = container);
             entityTracker = new EntityTracker(trackerManager);
             blockScanner = new BlockScanner(this);
@@ -277,7 +285,6 @@ public class AltoClef {
             miscBlockTracker.tick();
             trackerManager.tick();
             blockScanner.tick();
-            foodChain.update();
             userTaskChain.setTask(root);
             taskRunner.tick();
             // Baritone's tick, as its client mixins drive it: its processes, the path, what it presses and where it

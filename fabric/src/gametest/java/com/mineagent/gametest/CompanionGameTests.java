@@ -5267,8 +5267,8 @@ public class CompanionGameTests implements FabricGameTest {
 
     /**
      * SMH plan 70, the model's say in its first days (Voyager's curriculum, ModelWants): with its stone tools on it, the
-     * model's "Mine 3 oak logs" goes ahead of the rest of its list, is done by AltoClef's task for logs, and is judged
-     * done by the game (three more logs carried), which tells the model so.
+     * model's "Mine 3 cobblestone" goes ahead of the rest of its list, is done by AltoClef's task for cobblestone on the
+     * stone floor, and is judged done by the game (three more carried), which tells the model so.
      */
     @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_model_want", timeoutTicks = 1600)
     public void theModelsTaskIsDoneByAltoClefAndJudgedByTheGame(GameTestHelper helper) {
@@ -5278,19 +5278,17 @@ public class CompanionGameTests implements FabricGameTest {
         var inv = s.body().getInventory();
         inv.setItem(0, new ItemStack(Items.STONE_PICKAXE));
         inv.setItem(1, new ItemStack(Items.STONE_AXE));
-        helper.setBlock(8, 0, 6, Blocks.DIRT);
-        for (int y = 1; y <= 5; y++) helper.setBlock(8, y, 6, Blocks.OAK_LOG);
         Boolean[] verdict = {null};
         helper.runAfterDelay(5, () -> {
-            com.mineagent.engine.alto.tasks.life.ModelWants.propose(s.companion().companionId(), "Mine 3 oak logs", done -> verdict[0] = done);
+            com.mineagent.engine.alto.tasks.life.ModelWants.propose(s.companion().companionId(), "Mine 3 cobblestone", done -> verdict[0] = done);
             com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
                     new com.mineagent.engine.alto.AltoLifeTask.LifeRecord("life-model", helper.absolutePos(new BlockPos(3, 1, 10))), reply -> { });
         });
         helper.onEachTick(() -> {
             trace(helper, s, "alto model want");
             if (verdict[0] != null || helper.getTick() >= 1550) {
-                int logs = inv.countItem(Items.OAK_LOG);
-                String how = "verdict " + verdict[0] + ", logs " + logs
+                int logs = inv.countItem(Items.COBBLESTONE);
+                String how = "verdict " + verdict[0] + ", cobblestone " + logs
                         + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
                 com.mineagent.engine.alto.tasks.life.ModelWants.clear(s.companion().companionId());
                 tidy(s);

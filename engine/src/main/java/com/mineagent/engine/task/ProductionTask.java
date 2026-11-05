@@ -592,6 +592,11 @@ public class ProductionTask extends CompanionTask<ProductionTask.ProduceRecord> 
         return fail(why.isEmpty() ? "I couldn't get any food" : "I couldn't get any food: " + why);
     }
 
+    /** Whether its order is being done by AltoClef's own task now (behaviour.altoTasks). */
+    public boolean onAltoClef() {
+        return phase == Phase.ALTO;
+    }
+
     private TaskState byAltoClef() {
         TaskState st = altoTask.tick();
         if (st == TaskState.RUNNING) return TaskState.RUNNING;

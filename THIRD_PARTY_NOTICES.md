@@ -32,7 +32,11 @@ movement, construction, containers, entities, the speedrun tasks), 1f8e038 in Mo
 (`third_party/altoclef`, made by Loom's `migrateMappings`), with only the changes a body without a client needs, each
 marked `SMH` in the file, which also names the AltoClef file it came from, into:
 
-- `engine/src/main/java/com/mineagent/engine/alto/` (all but `alto/AltoTreeTask.java` and `alto/control/ServerGameMode.java`)
+- `engine/src/main/java/com/mineagent/engine/alto/` (all but the mod's own `alto/AltoTreeTask.java`, `alto/AltoLifeTask.java`,
+  `alto/control/ServerGameMode.java`, `alto/tasks/life/` (its first days, from AltoClef's priority tasks, and the model's
+  wants) and `alto/tasks/construction/BuildHutTask.java` (below, under Mindcraft); `PrioritySelector` is lifted out of
+  `BeatMinecraftTask`), its survival chains (food, mob defence, the MLG bucket, getting unstuck, equipping ahead, lava,
+  fire and drowning) and the tasks they use among them
 
 `third_party/altoclef/` keeps the copy they are made from, with AltoClef's `LICENSE`.
 

@@ -1,46 +1,213 @@
-// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/chains/FoodChain.java
-// at commit 1f8e038, in Mojang's names (third_party/altoclef). SMH: what AltoClef's tasks ask of it (needsToEat, its food
-// pick, shouldStop) kept as AltoClef has it; the eating itself is the companion's own food chain (survival/FoodChain),
-// which takes the body from any task, so this one never eats.
+// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/chains/FoodChain.java at commit
+// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
 package com.mineagent.engine.alto.chains;
 
 import com.mineagent.engine.alto.AltoClef;
+import com.mineagent.engine.alto.Settings;
 import com.mineagent.engine.alto.multiversion.FoodComponentWrapper;
 import com.mineagent.engine.alto.multiversion.item.ItemVer;
-import com.mineagent.engine.alto.util.helpers.ItemHelper;
-
+import com.mineagent.engine.alto.tasks.resources.CollectFoodTask;
+import com.mineagent.engine.alto.tasks.speedrun.DragonBreathTracker;
+import com.mineagent.engine.alto.tasksystem.TaskRunner;
+import com.mineagent.engine.alto.util.helpers.*;
+import com.mineagent.engine.alto.util.slots.PlayerSlot;
+import com.mineagent.engine.baritone.api.utils.input.Input;
+import java.util.Objects;
+import java.util.Optional;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
-import java.util.Objects;
-import java.util.Optional;
+@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
+public class FoodChain extends SingleTaskChain {
+    private static FoodChainConfig config;
+    private static boolean hasFood;
 
-public class FoodChain {
+    static {
+        ConfigHelper.loadConfig("configs/food_chain_settings.json", FoodChainConfig::new, FoodChainConfig.class, newConfig -> config = newConfig);
+    }
 
-    private static final FoodChainConfig config = new FoodChainConfig();
-    private final AltoClef mod;
-    private boolean shouldStop = false;
+    private final DragonBreathTracker dragonBreathTracker = new DragonBreathTracker();
+    private boolean isTryingToEat = false;
+    private boolean requestFillup = false;
+    private boolean needsFood = false;
     private Optional<Item> cachedPerfectFood = Optional.empty();
-    private boolean hasFood;
+    private boolean shouldStop = false;
 
-    public FoodChain(AltoClef mod) {
-        this.mod = mod;
+    public FoodChain(TaskRunner runner) {
+        super(runner);
     }
 
-    /** SMH: once a tick, before the tasks, as AltoClef's getPriority works out its food. */
-    public void update() {
-        Tuple<Integer, Optional<Item>> calculation = calculateFood(mod);
-        cachedPerfectFood = calculation.getB();
-        hasFood = calculation.getA() > 0;
+    @Override
+    protected void onTaskFinish(AltoClef mod) {
+        // Nothing.
     }
 
-    /** SMH: our food chain is eating (it has the body): AltoClef's own chain would be. */
+    private void startEat(AltoClef mod, Item food) {
+        //Debug.logInternal("EATING " + toUse.getTranslationKey() + " : " + test);
+        if (mod.getPlayer().isBlocking()) {
+            mod.log("want to eat, trying to stop shielding...");
+            mod.getInputControls().release(Input.CLICK_RIGHT);
+            return;
+        }
+
+        isTryingToEat = true;
+        requestFillup = true;
+        mod.getSlotHandler().forceEquipItem(new Item[]{food}, true); //"true" because it's food
+        mod.getInputControls().hold(Input.CLICK_RIGHT);
+        mod.getExtraBaritoneSettings().setInteractionPaused(true);
+    }
+
+    private void stopEat() {
+        if (isTryingToEat) {
+            AltoClef altoClef = AltoClef.getInstance();
+
+            if (altoClef.getItemStorage().hasItem(Items.SHIELD) || altoClef.getItemStorage().hasItemInOffhand(Items.SHIELD)) {
+                if (StorageHelper.getItemStackInSlot(PlayerSlot.OFFHAND_SLOT).getItem() != Items.SHIELD) {
+                    altoClef.getSlotHandler().forceEquipItemToOffhand(Items.SHIELD);
+                } else {
+                    isTryingToEat = false;
+                    requestFillup = false;
+                }
+            } else {
+                isTryingToEat = false;
+                requestFillup = false;
+            }
+            altoClef.getInputControls().release(Input.CLICK_RIGHT);
+            altoClef.getExtraBaritoneSettings().setInteractionPaused(false);
+        }
+    }
+
     public boolean isTryingToEat() {
-        return mod.companionEating();
+        return isTryingToEat;
+    }
+
+    @Override
+    public float getPriority() {
+        AltoClef mod = AltoClef.getInstance();
+
+        if (WorldHelper.isInNetherPortal()) {
+            stopEat();
+            return Float.NEGATIVE_INFINITY;
+        }
+        // do not interrupt defending from mobs by eating
+        if (mod.getMobDefenseChain().isPuttingOutFire()
+                || mod.getMobDefenseChain().isShielding()
+                || mod.getPlayer().isBlocking()
+                || mod.getMobDefenseChain().isDoingAcrobatics()
+        ) {
+            stopEat();
+            return Float.NEGATIVE_INFINITY;
+        }
+        dragonBreathTracker.updateBreath(mod);
+        for (BlockPos playerIn : WorldHelper.getBlocksTouchingPlayer()) {
+            if (dragonBreathTracker.isTouchingDragonBreath(playerIn)) {
+                stopEat();
+                return Float.NEGATIVE_INFINITY;
+            }
+        }
+        if (!mod.getModSettings().isAutoEat()) {
+            stopEat();
+            return Float.NEGATIVE_INFINITY;
+        }
+
+        // do NOT eat while in lava if we are escaping it (spaghetti code dependencies go brrrr)
+        if (mod.getPlayer().isInLava()) {
+            stopEat();
+            return Float.NEGATIVE_INFINITY;
+        }
+
+        /*
+        - Eats if:
+        - We're hungry and have food that fits
+            - We're low on health and maybe a little bit hungry
+            - We're very low on health and are even slightly hungry
+        - We're kind of hungry and have food that fits perfectly
+         */
+        // We're in danger, don't eat now!!
+        if (!mod.getMLGBucketChain().doneMLG() || mod.getMLGBucketChain().isFalling(mod) ||
+                mod.getPlayer().isBlocking() || shouldStop) {
+            stopEat();
+            return Float.NEGATIVE_INFINITY;
+        }
+        Tuple<Integer, Optional<Item>> calculation = calculateFood(mod);
+        int cachedFoodScore = calculation.getA();
+        cachedPerfectFood = calculation.getB();
+        hasFood = cachedFoodScore > 0;
+        // If we requested a fillup but we're full, stop.
+        if (requestFillup && mod.getPlayer().getFoodData().getFoodLevel() >= 20) {
+            requestFillup = false;
+        }
+        // If we no longer have food, we no longer can eat.
+        if (!hasFood) {
+            requestFillup = false;
+        }
+
+        //FIXME should check if currently fighting
+        if (hasFood && (needsToEat() || requestFillup) && cachedPerfectFood.isPresent() &&
+                !mod.getMLGBucketChain().isChorusFruiting() && !mod.getPlayer().isBlocking()/* &&
+                !areEnemiesNearby(mod)*/) {
+
+            Item toUse = cachedPerfectFood.get();
+
+            // Make sure we're not facing a container
+            if (!LookHelper.tryAvoidingInteractable(mod)) {
+                return Float.NEGATIVE_INFINITY;
+            }
+            startEat(mod, toUse);
+        } else {
+            stopEat();
+        }
+
+        Settings settings = mod.getModSettings();
+
+        if (needsFood || cachedFoodScore < settings.getMinimumFoodAllowed()) {
+            needsFood = cachedFoodScore < settings.getFoodUnitsToCollect();
+
+            // Only collect if we don't have enough food.
+            // If the user inputs invalid settings, the bot would get stuck here.
+            if (cachedFoodScore < settings.getFoodUnitsToCollect()) {
+                setTask(new CollectFoodTask(settings.getFoodUnitsToCollect()));
+                return 55f;
+            }
+        }
+
+
+        // Food eating is handled asynchronously.
+        return Float.NEGATIVE_INFINITY;
+    }
+
+    private boolean areEnemiesNearby(AltoClef mod) {
+        for (Entity entity : mod.getEntityTracker().getCloseEntities()) {
+            if (entity instanceof Monster hostile && hostile.distanceTo(mod.getPlayer()) < (isTryingToEat?14:7)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    @Override
+    public boolean isActive() {
+        // We're always checking for food.
+        return true;
+    }
+
+    @Override
+    public String getName() {
+        return "Food";
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopEat();
     }
 
     public boolean needsToEat() {
@@ -48,7 +215,8 @@ public class FoodChain {
             return false;
         }
 
-        ServerPlayer player = mod.getPlayer();
+
+        ServerPlayer player = AltoClef.getInstance().getPlayer();
         assert player != null;
         int foodLevel = player.getFoodData().getFoodLevel();
         float health = player.getHealth();
@@ -61,6 +229,7 @@ public class FoodChain {
         if (health <= 10) {
             return true;
         }
+        //Debug.logMessage("FOOD: " + foodLevel + " -- HEALTH: " + health);
 
         // Eat if we're desperate/need to heal ASAP
         if (player.isOnFire() || player.hasEffect(MobEffects.WITHER) || health < config.alwaysEatWhenWitherOrFireAndHealthBelow) {
@@ -73,6 +242,7 @@ public class FoodChain {
             // We have half hunger
             return true;
         }
+
 
         // Eat if we're  units hungry and we have a perfect fit.
         if (foodLevel < config.alwaysEatWhenBelowHungerAndPerfectFit && cachedPerfectFood.isPresent()) {
@@ -92,6 +262,7 @@ public class FoodChain {
         int foodTotal = 0;
         ServerPlayer player = mod.getPlayer();
         float health = player != null ? player.getHealth() : 20;
+        //float toHeal = player != null? 20 - player.getHealth() : 0;
         float hunger = player != null ? player.getFoodData().getFoodLevel() : 20;
         float saturation = player != null ? player.getFoodData().getSaturationLevel() : 20;
         // Get best food item + calculate food total
@@ -140,6 +311,7 @@ public class FoodChain {
         return new Tuple<>(foodTotal, Optional.ofNullable(bestFood));
     }
 
+    // If we need to eat like, NOW.
     public boolean needsToEatCritical() {
         return false;
     }

@@ -106,6 +106,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.reactiveFood(), "food from what is in sight is on by default");
         assertFalse(d.altoTasks(), "items by AltoClef's tasks is off until its scenes pass");
         assertFalse(d.altoLife(), "living on its own by AltoClef's priorities is off until its scenes and the benchmark show it helped");
+        assertFalse(d.altoSurvival(), "AltoClef's survival chains are off until the benchmark shows they keep it alive better");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

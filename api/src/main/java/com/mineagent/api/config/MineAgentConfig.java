@@ -186,6 +186,7 @@ public record MineAgentConfig(
      * @param reactiveFood its food got by deciding again and again from what is there now (food on the ground, ripe crops, animals in sight, berries), new ground looked over when none, not planned ahead from memory
      * @param altoTasks an order for an item kept on it is done by AltoClef's own task for that item, from its catalogue (mined, crafted, smelted, hunted), decided again every tick from what is there; off, by the production planner
      * @param altoLife living on its own, its first days (stone tools, a hut with its crafting table and furnace, fuel, food, a bed if it can, else a night waited out in its hut) are run by AltoClef's priority tasks, chosen again every tick from what is there; off, by its starter kit orders
+     * @param altoSurvival while one of AltoClef's tasks has its body, AltoClef's own survival chains (mob defence, the MLG bucket, getting unstuck, lava, fire and drowning, eating) look after it, and the companion's chains for those stand down; off, the companion's own chains do
      */
     public record BehaviourConfig(
         boolean neverBreakBuilt,
@@ -260,11 +261,12 @@ public record MineAgentConfig(
         boolean homeAtNight,
         boolean reactiveFood,
         boolean altoTasks,
-        boolean altoLife
+        boolean altoLife,
+        boolean altoSurvival
     ) {
         public static final BehaviourConfig DEFAULTS = new BehaviourConfig(
             true, true, true, false, 3, true, true, true, true, true, true, true, true, true, 0, true, true, true, true,
-            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, false, false
+            true, 8, 16, true, true, true, true, 64, 32, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, true, true, true, false, false, false
         );
     }
 
@@ -372,7 +374,7 @@ public record MineAgentConfig(
                 clamp(rawBehaviour.primeMeat, 0, 128), clamp(rawBehaviour.primeTorches, 0, 128), rawBehaviour.primeFullIron,
                 rawBehaviour.manners, rawBehaviour.recoverDrops, rawBehaviour.feedOwner, rawBehaviour.offerTools,
                 rawBehaviour.partner, rawBehaviour.guardPerimeter, rawBehaviour.fightPlayers, rawBehaviour.huntDrops,
-                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery, rawBehaviour.wholeTrees, rawBehaviour.hoard, rawBehaviour.godGear, rawBehaviour.dumpJunk, rawBehaviour.grindXp, rawBehaviour.watchChests, rawBehaviour.revengeThieves, rawBehaviour.autoRespawn, rawBehaviour.afkImprove, rawBehaviour.takeTrapTnt, rawBehaviour.nightStopsWork, rawBehaviour.wayOutOfHoles, rawBehaviour.dugoutHomes, rawBehaviour.homeAtNight, rawBehaviour.reactiveFood, rawBehaviour.altoTasks, rawBehaviour.altoLife);
+                rawBehaviour.liveTracking, rawBehaviour.replantTrees, rawBehaviour.putOutFires, rawBehaviour.pickBerries, rawBehaviour.lavaFuel, rawBehaviour.keepPhrases, rawBehaviour.talkSummary, rawBehaviour.fillHoles, rawBehaviour.huntMonsters, rawBehaviour.gearGoal, rawBehaviour.bowAtRange, rawBehaviour.kitGoal, rawBehaviour.readChestLabels, rawBehaviour.fillCraters, rawBehaviour.tradesInPlans, rawBehaviour.branchForOre, rawBehaviour.golemIron, rawBehaviour.weighFights, rawBehaviour.tradingMastery, rawBehaviour.wholeTrees, rawBehaviour.hoard, rawBehaviour.godGear, rawBehaviour.dumpJunk, rawBehaviour.grindXp, rawBehaviour.watchChests, rawBehaviour.revengeThieves, rawBehaviour.autoRespawn, rawBehaviour.afkImprove, rawBehaviour.takeTrapTnt, rawBehaviour.nightStopsWork, rawBehaviour.wayOutOfHoles, rawBehaviour.dugoutHomes, rawBehaviour.homeAtNight, rawBehaviour.reactiveFood, rawBehaviour.altoTasks, rawBehaviour.altoLife, rawBehaviour.altoSurvival);
         MemoryConfig rawMemory = loaded.memory != null ? loaded.memory : MemoryConfig.DEFAULTS;
         MemoryConfig memory = new MemoryConfig(clamp(rawMemory.thingsSeen, 1_000, 500_000),
                 clamp(rawMemory.journalDays, 1, 3_650), clamp(rawMemory.chests, 64, 16_384));

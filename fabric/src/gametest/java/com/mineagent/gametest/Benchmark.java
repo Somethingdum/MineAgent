@@ -54,6 +54,7 @@ public final class Benchmark implements ModInitializer {
             switch (sw.trim()) {
                 case "altoTasks" -> com.mineagent.engine.settings.Switches.altoTasksOverride = Boolean.TRUE;
                 case "altoLife" -> com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+                case "altoSurvival" -> com.mineagent.engine.settings.Switches.altoSurvivalOverride = Boolean.TRUE;
                 case "" -> { }
                 default -> System.out.println("[BENCH] no such switch to turn on: " + sw.trim());
             }
