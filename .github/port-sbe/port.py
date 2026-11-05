@@ -147,6 +147,10 @@ PATCHES = [
 _names = {}
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mixin_names.py'), encoding='utf-8').read(), _names)
 PATCHES += _names['MIXIN_PATCHES']
+# Jackson left out (jackson.py, read the same way).
+_jackson = {}
+exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'jackson.py'), encoding='utf-8').read(), _jackson)
+SKIP |= _jackson['SKIP']
 
 FABRIC_IMPORTS = re.compile(r'^import net\.fabricmc\.[^;]*;\n', re.M)
 
@@ -174,6 +178,7 @@ def main():
                     if n != 1:
                         sys.exit('patch for %s matched %d times: %r' % (rel, n, old[:80]))
                     text = text.replace(old, new)
+            text = _jackson['strip'](rel, text)
             text = FABRIC_IMPORTS.sub('', text)
             text = text.replace('me.sailex.', 'com.mineagent.sbe.')
             out = os.path.join(DST, rel)

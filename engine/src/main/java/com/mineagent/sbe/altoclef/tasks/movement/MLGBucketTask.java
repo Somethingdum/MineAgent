@@ -16,8 +16,6 @@ import com.mineagent.sbe.altoclef.util.helpers.EntityHelper;
 import com.mineagent.sbe.altoclef.util.helpers.LookHelper;
 import com.mineagent.sbe.altoclef.util.helpers.MathsHelper;
 import com.mineagent.sbe.altoclef.util.helpers.WorldHelper;
-import com.mineagent.sbe.altoclef.util.serialization.ItemDeserializer;
-import com.mineagent.sbe.altoclef.util.serialization.ItemSerializer;
 import com.mineagent.sbe.automatone.api.IBaritone;
 import com.mineagent.sbe.automatone.api.utils.IEntityContext;
 import com.mineagent.sbe.automatone.api.utils.Rotation;
@@ -40,8 +38,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult.Type;
 import net.minecraft.world.phys.Vec3;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -515,12 +511,6 @@ public class MLGBucketTask extends Task {
       public int epicClutchConeYawDivisionEnd = 20;
       public int preferLavaWhenFallDropsHealthBelowThreshold = 3;
       public int lavaLevelOrGreaterWillCancelFallDamage = 5;
-      @JsonSerialize(
-         using = ItemSerializer.class
-      )
-      @JsonDeserialize(
-         using = ItemDeserializer.class
-      )
       public List<Item> clutchItems = List.of(Items.HAY_BLOCK, Items.TWISTING_VINES);
    }
 }

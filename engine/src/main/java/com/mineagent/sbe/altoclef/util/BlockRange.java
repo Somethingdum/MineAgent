@@ -7,7 +7,6 @@ package com.mineagent.sbe.altoclef.util;
 import com.mineagent.sbe.altoclef.AltoClefController;
 import com.mineagent.sbe.altoclef.util.helpers.WorldHelper;
 import net.minecraft.core.BlockPos;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Objects;
 
 public class BlockRange {
@@ -43,7 +42,6 @@ public class BlockRange {
             && pos.getY() <= this.end.getY();
    }
 
-   @JsonIgnore
    public BlockPos getCenter() {
       BlockPos sum = this.start.offset(this.end);
       return new BlockPos(sum.getX() / 2, sum.getY() / 2, sum.getZ() / 2);

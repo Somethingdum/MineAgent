@@ -5,23 +5,11 @@
 package com.mineagent.sbe.altoclef.util.helpers;
 
 import com.mineagent.sbe.altoclef.Debug;
-import com.mineagent.sbe.altoclef.util.serialization.BlockPosDeserializer;
-import com.mineagent.sbe.altoclef.util.serialization.BlockPosSerializer;
-import com.mineagent.sbe.altoclef.util.serialization.ChunkPosDeserializer;
-import com.mineagent.sbe.altoclef.util.serialization.ChunkPosSerializer;
 import com.mineagent.sbe.altoclef.util.serialization.IFailableConfigFile;
 import com.mineagent.sbe.altoclef.util.serialization.IListConfigFile;
-import com.mineagent.sbe.altoclef.util.serialization.Vec3dDeserializer;
-import com.mineagent.sbe.altoclef.util.serialization.Vec3dSerializer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
-import com.fasterxml.jackson.core.util.DefaultIndenter;
-import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.module.SimpleModule;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
@@ -50,50 +38,8 @@ public class ConfigHelper {
    }
 
    private static <T> T getConfig(String path, Supplier<T> getDefault, Class<T> classToLoad) {
-      T result = getDefault.get();
-      File loadFrom = getConfigFile(path);
-      if (!loadFrom.exists()) {
-         saveConfig(path, result);
-         return result;
-      } else {
-         ObjectMapper mapper = new ObjectMapper();
-         SimpleModule module = new SimpleModule();
-         module.addDeserializer(Vec3.class, new Vec3dDeserializer());
-         module.addDeserializer(ChunkPos.class, new ChunkPosDeserializer());
-         module.addDeserializer(BlockPos.class, new BlockPosDeserializer());
-         mapper.registerModule(module);
-
-         try {
-            result = mapper.readValue(loadFrom, classToLoad);
-         } catch (JsonMappingException var9) {
-            Debug.logError(
-               "Failed to parse Config file of type "
-                  + classToLoad.getSimpleName()
-                  + "at "
-                  + path
-                  + ". JSON Error Message: "
-                  + var9.getMessage()
-                  + ".\n JSON Error STACK TRACE:\n\n"
-            );
-            var9.printStackTrace();
-            if (result instanceof IFailableConfigFile failable) {
-               failable.failedToLoad();
-            }
-
-            return result;
-         } catch (IOException var10) {
-            Debug.logError("Failed to read Config at " + path + ".");
-            var10.printStackTrace();
-            if (result instanceof IFailableConfigFile failable) {
-               failable.failedToLoad();
-            }
-
-            return result;
-         }
-
-         saveConfig(path, result);
-         return result;
-      }
+      // SMH: its settings' defaults; no file (the mod sets what it needs in code).
+      return getDefault.get();
    }
 
    public static <T> void loadConfig(String path, Supplier<T> getDefault, Class<T> classToLoad, Consumer<T> onReload) {
@@ -103,21 +49,7 @@ public class ConfigHelper {
    }
 
    public static <T> void saveConfig(String path, T config) {
-      ObjectMapper mapper = new ObjectMapper();
-      SimpleModule module = new SimpleModule();
-      module.addSerializer(Vec3.class, new Vec3dSerializer());
-      module.addSerializer(BlockPos.class, new BlockPosSerializer());
-      module.addSerializer(ChunkPos.class, new ChunkPosSerializer());
-      mapper.registerModule(module);
-      File configFile = getConfigFile(path);
-      createParentDirectories(configFile);
-
-      try {
-         enablePrettyPrinting(mapper);
-         writeConfigToFile(mapper, configFile, config);
-      } catch (IOException var6) {
-         handleIOException(var6);
-      }
+      // SMH: nothing written (see getConfig).
    }
 
    private static void createParentDirectories(File file) {
@@ -129,30 +61,12 @@ public class ConfigHelper {
       }
    }
 
-   private static void enablePrettyPrinting(ObjectMapper mapper) {
-      if (mapper != null) {
-         mapper.enable(SerializationFeature.INDENT_OUTPUT);
-         DefaultPrettyPrinter prettyPrinter = new DefaultPrettyPrinter();
-         prettyPrinter.indentArraysWith(DefaultIndenter.SYSTEM_LINEFEED_INSTANCE);
-         mapper.writer(prettyPrinter);
-      }
+   private static void enablePrettyPrinting(Object mapper) {
+      // SMH: not used (see getConfig).
    }
 
-   private static <T> void writeConfigToFile(ObjectMapper objectMapper, File configFile, T configData) throws IOException {
-      Writer writer = new FileWriter(configFile);
-
-      try {
-         objectMapper.writeValue(writer, configData);
-         writer.close();
-      } catch (Throwable var7) {
-         try {
-            writer.close();
-         } catch (Throwable var6) {
-            var7.addSuppressed(var6);
-         }
-
-         throw var7;
-      }
+   private static <T> void writeConfigToFile(Object objectMapper, File configFile, T configData) throws IOException {
+      // SMH: not used (see getConfig).
    }
 
    private static void handleIOException(IOException exception) {

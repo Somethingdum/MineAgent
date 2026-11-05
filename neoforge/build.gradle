@@ -44,6 +44,8 @@ sourceSets {
 
 dependencies {
     implementation project(':api')
+    // The ported SecondBrainEngine's annotations (javax.annotation: Nullable, Nonnegative); the game ships them at run time.
+    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
 }
 
 neoForge {

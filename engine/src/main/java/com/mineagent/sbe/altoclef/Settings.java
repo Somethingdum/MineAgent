@@ -10,16 +10,9 @@ import com.mineagent.sbe.altoclef.util.BlockRange;
 import com.mineagent.sbe.altoclef.util.helpers.ConfigHelper;
 import com.mineagent.sbe.altoclef.util.helpers.ItemHelper;
 import com.mineagent.sbe.altoclef.util.serialization.IFailableConfigFile;
-import com.mineagent.sbe.altoclef.util.serialization.ItemDeserializer;
-import com.mineagent.sbe.altoclef.util.serialization.ItemSerializer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.google.common.collect.Streams;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,15 +20,8 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-@JsonIgnoreProperties(
-   ignoreUnknown = true
-)
-@JsonAutoDetect(
-   fieldVisibility = JsonAutoDetect.Visibility.ANY
-)
 public class Settings implements IFailableConfigFile {
    public static final String SETTINGS_PATH = "altoclef_settings.json";
-   @JsonIgnore
    private transient boolean failedToLoad = false;
    private boolean showDebugTickMs = false;
    private boolean showTaskChains = true;
@@ -71,12 +57,6 @@ public class Settings implements IFailableConfigFile {
    private int netherFastTravelWalkingRange = 600;
    private String idleCommand = "idle";
    private String deathCommand = "";
-   @JsonSerialize(
-      using = ItemSerializer.class
-   )
-   @JsonDeserialize(
-      using = ItemDeserializer.class
-   )
    private List<Item> throwawayItems = Arrays.asList(
       Items.DRIPSTONE_BLOCK,
       Items.ROOTED_DIRT,
@@ -111,12 +91,6 @@ public class Settings implements IFailableConfigFile {
    private boolean dontThrowAwayCustomNameItems = true;
    private boolean dontThrowAwayEnchantedItems = true;
    private boolean throwAwayUnusedItems = true;
-   @JsonSerialize(
-      using = ItemSerializer.class
-   )
-   @JsonDeserialize(
-      using = ItemDeserializer.class
-   )
    private List<Item> importantItems = Streams.concat(
          new Stream[]{
             Stream.of(
@@ -139,12 +113,6 @@ public class Settings implements IFailableConfigFile {
       )
       .toList();
    private boolean limitFuelsToSupportedFuels = true;
-   @JsonSerialize(
-      using = ItemSerializer.class
-   )
-   @JsonDeserialize(
-      using = ItemDeserializer.class
-   )
    private List<Item> supportedFuels = Streams.concat(new Stream[]{Stream.of(Items.COAL, Items.CHARCOAL)}).toList();
    private BlockPos homeBasePosition = new BlockPos(0, 64, 0);
    private List<BlockRange> areasToProtect = Collections.emptyList();
@@ -326,7 +294,6 @@ public class Settings implements IFailableConfigFile {
       return !this.limitFuelsToSupportedFuels || this.supportedFuels.contains(item);
    }
 
-   @JsonIgnore
    public Item[] getSupportedFuelItems() {
       return this.supportedFuels.toArray(Item[]::new);
    }
