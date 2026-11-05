@@ -1,0 +1,8 @@
+@@ -24,7 +24,6 @@
+ import com.mineagent.engine.baritone.api.process.ICustomGoalProcess;
+ import com.mineagent.engine.baritone.api.utils.Rotation;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+-import net.minecraft.block.*;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.core.Vec3i;

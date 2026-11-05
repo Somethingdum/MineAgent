@@ -1,0 +1,12 @@
+@@ -11,11 +11,7 @@
+ 
+ 
+     public static ItemStack getOutput(Recipe<?> recipe, Level world) {
+-        //#if MC >= 11904
+         return recipe.getResultItem(world.registryAccess());
+-        //#else
+-        //$$ return recipe.getOutput();
+-        //#endif
+     }
+ 
+ 

@@ -1,0 +1,25 @@
+@@ -2,12 +2,10 @@
+ // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+ package com.mineagent.engine.alto.trackers.storage;
+ 
++import com.mineagent.engine.alto.AltoClef;
+ import com.mineagent.engine.alto.util.slots.ChestSlot;
+ import com.mineagent.engine.alto.util.slots.FurnaceSlot;
+ import com.mineagent.engine.alto.util.slots.Slot;
+-import net.minecraft.block.*;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.screen.*;
+ import net.minecraft.world.inventory.AbstractContainerMenu;
+ import net.minecraft.world.inventory.AbstractFurnaceMenu;
+ import net.minecraft.world.inventory.BrewingStandMenu;
+@@ -75,8 +73,8 @@
+     }
+ 
+     public static boolean screenHandlerMatches(ContainerType type) {
+-        if (Minecraft.getInstance().player != null) {
+-            AbstractContainerMenu h = Minecraft.getInstance().player.containerMenu;
++        if (AltoClef.getInstance().getPlayer() != null) {
++            AbstractContainerMenu h = AltoClef.getInstance().getPlayer().containerMenu;
+             if (h != null)
+                 return screenHandlerMatches(type, h);
+         }

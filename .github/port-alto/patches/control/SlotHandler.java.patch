@@ -1,0 +1,58 @@
+@@ -11,9 +11,7 @@
+ import com.mineagent.engine.alto.util.slots.PlayerSlot;
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.player.LocalPlayer;
+-import net.minecraft.item.*;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.inventory.ClickType;
+ import net.minecraft.world.item.BucketItem;
+ import net.minecraft.world.item.EmptyMapItem;
+@@ -64,8 +62,15 @@
+     }
+ 
+ 
++    /** SMH: the clicks asked for, held back by the move delay and sent, for the scenes' traces. */
++    public int clicksAsked, clicksHeld, clicksSent;
++
+     public void clickSlot(Slot slot, int mouseButton, ClickType type) {
+-        if (!canDoSlotAction()) return;
++        clicksAsked++;
++        if (!canDoSlotAction()) {
++            clicksHeld++;
++            return;
++        }
+ 
+         if (slot.getWindowSlot() == -1) {
+             clickSlot(PlayerSlot.UNDEFINED, 0, ClickType.PICKUP);
+@@ -83,11 +88,12 @@
+     }
+ 
+     private void clickWindowSlot(int windowSlot, int mouseButton, ClickType type) {
+-        LocalPlayer player = Minecraft.getInstance().player;
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+         if (player == null) {
+             return;
+         }
+         registerSlotAction();
++        clicksSent++;
+         int syncId = player.containerMenu.containerId;
+ 
+         try {
+@@ -248,13 +254,8 @@
+     }
+ 
+     public void refreshInventory() {
+-        if (Minecraft.getInstance().player == null)
+-            return;
+-        for (int i = 0; i < Minecraft.getInstance().player.getInventory().items.size(); ++i) {
+-            Slot slot = Slot.getFromCurrentScreenInventory(i);
+-            clickSlotForce(slot, 0, ClickType.PICKUP);
+-            clickSlotForce(slot, 0, ClickType.PICKUP);
+-        }
++        // SMH: a client clicks every slot twice to have the server resend its inventory when the two disagree; the
++        // companion's inventory is the server's own, so there is nothing to bring back in step.
+     }
+ }
+ 

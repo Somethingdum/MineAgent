@@ -1,0 +1,170 @@
+@@ -1,21 +1,11 @@
+-// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/Settings.java at commit
+-// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
++// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/Settings.java at
++// commit 1f8e038, in Mojang's names (third_party/altoclef). SMH: no JSON file (its defaults, as AltoClef ships them, except
++// where marked), no Jackson; the areas the owner protects are the engine's (world/ProtectedAreas).
+ package com.mineagent.engine.alto;
+ 
+-import com.mineagent.engine.alto.control.KillAura;
+ import com.mineagent.engine.alto.multiversion.versionedfields.Items;
+ import com.mineagent.engine.alto.tasks.movement.DefaultGoToDimensionTask;
+-import com.mineagent.engine.alto.util.BlockRange;
+-import com.mineagent.engine.alto.util.helpers.ConfigHelper;
+ import com.mineagent.engine.alto.util.helpers.ItemHelper;
+-import com.mineagent.engine.alto.util.serialization.IFailableConfigFile;
+-import com.mineagent.engine.alto.util.serialization.ItemDeserializer;
+-import com.mineagent.engine.alto.util.serialization.ItemSerializer;
+-import com.fasterxml.jackson.annotation.JsonAutoDetect;
+-import com.fasterxml.jackson.annotation.JsonIgnore;
+-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+ import com.google.common.collect.Streams;
+ import java.util.Arrays;
+ import java.util.Collections;
+@@ -31,15 +21,12 @@
+  * Each setting is documented.
+  */
+ @SuppressWarnings("ALL")
+-@JsonIgnoreProperties(ignoreUnknown = true)
+-@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+-public class Settings implements IFailableConfigFile {
++public class Settings {
+ 
+     public static final String SETTINGS_PATH = "altoclef_settings.json";
+ 
+     // Internal only.
+     // If settings failed to load, this will be set to warn the user.
+-    @JsonIgnore
+     private transient boolean failedToLoad = false;
+ 
+     //////////////////////////////////////////////////////////////////////////////////////////
+@@ -104,7 +91,7 @@
+      * <p>
+      * If false, will place items in each slot manually (the original way)
+      */
+-    private boolean useCraftingBookToCraft = true;
++    private boolean useCraftingBookToCraft = true; // SMH: AltoClef's default; the host fills the companion's recipe book with every recipe (AltoClef.knowAllRecipes), so a recipe it has never made is placed as one it has.
+ 
+     /**
+      * If a dropped resource item is further than this from the player, don't pick it up.
+@@ -214,7 +201,7 @@
+      * SMART: Closest hostile is attacked at max every 0.2 seconds.
+      * OFF: Off
+      */
+-    private KillAura.Strategy forceFieldStrategy = KillAura.Strategy.SMART;
++    // SMH: the force field's strategy is the companion's own fighting (combat/CombatBrain, from AltoClef's KillAura).
+ 
+     /**
+      * Only applies if mobDefense is on.
+@@ -318,8 +305,6 @@
+     /**
+      * If we need to throw away something, throw away these items first.
+      */
+-    @JsonSerialize(using = ItemSerializer.class)
+-    @JsonDeserialize(using = ItemDeserializer.class)
+     private List<Item> throwawayItems = Arrays.asList(
+             // Overworld junk
+             Items.DRIPSTONE_BLOCK,
+@@ -372,8 +357,6 @@
+      * We will NEVER throw away these items.
+      * Even if "throwAwayUnusedItems" is true and one of these items is not used in a task.
+      */
+-    @JsonSerialize(using = ItemSerializer.class)
+-    @JsonDeserialize(using = ItemDeserializer.class)
+     private List<Item> importantItems = Streams.concat(
+             Stream.of(
+                     Items.TOTEM_OF_UNDYING,
+@@ -407,8 +390,6 @@
+     /**
+      * If `limitFuelsToSupportedFuels` is true, will use these items and ONLY these items as smelting fuel.
+      */
+-    @JsonSerialize(using = ItemSerializer.class)
+-    @JsonDeserialize(using = ItemDeserializer.class)
+     private List<Item> supportedFuels = Streams.concat(
+             Stream.of(
+                     Items.COAL,
+@@ -441,7 +422,6 @@
+      * },
+      * ],
+      */
+-    private List<BlockRange> areasToProtect = Collections.emptyList();
+ 
+ 
+     //////////////////////////////////////////////////////////////////////////////////////////
+@@ -449,7 +429,8 @@
+     //////////////////////////////////////////////////////////////////////////////////////////
+ 
+     public static void load(Consumer<Settings> onReload) {
+-        ConfigHelper.loadConfig(SETTINGS_PATH, Settings::new, Settings.class, onReload);
++        // SMH: no settings file; AltoClef's defaults, as below.
++        onReload.accept(new Settings());
+     }
+ 
+     public boolean shouldShowTaskChain() {
+@@ -508,6 +489,16 @@
+         return minimumFoodAllowed;
+     }
+ 
++    /**
++     * How the kill aura works when it pushes mobs away (AltoClef's setting, its default): SMART, the closest hostile at
++     * most every 0.2 seconds. FASTEST: every hostile, every frame; DELAY: the closest, with a charged sword; OFF.
++     */
++    private com.mineagent.engine.alto.control.KillAura.Strategy forceFieldStrategy = com.mineagent.engine.alto.control.KillAura.Strategy.SMART;
++
++    public com.mineagent.engine.alto.control.KillAura.Strategy getForceFieldStrategy() {
++        return forceFieldStrategy;
++    }
++
+     public boolean isMobDefense() {
+         return mobDefense;
+     }
+@@ -536,9 +527,6 @@
+         return killOrAvoidAnnoyingHostiles;
+     }
+ 
+-    public KillAura.Strategy getForceFieldStrategy() {
+-        return forceFieldStrategy;
+-    }
+ 
+     public String getIdleCommand() {
+         return idleCommand;
+@@ -624,19 +612,16 @@
+     public boolean isSupportedFuel(Item item) {
+         return !limitFuelsToSupportedFuels || supportedFuels.contains(item);
+     }
+-
+-    @JsonIgnore
+     public Item[] getSupportedFuelItems() {
+         return supportedFuels.toArray(Item[]::new);
+     }
+ 
+     public boolean isPositionExplicitlyProtected(BlockPos pos) {
+-        if (!areasToProtect.isEmpty()) {
+-            for (BlockRange protection : areasToProtect) {
+-                if (protection.contains(pos)) return true;
+-            }
+-        }
+-        return false;
++        // SMH: the places its owner said not to touch (world/ProtectedAreas, plan 70 MA10.2).
++        AltoClef host = AltoClef.current();
++        if (host == null || pos == null) return false;
++        return com.mineagent.engine.world.ProtectedAreas.at(host.getWorld().dimension().location().toString(),
++                pos.getX(), pos.getY(), pos.getZ()) != null;
+     }
+ 
+     public DefaultGoToDimensionTask.OVERWORLD_TO_NETHER_BEHAVIOUR getOverworldToNetherBehaviour() {
+@@ -651,12 +636,10 @@
+         return homeBasePosition;
+     }
+ 
+-    @Override
+     public void onFailLoad() {
+         failedToLoad = true;
+     }
+ 
+-    @Override
+     public boolean failedToLoad() {
+         return failedToLoad;
+     }

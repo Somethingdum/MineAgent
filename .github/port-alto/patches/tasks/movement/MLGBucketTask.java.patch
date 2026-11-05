@@ -1,0 +1,122 @@
+@@ -8,22 +8,17 @@
+ import com.mineagent.engine.alto.multiversion.DamageSourceVer;
+ import com.mineagent.engine.alto.tasksystem.Task;
+ import com.mineagent.engine.alto.util.helpers.*;
+-import com.mineagent.engine.alto.util.serialization.ItemDeserializer;
+-import com.mineagent.engine.alto.util.serialization.ItemSerializer;
+ import com.mineagent.engine.baritone.Baritone;
+ import com.mineagent.engine.baritone.api.utils.IPlayerContext;
+ import com.mineagent.engine.baritone.api.utils.Rotation;
+ import com.mineagent.engine.baritone.api.utils.RotationUtils;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+ import java.util.Arrays;
+ import java.util.List;
+ import java.util.Objects;
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.multiplayer.ClientLevel;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+@@ -51,13 +46,13 @@
+     private BlockPos movingTorwards;
+ 
+     private static boolean isLava(BlockPos pos) {
+-        assert Minecraft.getInstance().level != null;
+-        return Minecraft.getInstance().level.getBlockState(pos).getBlock() == Blocks.LAVA;
++        assert AltoClef.getInstance().getWorld() != null;
++        return AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == Blocks.LAVA;
+     }
+ 
+     private static boolean lavaWillProtect(BlockPos pos) {
+-        assert Minecraft.getInstance().level != null;
+-        BlockState state = Minecraft.getInstance().level.getBlockState(pos);
++        assert AltoClef.getInstance().getWorld() != null;
++        BlockState state = AltoClef.getInstance().getWorld().getBlockState(pos);
+         if (state.getBlock() == Blocks.LAVA) {
+             int level = state.getFluidState().getAmount();
+             return level == 0 || level >= _config.lavaLevelOrGreaterWillCancelFallDamage;
+@@ -66,15 +61,15 @@
+     }
+ 
+     private static boolean isWater(BlockPos pos) {
+-        assert Minecraft.getInstance().level != null;
+-        return Minecraft.getInstance().level.getBlockState(pos).getBlock() == Blocks.WATER;
++        assert AltoClef.getInstance().getWorld() != null;
++        return AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == Blocks.WATER;
+     }
+ 
+     /**
+      * Can we reach this block while falling, or will gravity pull us too far?
+      */
+     private static boolean canTravelToInAir(BlockPos pos) {
+-        Entity player = Minecraft.getInstance().player;
++        Entity player = AltoClef.getInstance().getPlayer();
+         assert player != null;
+         double verticalDist = player.position().y() - pos.getY() - 1;
+         double verticalVelocity = -1 * player.getDeltaMovement().y;
+@@ -91,10 +86,10 @@
+     }
+ 
+     private static boolean isFallDeadly(BlockPos pos) {
+-        Player player = Minecraft.getInstance().player;
++        Player player = AltoClef.getInstance().getPlayer();
+         double damage = calculateFallDamageToLandOn(pos);
+-        assert Minecraft.getInstance().level != null;
+-        Block b = Minecraft.getInstance().level.getBlockState(pos).getBlock();
++        assert AltoClef.getInstance().getWorld() != null;
++        Block b = AltoClef.getInstance().getWorld().getBlockState(pos).getBlock();
+         if (b == Blocks.HAY_BLOCK) {
+             damage *= 0.2f;
+         }
+@@ -104,8 +99,8 @@
+     }
+ 
+     private static double calculateFallDamageToLandOn(BlockPos pos) {
+-        ClientLevel world = Minecraft.getInstance().level;
+-        Player player = Minecraft.getInstance().player;
++        ServerLevel world = AltoClef.getInstance().getWorld();
++        Player player = AltoClef.getInstance().getPlayer();
+         assert player != null;
+         double totalFallDistance = player.fallDistance + (player.getY() - pos.getY() - 1);
+         // Copied from living entity I think, somewhere idk you get the picture.
+@@ -402,13 +397,13 @@
+     }
+ 
+     private ClipContext castDown(Vec3 origin) {
+-        Entity player = Minecraft.getInstance().player;
++        Entity player = AltoClef.getInstance().getPlayer();
+         assert player != null;
+         return new ClipContext(origin, origin.add(0, -1 * _config.castDownDistance, 0), ClipContext.Block.COLLIDER, ClipContext.Fluid.ANY, player);
+     }
+ 
+     private ClipContext castCone(double yaw, double pitch) {
+-        Entity player = Minecraft.getInstance().player;
++        Entity player = AltoClef.getInstance().getPlayer();
+         assert player != null;
+         Vec3 origin = player.position();
+         double dy = _config.epicClutchConeCastHeight;
+@@ -443,7 +438,7 @@
+ 
+     @Override
+     public boolean isFinished() {
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         return player.isSwimming() || player.isInWater() || player.onGround() || player.onClimbable();
+     }
+@@ -476,8 +471,7 @@
+         public int epicClutchConeYawDivisionEnd = 20; // How many divisions to move the cone clutch at torwars the end
+         public int preferLavaWhenFallDropsHealthBelowThreshold = 3; // If a fall results in our player's health going below this value, consider it deadly.
+         public int lavaLevelOrGreaterWillCancelFallDamage = 5; // Lava at this level will cancel our fall damage if we hold space.
+-        @JsonSerialize(using = ItemSerializer.class)
+-        @JsonDeserialize(using = ItemDeserializer.class)
++        // SMH: no settings file on a server-side body; its defaults are kept.
+         public List<Item> clutchItems = List.of(Items.HAY_BLOCK, Items.TWISTING_VINES);
+     }
+ 

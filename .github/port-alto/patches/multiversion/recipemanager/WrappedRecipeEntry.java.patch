@@ -1,0 +1,16 @@
+@@ -8,15 +8,9 @@
+ 
+ public record WrappedRecipeEntry(ResourceLocation id, Recipe<?> value) {
+ 
+-    //#if MC>12001
+     public RecipeHolder<?> asRecipe() {
+         return new RecipeHolder<Recipe<?>>(id, value);
+     }
+-    //#else
+-    //$$ public Recipe<?> asRecipe(){
+-    //$$     return value;
+-    //$$ }
+-    //#endif
+ 
+ }
+ 

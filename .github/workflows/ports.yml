@@ -1,0 +1,31 @@
+name: Ports
+
+# The ported trees are what their scripts make (SMH plan 71, invariant I5): AltoClef's port is regenerated from
+# third_party/altoclef and its patches (.github/port-alto, every difference in LEDGER.md), SecondBrainEngine's from
+# third_party/secondbrainengine (.github/port-sbe). A hand edit in either fails here; it belongs in the script.
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ports:
+    name: Ported trees match their scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: AltoClef's port
+        run: |
+          python3 -I .github/port-alto/port.py --check
+          python3 -I .github/port-alto/ledger.py
+
+      - name: SecondBrainEngine's port
+        run: |
+          python3 -I .github/port-sbe/port.py
+          git diff --exit-code --stat

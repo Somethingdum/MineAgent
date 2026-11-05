@@ -1,0 +1,84 @@
+@@ -16,25 +16,43 @@
+ @SuppressWarnings({"rawtypes", "unchecked"})
+ public class EventBus {
+ 
+-    private static final HashMap<Class, List<Subscription>> topics = new HashMap<>();
+-    private static final List<Tuple<Class, Subscription>> toAdd = new ArrayList<>();
+-    private static boolean lock;
++    // SMH: one bus per companion (its AltoClef host), so one companion's container or block events never reach
++    // another's trackers; the static calls below use the host that is ticking or being built, else this global one.
++    private static final EventBus GLOBAL = new EventBus();
++
++    private final HashMap<Class, List<Subscription>> topics = new HashMap<>();
++    private final List<Tuple<Class, Subscription>> toAdd = new ArrayList<>();
++    private boolean lock;
++
++    private static EventBus bus() {
++        com.mineagent.engine.alto.AltoClef host = com.mineagent.engine.alto.AltoClef.current();
++        return host != null ? host.getEventBus() : GLOBAL;
++    }
+ 
+     public static <T> void publish(T event) {
++        bus().publishHere(event);
++    }
++
++    public static <T> Subscription<T> subscribe(Class<T> type, Consumer<T> consumeEvent) {
++        return bus().subscribeHere(type, consumeEvent);
++    }
++
++    public static <T> void unsubscribe(Subscription<T> subscription) {
++        if (subscription != null)
++            subscription.delete();
++    }
++
++    public <T> void publishHere(T event) {
+         Class type = event.getClass();
+-
+         // Add all subscriptions we need to add
+         for (Tuple<Class, Subscription> toAdd : toAdd) {
+             subscribeInternal(toAdd.getA(), toAdd.getB());
+         }
+         toAdd.clear();
+-
+         if (topics.containsKey(type)) {
+             List<Subscription> subscribers = topics.get(type);
+-
+             // Subscriptions can be deleted while they're called
+             List<Subscription> toDelete = new ArrayList<>();
+-
+             // Go through our subscription list. We shouldn't modify the list while we're iterating it.
+             lock = true;
+             for (Subscription subRaw : subscribers) {
+@@ -52,18 +70,19 @@
+                 }
+             }
+             // Delete all subscriptions
++            subscribers.removeAll(toDelete); // SMH: AltoClef collected these but never removed them.
+             lock = false;
+         }
+     }
+ 
+-    private static <T> void subscribeInternal(Class<T> type, Subscription<T> sub) {
++    private <T> void subscribeInternal(Class<T> type, Subscription<T> sub) {
+         if (!topics.containsKey(type)) {
+             topics.put(type, new ArrayList<>());
+         }
+         topics.get(type).add(sub);
+     }
+ 
+-    public static <T> Subscription<T> subscribe(Class<T> type, Consumer<T> consumeEvent) {
++    public <T> Subscription<T> subscribeHere(Class<T> type, Consumer<T> consumeEvent) {
+         Subscription<T> sub = new Subscription<>(consumeEvent);
+         if (lock) {
+             toAdd.add(new Tuple<>(type, sub));
+@@ -72,10 +91,5 @@
+         }
+         return sub;
+     }
+-
+-    public static <T> void unsubscribe(Subscription<T> subscription) {
+-        if (subscription != null)
+-            subscription.delete();
+-    }
+ }
+ 

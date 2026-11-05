@@ -1,0 +1,10 @@
+@@ -24,9 +24,6 @@
+         this(ItemHelper.WOOD_HANGING_SIGN, TaskCatalogue.getItemTarget("stripped_logs", 1), count);
+ 
+ 
+-        //#if MC <= 11802
+-        //$$ throw new IllegalStateException("Hanging signs dont exist yet!");
+-        //#endif
+     }
+ 
+ 

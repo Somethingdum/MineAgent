@@ -1,0 +1,18 @@
+@@ -4,7 +4,7 @@
+ 
+ import com.mineagent.engine.alto.Debug;
+ import com.mineagent.engine.alto.util.baritone.CachedProjectile;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.projectile.AbstractHurtingProjectile;
+ import net.minecraft.world.entity.projectile.Projectile;
+@@ -67,7 +67,7 @@
+         return calculateArrowClosestApproach(projectile.position, projectile.velocity, projectile.gravity, pos);
+     }
+ 
+-    public static Vec3 calculateArrowClosestApproach(CachedProjectile projectile, LocalPlayer player) {
++    public static Vec3 calculateArrowClosestApproach(CachedProjectile projectile, ServerPlayer player) {
+         return calculateArrowClosestApproach(projectile, player.position());
+     }
+ 

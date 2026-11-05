@@ -1,0 +1,34 @@
+@@ -23,7 +23,6 @@
+ 
+ import java.util.Arrays;
+ import java.util.function.Predicate;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.InteractionHand;
+ import net.minecraft.world.InteractionResult;
+@@ -187,7 +186,7 @@
+     }
+ 
+     private BlockPos getCurrentlyLookingBlockPlace(AltoClef mod) {
+-        HitResult hit = Minecraft.getInstance().hitResult;
++        HitResult hit = mod.getClientBaritone().getPlayerContext().objectMouseOver(); // SMH: its crosshair
+         if (hit instanceof BlockHitResult bhit) {
+             BlockPos bpos = bhit.getBlockPos();//.subtract(bhit.getSide().getVector());
+             //Debug.logMessage("TEMP: A: " + bpos);
+@@ -219,13 +218,13 @@
+             //mod.getInputControls().tryPress(Input.CLICK_RIGHT);
+             // This appears to work on servers...
+             // TODO: Helper lol
+-            HitResult mouseOver = Minecraft.getInstance().hitResult;
++            HitResult mouseOver = mod.getClientBaritone().getPlayerContext().objectMouseOver(); // SMH: its crosshair
+             if (mouseOver == null || mouseOver.getType() != HitResult.Type.BLOCK) {
+                 return false;
+             }
+             InteractionHand hand = InteractionHand.MAIN_HAND;
+-            assert Minecraft.getInstance().gameMode != null;
+-            if (Minecraft.getInstance().gameMode.useItemOn(mod.getPlayer(),hand, (BlockHitResult) mouseOver) == InteractionResult.SUCCESS &&
++            assert AltoClef.getInstance().getController() != null;
++            if (AltoClef.getInstance().getController().useItemOn(mod.getPlayer(),hand, (BlockHitResult) mouseOver) == InteractionResult.SUCCESS &&
+                     mod.getPlayer().isShiftKeyDown()) {
+                 mod.getPlayer().swing(hand);
+                 justPlaced = targetPlace;

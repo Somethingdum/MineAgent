@@ -1,0 +1,8 @@
+@@ -12,7 +12,6 @@
+ import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
+ import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+-import net.minecraft.block.*;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.DoorBlock;

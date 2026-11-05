@@ -1,0 +1,19 @@
+@@ -15,8 +15,7 @@
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+-import net.minecraft.block.*;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.Mob;
+@@ -263,7 +262,7 @@
+             return true;
+         }
+ 
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         if (player != null && player.position() != null && (player.onGround() ||
+                 player.isInWater())) {

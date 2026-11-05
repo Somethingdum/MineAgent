@@ -1,0 +1,64 @@
+@@ -12,13 +12,10 @@
+ import com.mineagent.engine.baritone.api.utils.Rotation;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+ import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+-import net.minecraft.item.*;
+ import net.minecraft.util.Mth;
+-import net.minecraft.util.math.*;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.item.ItemStack;
+ import net.minecraft.world.item.Items;
+@@ -152,7 +149,7 @@
+     private Optional<Item> calculateFood(AltoClef mod) {
+         Item bestFood = null;
+         double bestFoodScore = Double.NEGATIVE_INFINITY;
+-        LocalPlayer player = mod.getPlayer();
++        ServerPlayer player = mod.getPlayer();
+ 
+         float hunger = player != null ? player.getFoodData().getFoodLevel() : 20;
+         float saturation = player != null ? player.getFoodData().getSaturationLevel() : 20;
+@@ -201,7 +198,7 @@
+ 
+ 
+     public HitResult raycast(AltoClef mod,double maxDistance, float pitch, float yaw) {
+-        Vec3 cameraPos = mod.getPlayer().getEyePosition(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true));
++        Vec3 cameraPos = mod.getPlayer().getEyePosition() /* SMH: a server-side body has no frame to interpolate */;
+         Vec3 rotationVector = getRotationVector(pitch,yaw);
+ 
+         Vec3 vec3d3 = cameraPos.add(rotationVector.x * maxDistance, rotationVector.y * maxDistance, rotationVector.z * maxDistance);
+@@ -251,7 +248,7 @@
+ 
+     @Override
+     public boolean isFinished() {
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         return !player.isInLava() && !player.isOnFire();
+     }
+@@ -264,8 +261,8 @@
+     private class EscapeFromLavaGoal implements Goal {
+ 
+         private static boolean isLava(int x, int y, int z) {
+-            if (Minecraft.getInstance().level == null) return false;
+-            return MovementHelper.isLava(Minecraft.getInstance().level.getBlockState(new BlockPos(x, y, z)));
++            if (AltoClef.getInstance().getWorld() == null) return false;
++            return MovementHelper.isLava(AltoClef.getInstance().getWorld().getBlockState(new BlockPos(x, y, z)));
+         }
+ 
+         private static boolean isLavaAdjacent(int x, int y, int z) {
+@@ -275,8 +272,8 @@
+         }
+ 
+         private static boolean isWater(int x, int y, int z) {
+-            if (Minecraft.getInstance().level == null) return false;
+-            return MovementHelper.isWater(Minecraft.getInstance().level.getBlockState(new BlockPos(x, y, z)));
++            if (AltoClef.getInstance().getWorld() == null) return false;
++            return MovementHelper.isWater(AltoClef.getInstance().getWorld().getBlockState(new BlockPos(x, y, z)));
+         }
+ 
+         @Override

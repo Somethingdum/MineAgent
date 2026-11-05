@@ -1,0 +1,17 @@
+@@ -11,7 +11,6 @@
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+ import java.util.ArrayList;
+ import java.util.List;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.world.level.block.Blocks;
+@@ -181,7 +180,7 @@
+             if (mod.getWorld().getBlockState(pos).getBlock().equals(Blocks.SOUL_SAND)) {
+                 LookHelper.lookAt(mod, pos);
+ 
+-                HitResult result = mod.getPlayer().pick(3, Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true), true);
++                HitResult result = mod.getPlayer().pick(3, 1.0F /* SMH: no frames between ticks on a server */, true);
+                 if (result instanceof BlockHitResult blockHitResult && mod.getWorld().getBlockState(blockHitResult.getBlockPos()).getBlock().equals(Blocks.NETHER_PORTAL)) {
+                     setDebugState("Getting closer to target...");
+                     mod.getInputControls().hold(Input.MOVE_FORWARD);

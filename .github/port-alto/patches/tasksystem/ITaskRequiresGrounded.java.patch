@@ -1,0 +1,18 @@
+@@ -3,7 +3,7 @@
+ package com.mineagent.engine.alto.tasksystem;
+ 
+ import com.mineagent.engine.alto.AltoClef;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ 
+ /**
+  * Some tasks may mess up royally if we interrupt them while mid air.
+@@ -16,7 +16,7 @@
+         if (interruptingCandidate instanceof ITaskOverridesGrounded)
+             return false;
+ 
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+         return !(player.onGround() || player.isSwimming() || player.isInWater() || player.onClimbable());
+     }
+ }

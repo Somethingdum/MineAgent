@@ -1,0 +1,8 @@
+@@ -15,7 +15,6 @@
+ import com.mineagent.engine.alto.util.helpers.StorageHelper;
+ import com.mineagent.engine.alto.util.slots.SmokerSlot;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+-import net.minecraft.entity.passive.*;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.animal.Chicken;

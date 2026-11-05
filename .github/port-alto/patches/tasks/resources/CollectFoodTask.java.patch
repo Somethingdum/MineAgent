@@ -1,0 +1,19 @@
+@@ -22,9 +22,7 @@
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import com.mineagent.engine.alto.util.slots.SmokerSlot;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+-import net.minecraft.block.*;
+ import net.minecraft.core.BlockPos;
+-import net.minecraft.entity.passive.*;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.animal.Chicken;
+@@ -318,7 +316,7 @@
+         if (mod.getEntityTracker().entityFound(Chicken.class)) {
+             Optional<Entity> chickens = mod.getEntityTracker().getClosestEntity(Chicken.class);
+             if (chickens.isPresent()) {
+-                Iterable<Entity> entities = mod.getWorld().entitiesForRendering();
++                Iterable<Entity> entities = mod.visibleEntities() /* SMH: what a client would see */;
+                 for (Entity entity : entities) {
+                     if (entity instanceof Monster || entity instanceof Slime) {
+                         if (chickens.get().hasPassenger(entity)) {

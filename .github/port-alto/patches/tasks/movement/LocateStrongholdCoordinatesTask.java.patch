@@ -1,0 +1,27 @@
+@@ -13,7 +13,6 @@
+ import com.mineagent.engine.alto.util.time.TimerGame;
+ import java.util.List;
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.world.InteractionHand;
+@@ -172,15 +171,15 @@
+             }
+             // Throw it
+             if (mod.getSlotHandler().forceEquipItem(Items.ENDER_EYE)) {
+-                assert Minecraft.getInstance().gameMode != null;
++                assert AltoClef.getInstance().getController() != null;
+                 if (_throwTimer.elapsed()) {
+                     if (LookHelper.tryAvoidingInteractable(mod)) {
+-                        Minecraft.getInstance().gameMode.useItem(mod.getPlayer(),InteractionHand.MAIN_HAND);
++                        AltoClef.getInstance().getController().useItem(mod.getPlayer(),InteractionHand.MAIN_HAND);
+                         //MinecraftClient.getInstance().options.keyUse.setPressed(true);
+                         _throwTimer.reset();
+                     }
+                 } else {
+-                    Minecraft.getInstance().gameMode.releaseUsingItem(mod.getPlayer());
++                    AltoClef.getInstance().getController().releaseUsingItem(mod.getPlayer());
+                     //MinecraftClient.getInstance().options.keyUse.setPressed(false);
+                 }
+             } else {

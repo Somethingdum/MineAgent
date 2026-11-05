@@ -1,0 +1,12 @@
+@@ -10,11 +10,7 @@
+ 
+ 
+     public static boolean isWool(Block block) {
+-        //#if MC >= 11802
+         return BuiltInRegistries.BLOCK.getResourceKey(block).map(e -> BuiltInRegistries.BLOCK.getHolderOrThrow(e).tags().anyMatch(t -> t == BlockTags.WOOL)).orElse(false);
+-        //#else
+-        //$$ return BlockTags.WOOL.contains(block);
+-        //#endif
+     }
+ 
+ }

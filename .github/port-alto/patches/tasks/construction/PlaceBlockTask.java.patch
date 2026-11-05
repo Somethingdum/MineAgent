@@ -1,0 +1,17 @@
+@@ -22,7 +22,6 @@
+ 
+ import java.util.Arrays;
+ import java.util.List;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.level.block.Block;
+@@ -171,7 +170,7 @@
+ 
+     @Override
+     public boolean isFinished() {
+-        assert Minecraft.getInstance().level != null;
++        assert AltoClef.getInstance().getWorld() != null;
+         if (useThrowaways) {
+             return WorldHelper.isSolidBlock(target);
+         }

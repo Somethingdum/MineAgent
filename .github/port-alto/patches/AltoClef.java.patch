@@ -1,0 +1,865 @@
+@@ -1,259 +1,237 @@
+-// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/AltoClef.java at commit
+-// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
++// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/AltoClef.java at
++// commit 1f8e038, in Mojang's names (third_party/altoclef). SMH: AltoClef is one client's mod with one player; here there is
++// one per companion, built and ticked by the engine (alto/AltoTreeTask) for the companion's server-side body. Its parts are
++// AltoClef's own, made in the same order; its tick is AltoClef's client tick. No commands, butler, overlay or chat.
+ package com.mineagent.engine.alto;
+ 
+-
+-import com.mineagent.engine.alto.butler.Butler;
+-import com.mineagent.engine.alto.chains.*;
+-import com.mineagent.engine.alto.commandsystem.CommandExecutor;
+-import com.mineagent.engine.alto.commandsystem.TabCompleter;
++import com.mineagent.api.entity.AgentPlayer;
++import com.mineagent.engine.baritone.Baritone;
++import com.mineagent.engine.baritone.BaritoneProvider;
++import com.mineagent.engine.baritone.api.BaritoneAPI;
++import com.mineagent.engine.baritone.utils.SmhRules;
++import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
++import com.mineagent.engine.baritone.api.Settings;
++import com.mineagent.engine.alto.chains.FoodChain;
++import com.mineagent.engine.alto.chains.MLGBucketFallChain;
++import com.mineagent.engine.alto.chains.MobDefenseChain;
++import com.mineagent.engine.alto.chains.UserTaskChain;
+ import com.mineagent.engine.alto.control.InputControls;
+ import com.mineagent.engine.alto.control.PlayerExtraController;
++import com.mineagent.engine.alto.control.ServerGameMode;
+ import com.mineagent.engine.alto.control.SlotHandler;
+ import com.mineagent.engine.alto.eventbus.EventBus;
+-import com.mineagent.engine.alto.eventbus.events.ClientRenderEvent;
+-import com.mineagent.engine.alto.eventbus.events.ClientTickEvent;
+-import com.mineagent.engine.alto.eventbus.events.SendChatEvent;
+-import com.mineagent.engine.alto.eventbus.events.TitleScreenEntryEvent;
+-import com.mineagent.engine.alto.multiversion.DrawContextWrapper;
+-import com.mineagent.engine.alto.multiversion.RenderLayerVer;
+-import com.mineagent.engine.alto.multiversion.versionedfields.Blocks;
++import com.mineagent.engine.alto.eventbus.events.BlockBreakingCancelEvent;
++import com.mineagent.engine.alto.eventbus.events.BlockBreakingEvent;
++import com.mineagent.engine.alto.eventbus.events.ScreenOpenEvent;
+ import com.mineagent.engine.alto.tasksystem.Task;
++import com.mineagent.engine.alto.tasksystem.TaskChain;
+ import com.mineagent.engine.alto.tasksystem.TaskRunner;
+-import com.mineagent.engine.alto.trackers.*;
++import com.mineagent.engine.alto.trackers.BlockScanner;
++import com.mineagent.engine.alto.trackers.CraftingRecipeTracker;
++import com.mineagent.engine.alto.trackers.EntityTracker;
++import com.mineagent.engine.alto.trackers.MiscBlockTracker;
++import com.mineagent.engine.alto.trackers.SimpleChunkTracker;
++import com.mineagent.engine.alto.trackers.TrackerManager;
+ import com.mineagent.engine.alto.trackers.storage.ContainerSubTracker;
+ import com.mineagent.engine.alto.trackers.storage.ItemStorageTracker;
+-import com.mineagent.engine.alto.ui.AltoClefTickChart;
+-import com.mineagent.engine.alto.ui.CommandStatusOverlay;
+-import com.mineagent.engine.alto.ui.MessagePriority;
+-import com.mineagent.engine.alto.ui.MessageSender;
+-import com.mineagent.engine.alto.util.helpers.InputHelper;
+ import com.mineagent.engine.alto.util.helpers.StorageHelper;
+-import com.mineagent.engine.baritone.Baritone;
+-import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
+-import com.mineagent.engine.baritone.api.BaritoneAPI;
+-import com.mineagent.engine.baritone.api.Settings;
+-import net.fabricmc.api.ModInitializer;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.multiplayer.ClientLevel;
+-import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+-import net.minecraft.client.player.LocalPlayer;
++import com.mineagent.engine.entity.CompanionInputDriver;
++import com.mineagent.engine.entity.fakeplayer.FakePlayerGameMode;
++import com.mineagent.engine.task.TaskContext;
++
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.ServerPlayer;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.inventory.AbstractContainerMenu;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.item.Items;
+-import org.lwjgl.glfw.GLFW;
++import net.minecraft.world.level.block.Blocks;
+ 
+-import java.util.*;
+-import java.util.function.Consumer;
++import java.util.Arrays;
++import java.util.LinkedList;
++import java.util.List;
++import java.util.Map;
++import java.util.UUID;
++import java.util.concurrent.ConcurrentHashMap;
+ 
+ /**
+- * Central access point for AltoClef
++ * Central access point for AltoClef, one per companion.
+  */
+-public class AltoClef implements ModInitializer {
++public class AltoClef {
+ 
+-    // Static access to altoclef
+-    private static final Queue<Consumer<AltoClef>> _postInitQueue = new ArrayDeque<>();
++    /** Every companion's host, by its body's id: Baritone's "baritone for this player". */
++    private static final Map<UUID, AltoClef> HOSTS = new ConcurrentHashMap<>();
++    private static final java.util.concurrent.atomic.AtomicInteger BARITONE_LINES = new java.util.concurrent.atomic.AtomicInteger();
++    /** The host whose tick (or construction) is running: AltoClef's static getInstance(). Server thread only. */
++    private static AltoClef current;
++
++    private final AgentPlayer agent;
++    private ServerPlayer player;
++    private final EventBus eventBus = new EventBus();
+ 
+     // Central Managers
+-    private static CommandExecutor commandExecutor;
+-    private TaskRunner taskRunner;
+-    private TrackerManager trackerManager;
+-    private BotBehaviour botBehaviour;
+-    private PlayerExtraController extraController;
++    private final TaskRunner taskRunner;
++    private final TrackerManager trackerManager;
++    private final BotBehaviour botBehaviour;
++    private final PlayerExtraController extraController;
+     // Task chains
+-    private UserTaskChain userTaskChain;
+-    private FoodChain foodChain;
+-    private MobDefenseChain mobDefenseChain;
+-    private MLGBucketFallChain mlgBucketChain;
++    private final UserTaskChain userTaskChain;
++    private final FoodChain foodChain;
++    private final MobDefenseChain mobDefenseChain;
++    private final MLGBucketFallChain mlgBucketChain;
+     // Trackers
+-    private ItemStorageTracker storageTracker;
++    private final ItemStorageTracker storageTracker;
+     private ContainerSubTracker containerSubTracker;
+-    private EntityTracker entityTracker;
+-    private BlockScanner blockScanner;
+-    private SimpleChunkTracker chunkTracker;
+-    private MiscBlockTracker miscBlockTracker;
+-    private CraftingRecipeTracker craftingRecipeTracker;
+-    // Renderers
+-    private CommandStatusOverlay commandStatusOverlay;
+-    private AltoClefTickChart altoClefTickChart;
++    private final EntityTracker entityTracker;
++    private final BlockScanner blockScanner;
++    private final SimpleChunkTracker chunkTracker;
++    private final MiscBlockTracker miscBlockTracker;
++    private final CraftingRecipeTracker craftingRecipeTracker;
+     // Settings
+     private com.mineagent.engine.alto.Settings settings;
+     // Misc managers/input
+-    private MessageSender messageSender;
+-    private InputControls inputControls;
+-    private SlotHandler slotHandler;
+-    // Butler
+-    private Butler butler;
+-    // Pausing
+-    private boolean paused = false;
+-    private Task storedTask;
++    private final InputControls inputControls;
++    private final SlotHandler slotHandler;
++    private final ServerGameMode controller = new ServerGameMode();
++    private final Baritone baritone;
++    // SMH: what the companion's body was showing last tick, for AltoClef's screen events.
++    private AbstractContainerMenu lastMenu;
++    private boolean wasBreaking;
+ 
+-    private static AltoClef instance;
+-
+-    // Are we in game (playing in a server/world)
+-    public static boolean inGame() {
+-        return Minecraft.getInstance().player != null && Minecraft.getInstance().getConnection() != null;
+-    }
+-
+-    /**
+-     * Executes commands (ex. `@get`/`@gamer`)
+-     */
+-    public static CommandExecutor getCommandExecutor() {
+-        return commandExecutor;
+-    }
+-
+-    @Override
+-    public void onInitialize() {
+-        // This code runs as soon as Minecraft is in a mod-load-ready state.
+-        // However, some things (like resources) may still be uninitialized.
+-        // As such, nothing will be loaded here but basic initialization.
+-        EventBus.subscribe(TitleScreenEntryEvent.class, evt -> onInitializeLoad());
+-
+-        if (instance != null) {
+-            throw new IllegalStateException("AltoClef already loaded!");
+-        }
+-        instance = this;
+-    }
+-
+-    public void onInitializeLoad() {
+-        // This code should be run after Minecraft loads everything else in.
+-        // This is the actual start point, controlled by a mixin.
+-
+-        initializeBaritoneSettings();
+-
+-        // Central Managers
+-        commandExecutor = new CommandExecutor(this);
+-        taskRunner = new TaskRunner(this);
+-        trackerManager = new TrackerManager(this);
+-        botBehaviour = new BotBehaviour(this);
+-        extraController = new PlayerExtraController(this);
+-
+-        // Task chains
+-        userTaskChain = new UserTaskChain(taskRunner);
+-        mobDefenseChain = new MobDefenseChain(taskRunner);
+-        new DeathMenuChain(taskRunner);
+-        new PlayerInteractionFixChain(taskRunner);
+-        mlgBucketChain = new MLGBucketFallChain(taskRunner);
+-        new UnstuckChain(taskRunner);
+-        new PreEquipItemChain(taskRunner);
+-        new WorldSurvivalChain(taskRunner);
+-        foodChain = new FoodChain(taskRunner);
+-
+-        // Trackers
+-        storageTracker = new ItemStorageTracker(this, trackerManager, container -> containerSubTracker = container);
+-        entityTracker = new EntityTracker(trackerManager);
+-        blockScanner = new BlockScanner(this);
+-        chunkTracker = new SimpleChunkTracker(this);
+-        miscBlockTracker = new MiscBlockTracker(this);
+-        craftingRecipeTracker = new CraftingRecipeTracker(trackerManager);
+-
+-        // Renderers
+-        commandStatusOverlay = new CommandStatusOverlay();
+-        altoClefTickChart = new AltoClefTickChart(Minecraft.getInstance().font);
+-
+-        // Misc managers
+-        messageSender = new MessageSender();
+-        inputControls = new InputControls();
+-        slotHandler = new SlotHandler(this);
+-
+-        butler = new Butler(this);
+-
+-        initializeCommands();
+-
+-        // Load settings
+-        com.mineagent.engine.alto.Settings.load(newSettings -> {
+-            settings = newSettings;
+-            // Baritone's `acceptableThrowawayItems` should match our own.
++    private AltoClef(AgentPlayer agent, ServerPlayer player) {
++        this.agent = agent;
++        this.player = player;
++        AltoClef before = current;
++        current = this;
++        try {
++            // Baritone's engine (engine/.../baritone, AltoClef's own fork of it), one for each companion's body.
++            this.baritone = BaritoneAPI.getProvider().createBaritone(agent, player);
++            settings = new com.mineagent.engine.alto.Settings();
++            initializeBaritoneSettings();
++            taskRunner = new TaskRunner(this);
++            trackerManager = new TrackerManager(this);
++            botBehaviour = new BotBehaviour(this);
++            extraController = new PlayerExtraController(this);
++            userTaskChain = new UserTaskChain(taskRunner);
++            // AltoClef's hand fixes: the best tool equipped while it breaks a block, a stack left on the cursor put
++            // away, a container shut when it looks away (a chain that works out its priority and never runs).
++            new com.mineagent.engine.alto.chains.PlayerInteractionFixChain(taskRunner);
++            // AltoClef's own survival chains, in its order (behaviour.altoSurvival): mob defence, the MLG bucket, getting
++            // unstuck, equipping ahead, lava, fire and drowning, eating; each by priority over the task tree, as AltoClef
++            // runs them. Off, they are made on a runner that never runs (its tasks still ask them what they know), and the
++            // companion's own chains look after it instead.
++            TaskRunner survival = com.mineagent.engine.settings.Switches.altoSurvival() ? taskRunner : new TaskRunner(this);
++            mobDefenseChain = new MobDefenseChain(survival);
++            mlgBucketChain = new MLGBucketFallChain(survival);
++            new com.mineagent.engine.alto.chains.UnstuckChain(survival);
++            new com.mineagent.engine.alto.chains.PreEquipItemChain(survival);
++            new com.mineagent.engine.alto.chains.WorldSurvivalChain(survival);
++            foodChain = new FoodChain(survival);
++            storageTracker = new ItemStorageTracker(this, trackerManager, container -> containerSubTracker = container);
++            entityTracker = new EntityTracker(trackerManager);
++            blockScanner = new BlockScanner(this);
++            chunkTracker = new SimpleChunkTracker(this);
++            miscBlockTracker = new MiscBlockTracker(this);
++            craftingRecipeTracker = new CraftingRecipeTracker(trackerManager);
++            inputControls = new InputControls(player);
++            knowAllRecipes(player);
++            slotHandler = new SlotHandler(this);
++            // AltoClef's settings load: its throwaway blocks are blocks Baritone may place, its protected areas are never
++            // broken or built on, and the tools it saves are not spent.
+             List<Item> baritoneCanPlace = Arrays.stream(settings.getThrowawayItems(true))
+                     .filter(item -> item != Items.SOUL_SAND && item != Items.MAGMA_BLOCK && item != Items.SAND && item
+                             != Items.GRAVEL).toList();
+             getClientBaritoneSettings().acceptableThrowawayItems.value.addAll(baritoneCanPlace);
+-            // If we should run an idle command...
+-            if ((!getUserTaskChain().isActive() || getUserTaskChain().isRunningIdleTask()) && getModSettings().shouldRunIdleCommandWhenNotActive()) {
+-                getUserTaskChain().signalNextTaskToBeIdleTask();
+-                getCommandExecutor().executeWithPrefix(getModSettings().getIdleCommand());
+-            }
+-            // Don't break blocks or place blocks where we are explicitly protected.
+             getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
+             getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
+             getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
+-        });
+-
+-        // Receive + cancel chat
+-        EventBus.subscribe(SendChatEvent.class, evt -> {
+-            String line = evt.message;
+-            if (getCommandExecutor().isClientCommand(line)) {
+-                evt.cancel();
+-                getCommandExecutor().execute(line);
++            // SMH plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a
++            // farm whose player is AFK (the companion's own rules; the kinds of block it never breaks to get
++            // somewhere are kept in Baritone's path costs, SmhRules.neverBreakToPass).
++            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> SmhRules.placedByAPerson(this.player.serverLevel(), blockPos)
++                    || SmhRules.afkFarm(this.player.serverLevel(), blockPos));
++            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> SmhRules.afkFarm(this.player.serverLevel(), blockPos));
++            TaskCatalogue.init();
++            if (Boolean.getBoolean("mineagent.traceWork")) {
++                // The scenes: Baritone's own messages (its debug ones too), the first 120 of them.
++                getClientBaritoneSettings().chatDebug.value = true;
++                java.util.function.Consumer<net.minecraft.network.chat.Component> log = message -> {
++                    if (BARITONE_LINES.incrementAndGet() <= 120) System.out.println("[MineAgent] alto: baritone: " + message.getString());
++                };
++                getClientBaritoneSettings().logger.value = log;
+             }
+-        });
+-
+-        // Tick with the client
+-        EventBus.subscribe(ClientTickEvent.class, evt -> {
+-            long nanos = System.nanoTime();
+-            onClientTick();
+-            altoClefTickChart.pushTickNanos(System.nanoTime()-nanos);
+-        });
+-
+-        // Render
+-        EventBus.subscribe(ClientRenderEvent.class, evt -> onClientRenderOverlay(evt.context));
+-
+-        // Playground
+-        Playground.IDLE_TEST_INIT_FUNCTION(this);
+-
+-        // Tasks
+-        TaskCatalogue.init();
+-
+-        getClientBaritone().getGameEventHandler().registerEventListener(new TabCompleter());
+-
+-        // External mod initialization
+-        runEnqueuedPostInits();
++            taskRunner.enable();
++        } finally {
++            current = before;
++        }
+     }
+ 
+-    // Client tick
+-    private void onClientTick() {
+-        runEnqueuedPostInits();
+-
+-        inputControls.onTickPre();
+-
+-        // Cancel shortcut
+-        if (InputHelper.isKeyPressed(GLFW.GLFW_KEY_LEFT_CONTROL) && InputHelper.isKeyPressed(GLFW.GLFW_KEY_K)) {
+-            stopTasks();
++    /** The host for a companion, made the first time it is asked for. */
++    public static AltoClef of(AgentPlayer agent) {
++        ServerPlayer sp = TaskContext.serverPlayer(agent);
++        AltoClef host = HOSTS.computeIfAbsent(agent.companionId(), id -> new AltoClef(agent, sp));
++        if (host.player != sp) { // respawned: a new body, the same companion
++            host.player = sp;
++            knowAllRecipes(sp);
++            host.baritone.setPlayer(sp);
++            host.inputControls.setPlayer(sp);
+         }
+-
+-        // TODO: should this go here?
+-        storageTracker.setDirty();
+-        containerSubTracker.onServerTick();
+-        miscBlockTracker.tick();
+-        trackerManager.tick();
+-        blockScanner.tick();
+-        taskRunner.tick();
+-
+-        messageSender.tick();
+-
+-        inputControls.onTickPost();
++        return host;
+     }
+ 
+-    public void stopTasks() {
+-        if (userTaskChain != null) {
+-            userTaskChain.cancel(this);
++    /** A companion's host when it has one (Baritone's getBaritoneForPlayer). */
++    public static AltoClef forPlayer(Entity entity) {
++        if (entity == null) return null;
++        for (AltoClef host : HOSTS.values()) {
++            if (host.player == entity || host.player.getUUID().equals(entity.getUUID())) return host;
+         }
+-        if (taskRunner.getCurrentTaskChain() != null) {
+-            taskRunner.getCurrentTaskChain().stop();
+-        }
+-        commandStatusOverlay.resetTimer();
++        return null;
+     }
+ 
+-    /// GETTERS AND SETTERS
++    /**
++     * SMH: every recipe in the companion's recipe book, so AltoClef places a recipe from it as it does by default
++     * (CraftGenericWithRecipeBooksTask; the server places a recipe only from a book that holds it). It changes nothing it
++     * can make: any recipe can be laid out by hand in the grid.
++     */
++    private static void knowAllRecipes(ServerPlayer player) {
++        if (player == null || player.getServer() == null) return;
++        player.awardRecipes(player.getServer().getRecipeManager().getRecipes());
++    }
+ 
+-    private void onClientRenderOverlay(DrawContextWrapper context) {
+-        context.setRenderLayer(RenderLayerVer.getGuiOverlay());
+-        if (settings.shouldShowTaskChain()) {
+-            commandStatusOverlay.render(this, context);
++    /** The companion's host let go of (it left). */
++    public static void remove(UUID companionId) {
++        AltoClef host = HOSTS.remove(companionId);
++        if (host != null) {
++            host.baritone.getPathingBehavior().forceCancel();
++            BaritoneAPI.getProvider().destroyBaritone(host.baritone);
+         }
++    }
+ 
+-        if (settings.shouldShowDebugTickMs()) {
+-            altoClefTickChart.render(this, context, 1, context.getScaledWindowWidth() / 2 - 124);
++    /** Something of AltoClef's done as this host's (its tasks reach for AltoClef.getInstance() when made and asked). */
++    public <T> T within(java.util.function.Supplier<T> what) {
++        AltoClef before = current;
++        current = this;
++        try {
++            // Its Baritone is the primary one meanwhile (AltoClef's helpers ask BaritoneAPI for it).
++            return BaritoneProvider.as(baritone, what);
++        } finally {
++            current = before;
+         }
++    }
++
++    /** The host ticking now, or null. */
++    public static AltoClef current() {
++        return current;
++    }
++
++    /** AltoClef's static access, as its tasks use it: the host ticking now. */
++    public static AltoClef getInstance() {
++        return current;
++    }
++
++    // Are we in game (playing in a server/world)
++    public static boolean inGame() {
++        return current != null && current.player != null && current.player.isAlive() && !current.player.hasDisconnected();
+     }
+ 
+     private void initializeBaritoneSettings() {
+@@ -273,300 +251,227 @@
+                 Blocks.WARPED_ROOTS, Blocks.VINE, Blocks.SHORT_GRASS, Blocks.FERN, Blocks.TALL_GRASS, Blocks.LARGE_FERN,
+                 Blocks.SMALL_AMETHYST_BUD, Blocks.MEDIUM_AMETHYST_BUD, Blocks.LARGE_AMETHYST_BUD,
+                 Blocks.AMETHYST_CLUSTER, Blocks.SCULK, Blocks.SCULK_VEIN));
+-
+-        // dont try to break nether portal block
+         getClientBaritoneSettings().blocksToAvoidBreaking.value.add(Blocks.NETHER_PORTAL);
+         getClientBaritoneSettings().blocksToDisallowBreaking.value.add(Blocks.NETHER_PORTAL);
+-
+-        // Let baritone move items to hotbar to use them
+-        // Reduces a bit of far rendering to save FPS
+         getClientBaritoneSettings().fadePath.value = true;
+-        // Don't let baritone scan dropped items, we handle that ourselves.
+         getClientBaritoneSettings().mineScanDroppedItems.value = false;
+-        // Don't let baritone wait for drops, we handle that ourselves.
+         getClientBaritoneSettings().mineDropLoiterDurationMSThanksLouca.value = 0L;
+-
+-        // Water bucket placement will be handled by us exclusively
+         getExtraBaritoneSettings().configurePlaceBucketButDontFall(true);
+-
+-        // For render smoothing
+         getClientBaritoneSettings().randomLooking.value = 0.0;
+-        getClientBaritoneSettings().randomLooking113.value = 0.0;
+-
+-        // Give baritone more time to calculate paths. Sometimes they can be really far away.
+-        // Was: 2000L
+         getClientBaritoneSettings().failureTimeoutMS.reset();
+-        // Was: 5000L
+         getClientBaritoneSettings().planAheadFailureTimeoutMS.reset();
+-        // Was 100
+         getClientBaritoneSettings().movementTimeoutTicks.reset();
+     }
+ 
+-    // List all command sources here.
+-    private void initializeCommands() {
+-        try {
+-            // This creates the commands. If you want any more commands feel free to initialize new command lists.
+-            AltoClefCommands.init();
+-        } catch (Exception e) {
+-            e.printStackTrace();
++    /**
++     * One tick of AltoClef for this companion, with {@code root} as its user task (AltoClef's onClientTick): its inputs
++     * readied, its trackers brought up to date, the task tree ticked, then Baritone's processes and the walk, and the keys
++     * put on the body.
++     */
++    public void tick(Task root) {
++        within(() -> {
++            tickInner(root);
++            return null;
++        });
++    }
++
++    private void tickInner(Task root) {
++        {
++            SmhRules.prime(player.serverLevel());
++            inputControls.onTickPre();
++            publishBodyEvents();
++            storageTracker.setDirty();
++            containerSubTracker.onServerTick();
++            miscBlockTracker.tick();
++            trackerManager.tick();
++            blockScanner.tick();
++            userTaskChain.setTask(root);
++            taskRunner.tick();
++            // Baritone's tick, as its client mixins drive it: its processes, the path, what it presses and where it
++            // looks; then the task tree's own keys (its movement keys only while Baritone isn't steering).
++            baritone.tick();
++            CompanionInputDriver driver = driver();
++            if (driver != null) {
++                inputControls.apply(driver, java.util.Set.of(), baritone.getInputOverrideHandler().isInControl());
++            }
++            inputControls.onTickPost();
+         }
+     }
+ 
+-    // TODO refactor codebase to use this instead of passing an argument around
+-    /**
+-     * @return the instance of this class or null if it has not been initialized yet
+-     */
+-    public static AltoClef getInstance() {
+-        return instance;
++    /** The task tree and every key and walk let go (its order ended, or another took the body). */
++    public void stop(Task root, Task interruptedBy) {
++        within(() -> {
++            if (root != null) {
++                if (interruptedBy == null) root.stop();
++                else root.interrupt(interruptedBy);
++            }
++            userTaskChain.setTask(null);
++            // Baritone let go: every process, the path now, and the keys it forces.
++            baritone.getPathingBehavior().cancelEverything();
++            baritone.getPathingBehavior().forceCancel();
++            baritone.getInputOverrideHandler().clearAllKeys();
++            CompanionInputDriver driver = driver();
++            inputControls.releaseAll(driver);
++            if (driver != null) driver.clear(); // what Baritone's walk left on it too
++            if (player.containerMenu != player.inventoryMenu) player.closeContainer();
++            return null;
++        });
++    }
++
++    /** SMH: the client's events, from what the body did (a screen opened or shut; a block being broken or let go). */
++    private void publishBodyEvents() {
++        AbstractContainerMenu menu = player.containerMenu == player.inventoryMenu ? null : player.containerMenu;
++        if (menu != lastMenu) {
++            EventBus.publish(new ScreenOpenEvent(menu, true));
++            EventBus.publish(new ScreenOpenEvent(menu, false));
++            lastMenu = menu;
++        }
++        // What it bumps into (a client mixin on Player.touch posts these): entities touching its body.
++        for (Entity e : getWorld().getEntities(player, player.getBoundingBox().inflate(0.05), e -> !e.isSpectator())) {
++            EventBus.publish(new com.mineagent.engine.alto.eventbus.events.PlayerCollidedWithEntityEvent(player, e));
++        }
++        if (player.gameMode instanceof FakePlayerGameMode fake && fake.automaticDestroyPos() != null) {
++            EventBus.publish(new BlockBreakingEvent(fake.automaticDestroyPos(), fake.automaticDestroyProgress()));
++            wasBreaking = true;
++        } else if (wasBreaking) {
++            EventBus.publish(new BlockBreakingCancelEvent());
++            wasBreaking = false;
++        }
++    }
++
++    private CompanionInputDriver driver() {
++        return TaskContext.inputDriver(agent) instanceof CompanionInputDriver d ? d : null;
+     }
+ 
+     /**
+-     * Runs the highest priority task chain
+-     * (task chains run the task tree)
++     * SMH: the entities a client in the companion's place would have: within each one's tracking range of it (the
++     * server sends a client only those; AltoClef's world is the client's), no further than the server's view distance.
+      */
++    public Iterable<Entity> visibleEntities() {
++        ServerLevel level = getWorld();
++        int view = Math.max(2, level.getServer().getPlayerList().getViewDistance()) * 16;
++        var box = player.getBoundingBox().inflate(view, level.getHeight(), view);
++        List<Entity> out = new java.util.ArrayList<>();
++        for (Entity e : level.getEntities((Entity) null, box, e -> true)) {
++            int range = Math.min(view, e.getType().clientTrackingRange() * 16);
++            double dx = e.getX() - player.getX(), dz = e.getZ() - player.getZ();
++            if (dx * dx + dz * dz <= (double) range * range) out.add(e);
++        }
++        return out;
++    }
++
++    /** SMH: whether the companion's own food chain has the body (it eats; the task tree waits). */
++    public boolean companionEating() {
++        return false;
++    }
++
++    /** SMH: whether the companion's own fall chain has the body (it is catching a fall). */
++    public boolean companionCatchingFall() {
++        return false;
++    }
++
++    public EventBus getEventBus() {
++        return eventBus;
++    }
++
++    public AgentPlayer getAgent() {
++        return agent;
++    }
++
+     public TaskRunner getTaskRunner() {
+         return taskRunner;
+     }
+ 
+-    /**
+-     * The user task chain (runs your command. Ex. Get Diamonds, Beat the Game)
+-     */
+     public UserTaskChain getUserTaskChain() {
+         return userTaskChain;
+     }
+ 
+-    /**
+-     * Controls bot behaviours, like whether to temporarily "protect" certain blocks or items
+-     */
+     public BotBehaviour getBehaviour() {
+         return botBehaviour;
+     }
+ 
+-    /**
+-     * Controls tasks, for pausing and unpausing the bot
+-     */
+-    public boolean isPaused() {
+-        return paused;
+-    }
+-
+-    public void setPaused(boolean pausing) {
+-        this.paused = pausing;
+-    }
+-
+-    /**
+-     * storages the task you where doing before pausing.
+-     */
+-    public void setStoredTask(Task currentTask) {
+-        this.storedTask = currentTask;
+-    }
+-
+-    /**
+-     * Gets the task you where doing before pausing.
+-     */
+-    public Task getStoredTask() {
+-        return storedTask;
+-    }
+-
+-    /**
+-     * Tracks items in your inventory and in storage containers.
+-     */
+     public ItemStorageTracker getItemStorage() {
+         return storageTracker;
+     }
+ 
+-    /**
+-     * Tracks loaded entities
+-     */
+     public EntityTracker getEntityTracker() {
+         return entityTracker;
+     }
+ 
+-    /**
+-     * Manages a list of all available recipes
+-     */
+     public CraftingRecipeTracker getCraftingRecipeTracker() {
+         return craftingRecipeTracker;
+     }
+ 
+-    /**
+-     * Tracks blocks and their positions - better version of BlockTracker
+-     */
+     public BlockScanner getBlockScanner() {
+         return blockScanner;
+     }
+ 
+-    /**
+-     * Tracks of whether a chunk is loaded/visible or not
+-     */
+     public SimpleChunkTracker getChunkTracker() {
+         return chunkTracker;
+     }
+ 
+-    /**
+-     * Tracks random block things, like the last nether portal we used
+-     */
+     public MiscBlockTracker getMiscBlockTracker() {
+         return miscBlockTracker;
+     }
+ 
+-    /**
+-     * Baritone access (could just be static honestly)
+-     */
+     public Baritone getClientBaritone() {
+-        if (getPlayer() == null) {
+-            return (Baritone) BaritoneAPI.getProvider().getPrimaryBaritone();
+-        }
+-        return (Baritone) BaritoneAPI.getProvider().getBaritoneForPlayer(getPlayer());
++        return baritone;
+     }
+ 
+-    /**
+-     * Baritone settings access (could just be static honestly)
+-     */
+     public Settings getClientBaritoneSettings() {
+-        return Baritone.settings();
++        return BaritoneAPI.getSettings();
+     }
+ 
+-    /**
+-     * Baritone settings special to AltoClef (could just be static honestly)
+-     */
+     public AltoClefSettings getExtraBaritoneSettings() {
+-        return AltoClefSettings.getInstance();
++        return baritone.getAltoClefSettings();
+     }
+ 
+-    /**
+-     * AltoClef Settings
+-     */
+     public com.mineagent.engine.alto.Settings getModSettings() {
+         return settings;
+     }
+ 
+-    /**
+-     * Butler controller. Keeps track of users and lets you receive user messages
+-     */
+-    public Butler getButler() {
+-        return butler;
+-    }
+-
+-    /**
+-     * Sends chat messages (avoids auto-kicking)
+-     */
+-    public MessageSender getMessageSender() {
+-        return messageSender;
+-    }
+-
+-    /**
+-     * Does Inventory/container slot actions
+-     */
+     public SlotHandler getSlotHandler() {
+         return slotHandler;
+     }
+ 
+-    /**
+-     * Minecraft player client access (could just be static honestly)
+-     */
+-    public LocalPlayer getPlayer() {
+-        return Minecraft.getInstance().player;
++    public ServerPlayer getPlayer() {
++        return player;
+     }
+ 
+-    /**
+-     * Minecraft world access (could just be static honestly)
+-     */
+-    public ClientLevel getWorld() {
+-        return Minecraft.getInstance().level;
++    public ServerLevel getWorld() {
++        return player.serverLevel();
+     }
+ 
+-    /**
+-     * Minecraft client interaction controller access (could just be static honestly)
+-     */
+-    public MultiPlayerGameMode getController() {
+-        return Minecraft.getInstance().gameMode;
++    public ServerGameMode getController() {
++        return controller;
+     }
+ 
+-    /**
+-     * Extra controls not present in ClientPlayerInteractionManager. This REALLY should be made static or combined with something else.
+-     */
+     public PlayerExtraController getControllerExtras() {
+         return extraController;
+     }
+ 
+-    /**
+-     * Manual control over input actions (ex. jumping, attacking)
+-     */
+     public InputControls getInputControls() {
+         return inputControls;
+     }
+ 
+-    /**
+-     * Run a user task
+-     */
+-    public void runUserTask(Task task) {
+-        runUserTask(task, () -> {
+-        });
+-    }
+-
+-    /**
+-     * Run a user task
+-     */
+-    public void runUserTask(Task task, Runnable onFinish) {
+-        userTaskChain.runTask(this, task, onFinish);
+-    }
+-
+-    /**
+-     * Cancel currently running user task
+-     */
+-    public void cancelUserTask() {
+-        userTaskChain.cancel(this);
+-    }
+-
+-    /**
+-     * Takes control away to eat food
+-     */
+     public FoodChain getFoodChain() {
+         return foodChain;
+     }
+ 
+-    /**
+-     * Takes control away to defend against mobs
+-     */
+     public MobDefenseChain getMobDefenseChain() {
+         return mobDefenseChain;
+     }
+ 
+-    /**
+-     * Takes control away to perform bucket saves
+-     */
+     public MLGBucketFallChain getMLGBucketChain() {
+         return mlgBucketChain;
+     }
+ 
+     public void log(String message) {
+-        log(message, MessagePriority.TIMELY);
+-    }
+-
+-    /**
+-     * Logs to the console and also messages any player using the bot as a butler.
+-     */
+-    public void log(String message, MessagePriority priority) {
+         Debug.logMessage(message);
+     }
+ 
+     public void logWarning(String message) {
+-        logWarning(message, MessagePriority.TIMELY);
+-    }
+-
+-    /**
+-     * Logs a warning to the console and also alerts any player using the bot as a butler.
+-     */
+-    public void logWarning(String message, MessagePriority priority) {
+         Debug.logWarning(message);
+-    }
+-
+-    private void runEnqueuedPostInits() {
+-        synchronized (_postInitQueue) {
+-            while (!_postInitQueue.isEmpty()) {
+-                _postInitQueue.poll().accept(this);
+-            }
+-        }
+     }
+ 
+ }

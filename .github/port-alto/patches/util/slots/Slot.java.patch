@@ -1,0 +1,66 @@
+@@ -2,18 +2,13 @@
+ // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+ package com.mineagent.engine.alto.util.slots;
+ 
++import com.mineagent.engine.alto.AltoClef;
+ import com.mineagent.engine.alto.Debug;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.screen.ingame.*;
+-import net.minecraft.client.gui.screens.Screen;
+-import net.minecraft.client.gui.screens.inventory.BlastFurnaceScreen;
+-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+-import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+-import net.minecraft.client.gui.screens.inventory.FurnaceScreen;
+-import net.minecraft.client.gui.screens.inventory.SmithingScreen;
+-import net.minecraft.client.gui.screens.inventory.SmokerScreen;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.inventory.AbstractContainerMenu;
++import net.minecraft.world.inventory.CraftingMenu;
++import net.minecraft.world.inventory.SmithingMenu;
++import net.minecraft.world.inventory.AbstractFurnaceMenu;
+ import net.minecraft.world.inventory.ChestMenu;
+ import net.minecraft.world.inventory.InventoryMenu;
+ import java.util.Iterator;
+@@ -75,17 +70,17 @@
+     }
+ 
+     private static ContainerType getCurrentType() {
+-        Screen screen = Minecraft.getInstance().screen;
+-        if (screen instanceof FurnaceScreen || screen instanceof SmithingScreen || screen instanceof SmokerScreen ||
+-                screen instanceof BlastFurnaceScreen) {
++        // SMH: the companion's open menu stands for the client's screen.
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
++        AbstractContainerMenu menu = player != null ? player.containerMenu : null;
++        if (menu instanceof AbstractFurnaceMenu || menu instanceof SmithingMenu) {
+             return ContainerType.FURNACE_OR_SMITH_OR_SMOKER_OR_BLAST;
+         }
+-        if (screen instanceof ContainerScreen) {
+-            ChestMenu handler = ((ContainerScreen) screen).getMenu();
++        if (menu instanceof ChestMenu handler) {
+             boolean big = (handler.getRowCount() == 6);
+             return big ? ContainerType.CHEST_LARGE : ContainerType.CHEST_SMALL;
+         }
+-        if (screen instanceof CraftingScreen) {
++        if (menu instanceof CraftingMenu) {
+             return ContainerType.CRAFTING_TABLE;
+         }
+         return ContainerType.PLAYER;
+@@ -97,7 +92,7 @@
+ 
+     public static Iterable<Slot> getCurrentScreenSlots() {
+         return () -> new Iterator<>() {
+-            final LocalPlayer player = Minecraft.getInstance().player;
++            final ServerPlayer player = AltoClef.getInstance().getPlayer();
+             final AbstractContainerMenu handler = player != null ? player.containerMenu : null;
+             final int MAX = handler != null ? handler.slots.size() : 0;
+             int i = -1;
+@@ -165,7 +160,7 @@
+      * @return Whether this slot exists within the player's inventory or in a container that's disconnected from the player's inventory.
+      */
+     public boolean isSlotInPlayerInventory() {
+-        AbstractContainerMenu handler = Minecraft.getInstance().player != null ? Minecraft.getInstance().player.containerMenu : null;
++        AbstractContainerMenu handler = AltoClef.getInstance().getPlayer() != null ? AltoClef.getInstance().getPlayer().containerMenu : null;
+         int windowSlot = getWindowSlot();
+         if (handler instanceof InventoryMenu) {
+             // Everything visible is player inventory.

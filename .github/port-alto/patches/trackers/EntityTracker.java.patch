@@ -1,0 +1,47 @@
+@@ -2,10 +2,10 @@
+ // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+ package com.mineagent.engine.alto.trackers;
+ 
++import com.mineagent.engine.alto.AltoClef;
+ import com.mineagent.engine.alto.Debug;
+ import com.mineagent.engine.alto.eventbus.EventBus;
+ import com.mineagent.engine.alto.eventbus.events.PlayerCollidedWithEntityEvent;
+-import com.mineagent.engine.alto.mixins.PersistentProjectileEntityAccessor;
+ import com.mineagent.engine.alto.trackers.blacklisting.EntityLocateBlacklist;
+ import com.mineagent.engine.alto.util.ItemTarget;
+ import com.mineagent.engine.alto.util.baritone.CachedProjectile;
+@@ -15,7 +15,6 @@
+ import com.mineagent.engine.alto.util.helpers.WorldHelper;
+ import java.util.*;
+ import java.util.function.Predicate;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.Mob;
+@@ -324,7 +323,7 @@
+             projectiles.clear();
+             hostiles.clear();
+             playerMap.clear();
+-            if (Minecraft.getInstance().level == null) return;
++            if (AltoClef.getInstance().getWorld() == null) return;
+ 
+             // Store/Register All accumulated player collisions for this frame.
+             entitiesCollidingWithPlayer.clear();
+@@ -335,7 +334,7 @@
+             entitiesCollidingWithPlayerAccumulator.clear();
+ 
+             // Loop through all entities and track 'em
+-            for (Entity entity : Minecraft.getInstance().level.entitiesForRendering()) {
++            for (Entity entity : AltoClef.getInstance().visibleEntities() /* SMH: what a client would see */) {
+ 
+                 // Catalogue based on type. Some types may get "squashed" or combined into one.
+                 Class type = entity.getClass();
+@@ -385,7 +384,7 @@
+                         boolean inGround = false;
+                         // Get projectile "inGround" variable
+                         if (entity instanceof AbstractArrow) {
+-                            inGround = ((PersistentProjectileEntityAccessor) entity).isInGround();
++                            inGround = ((net.minecraft.world.entity.projectile.AbstractArrow) entity).inGround /* SMH: access widener */;
+                         }
+ 
+                         // Ignore some of the harlmess projectiles

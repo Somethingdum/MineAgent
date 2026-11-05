@@ -1,0 +1,21 @@
+@@ -22,10 +22,8 @@
+ import com.mineagent.engine.baritone.Baritone;
+ import com.mineagent.engine.baritone.api.utils.Rotation;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+-import net.minecraft.entity.mob.*;
+-import net.minecraft.entity.projectile.*;
+ import net.minecraft.world.Difficulty;
+ import net.minecraft.world.effect.MobEffects;
+ import net.minecraft.world.entity.Entity;
+@@ -605,7 +603,7 @@
+         if (WorldHelper.isVulnerable()) {
+             // If hostile mobs are nearby...
+             try {
+-                LocalPlayer player = mod.getPlayer();
++                ServerPlayer player = mod.getPlayer();
+                 List<LivingEntity> hostiles = mod.getEntityTracker().getHostiles();
+ 
+                 synchronized (BaritoneHelper.MINECRAFT_LOCK) {

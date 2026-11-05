@@ -1,0 +1,30 @@
+@@ -15,15 +15,7 @@
+ 
+ 
+     public static Entity getRenderedEntity(BaseSpawner logic, Level world, BlockPos pos) {
+-        //#if MC>12002
+         return logic.getOrCreateDisplayEntity(world, pos);
+-        //#elseif MC >= 11904
+-        //$$ return logic.getRenderedEntity(world,Random.create() ,pos);
+-        //#elseif MC >= 11701
+-        //$$ return logic.getRenderedEntity(world);
+-        //#else
+-        //$$ return logic.getRenderedEntity();
+-        //#endif
+     }
+ 
+     public static float getDamageLeft(LivingEntity armorWearer, double damage, DamageSource source, double armor, double armorToughness) {
+@@ -31,13 +23,7 @@
+     }
+ 
+     public static float getDamageLeft(LivingEntity armorWearer, float damage, DamageSource source, float armor, float armorToughness) {
+-        //#if MC >= 12100
+         return CombatRules.getDamageAfterAbsorb(armorWearer, damage, source, armor, armorToughness);
+-        //#elseif MC>=12005
+-        //$$ return DamageUtil.getDamageLeft(damage, source, armor, armorToughness);
+-        //#else
+-        //$$ return DamageUtil.getDamageLeft(damage,armor,armorToughness);
+-        //#endif
+     }
+ 
+ 

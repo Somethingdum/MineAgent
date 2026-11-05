@@ -1,0 +1,28 @@
+@@ -22,7 +22,6 @@
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+ import java.util.HashSet;
+ import java.util.function.Predicate;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.core.Vec3i;
+@@ -67,8 +66,8 @@
+         mod.getBehaviour().setRayTracingFluidHandling(ClipContext.Fluid.SOURCE_ONLY);
+ 
+         // Avoid breaking / placing blocks at our liquid
+-        mod.getBehaviour().avoidBlockBreaking((pos) -> Minecraft.getInstance().level.getBlockState(pos).getBlock() == toCollect);
+-        mod.getBehaviour().avoidBlockPlacing((pos) -> Minecraft.getInstance().level.getBlockState(pos).getBlock() == toCollect);
++        mod.getBehaviour().avoidBlockBreaking((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
++        mod.getBehaviour().avoidBlockPlacing((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
+ 
+         mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.value = true;
+         //_blacklist.clear();
+@@ -129,7 +128,7 @@
+             if (blacklist.contains(blockPos)) return false;
+             if (!WorldHelper.canReach(blockPos)) return false;
+             if (!WorldHelper.canReach(blockPos.above())) return false; // We may try reaching the block above.
+-            assert Minecraft.getInstance().level != null;
++            assert AltoClef.getInstance().getWorld() != null;
+ 
+             Block above = mod.getWorld().getBlockState(blockPos.above()).getBlock();
+             // We break the block above. If it's bedrock, ignore.

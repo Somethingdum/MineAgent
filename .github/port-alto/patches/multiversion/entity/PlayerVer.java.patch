@@ -1,0 +1,62 @@
+@@ -3,7 +3,7 @@
+ package com.mineagent.engine.alto.multiversion.entity;
+ 
+ import com.mineagent.engine.alto.multiversion.Pattern;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.Container;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.item.ItemStack;
+@@ -11,46 +11,28 @@
+ public class PlayerVer {
+ 
+ 
+-    public static void sendChatMessage(LocalPlayer player,String content) {
+-        //#if MC >= 11904
+-        player.connection.sendChat(content);
+-        //#else
+-        //$$ player.sendChatMessage(content);
+-        //#endif
++    // SMH: what AltoClef would say in chat is its log here (the companion speaks through its own loop); a command it
++    // would type is run as the server runs a player's command.
++    public static void sendChatMessage(ServerPlayer player,String content) {
++        com.mineagent.engine.alto.Debug.logMessage(content);
+     }
+ 
+-    public static void sendChatCommand(LocalPlayer player,String content) {
+-        //#if MC >= 11904
+-        player.connection.sendCommand(content);
+-        //#else
+-        //$$ player.sendChatMessage("/"+content);
+-        //#endif
++    public static void sendChatCommand(ServerPlayer player,String content) {
++        player.getServer().getCommands().performPrefixedCommand(player.createCommandSourceStack(), content);
+     }
+ 
+     @Pattern
+     private static ItemStack getCursorStack(Player player) {
+-        //#if MC >= 11701
+         return player.containerMenu.getCarried();
+-        //#else
+-        //$$ return player.inventory.getCursorStack();
+-        //#endif
+     }
+ 
+     @Pattern
+     private static Container getInventory(Player player) {
+-        //#if MC >= 11701
+         return player.getInventory();
+-        //#else
+-        //$$ return player.inventory;
+-        //#endif
+     }
+ 
+     public static boolean inPowderedSnow(Player player) {
+-        //#if MC >= 11701
+         return player.isInPowderSnow;
+-        //#else
+-        //$$ return false;
+-        //#endif
+     }
+ 
+ 

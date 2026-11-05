@@ -1,0 +1,12 @@
+@@ -9,11 +9,7 @@
+ 
+ 
+     public static DamageSource getFallDamageSource(Level world) {
+-        //#if MC >= 11904
+         return world.damageSources().fall();
+-        //#else
+-        //$$ return DamageSource.FALL;
+-        //#endif
+     }
+ 
+ }

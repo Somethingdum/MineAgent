@@ -1,0 +1,192 @@
+@@ -3,7 +3,6 @@
+ package com.mineagent.engine.alto.util.helpers;
+ 
+ import com.mineagent.engine.alto.AltoClef;
+-import com.mineagent.engine.alto.mixins.ClientConnectionAccessor;
+ import com.mineagent.engine.alto.multiversion.MethodWrapper;
+ import com.mineagent.engine.alto.multiversion.world.WorldVer;
+ import com.mineagent.engine.alto.util.Dimension;
+@@ -12,16 +11,13 @@
+ import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+ import com.mineagent.engine.baritone.process.MineProcess;
+ import com.mineagent.engine.baritone.utils.BlockStateInterface;
+-import net.minecraft.block.*;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.multiplayer.ClientLevel;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.network.Connection;
+-import net.minecraft.util.math.*;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.level.Level;
+@@ -60,8 +56,8 @@
+      * Get the number of in-game ticks the game/world has been active for.
+      */
+     static int getTicks() {
+-        Connection con = Objects.requireNonNull(Minecraft.getInstance().getConnection()).getConnection();
+-        return ((ClientConnectionAccessor) con).getTicks();
++        // SMH: the world's game time (a client counts its connection's ticks).
++        return (int) AltoClef.getInstance().getWorld().getGameTime();
+     }
+ 
+     static Vec3 toVec3d(BlockPos pos) {
+@@ -82,7 +78,7 @@
+     }
+ 
+     static boolean isSourceBlock(BlockPos pos, boolean onlyAcceptStill) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         BlockState s = world.getBlockState(pos);
+         if (s.getBlock() instanceof LiquidBlock) {
+@@ -127,7 +123,7 @@
+     }
+ 
+     static Dimension getCurrentDimension() {
+-        ClientLevel world = Minecraft.getInstance().level;
++        ServerLevel world = AltoClef.getInstance().getWorld();
+         if (world == null) return Dimension.OVERWORLD;
+         if (world.dimensionType().ultraWarm()) return Dimension.NETHER;
+         if (world.dimensionType().natural()) return Dimension.OVERWORLD;
+@@ -143,7 +139,7 @@
+      * better method for blocks that can be walked on should be created instead
+      */
+     static boolean isSolidBlock(BlockPos pos) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         return world.getBlockState(pos).isRedstoneConductor(world, pos);
+     }
+@@ -152,7 +148,7 @@
+      * Get the "head" of a block with a bed, if the block is a bed.
+      */
+     static BlockPos getBedHead(BlockPos posWithBed) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         BlockState state = world.getBlockState(posWithBed);
+         if (state.getBlock() instanceof BedBlock) {
+@@ -169,7 +165,7 @@
+      * Get the "foot" of a block with a bed, if the block is a bed.
+      */
+     static BlockPos getBedFoot(BlockPos posWithBed) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         BlockState state = world.getBlockState(posWithBed);
+         if (state.getBlock() instanceof BedBlock) {
+@@ -208,7 +204,7 @@
+     }
+ 
+     static int getGroundHeight(int x, int z) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         for (int y = world.getMaxBuildHeight(); y >= world.getMinBuildHeight(); --y) {
+             BlockPos check = new BlockPos(x, y, z);
+@@ -218,7 +214,7 @@
+     }
+ 
+     static BlockPos getADesertTemple() {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         List<BlockPos> stonePressurePlates = AltoClef.getInstance().getBlockScanner().getKnownLocations(Blocks.STONE_PRESSURE_PLATE);
+         if (!stonePressurePlates.isEmpty()) {
+@@ -238,7 +234,7 @@
+     }
+ 
+     static int getGroundHeight(int x, int z, Block... groundBlocks) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         Set<Block> possibleBlocks = new HashSet<>(Arrays.asList(groundBlocks));
+         for (int y = world.getMaxBuildHeight(); y >= world.getMinBuildHeight(); --y) {
+@@ -269,7 +265,7 @@
+     }
+ 
+     static boolean isInNetherPortal() {
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         if (player == null)
+             return false;
+@@ -325,11 +321,7 @@
+         return !altoClef.getBlockScanner().isUnreachable(pos);
+     }
+ 
+-    //#if MC >= 11802
+     static boolean isOcean(Holder<Biome> b) {
+-    //#else
+-    //$$ static boolean isOcean(Biome b) {
+-    //#endif
+         return (WorldVer.isBiome(b,Biomes.OCEAN)
+                 || WorldVer.isBiome(b,Biomes.COLD_OCEAN)
+                 || WorldVer.isBiome(b,Biomes.DEEP_COLD_OCEAN)
+@@ -406,7 +398,7 @@
+ 
+     static boolean fallingBlockSafeToBreak(BlockPos pos) {
+         BlockStateInterface bsi = new BlockStateInterface(BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext());
+-        Level w = Minecraft.getInstance().level;
++        Level w = AltoClef.getInstance().getWorld();
+         assert w != null;
+         while (isFallingBlock(pos)) {
+             if (MovementHelper.avoidBreaking(bsi, pos.getX(), pos.getY(), pos.getZ(), w.getBlockState(pos)))
+@@ -417,13 +409,13 @@
+     }
+ 
+     static boolean isFallingBlock(BlockPos pos) {
+-        Level w = Minecraft.getInstance().level;
++        Level w = AltoClef.getInstance().getWorld();
+         assert w != null;
+         return w.getBlockState(pos).getBlock() instanceof FallingBlock;
+     }
+ 
+     static Entity getSpawnerEntity(BlockPos pos) {
+-        ClientLevel world = AltoClef.getInstance().getWorld();
++        ServerLevel world = AltoClef.getInstance().getWorld();
+ 
+         BlockState state = world.getBlockState(pos);
+         if (state.getBlock() instanceof SpawnerBlock) {
+@@ -463,7 +455,7 @@
+     }
+ 
+     static boolean canSleep() {
+-        ClientLevel world = Minecraft.getInstance().level;
++        ServerLevel world = AltoClef.getInstance().getWorld();
+         if (world != null) {
+             // You can sleep during thunderstorms
+             if (world.isThundering() && world.isRaining())
+@@ -478,7 +470,7 @@
+     }
+ 
+     static int getTimeOfDay() {
+-        ClientLevel world = Minecraft.getInstance().level;
++        ServerLevel world = AltoClef.getInstance().getWorld();
+         if (world != null) {
+             // You can sleep during thunderstorms
+             return (int) (world.getDayTime() % 24000);
+@@ -487,7 +479,7 @@
+     }
+ 
+     static boolean isVulnerable() {
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         int armor = player.getArmorValue();
+         float health = player.getHealth();
+@@ -505,7 +497,7 @@
+ 
+     // Function to check if the player is surrounded on two or more sides
+     static boolean isSurrounded(List<LivingEntity> entities) {
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         BlockPos playerPos = player.blockPosition();
+ 

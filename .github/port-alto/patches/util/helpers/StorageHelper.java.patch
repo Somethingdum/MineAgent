@@ -1,0 +1,155 @@
+@@ -5,7 +5,6 @@
+ import com.mineagent.engine.alto.AltoClef;
+ import com.mineagent.engine.alto.Debug;
+ import com.mineagent.engine.alto.TaskCatalogue;
+-import com.mineagent.engine.alto.mixins.AbstractFurnaceScreenHandlerAccessor;
+ import com.mineagent.engine.alto.multiversion.item.ItemVer;
+ import com.mineagent.engine.alto.multiversion.ToolMaterialVer;
+ import com.mineagent.engine.alto.multiversion.versionedfields.Blocks;
+@@ -20,14 +19,7 @@
+ import com.mineagent.engine.alto.util.slots.PlayerSlot;
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import com.mineagent.engine.baritone.utils.ToolSet;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.screens.ChatScreen;
+-import net.minecraft.client.gui.screens.PauseScreen;
+-import net.minecraft.client.gui.screens.Screen;
+-import net.minecraft.client.gui.screens.options.OptionsSubScreen;
+-import net.minecraft.client.player.LocalPlayer;
+-import net.minecraft.item.*;
+-import net.minecraft.screen.*;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.Inventory;
+ import net.minecraft.world.inventory.AbstractContainerMenu;
+ import net.minecraft.world.inventory.AbstractFurnaceMenu;
+@@ -64,21 +56,18 @@
+     private static final int OFF_HAND_SLOT = 40;
+ 
+     public static void closeScreen() {
+-        if (Minecraft.getInstance().player == null)
++        if (AltoClef.getInstance().getPlayer() == null)
+             return;
+-        Screen screen = Minecraft.getInstance().screen;
+-        if (
+-                screen != null &&
+-                        !(screen instanceof PauseScreen) &&
+-                        !(screen instanceof OptionsSubScreen) &&
+-                        !(screen instanceof ChatScreen)) {
++        // SMH: the companion's open container stands for the client's screen; its own inventory is no screen.
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
++        if (player.containerMenu != player.inventoryMenu) {
+             // Close the screen if we're in-game
+-            Minecraft.getInstance().player.closeContainer();
++            player.closeContainer();
+         }
+     }
+ 
+     public static ItemStack getItemStackInSlot(Slot slot) {
+-        LocalPlayer player = Minecraft.getInstance().player;
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+         if (player == null)
+             return ItemStack.EMPTY;
+         // Cursor slot
+@@ -433,7 +422,7 @@
+     }
+ 
+     public static boolean isArmorEquipped(Item... any) {
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         for (Item item : any) {
+             if (item instanceof ArmorItem armor) {
+@@ -458,7 +447,7 @@
+     }
+ 
+     private static boolean isScreenOpenInner(Predicate<AbstractContainerMenu> pNotNull) {
+-        LocalPlayer player = Minecraft.getInstance().player;
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+         if (player != null)
+             return pNotNull.test(player.containerMenu);
+         return false;
+@@ -635,16 +624,16 @@
+     }
+ 
+     public static ItemStack getItemStackInCursorSlot() {
+-        if (Minecraft.getInstance().player != null) {
+-            if (Minecraft.getInstance().player.containerMenu != null) {
+-                return Minecraft.getInstance().player.containerMenu.getCarried();
++        if (AltoClef.getInstance().getPlayer() != null) {
++            if (AltoClef.getInstance().getPlayer().containerMenu != null) {
++                return AltoClef.getInstance().getPlayer().containerMenu.getCarried();
+             }
+         }
+         return ItemStack.EMPTY;
+     }
+ 
+     public static int getBrewingStandFuel() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof BrewingStandMenu stand)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof BrewingStandMenu stand)
+             return getBrewingStandFuel(stand);
+         return -1;
+     }
+@@ -654,34 +643,34 @@
+     }
+ 
+     public static double getFurnaceFuel(AbstractFurnaceMenu handler) {
+-        ContainerData d = ((AbstractFurnaceScreenHandlerAccessor) handler).getPropertyDelegate();
++        ContainerData d = handler.data /* SMH: opened by the access widener, as AltoClef's accessor does */;
+         return (double) d.get(0) / 200.0;
+     }
+ 
+     public static double getSmokerFuel(AbstractFurnaceMenu handler) {
+-        ContainerData d = ((AbstractFurnaceScreenHandlerAccessor) handler).getPropertyDelegate();
++        ContainerData d = handler.data /* SMH: opened by the access widener, as AltoClef's accessor does */;
+         return (double) d.get(0) / 200.0;
+     }
+ 
+     public static double getBlastFurnaceFuel(AbstractFurnaceMenu handler) {
+-        ContainerData d = ((AbstractFurnaceScreenHandlerAccessor) handler).getPropertyDelegate();
++        ContainerData d = handler.data /* SMH: opened by the access widener, as AltoClef's accessor does */;
+         return (double) d.get(0) / 200.0;
+     }
+ 
+     public static double getFurnaceFuel() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof AbstractFurnaceMenu furnace)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof AbstractFurnaceMenu furnace)
+             return getFurnaceFuel(furnace);
+         return -1;
+     }
+ 
+     public static double getSmokerFuel() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof AbstractFurnaceMenu smoker)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof AbstractFurnaceMenu smoker)
+             return getSmokerFuel(smoker);
+         return -1;
+     }
+ 
+     public static double getBlastFurnaceFuel() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof AbstractFurnaceMenu blastFurnace)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof AbstractFurnaceMenu blastFurnace)
+             return getBlastFurnaceFuel(blastFurnace);
+         return -1;
+     }
+@@ -699,19 +688,19 @@
+     }
+ 
+     public static double getFurnaceCookPercent() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof AbstractFurnaceMenu furnace)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof AbstractFurnaceMenu furnace)
+             return getFurnaceCookPercent(furnace);
+         return -1;
+     }
+ 
+     public static double getSmokerCookPercent() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof AbstractFurnaceMenu smoker)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof AbstractFurnaceMenu smoker)
+             return getSmokerCookPercent(smoker);
+         return -1;
+     }
+ 
+     public static double getBlastFurnaceCookPercent() {
+-        if (Minecraft.getInstance().player != null && Minecraft.getInstance().player.containerMenu instanceof AbstractFurnaceMenu blastFurnace)
++        if (AltoClef.getInstance().getPlayer() != null && AltoClef.getInstance().getPlayer().containerMenu instanceof AbstractFurnaceMenu blastFurnace)
+             return getBlastFurnaceCookPercent(blastFurnace);
+         return -1;
+     }

@@ -1,0 +1,37 @@
+@@ -3,7 +3,6 @@
+ package com.mineagent.engine.alto.tasks.construction;
+ 
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.util.Mth;
+@@ -100,7 +99,7 @@
+ 	
+ 	@Override
+     public boolean isFinished() {
+-        assert Minecraft.getInstance().level != null;
++        assert AltoClef.getInstance().getWorld() != null;
+         
+         Optional<Entity> entity = mod.getEntityTracker().getClosestEntity((e) -> {
+         	if(e instanceof Skeleton 
+@@ -187,8 +186,8 @@
+     }
+ 	
+ 	public void interact(BlockHitResult blockHitResult, InteractionHand hand) {
+-        boolean wasSneaking = mod.getPlayer().input.shiftKeyDown;
+-        mod.getPlayer().input.shiftKeyDown = false;
++        boolean wasSneaking = mod.getPlayer().isShiftKeyDown(); // SMH: the body's own sneak state (a client's input)
++        mod.getPlayer().setShiftKeyDown(false);
+ 
+         InteractionResult result = mod.getController().useItemOn(mod.getPlayer(),hand, blockHitResult);
+ 
+@@ -196,7 +195,7 @@
+             mod.getPlayer().swing(hand);
+         }
+ 
+-        mod.getPlayer().input.shiftKeyDown = wasSneaking;
++        mod.getPlayer().setShiftKeyDown(wasSneaking);
+     }
+ 
+ 	public boolean canPlace(BlockPos blockPos, boolean checkEntities) {

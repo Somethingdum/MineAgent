@@ -1,0 +1,8 @@
+# Files in engine/alto written for the companion, not ported (the script leaves them alone)
+AltoLifeTask.java
+AltoTreeTask.java
+control/ServerGameMode.java
+tasks/construction/BuildHutTask.java
+tasks/life/ModelWants.java
+tasks/life/OwnLifeTask.java
+tasks/speedrun/beatgame/prioritytask/PrioritySelector.java

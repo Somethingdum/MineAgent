@@ -1,0 +1,39 @@
+@@ -15,11 +15,7 @@
+ import com.mineagent.engine.baritone.api.utils.Rotation;
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.screens.ChatScreen;
+-import net.minecraft.client.gui.screens.DeathScreen;
+-import net.minecraft.client.gui.screens.PauseScreen;
+-import net.minecraft.client.gui.screens.Screen;
++import net.minecraft.world.inventory.AbstractContainerMenu;
+ import net.minecraft.world.inventory.ClickType;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.item.ItemStack;
+@@ -33,7 +29,7 @@
+     private final TimerGame mouseMovingButScreenOpenTimeout = new TimerGame(1);
+     private ItemStack lastHandStack = null;
+ 
+-    private Screen lastScreen;
++    private AbstractContainerMenu lastScreen; // SMH: the open menu stands for the screen
+     private Rotation lastLookRotation;
+ 
+     public PlayerInteractionFixChain(TaskRunner runner) {
+@@ -174,12 +170,14 @@
+             return false;
+ 
+         // Only check look if we've had the same screen open for a while
+-        Screen openScreen = Minecraft.getInstance().screen;
++        // SMH: the companion's open container stands for the client's screen; its inventory is none.
++        var player = AltoClef.getInstance().getPlayer();
++        AbstractContainerMenu openScreen = player.containerMenu == player.inventoryMenu ? null : player.containerMenu;
+         if (openScreen != lastScreen) {
+             mouseMovingButScreenOpenTimeout.reset();
+         }
+         // We're in the player screen/a screen we DON'T want to cancel out of
+-        if (openScreen == null || openScreen instanceof ChatScreen || openScreen instanceof PauseScreen || openScreen instanceof DeathScreen) {
++        if (openScreen == null || player.isDeadOrDying()) {
+             mouseMovingButScreenOpenTimeout.reset();
+             return false;
+         }

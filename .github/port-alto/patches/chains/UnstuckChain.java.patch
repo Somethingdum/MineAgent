@@ -1,0 +1,41 @@
+@@ -16,9 +16,8 @@
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+ import java.util.LinkedList;
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.multiplayer.ClientLevel;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.level.block.EndPortalFrameBlock;
+@@ -42,8 +41,8 @@
+     private void checkStuckInWater() {
+         if (posHistory.size() < 100) return;
+ 
+-        ClientLevel world = AltoClef.getInstance().getWorld();
+-        LocalPlayer player = AltoClef.getInstance().getPlayer();
++        ServerLevel world = AltoClef.getInstance().getWorld();
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+         // is not in water
+         if (!world.getBlockState(player.getOnPos()).getBlock().equals(Blocks.WATER)
+@@ -77,7 +76,7 @@
+         AltoClef mod = AltoClef.getInstance();
+ 
+         Player player = mod.getPlayer();
+-        ClientLevel world = mod.getWorld();
++        ServerLevel world = mod.getWorld();
+ 
+         if (PlayerVer.inPowderedSnow(player)) {
+             isProbablyStuck = true;
+@@ -149,7 +148,7 @@
+ 
+         AltoClef mod = AltoClef.getInstance();
+ 
+-        if (!AltoClef.inGame() || Minecraft.getInstance().isPaused() || !mod.getUserTaskChain().isActive())
++        if (!AltoClef.inGame() || false /* SMH: a server-side body is never paused */ || !mod.getUserTaskChain().isActive())
+             return Float.NEGATIVE_INFINITY;
+ 
+         if (StorageHelper.isBlastFurnaceOpen() || StorageHelper.isSmokerOpen() || StorageHelper.isChestOpen() || StorageHelper.isBigCraftingOpen()) {

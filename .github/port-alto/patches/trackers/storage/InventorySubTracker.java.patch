@@ -1,0 +1,66 @@
+@@ -2,6 +2,7 @@
+ // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+ package com.mineagent.engine.alto.trackers.storage;
+ 
++import com.mineagent.engine.alto.AltoClef;
+ import com.mineagent.engine.alto.trackers.Tracker;
+ import com.mineagent.engine.alto.trackers.TrackerManager;
+ import com.mineagent.engine.alto.util.helpers.ItemHelper;
+@@ -14,8 +15,7 @@
+ import java.util.Collections;
+ import java.util.HashMap;
+ import java.util.List;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.Inventory;
+ import net.minecraft.world.inventory.AbstractContainerMenu;
+ import net.minecraft.world.item.Item;
+@@ -102,7 +102,7 @@
+     }
+ 
+     public List<ItemStack> getInventoryStacks(boolean includeCursor) {
+-        LocalPlayer player = Minecraft.getInstance().player;
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+         if (player == null || player.getInventory() == null)
+             return Collections.emptyList();
+         Inventory inv = player.getInventory();
+@@ -134,8 +134,8 @@
+             }
+         }
+         // Then add air slots that can insert our item
+-        if (Minecraft.getInstance().player != null) {
+-            AbstractContainerMenu handler = Minecraft.getInstance().player.containerMenu;
++        if (AltoClef.getInstance().getPlayer() != null) {
++            AbstractContainerMenu handler = AltoClef.getInstance().getPlayer().containerMenu;
+             for (Slot airSlot : list.getOrDefault(Items.AIR, Collections.emptyList())) {
+                 // Ignore cursor slot
+                 if (airSlot.equals(CursorSlot.SLOT))
+@@ -189,15 +189,15 @@
+ 
+     @Override
+     protected void updateState() {
+-        _prevScreenHandler = Minecraft.getInstance().player != null ? Minecraft.getInstance().player.containerMenu : null;
++        _prevScreenHandler = AltoClef.getInstance().getPlayer() != null ? AltoClef.getInstance().getPlayer().containerMenu : null;
+ 
+         itemToSlotPlayer.clear();
+         itemToSlotContainer.clear();
+         itemCountsPlayer.clear();
+         itemCountsContainer.clear();
+-        if (Minecraft.getInstance().player == null)
++        if (AltoClef.getInstance().getPlayer() == null)
+             return;
+-        AbstractContainerMenu handler = Minecraft.getInstance().player.containerMenu;
++        AbstractContainerMenu handler = AltoClef.getInstance().getPlayer().containerMenu;
+         if (handler == null)
+             return;
+         for (Slot slot : Slot.getCurrentScreenSlots()) {
+@@ -223,7 +223,7 @@
+ 
+     @Override
+     protected boolean isDirty() {
+-        AbstractContainerMenu handler = Minecraft.getInstance().player != null ? Minecraft.getInstance().player.containerMenu : null;
++        AbstractContainerMenu handler = AltoClef.getInstance().getPlayer() != null ? AltoClef.getInstance().getPlayer().containerMenu : null;
+         return super.isDirty() || handler != _prevScreenHandler;
+     }
+ }

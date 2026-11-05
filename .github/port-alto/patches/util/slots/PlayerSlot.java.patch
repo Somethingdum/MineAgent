@@ -1,0 +1,21 @@
+@@ -2,8 +2,8 @@
+ // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
+ package com.mineagent.engine.alto.util.slots;
+ 
++import com.mineagent.engine.alto.AltoClef;
+ import java.util.stream.IntStream;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.world.entity.EquipmentSlot;
+ 
+ public class PlayerSlot extends Slot {
+@@ -42,8 +42,8 @@
+     public static Slot getEquipSlot(EquipmentSlot equipSlot) {
+         switch (equipSlot) {
+             case MAINHAND:
+-                assert Minecraft.getInstance().player != null;
+-                return Slot.getFromCurrentScreenInventory(Minecraft.getInstance().player.getInventory().selected);
++                assert AltoClef.getInstance().getPlayer() != null;
++                return Slot.getFromCurrentScreenInventory(AltoClef.getInstance().getPlayer().getInventory().selected);
+             case OFFHAND:
+                 return OFFHAND_SLOT;
+             case FEET:

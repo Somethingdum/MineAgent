@@ -1,0 +1,9 @@
+@@ -30,7 +30,7 @@
+     }
+ 
+     private static String maybeCensor(double value) {
+-        return Baritone.settings().censorCoordinates.value ? "<censored>" : Double.toString(value);
++        return com.mineagent.engine.baritone.api.BaritoneAPI.getSettings().censorCoordinates.value ? "<censored>" : Double.toString(value);
+     }
+ 
+     public boolean isInGoal(int x, int y, int z) {

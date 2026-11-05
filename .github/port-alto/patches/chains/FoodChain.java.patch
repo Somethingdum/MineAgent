@@ -1,0 +1,28 @@
+@@ -14,8 +14,7 @@
+ import com.mineagent.engine.baritone.api.utils.input.Input;
+ import java.util.Objects;
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.util.Tuple;
+ import net.minecraft.world.effect.MobEffects;
+@@ -217,7 +216,7 @@
+         }
+ 
+ 
+-        LocalPlayer player = Minecraft.getInstance().player;
++        ServerPlayer player = AltoClef.getInstance().getPlayer();
+         assert player != null;
+         int foodLevel = player.getFoodData().getFoodLevel();
+         float health = player.getHealth();
+@@ -261,7 +260,7 @@
+         Item bestFood = null;
+         double bestFoodScore = Double.NEGATIVE_INFINITY;
+         int foodTotal = 0;
+-        LocalPlayer player = mod.getPlayer();
++        ServerPlayer player = mod.getPlayer();
+         float health = player != null ? player.getHealth() : 20;
+         //float toHeal = player != null? 20 - player.getHealth() : 0;
+         float hunger = player != null ? player.getFoodData().getFoodLevel() : 20;

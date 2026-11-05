@@ -1,0 +1,19 @@
+@@ -22,8 +22,7 @@
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+ import java.util.*;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.inventory.ClickType;
+ import net.minecraft.world.inventory.CraftingMenu;
+@@ -398,7 +397,7 @@
+             Optional<WrappedRecipeEntry> recipeToSend = JankCraftingRecipeMapping.getMinecraftMappedRecipe(target.getRecipe(), target.getOutputItem());
+ 
+             // Get the client player entity
+-            LocalPlayer player = Minecraft.getInstance().player;
++            ServerPlayer player = AltoClef.getInstance().getPlayer();
+ 
+             // If crafting book is enabled, the recipe to send exists, and the player has the recipe in their recipe book, return a CraftGenericWithRecipeBooksTask
+             if (mod.getModSettings().shouldUseCraftingBookToCraft() && recipeToSend.isPresent()) {

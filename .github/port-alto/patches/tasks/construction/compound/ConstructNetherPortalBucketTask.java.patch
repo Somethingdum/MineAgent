@@ -1,0 +1,41 @@
+@@ -19,7 +19,6 @@
+ import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+ import java.util.*;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.core.Vec3i;
+@@ -273,8 +272,8 @@
+         // Now, clear the inside.
+         for (Vec3i offs : PORTAL_INTERIOR) {
+             BlockPos p = portalOrigin.offset(offs);
+-            assert Minecraft.getInstance().level != null;
+-            if (!Minecraft.getInstance().level.getBlockState(p).isAir()) {
++            assert AltoClef.getInstance().getWorld() != null;
++            if (!AltoClef.getInstance().getWorld().getBlockState(p).isAir()) {
+                 setDebugState("Clearing inside of portal");
+                 currentDestroyTarget = p;
+                 return null;
+@@ -339,8 +338,8 @@
+             alreadyExplored.add(origin);
+ 
+             // Base case: We hit a non-full lava block.
+-            assert Minecraft.getInstance().level != null;
+-            BlockState s = Minecraft.getInstance().level.getBlockState(origin);
++            assert AltoClef.getInstance().getWorld() != null;
++            BlockState s = AltoClef.getInstance().getWorld().getBlockState(origin);
+             if (s.getBlock() != Blocks.LAVA) {
+                 continue;
+             } else {
+@@ -383,8 +382,8 @@
+                     for (int dz = -1; dz < sizeAllocation.getZ() + 1; ++dz) {
+                         for (int dy = -1; dy < sizeAllocation.getY(); ++dy) {
+                             BlockPos toCheck = lava.offset(offset).offset(sizeOffset).offset(dx,dy,dz);
+-                            assert Minecraft.getInstance().level != null;
+-                            BlockState state = Minecraft.getInstance().level.getBlockState(toCheck);
++                            assert AltoClef.getInstance().getWorld() != null;
++                            BlockState state = AltoClef.getInstance().getWorld().getBlockState(toCheck);
+                             if (state.getBlock() == Blocks.LAVA || state.getBlock() == Blocks.WATER || state.getBlock() == Blocks.BEDROCK) {
+                                 found = false;
+                                 break moveAlongLine;

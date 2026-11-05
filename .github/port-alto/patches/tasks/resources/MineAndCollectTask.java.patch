@@ -1,0 +1,17 @@
+@@ -20,7 +20,6 @@
+ import com.mineagent.engine.alto.util.slots.PlayerSlot;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+ import java.util.*;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.util.Tuple;
+ import net.minecraft.world.entity.item.ItemEntity;
+@@ -127,7 +126,7 @@
+ 
+     private void makeSureToolIsEquipped(AltoClef mod) {
+         if (_cursorStackTimer.elapsed() && !mod.getFoodChain().needsToEat()) {
+-            assert Minecraft.getInstance().player != null;
++            assert AltoClef.getInstance().getPlayer() != null;
+             ItemStack cursorStack = StorageHelper.getItemStackInCursorSlot();
+             if (cursorStack != null && !cursorStack.isEmpty()) {
+                 // We have something in our cursor stack

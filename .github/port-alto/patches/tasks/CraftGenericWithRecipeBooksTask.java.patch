@@ -1,0 +1,19 @@
+@@ -17,8 +17,7 @@
+ import com.mineagent.engine.alto.util.slots.PlayerSlot;
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import java.util.Optional;
+-import net.minecraft.client.Minecraft;
+-import net.minecraft.client.player.LocalPlayer;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.inventory.ClickType;
+ import net.minecraft.world.item.ItemStack;
+ 
+@@ -138,7 +137,7 @@
+         Optional<WrappedRecipeEntry> recipeToSend = JankCraftingRecipeMapping.getMinecraftMappedRecipe(target.getRecipe(), target.getOutputItem());
+         if (recipeToSend.isPresent()) {
+             if (mod.getSlotHandler().canDoSlotAction()) {
+-                LocalPlayer player = Minecraft.getInstance().player;
++                ServerPlayer player = AltoClef.getInstance().getPlayer();
+                 assert player != null;
+                 // Click the recipe to send it
+                 mod.getController().handlePlaceRecipe(player.containerMenu.containerId, recipeToSend.get().asRecipe(), true);

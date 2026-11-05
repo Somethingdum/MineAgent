@@ -1,0 +1,21 @@
+@@ -15,7 +15,6 @@
+ import com.mineagent.engine.alto.util.helpers.WorldHelper;
+ import com.mineagent.engine.alto.util.time.TimerGame;
+ import java.util.LinkedList;
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.core.Vec3i;
+@@ -86,10 +85,10 @@
+     private static BlockPos getBuildableAreaNearby(AltoClef mod) {
+         BlockPos checkOrigin = mod.getPlayer().blockPosition();
+         for (BlockPos toCheck : WorldHelper.scanRegion(checkOrigin, checkOrigin.offset(PORTALABLE_REGION_SIZE))) {
+-            if (Minecraft.getInstance().level == null) {
++            if (AltoClef.getInstance().getWorld() == null) {
+                 return null;
+             }
+-            BlockState state = Minecraft.getInstance().level.getBlockState(toCheck);
++            BlockState state = AltoClef.getInstance().getWorld().getBlockState(toCheck);
+             boolean validToWorld = (WorldHelper.canPlace(toCheck) || WorldHelper.canBreak(toCheck));
+             if (!validToWorld || state.getBlock() == Blocks.LAVA || state.getBlock() == Blocks.WATER || state.getBlock() == Blocks.BEDROCK) {
+                 return null;
