@@ -100,8 +100,13 @@ jobs:
         run: |
           # The scenes' failure lines and the companions' traces near them, repeated at the end of the job log, where a
           # look at its last lines finds them.
-          grep -E "GAMETEST FAILED|required tests failed|^.*   - companiongametests|\[MineAgent\] (loot|builder|light|smelting|cell|shelter|production|hunt|alto|food):|\[SCENE trap\]|Took the trap|couldn't|Task tick error|\[SCENE agent|\[Alto Clef\] (Task START|Task FAILED|User Task Set)" \
+          grep -E "GAMETEST FAILED|required tests failed|^.*   - companiongametests|\[MineAgent\] (loot|builder|light|smelting|cell|shelter|production|hunt|alto|food):|\[SCENE trap\]|Took the trap|couldn't" \
             fabric/build/gametest/logs/latest.log | cut -c 1-1600 | tail -700 || true
+          # The one agent's scenes last, so they are in the log's last lines: their traces (its task tree root to leaf
+          # and Baritone's state), its errors, the tasks it was set and the ones that failed.
+          echo "---- the one agent ----"
+          grep -E "\[SCENE agent|Task tick error|\[Alto Clef\] (Task FAILED|User Task Set)|GAMETEST FAILED.*the agent" \
+            fabric/build/gametest/logs/latest.log | cut -c 1-2400 | tail -400 || true
 
       - name: Keep the report and the server log
         if: always()

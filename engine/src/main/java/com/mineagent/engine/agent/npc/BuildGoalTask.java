@@ -7,11 +7,15 @@
 // the companion are marked SMH.
 package com.mineagent.engine.agent.npc;
 
+import com.mineagent.sbe.altoclef.tasks.InteractWithBlockTask;
 import com.mineagent.sbe.altoclef.tasks.construction.DestroyBlockTask;
 import com.mineagent.sbe.altoclef.tasks.construction.PlaceBlockTask;
+import com.mineagent.sbe.altoclef.tasks.movement.GetToBlockTask;
 import com.mineagent.sbe.altoclef.tasksystem.Task;
+import com.mineagent.sbe.altoclef.util.ItemTarget;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -19,6 +23,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.LinkedHashMap;
@@ -95,6 +100,14 @@ public class BuildGoalTask extends Task {
         return chunk != null && satisfied(name, chunk.getBlockState(p), level, p);
     }
 
+    /** What the blueprint asks for at a spot, or null outside it. */
+    private String cell(BlockPos p) {
+        if (!holds(p) || orientation == null) return null;
+        int x = p.getX() - position.getX(), y = p.getY() - position.getY() - goal.offset(), z = p.getZ() - position.getZ();
+        int[] r = NpcUtils.rotateXZ(x, z, orientation, goal.sizeX(), goal.sizeZ());
+        return goal.blocks()[y][r[1]][r[0]];
+    }
+
     /** The door of the build, if its blueprint has one and it stands (Mindcraft's getBuildingDoor). */
     public BlockPos door(ServerLevel level) {
         if (position == null || orientation == null) return null;
@@ -166,6 +179,10 @@ public class BuildGoalTask extends Task {
                         String typed = NpcUtils.typeOfGeneric(player, blockName);
                         if (inventory.getOrDefault(typed, 0) > 0) {
                             Block block = BuiltInRegistries.BLOCK.get(ResourceLocation.withDefaultNamespace(typed));
+                            if (block instanceof DoorBlock) {
+                                Task door = placeDoor(player, worldPos, block);
+                                if (door != null) return door;
+                            }
                             if (block != Blocks.AIR) {
                                 setDebugState("Placing " + typed + " at " + worldPos.toShortString() + " for the " + goal.name());
                                 return new PlaceBlockTask(worldPos, block);
@@ -178,6 +195,40 @@ public class BuildGoalTask extends Task {
         }
         setDebugState(missing.isEmpty() ? "The " + goal.name() + " stands" : "Short of " + missing + " for the " + goal.name());
         return null;
+    }
+
+    /**
+     * SMH: a door placed so that it shuts the doorway. Baritone's builder places a block only when the state it would
+     * place equals the one it was asked for, and a door's facing and hinge come from where the placer stands, so it never
+     * placed one (upstream Baritone's answer, buildIgnoreDirection, would let the door face along the wall and leave
+     * the doorway open). Done as AltoClef places its bed (PlaceBedAndSetSpawnTask: stand where the facing comes out
+     * right, then click the face below with the item, InteractWithBlockTask): from the open cell beside the doorway
+     * nearest the build's middle (inside), facing out through it. Null when no such cell is open (the builder tries).
+     */
+    private Task placeDoor(ServerPlayer player, BlockPos lower, Block door) {
+        ServerLevel level = controller.getWorld();
+        double midX = position.getX() + (goal.sizeX() - 1) / 2.0, midZ = position.getZ() + (goal.sizeZ() - 1) / 2.0;
+        BlockPos stand = null;
+        double best = Double.MAX_VALUE;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            BlockPos p = lower.relative(d);
+            // Open now, or open by the blueprint (the layer above may not be dug yet; Baritone digs to stand there).
+            boolean open = (level.getBlockState(p).getCollisionShape(level, p).isEmpty() || "air".equals(cell(p)))
+                    && (level.getBlockState(p.above()).getCollisionShape(level, p.above()).isEmpty() || "air".equals(cell(p.above())));
+            if (!open || !level.getBlockState(p.below()).isFaceSturdy(level, p.below(), Direction.UP)) continue;
+            double dist = Math.pow(p.getX() - midX, 2) + Math.pow(p.getZ() - midZ, 2);
+            if (dist < best) {
+                best = dist;
+                stand = p;
+            }
+        }
+        if (stand == null) return null;
+        if (!player.blockPosition().equals(stand)) {
+            setDebugState("Going to " + stand.toShortString() + " to hang the door at " + lower.toShortString());
+            return new GetToBlockTask(stand);
+        }
+        setDebugState("Hanging the door at " + lower.toShortString() + " for the " + goal.name());
+        return new InteractWithBlockTask(new ItemTarget(door.asItem(), 1), Direction.UP, lower.below(), false);
     }
 
     /**
