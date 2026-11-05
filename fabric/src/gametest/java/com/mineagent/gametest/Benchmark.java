@@ -129,9 +129,12 @@ public final class Benchmark implements ModInitializer {
                     System.out.println("[BENCH] hung: \"" + info.getThreadName() + "\" " + info.getThreadState()
                             + (info.getLockName() == null ? "" : " waiting on " + info.getLockName())
                             + (info.getLockOwnerName() == null ? "" : " held by \"" + info.getLockOwnerName() + "\""));
-                    // In full for the server's thread, Baritone's and any blocked on a lock (the job log keeps 400 lines).
+                    // In full for the server's thread, Baritone's (the old port's and Automatone's path workers), any
+                    // blocked on a lock and any holding one (the job log keeps 400 lines).
                     boolean full = info.getThreadName().equals("Server thread") || info.getThreadName().startsWith("MineAgent Baritone")
-                            || info.getThreadState() == Thread.State.BLOCKED || info.getLockOwnerName() != null;
+                            || info.getThreadName().startsWith("Automatone Worker")
+                            || info.getThreadState() == Thread.State.BLOCKED || info.getLockOwnerName() != null
+                            || info.getLockedMonitors().length > 0;
                     var frames = info.getStackTrace();
                     for (int i = 0; i < Math.min(full ? 40 : 2, frames.length); i++) System.out.println("[BENCH] hung:     at " + frames[i]);
                     for (var held : info.getLockedMonitors()) System.out.println("[BENCH] hung:     holds " + held);

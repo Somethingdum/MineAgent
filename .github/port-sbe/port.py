@@ -23,6 +23,17 @@ HOOKS = 'com.mineagent.sbe.common.ServerHooks'
 
 # (file, old, new): each old must occur exactly once in the renamed file.
 PATCHES = [
+    # A tracker refreshed on the server thread only; asked from Baritone's path workers it answers from its last state
+    # (at most a tick old: TrackerManager marks every tracker dirty each tick). A refresh reads the world, and on a
+    # server a read from another thread waits for the server thread, which can be waiting on the lock the refresh holds
+    # (BaritoneHelper.MINECRAFT_LOCK): the benchmark's seed 3 hung so at tick 18,884. On the client AltoClef was written
+    # for, such reads do not wait, so it never met this.
+    ('altoclef/trackers/Tracker.java',
+     '''   public void ensureUpdated() {
+      if (this.isDirty()) {''',
+     '''   public void ensureUpdated() {
+      // SMH: on the server thread only (see .github/port-sbe/port.py); elsewhere its last state.
+      if (this.isDirty() && (this.mod == null || this.mod.getWorld() == null || this.mod.getWorld().getServer().isSameThread())) {'''),
     # AltoClef's game timers on the game's time again, ticks / 20 as AltoClef's own TimerGame counts it (the client
     # world's time); SecondBrainEngine counted the wall clock, so a server faster than real time (a sprint, the game
     # tests) waited thousands of ticks on a 2-second craft, and one slower hurried.

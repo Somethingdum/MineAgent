@@ -23,7 +23,8 @@ public abstract class Tracker {
    }
 
    public void ensureUpdated() {
-      if (this.isDirty()) {
+      // SMH: on the server thread only (see .github/port-sbe/port.py); elsewhere its last state.
+      if (this.isDirty() && (this.mod == null || this.mod.getWorld() == null || this.mod.getWorld().getServer().isSameThread())) {
          this.updateState();
          this.dirty = false;
       }
