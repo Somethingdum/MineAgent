@@ -187,7 +187,10 @@ public class NpcRoutineTask extends Task {
     private boolean met(ServerPlayer player, NpcData.Goal goal) {
         switch (goal.name()) {
             case "food":
-                return CollectFoodTask.calculateFoodPotential(controller) >= goal.quantity();
+                // As CollectFoodTask judges itself done (StorageHelper.calculateInventoryFoodScore: food it can eat now),
+                // not its potential (wheat and hay bales count there as bread unmade: a world-1 run carried hay, called
+                // its food met and starved).
+                return com.mineagent.sbe.altoclef.util.helpers.StorageHelper.calculateInventoryFoodScore(controller) >= goal.quantity();
             case "fuel":
                 return controller.getItemStorage().getItemCount(Items.COAL, Items.CHARCOAL) >= goal.quantity();
             default:
