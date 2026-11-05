@@ -18,6 +18,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.BedItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
@@ -115,6 +116,13 @@ public class NpcRoutineTask extends Task {
     /** Mindcraft's executeGoal: the first goal not yet met, acted on; the model asked for one when none is left. */
     private Task executeGoal() {
         ServerPlayer player = controller.getPlayer();
+        data.idle = false;
+        // The model's goal, met: told (the curriculum's verdict, from what the game shows), and cleared.
+        if (data.currGoal != null && met(player, data.currGoal)) {
+            NpcData.Goal done = data.currGoal;
+            data.currGoal = null;
+            if (data.onCurrGoalMet != null) data.onCurrGoalMet.accept(done);
+        }
         tempGoals.removeIf(g -> met(player, g));
         List<NpcData.Goal> goals = new ArrayList<>(tempGoals);
         goals.addAll(data.goals);
@@ -154,6 +162,7 @@ public class NpcRoutineTask extends Task {
                 }
             }
         }
+        data.idle = true;
         if (data.doSetGoal && wantsGoal != null) wantsGoal.accept(this);
         setDebugState("Every goal met");
         return null;
@@ -174,9 +183,23 @@ public class NpcRoutineTask extends Task {
             case "fuel":
                 return controller.getItemStorage().getItemCount(Items.COAL, Items.CHARCOAL) >= goal.quantity();
             default:
+                if (goal.name().startsWith("kill:")) return kills(player, goal) >= goal.quantity();
+                if (BuiltInRegistries.ITEM.getOptional(ResourceLocation.withDefaultNamespace(goal.name())).isEmpty()) {
+                    // A catalogue name for a group of items ("log", "planks"): any of them.
+                    Item[] matches = TaskCatalogue.getItemMatches(goal.name());
+                    return matches != null && controller.getItemStorage().getItemCount(matches) >= goal.quantity();
+                }
                 if (NpcUtils.itemSatisfied(player, goal.name(), goal.quantity())) return true;
                 return goal.quantity() == 1 && placedInHome(goal.name());
         }
+    }
+
+    /** Kills of the goal's mob since the goal was set, by the game's own statistics. */
+    private int kills(ServerPlayer player, NpcData.Goal goal) {
+        var type = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.withDefaultNamespace(goal.name().substring(5)));
+        int now = player.getStats().getValue(net.minecraft.stats.Stats.ENTITY_KILLED.get(type));
+        int start = data.killsAtStart.computeIfAbsent(goal.name(), k -> now);
+        return now - start;
     }
 
     private boolean placedInHome(String name) {
@@ -207,6 +230,10 @@ public class NpcRoutineTask extends Task {
                 return TaskCatalogue.getItemTask("charcoal", goal.quantity());
             }
             default:
+                if (goal.name().startsWith("kill:")) {
+                    var type = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.withDefaultNamespace(goal.name().substring(5)));
+                    return new com.mineagent.sbe.altoclef.tasks.entity.KillEntitiesTask(e -> e.getType() == type);
+                }
                 if (!TaskCatalogue.taskExists(goal.name())) return null;
                 return TaskCatalogue.getItemTask(goal.name(), goal.quantity());
         }

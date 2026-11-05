@@ -33,7 +33,8 @@ jobs:
       matrix:
         seed: ${{ fromJSON(github.event.inputs.seed && format('["{0}"]', github.event.inputs.seed) || '["smh-benchmark-1","smh-benchmark-2","smh-benchmark-3"]') }}
         # [compare]: each world twice, as the config has it and with AltoClef's switches on, side by side on one commit.
-        way: ${{ fromJSON(contains(github.event.head_commit.message, '[compare]') && '["as set","altoclef"]' || '["as set"]') }}
+        # [compare]: each world twice, as the config has it and with the one agent ([compare-alto]: AltoClef's switches).
+        way: ${{ fromJSON(contains(github.event.head_commit.message, '[compare-alto]') && '["as set","altoclef"]' || contains(github.event.head_commit.message, '[compare]') && '["as set","agent"]' || '["as set"]') }}
     permissions:
       contents: read
       checks: write
@@ -41,7 +42,7 @@ jobs:
       DAYS: ${{ github.event.inputs.days || '3' }}
       SEED: ${{ matrix.seed }}
       # A [benchmark] push whose message also says [alto] runs AltoClef's tasks and life; [alto+] its survival chains too.
-      SWITCHES: ${{ matrix.way == 'altoclef' && 'altoTasks,altoLife,altoSurvival' || github.event.inputs.switches || (contains(github.event.head_commit.message, '[alto+]') && 'altoTasks,altoLife,altoSurvival' || contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
+      SWITCHES: ${{ matrix.way == 'altoclef' && 'altoTasks,altoLife,altoSurvival' || matrix.way == 'agent' && 'oneAgent' || github.event.inputs.switches || (contains(github.event.head_commit.message, '[agent]') && 'oneAgent' || contains(github.event.head_commit.message, '[alto+]') && 'altoTasks,altoLife,altoSurvival' || contains(github.event.head_commit.message, '[alto]') && 'altoTasks,altoLife' || '') }}
       WAY: ${{ matrix.way }}
     steps:
       - name: Check out source
@@ -86,7 +87,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-report-${{ matrix.seed }}-${{ matrix.way == 'altoclef' && 'altoclef' || 'as-set' }}
+          name: benchmark-report-${{ matrix.seed }}-${{ matrix.way == 'altoclef' && 'altoclef' || matrix.way == 'agent' && 'agent' || 'as-set' }}
           path: |
             fabric/build/benchmark/report.json
             benchmark.log

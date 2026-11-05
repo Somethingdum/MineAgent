@@ -1166,6 +1166,15 @@ public class AgentLoop {
     private void practice(net.minecraft.server.level.ServerPlayer player, boolean goalVerified, long gameTick) {
         if (player == null) return;
         if (curriculum.current() != null) {
+            if (curriculumToAgent) {
+                // The routine's goal the model set: judged there by the game (NpcData.onCurrGoalMet); its time up fails it.
+                if (player.isDeadOrDying() || curriculum.overdue(gameTick)) {
+                    if (agentLife != null) agentLife.currGoal = null;
+                    curriculumToAgent = false;
+                    curriculum.failed();
+                }
+                return;
+            }
             if (curriculumToLife) {
                 // Its first days' want (ModelWants): judged there by the game; a death or its time up fails it here.
                 if (player.isDeadOrDying() || curriculum.overdue(gameTick)) {
@@ -1192,7 +1201,10 @@ public class AgentLoop {
         boolean taskRunning = body != null && body.taskId() != null; // an order it is doing (a chest to fill)
         // Its first days by AltoClef's priorities (behaviour.altoLife): the model still proposes what it does next, as one
         // of its wants (ModelWants), the fixed list beneath it as the floor.
-        boolean lifeRunning = altoLifeTaskId != null;
+        // The one agent's life (behaviour.oneAgent) asks the model only once every goal on its list is met (Mindcraft's
+        // setGoal: when no goal acted); the list is its floor, the model's goals go on top of it.
+        if (agentLifeTaskId != null && (agentLife == null || !agentLife.idle)) return;
+        boolean lifeRunning = altoLifeTaskId != null || agentLifeTaskId != null;
         if (!curriculum.due(auto && agentSettings.curriculum(), (inProgress || skillRuntime.active() || taskRunning) && !lifeRunning, sinceOrder,
                 hostileNear, player.getHealth(), flee, now)) return;
         curriculum.asking(now);
@@ -1220,6 +1232,25 @@ public class AgentLoop {
                     var task = curriculum.parse(replyContent(sideCall(request)));
                     task.ifPresent(t -> Services.platform().scheduleOnServer(() -> {
                         if (curriculum.current() != null) return;
+                        if (agentLifeTaskId != null && agentLife != null) {
+                            // Voyager's task as the routine's goal (Mindcraft's curr_goal), judged by what the game shows.
+                            var g = com.mineagent.engine.agent.npc.VoyagerTasks.goal(t);
+                            curriculum.begin(t, currentGameTickSafe());
+                            journal.record("practice", "the model proposed: " + t + (g == null ? " (not a task I can read)" : ""), currentGameTickSafe());
+                            if (g == null) {
+                                curriculum.failed();
+                                return;
+                            }
+                            curriculumToAgent = true;
+                            agentLife.killsAtStart.remove(g.name());
+                            agentLife.onCurrGoalMet = done -> Services.platform().scheduleOnServer(() -> {
+                                if (!curriculumToAgent) return;
+                                curriculumToAgent = false;
+                                curriculum.verified();
+                            });
+                            agentLife.currGoal = g;
+                            return;
+                        }
                         if (altoLifeTaskId != null) {
                             curriculum.begin(t, currentGameTickSafe());
                             curriculumToLife = true;
@@ -5105,6 +5136,13 @@ public class AgentLoop {
         return best == null ? null : new net.minecraft.core.BlockPos(best.x(), best.y(), best.z());
     }
 
+    /** Its life by the one agent (behaviour.oneAgent): the task running it, when it was started, and its goals. */
+    private volatile String agentLifeTaskId;
+    private volatile long agentLifeAt = Long.MIN_VALUE / 2;
+    private com.mineagent.engine.agent.npc.NpcData agentLife;
+    /** The curriculum's task under way is the agent routine's goal (NpcData.currGoal), judged there. */
+    private volatile boolean curriculumToAgent;
+
     /** Its first days by AltoClef's priorities (behaviour.altoLife): done once, the one running, and when it was started. */
     private volatile boolean altoLifeDone;
     private volatile String altoLifeTaskId;
@@ -5140,6 +5178,22 @@ public class AgentLoop {
                 return;
             }
             keepBaseUp(self, dim, now); // kept up
+            return;
+        }
+        // Its life by the one agent (behaviour.oneAgent; SMH plan 70): Mindcraft's routine over its goals on its agent
+        // (AgentTask), its goals and builds kept between its turns with the body (an order between them, a restart).
+        if (com.mineagent.engine.settings.Switches.oneAgent()) {
+            if (agentLifeTaskId != null || now - agentLifeAt < 600) return;
+            agentLifeAt = now;
+            String id = "agent-life-" + UUID.randomUUID();
+            agentLifeTaskId = id;
+            if (agentLife == null) {
+                agentLife = com.mineagent.engine.agent.npc.NpcPresets.firstDays();
+                journal.record("survive", "my life on my own, by the one agent: " + agentLife.goals.size() + " goals, my day's routine", now);
+            }
+            afterTaskAlways.put(id, () -> agentLifeTaskId = null);
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(companion,
+                    com.mineagent.engine.agent.AgentTask.AgentRecord.life(id, agentLife), reply -> { });
             return;
         }
         // Its first days by AltoClef's priority tasks (behaviour.altoLife): stone tools, its hut with its crafting table
@@ -7212,7 +7266,7 @@ public class AgentLoop {
         // Its first days by AltoClef's priorities (behaviour.altoLife) have their own night: home to its hut at dusk, its
         // bed or a wait there till the mobs have burned, its hut first if it isn't up. Stopping them for a shelter here
         // lost the hut it was building (the benchmark's first world, dug in beside it, began another in the morning).
-        if (altoLifeTaskId != null) return;
+        if (altoLifeTaskId != null || agentLifeTaskId != null) return;
         var level = player.serverLevel();
         if (!level.dimensionType().bedWorks() || guarding()) return;
         LiveBodyState body = liveBodyState.get();

@@ -25,4 +25,10 @@ public final class NpcData {
     public String home;
     public boolean doRoutine;
     public boolean doSetGoal;
+    /** SMH: its routine found no goal to act on last time (every goal met): the model may set the next. */
+    public volatile boolean idle;
+    /** SMH: told when the goal the model set is met (the curriculum's verdict: what the game shows, as Voyager's critic). */
+    public transient java.util.function.Consumer<Goal> onCurrGoalMet;
+    /** SMH: kills of a kind of mob when its kill goal was set, by the game's own statistics (kill goals count from there). */
+    public final Map<String, Integer> killsAtStart = new LinkedHashMap<>();
 }
