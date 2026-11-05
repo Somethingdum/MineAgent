@@ -96,6 +96,11 @@ Baritone's builder. Into:
 
 - `engine/src/main/java/com/mineagent/engine/alto/tasks/construction/BuildHutTask.java`
 
+Its `giveToPlayer` skill (`src/agent/library/skills.js`, at `mindcraft-bots/mindcraft` `e1c1fc3`): to within 3 blocks of
+the player, and the items tossed to them from up to 5 with them in sight. Into:
+
+- `engine/src/main/java/com/mineagent/engine/task/GiveTask.java`
+
 ```
 MIT License
 

@@ -52,6 +52,12 @@ public final class SleepChain implements TaskChain {
     private long toldNight = Long.MIN_VALUE;
     /** A bed it placed itself, to pick up again in the morning. */
     private BlockPos placedBed;
+    /**
+     * When it was last closed in at home for the night. The shelter's own flag goes when the shelter is interrupted,
+     * and the sleep chain taking the body is what interrupts it: without this, the next tick saw no home, put its bed
+     * down as a field bed and took it back up in the morning (the bed-at-home scene).
+     */
+    private long homeNightAt = Long.MIN_VALUE / 2;
     /** Where the walk under way is going, and when it started. */
     private BlockPos walkingTo;
     private long walkStarted = Long.MIN_VALUE;
@@ -73,7 +79,7 @@ public final class SleepChain implements TaskChain {
             if (sp == null || !sp.isAlive()) return Float.NEGATIVE_INFINITY;
             if (sp.isSleeping()) return PRIORITY;
             if (com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp)) return PRIORITY;
-            if (alone(sp, companion) && bedToHand(sp)) return PRIORITY; // with no bed, the night shelter is its job
+            if ((alone(sp, companion) || homeTonight(sp)) && bedToHand(sp)) return PRIORITY; // with no bed, the night shelter is its job
             if (placedBed != null && sp.serverLevel().isDay() && placedBed.closerThan(sp.blockPosition(), 16)) {
                 return PICK_UP_PRIORITY;
             }
@@ -129,6 +135,17 @@ public final class SleepChain implements TaskChain {
     }
 
     /** Someone else in its world is in bed at a time beds work, so the night waits on it. */
+    /** Closed in at home this night: now, or when it took the body for the night (see {@link #homeNightAt}). */
+    private boolean homeTonight(ServerPlayer sp) {
+        ServerLevel level = sp.serverLevel();
+        long now = level.getDayTime();
+        if (com.mineagent.engine.task.ShelterTask.sealedAtHome(sp.getUUID())) {
+            homeNightAt = now;
+            return true;
+        }
+        return !level.isDay() && now - homeNightAt < 12_000L;
+    }
+
     static boolean wanted(ServerPlayer sp) {
         ServerLevel level = sp.serverLevel();
         if (!level.dimensionType().bedWorks()) return false; // beds explode in the Nether and the End
@@ -146,7 +163,7 @@ public final class SleepChain implements TaskChain {
     public void tick(AgentPlayer companion) {
         ServerPlayer sp = ((CompanionEntity) companion).serverPlayer();
         try {
-            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp) || alone(sp, companion) && bedToHand(sp);
+            boolean want = com.mineagent.engine.settings.Switches.sleepWithPlayers() && wanted(sp) || (alone(sp, companion) || homeTonight(sp)) && bedToHand(sp);
             if (sp.isSleeping()) {
                 if (!want) sp.stopSleepInBed(true, true); // everyone else is up (or the switch is off): it gets up too
                 return;
@@ -157,7 +174,7 @@ public final class SleepChain implements TaskChain {
             }
             ServerLevel level = sp.serverLevel();
             long now = level.getGameTime();
-            boolean home = com.mineagent.engine.task.ShelterTask.sealedAtHome(sp.getUUID());
+            boolean home = homeTonight(sp);
             if (home && bed != null && !bed.closerThan(sp.blockPosition(), HOME_REACH)) bed = null;
             if (bed == null || !freeBed(level, bed) || now - lastSearch > SEARCH_EVERY) {
                 lastSearch = now;
