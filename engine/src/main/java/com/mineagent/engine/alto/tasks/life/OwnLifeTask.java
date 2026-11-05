@@ -204,7 +204,9 @@ public class OwnLifeTask extends Task {
             if (want <= 0) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             Task smelt = new SmeltInFurnaceTask(new SmeltTarget(new ItemTarget(Items.CHARCOAL, a.getItemStorage().getItemCount(Items.CHARCOAL) + want),
                     new ItemTarget("log", want)));
-            return new Pair<>(smelt, 120d);
+            // Fuel is in its minimum and a bed is "if possible": ahead of the bed (320 with wool, 250 for sheep). At 120,
+            // the benchmark's third world went 200 blocks after a bed with 3 fuel of its 8.
+            return new Pair<>(smelt, 325d);
         }, a -> StorageHelper.miningRequirementMet(MiningRequirement.STONE) && fuel(a) < FUEL, true, false, false));
         // Food, as BeatMinecraftTask.addCollectFoodTask (enough for its night), and cooked, as its addCookFoodTasks.
         List<Item> food = new LinkedList<>(ItemHelper.cookableFoodMap.values());
