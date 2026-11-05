@@ -1,0 +1,10 @@
+// A throwaway build that only translates SecondBrainEngine's sources (already resolved to 1.21.1 by stonecut.py) from
+// Yarn's names to Mojang's (SMH plan 70: port the best existing code). Nothing here is shipped, and nothing of
+// SecondBrainEngine's own build is run: its sources are read as text.
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        gradlePluginPortal()
+    }
+}
+rootProject.name = 'remap-secondbrainengine'

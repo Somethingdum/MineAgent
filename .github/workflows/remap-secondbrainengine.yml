@@ -1,0 +1,79 @@
+name: Remap SecondBrainEngine
+
+# SMH plan 70, one agent: SecondBrainEngine's sources (Automatone's server-side Baritone with a server-side AltoClef) as
+# 1.21.1 in Mojang's names, the copy the mod's movement and doing layers are ported from (.github/remap-sbe/README.md).
+# Its sources are read as text: none of its own build or code is run.
+on:
+  push:
+    branches: [smh-companion]
+    paths: ['.github/remap-sbe/**', '.github/workflows/remap-secondbrainengine.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  remap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SBE_COMMIT: 1712b17e
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Fetch SecondBrainEngine's sources
+        run: |
+          git clone --quiet https://github.com/sailex428/SecondBrainEngine "$RUNNER_TEMP/sbe"
+          git -C "$RUNNER_TEMP/sbe" checkout --quiet "$SBE_COMMIT"
+          git -C "$RUNNER_TEMP/sbe" log --oneline -1
+
+      - name: Resolved to 1.21.1 (its Stonecutter comments, read as text)
+        run: |
+          python3 -I .github/remap-sbe/stonecut.py 1.21.1 "$RUNNER_TEMP/sbe/src/main" "$RUNNER_TEMP/sbe-1.21.1"
+          if grep -rln '//?\|/\*?' "$RUNNER_TEMP/sbe-1.21.1/java"; then echo "markers left"; exit 1; fi
+
+      - name: Remap from Yarn to Mojang's names
+        run: |
+          chmod +x gradlew
+          out="$RUNNER_TEMP/mojmap"
+          args="migrateMappings --mappings net.minecraft:mappings:1.21.1 --input $RUNNER_TEMP/sbe-1.21.1/java --output $out"
+          if ! ./gradlew --no-daemon -p .github/remap-sbe $args; then
+            echo "With Carpet on the classpath it failed; once more without it."
+            rm -rf "$out"
+            ./gradlew --no-daemon -p .github/remap-sbe -PnoCarpet $args
+          fi
+          find "$out" -name '*.java' | wc -l
+
+      - name: Keep it in third_party/secondbrainengine
+        run: |
+          rm -rf third_party/secondbrainengine
+          mkdir -p third_party/secondbrainengine/src/main
+          cp -r "$RUNNER_TEMP/mojmap" third_party/secondbrainengine/src/main/java
+          cp -r "$RUNNER_TEMP/sbe-1.21.1/resources" third_party/secondbrainengine/src/main/resources
+          cp "$RUNNER_TEMP/sbe/LICENSE" third_party/secondbrainengine/LICENSE
+          cp .github/remap-sbe/README.md third_party/secondbrainengine/README.md
+          for y in 'net.minecraft.util.math.BlockPos' 'net.minecraft.item.Items' 'net.minecraft.entity.ItemEntity' 'net.minecraft.server.network.ServerPlayerEntity'; do
+            echo "$y: $(grep -rl "import $y;" third_party/secondbrainengine | wc -l) files still import it"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add third_party/secondbrainengine
+          if git diff --cached --quiet; then echo "Nothing changed."; exit 0; fi
+          git commit -q -F - <<'MSG'
+          SecondBrainEngine 1712b17e as 1.21.1 in Mojang's names (stonecut.py, Loom migrateMappings), the copy ports are made from
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01Li1nwwTBR4H5BX1Z3D59KY
+          MSG
+          git pull --quiet --rebase origin smh-companion
+          git push origin HEAD:smh-companion

@@ -1,0 +1,28 @@
+plugins {
+    id 'fabric-loom' version '1.7-SNAPSHOT'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://jitpack.io' }
+}
+
+// SecondBrainEngine's own dependencies for 1.21.1 at commit 1712b17e (its build.gradle.kts and versions/1.21.1), so the
+// remapper can follow calls through them.
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.1'
+    mappings 'net.fabricmc:yarn:1.21.1+build.3:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.16.10'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.102.0+1.21.1'
+    if (!project.hasProperty('noCarpet')) {
+        modImplementation 'com.github.gnembon:fabric-carpet:1.4.147'
+    }
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.18.0'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.18.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.0'
+    implementation 'com.google.code.findbugs:jsr305:3.0.2'
+}
