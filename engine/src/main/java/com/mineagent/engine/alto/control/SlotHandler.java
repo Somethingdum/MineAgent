@@ -62,8 +62,15 @@ public class SlotHandler {
     }
 
 
+    /** SMH: the clicks asked for, held back by the move delay and sent, for the scenes' traces. */
+    public int clicksAsked, clicksHeld, clicksSent;
+
     public void clickSlot(Slot slot, int mouseButton, ClickType type) {
-        if (!canDoSlotAction()) return;
+        clicksAsked++;
+        if (!canDoSlotAction()) {
+            clicksHeld++;
+            return;
+        }
 
         if (slot.getWindowSlot() == -1) {
             clickSlot(PlayerSlot.UNDEFINED, 0, ClickType.PICKUP);
@@ -86,6 +93,7 @@ public class SlotHandler {
             return;
         }
         registerSlotAction();
+        clicksSent++;
         int syncId = player.containerMenu.containerId;
 
         try {

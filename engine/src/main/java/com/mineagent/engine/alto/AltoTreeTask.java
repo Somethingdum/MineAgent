@@ -102,7 +102,21 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
                 if (chain.length() > 0) chain.append(" > ");
                 chain.append(host.within(t::toString));
             }
-            LAST_CHAIN.put(player.companionId(), "tick " + ticks + " at " + sp.blockPosition().toShortString() + ": " + chain);
+            // What the body showed: the chain in control, the open menu, the cursor and the 2x2 grid, the clicks.
+            StringBuilder grid = new StringBuilder();
+            for (int i = 1; i <= 4; i++) {
+                var st = sp.inventoryMenu.getSlot(i).getItem();
+                grid.append(st.isEmpty() ? "-" : st.getCount() + " " + BuiltInRegistries.ITEM.getKey(st.getItem()).getPath()).append(i < 4 ? "," : "");
+            }
+            var carried = sp.containerMenu.getCarried();
+            String body = " | " + host.getTaskRunner().statusReport + "; menu " + sp.containerMenu.getClass().getSimpleName()
+                    + " " + sp.containerMenu.containerId + "; cursor " + (carried.isEmpty() ? "-" : carried.getCount() + " "
+                    + BuiltInRegistries.ITEM.getKey(carried.getItem()).getPath()) + "; grid " + grid + "; free "
+                    + sp.getInventory().getFreeSlot() + "; clicks " + host.getSlotHandler().clicksAsked + "/"
+                    + host.getSlotHandler().clicksHeld + "/" + host.getSlotHandler().clicksSent + "/"
+                    + host.getController().clicked + (host.getController().refused.isEmpty() ? "" : " (" + host.getController().refused + ")")
+                    + (host.getPlayer() == sp ? "" : "; HOST BODY STALE");
+            LAST_CHAIN.put(player.companionId(), "tick " + ticks + " at " + sp.blockPosition().toShortString() + ": " + chain + body);
             if (Boolean.getBoolean("mineagent.traceWork") && ticks % 200 == 0) {
                 System.out.println("[MineAgent] alto: " + LAST_CHAIN.get(player.companionId()));
             }

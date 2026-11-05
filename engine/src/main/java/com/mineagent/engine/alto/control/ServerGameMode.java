@@ -69,11 +69,25 @@ public final class ServerGameMode {
 
     /** A click in an open container (handleContainerClick). */
     public void handleInventoryMouseClick(int containerId, int slot, int button, ClickType type, ServerPlayer player) {
-        if (player == null || player.isSpectator()) return;
+        if (player == null || player.isSpectator()) {
+            refused = "no body";
+            return;
+        }
         var menu = player.containerMenu;
-        if (menu.containerId != containerId || !menu.stillValid(player)) return;
-        if (!menu.isValidSlotIndex(slot)) return;
+        if (menu.containerId != containerId || !menu.stillValid(player)) {
+            refused = "menu " + menu.containerId + " not " + containerId;
+            return;
+        }
+        if (!menu.isValidSlotIndex(slot)) {
+            refused = "slot " + slot;
+            return;
+        }
         menu.clicked(slot, button, type, player);
         menu.broadcastChanges();
+        clicked++;
     }
+
+    /** SMH: the clicks done, and why the last one refused was, for the scenes' traces. */
+    public int clicked;
+    public String refused = "";
 }
