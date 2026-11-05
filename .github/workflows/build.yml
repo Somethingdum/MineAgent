@@ -21,6 +21,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      # One implementation per behaviour (SMH plan 71, invariant I6): each grep from its phase (.github/phase) on.
+      - name: Architecture checks
+        run: bash .github/architecture.sh
+
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
