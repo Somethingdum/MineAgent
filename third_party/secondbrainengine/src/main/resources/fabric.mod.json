@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "secondbrainengine",
+  "version": "${version}",
+  "name": "SecondBrainEngine",
+  "description": "A serverside Minecraft pathfinder bot.",
+  "license": "LGPL-3.0",
+  "icon": "assets/secondbrainengine/icon.png",
+  "authors": ["sailex"],
+  "contact": {
+    "sources": "https://github.com/sailex428/SecondBrainEngine",
+    "issues": "https://github.com/sailex428/SecondBrainEngine/issues"
+  },
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "me.sailex.automatone.Automatone"
+    ]
+  },
+  "depends": {
+    "minecraft": "${mcDep}",
+    "fabricloader": ">=${fabricLoader}",
+    "fabric-api": "*"
+  },
+  "mixins": [
+    "mixins.secondbrainengine.json"
+  ]
+}

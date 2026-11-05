@@ -1,0 +1,11 @@
+package me.sailex.altoclef.trackers.blacklisting;
+
+import me.sailex.altoclef.multiversion.EntityVer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
+
+public class EntityLocateBlacklist extends AbstractObjectBlacklist<Entity> {
+   protected Vec3 getPos(Entity item) {
+      return EntityVer.getPos(item);
+   }
+}
