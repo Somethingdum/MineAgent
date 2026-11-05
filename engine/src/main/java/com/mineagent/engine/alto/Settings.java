@@ -91,7 +91,7 @@ public class Settings {
      * <p>
      * If false, will place items in each slot manually (the original way)
      */
-    private boolean useCraftingBookToCraft = false; // SMH: the recipe book of a body that never opened it may not hold the recipe; the grid is clicked as AltoClef does when this is off.
+    private boolean useCraftingBookToCraft = true; // SMH: AltoClef's default; the host fills the companion's recipe book with every recipe (AltoClef.knowAllRecipes), so a recipe it has never made is placed as one it has.
 
     /**
      * If a dropped resource item is further than this from the player, don't pick it up.

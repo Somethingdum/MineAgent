@@ -126,6 +126,7 @@ public class AltoClef {
             miscBlockTracker = new MiscBlockTracker(this);
             craftingRecipeTracker = new CraftingRecipeTracker(trackerManager);
             inputControls = new InputControls(player);
+            knowAllRecipes(player);
             slotHandler = new SlotHandler(this);
             // AltoClef's settings load: its throwaway blocks are blocks Baritone may place, its protected areas are never
             // broken or built on, and the tools it saves are not spent.
@@ -163,6 +164,7 @@ public class AltoClef {
         AltoClef host = HOSTS.computeIfAbsent(agent.companionId(), id -> new AltoClef(agent, sp));
         if (host.player != sp) { // respawned: a new body, the same companion
             host.player = sp;
+            knowAllRecipes(sp);
             host.baritone.setPlayer(sp);
             host.inputControls.setPlayer(sp);
         }
@@ -176,6 +178,16 @@ public class AltoClef {
             if (host.player == entity || host.player.getUUID().equals(entity.getUUID())) return host;
         }
         return null;
+    }
+
+    /**
+     * SMH: every recipe in the companion's recipe book, so AltoClef places a recipe from it as it does by default
+     * (CraftGenericWithRecipeBooksTask; the server places a recipe only from a book that holds it). It changes nothing it
+     * can make: any recipe can be laid out by hand in the grid.
+     */
+    private static void knowAllRecipes(ServerPlayer player) {
+        if (player == null || player.getServer() == null) return;
+        player.awardRecipes(player.getServer().getRecipeManager().getRecipes());
     }
 
     /** The companion's host let go of (it left). */

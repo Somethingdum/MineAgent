@@ -85,6 +85,11 @@ public class OwnLifeTask extends Task {
         return hut != null && BuildHutTask.shellStands(mod, hut);
     }
 
+    /** Its hut stands and its door is in: a home for the night. */
+    private boolean hutReady(AltoClef mod) {
+        return hutStands(mod) && hutTask(mod).doorIn(mod);
+    }
+
     private boolean inHut(AltoClef mod) {
         return hut != null && hutTask(mod).inside().closerToCenterThan(mod.getPlayer().position(), 1.6);
     }
@@ -224,15 +229,15 @@ public class OwnLifeTask extends Task {
                 false, true, false));
         // The night: home to its hut before dark; there, its bed (as BeatMinecraftTask.addSleepTask), else it waits.
         wants.add(new ActionPriorityTask(a -> {
-            if (!mobsAbout(a) || !hutStands(a) || inHut(a)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
+            if (!mobsAbout(a) || !hutReady(a) || inHut(a)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             return new Pair<>(new GetToBlockTask(hutTask(a).inside()), 1_000_000d);
         }, a -> true, false, false, true));
         wants.add(new ActionPriorityTask(a -> {
-            if (!WorldHelper.canSleep() || !inHut(a) || !hasAny(a, ItemHelper.BED)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
+            if (!WorldHelper.canSleep() || !hutReady(a) || !inHut(a) || !hasAny(a, ItemHelper.BED)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             return new Pair<>(new PlaceBedAndSetSpawnTask().stayInBed(), 1_100_000d);
         }, a -> true, true, false, true));
         wants.add(new ActionPriorityTask(a -> {
-            if (!mobsAbout(a) || !inHut(a)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
+            if (!mobsAbout(a) || !hutReady(a) || !inHut(a)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             if (WorldHelper.canSleep() && hasAny(a, ItemHelper.BED)) return new Pair<>(null, Double.NEGATIVE_INFINITY);
             return new Pair<>(new WaitInHutTask(), 1_050_000d);
         }, a -> true, false, true, true));

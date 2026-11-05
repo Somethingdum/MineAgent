@@ -23,7 +23,9 @@ import net.minecraft.world.item.Items;
  * <p>
  * Not useful for custom tasks.
  */
-public class CraftGenericManuallyTask extends Task {
+// SMH: it fills the 2x2 grid, as CraftGenericWithRecipeBooksTask does, so it says so (ITaskUsesCraftingGrid): without it
+// the ResourceTask above it took for loose the items it put in the grid, and took them out again each tick.
+public class CraftGenericManuallyTask extends Task implements com.mineagent.engine.alto.tasksystem.ITaskUsesCraftingGrid {
 
     private final RecipeTarget target;
 
