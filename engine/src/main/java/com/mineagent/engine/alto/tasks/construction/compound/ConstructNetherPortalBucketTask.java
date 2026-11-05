@@ -19,7 +19,6 @@ import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.engine.alto.util.time.TimerGame;
 import java.util.*;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;

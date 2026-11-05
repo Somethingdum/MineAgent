@@ -17,7 +17,6 @@ import com.mineagent.engine.alto.util.slots.CraftingTableSlot;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
 import java.util.Optional;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;

@@ -257,7 +257,7 @@ public class DestroyBlockTask extends Task implements ITaskRequiresGrounded {
         // Check if there is white wool at the specified position
         if (mod.getWorld().getBlockState(pos).getBlock() == Blocks.WHITE_WOOL) {
             // Iterate over all entities in the world
-            Iterable<Entity> entities = mod.getWorld().getAllEntities();
+            Iterable<Entity> entities = mod.visibleEntities() /* SMH: what a client would see */;
             for (Entity entity : entities) {
                 // Check if the entity is a PillagerEntity and is within a distance of 144 blocks from the position
                 if (entity instanceof Pillager && pos.closerToCenterThan(entity.position(), 144)) {

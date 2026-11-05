@@ -24,7 +24,8 @@ public interface IPlayerContext {
     ServerLevel world();
 
     default Iterable<Entity> entities() {
-        return world().getAllEntities();
+        com.mineagent.engine.alto.AltoClef host = com.mineagent.engine.alto.AltoClef.forPlayer(player());
+        return host != null ? host.visibleEntities() : world().getAllEntities();
     }
 
     default Stream<Entity> entitiesStream() {

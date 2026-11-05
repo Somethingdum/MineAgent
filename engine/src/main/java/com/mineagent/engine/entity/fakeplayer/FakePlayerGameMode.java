@@ -274,6 +274,20 @@ public class FakePlayerGameMode extends ServerPlayerGameMode {
                 && !level.getBlockState(pos).isAir();
     }
 
+    /** The block the fake client is breaking, or null (SMH plan 70: AltoClef's tasks ask). */
+    public BlockPos automaticDestroyPos() {
+        return automaticDestroyPos;
+    }
+
+    /** How far the fake client's breaking has got, 0 to 1, as a client's progress bar shows it. */
+    public float automaticDestroyProgress() {
+        if (automaticDestroyPos == null) return 0f;
+        BlockState state = level.getBlockState(automaticDestroyPos);
+        float perTick = state.getDestroyProgress(player, player.level(), automaticDestroyPos);
+        if (!Float.isFinite(perTick) || perTick <= 0f) return 0f;
+        return Math.min(1f, perTick * (automaticDestroyTicks + 1));
+    }
+
     /** Exposes whether START entered the fake client's progressive state. */
     public boolean isAutomaticallyDestroying(BlockPos pos) {
         return pos != null && pos.equals(automaticDestroyPos);

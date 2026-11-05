@@ -21,7 +21,7 @@ package com.mineagent.engine.alto.baritone.api.utils;
 
 import com.mineagent.engine.alto.baritone.api.BaritoneAPI;
 import com.mineagent.engine.alto.baritone.api.IBaritone;
-import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
@@ -268,12 +268,12 @@ public final class RotationUtils {
     }
 
     @Deprecated
-    public static Optional<Rotation> reachable(LocalPlayer entity, BlockPos pos, double blockReachDistance) {
+    public static Optional<Rotation> reachable(ServerPlayer entity, BlockPos pos, double blockReachDistance) {
         return reachable(entity, pos, blockReachDistance, false);
     }
 
     @Deprecated
-    public static Optional<Rotation> reachable(LocalPlayer entity, BlockPos pos, double blockReachDistance, boolean wouldSneak) {
+    public static Optional<Rotation> reachable(ServerPlayer entity, BlockPos pos, double blockReachDistance, boolean wouldSneak) {
         IBaritone baritone = BaritoneAPI.getProvider().getBaritoneForPlayer(entity);
         IPlayerContext ctx = baritone.getPlayerContext();
         return reachable(ctx, pos, blockReachDistance, wouldSneak);

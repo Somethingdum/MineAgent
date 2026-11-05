@@ -6,8 +6,6 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.multiversion.recipemanager.RecipeManagerWrapper;
 import com.mineagent.engine.alto.multiversion.recipemanager.WrappedRecipeEntry;
 import com.mineagent.engine.alto.util.RecipeTarget;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CustomRecipe;
@@ -100,10 +98,8 @@ public class CraftingRecipeTracker extends Tracker{
         // rebuild once we are in game
         if (!AltoClef.inGame()) return;
 
-        ClientPacketListener networkHandler =  Minecraft.getInstance().getConnection();
-        if (networkHandler == null) return;
-
-        RecipeManagerWrapper recipeManager = RecipeManagerWrapper.of(networkHandler.getRecipeManager());
+        // SMH: the server's own recipes (a client has them from its connection).
+        RecipeManagerWrapper recipeManager = RecipeManagerWrapper.of(AltoClef.getInstance().getWorld().getRecipeManager());
 
         for (WrappedRecipeEntry recipe : recipeManager.values()) {
             if (!(recipe.value() instanceof net.minecraft.world.item.crafting.CraftingRecipe craftingRecipe)) continue;

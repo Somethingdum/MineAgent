@@ -2,17 +2,16 @@
 // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
 package com.mineagent.engine.alto.multiversion;
 
-import net.minecraft.client.Minecraft;
 
 public class OptionsVer {
 
 
     public static void setGamma(double value) {
-        Minecraft.getInstance().options.gamma().set(value);
+        // SMH: a server-side body has no screen brightness.
     }
 
     public static void setAutoJump(boolean value) {
-        Minecraft.getInstance().options.autoJump().set(value);
+        // SMH: the companion jumps only when its walk says so; there is no auto-jump to set.
     }
 
 }

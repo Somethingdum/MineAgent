@@ -22,7 +22,6 @@ import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.engine.alto.util.time.TimerGame;
 import java.util.*;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.ClickType;

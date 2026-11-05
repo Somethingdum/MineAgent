@@ -11,3 +11,7 @@ accessible field net/minecraft/world/entity/LivingEntity jumping Z
 # at runtime without needing an access widener entry.
 # Note: Connection.channel is set via reflection in FakeConnection,
 # so no access widener entry is needed for it.
+# SMH plan 70, AltoClef's tasks: what AltoClef reads through its mixin accessors (AbstractFurnaceScreenHandlerAccessor,
+# PersistentProjectileEntityAccessor): a furnace's fuel and progress, and whether an arrow is stuck in the ground.
+accessible field net/minecraft/world/inventory/AbstractFurnaceMenu data Lnet/minecraft/world/inventory/ContainerData;
+accessible field net/minecraft/world/entity/projectile/AbstractArrow inGround Z

@@ -10,7 +10,6 @@ import com.mineagent.engine.alto.baritone.api.utils.IPlayerContext;
 import com.mineagent.engine.alto.baritone.api.utils.RayTraceUtils;
 import com.mineagent.engine.alto.baritone.api.utils.Rotation;
 import com.mineagent.engine.alto.baritone.api.utils.RotationUtils;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -198,8 +197,7 @@ public interface LookHelper {
      * @return True if there is a clear line of sight, false otherwise.
      */
     static boolean cleanLineOfSight(Vec3 end, double maxRange) {
-        Minecraft minecraftClient = Minecraft.getInstance();
-        Player playerEntity = minecraftClient.player;
+        Player playerEntity = AltoClef.getInstance().getPlayer();
         return cleanLineOfSight(playerEntity, end, maxRange);
     }
 
@@ -467,7 +465,7 @@ public interface LookHelper {
         }
 
         // Get the crosshair target
-        HitResult result = Minecraft.getInstance().hitResult;
+        HitResult result = AltoClef.getInstance().getClientBaritone().getPlayerContext().objectMouseOver(); // SMH: its crosshair
 
         // Check if the crosshair target is null
         if (result == null) {

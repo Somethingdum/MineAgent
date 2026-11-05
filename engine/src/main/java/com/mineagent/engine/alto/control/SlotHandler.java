@@ -11,7 +11,6 @@ import com.mineagent.engine.alto.util.slots.CursorSlot;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.BucketItem;

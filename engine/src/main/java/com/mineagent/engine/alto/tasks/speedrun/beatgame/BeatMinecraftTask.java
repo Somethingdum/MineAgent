@@ -6,7 +6,6 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
 import com.mineagent.engine.alto.TaskCatalogue;
 import com.mineagent.engine.alto.trackers.BlockScanner;
-import com.mineagent.engine.alto.commands.SetGammaCommand;
 import com.mineagent.engine.alto.multiversion.blockpos.BlockPosVer;
 import com.mineagent.engine.alto.multiversion.versionedfields.Blocks;
 import com.mineagent.engine.alto.tasks.*;
@@ -32,7 +31,6 @@ import com.mineagent.engine.alto.util.helpers.*;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.engine.alto.util.time.TimerGame;
 import com.mineagent.engine.alto.baritone.api.utils.input.Input;
-import net.minecraft.client.gui.screens.WinScreen;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
@@ -65,7 +63,6 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static com.mineagent.engine.alto.tasks.resources.CollectMeatTask.COOKABLE_FOODS;
-import static net.minecraft.client.Minecraft.getInstance;
 
 
 public class BeatMinecraftTask extends Task {
@@ -162,7 +159,7 @@ public class BeatMinecraftTask extends Task {
         buildMaterialsTask = new GetBuildingMaterialsTask(config.buildMaterialCount);
         uselessItems = new UselessItems(config);
 
-        SetGammaCommand.changeGamma(20d);
+        // SMH: no screen brightness on a server-side body (AltoClef sets gamma 20 here).
 
         if (mod.getWorld().getDifficulty() != Difficulty.EASY) {
             mod.logWarning("Detected that the difficulty is other than easy!");
@@ -737,7 +734,7 @@ public class BeatMinecraftTask extends Task {
      */
     @Override
     public boolean isFinished() {
-        if (getInstance().screen instanceof WinScreen) {
+        if (AltoClef.getInstance().getPlayer().wonGame) { // SMH: the end poem is the server's "won the game" (WinScreen on a client)
             Debug.logInternal("isFinished - Current screen is CreditsScreen");
             return true;
         }
@@ -1174,7 +1171,7 @@ public class BeatMinecraftTask extends Task {
         Optional<BlockPos> nearestTracking = mod.getBlockScanner().getNearestBlock(block);
 
         if (nearestTracking.isPresent()) {
-            Iterable<Entity> entities = mod.getWorld().getAllEntities();
+            Iterable<Entity> entities = mod.visibleEntities() /* SMH: what a client would see */;
             for (Entity entity : entities) {
 
                 if (mod.getBlockScanner().isUnreachable(nearestTracking.get()) || !(entity instanceof Monster))
@@ -1292,7 +1289,7 @@ public class BeatMinecraftTask extends Task {
         List<BlockPos> logs = mod.getBlockScanner().getKnownLocations(ItemHelper.itemsToBlocks(ItemHelper.LOG));
 
         for (BlockPos log : logs) {
-            Iterable<Entity> entities = mod.getWorld().getAllEntities();
+            Iterable<Entity> entities = mod.visibleEntities() /* SMH: what a client would see */;
             for (Entity entity : entities) {
                 if (entity instanceof Pillager && !mod.getBlockScanner().isUnreachable(log) && log.closerToCenterThan(entity.position(), 40)) {
                     Debug.logMessage("Blacklisting pillage log.");

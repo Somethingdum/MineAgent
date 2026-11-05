@@ -4,7 +4,6 @@ package com.mineagent.engine.alto.util.slots;
 
 import com.mineagent.engine.alto.AltoClef;
 import java.util.stream.IntStream;
-import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.EquipmentSlot;
 
 public class PlayerSlot extends Slot {

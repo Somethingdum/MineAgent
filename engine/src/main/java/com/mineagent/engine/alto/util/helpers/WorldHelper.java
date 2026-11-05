@@ -3,7 +3,6 @@
 package com.mineagent.engine.alto.util.helpers;
 
 import com.mineagent.engine.alto.AltoClef;
-import com.mineagent.engine.alto.mixins.ClientConnectionAccessor;
 import com.mineagent.engine.alto.multiversion.MethodWrapper;
 import com.mineagent.engine.alto.multiversion.world.WorldVer;
 import com.mineagent.engine.alto.util.Dimension;
@@ -12,7 +11,6 @@ import com.mineagent.engine.alto.baritone.pathing.movement.CalculationContext;
 import com.mineagent.engine.alto.baritone.pathing.movement.MovementHelper;
 import com.mineagent.engine.alto.baritone.process.MineProcess;
 import com.mineagent.engine.alto.baritone.utils.BlockStateInterface;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
@@ -58,8 +56,8 @@ public interface WorldHelper {
      * Get the number of in-game ticks the game/world has been active for.
      */
     static int getTicks() {
-        Connection con = Objects.requireNonNull(Minecraft.getInstance().getConnection()).getConnection();
-        return ((ClientConnectionAccessor) con).getTicks();
+        // SMH: the world's game time (a client counts its connection's ticks).
+        return (int) AltoClef.getInstance().getWorld().getGameTime();
     }
 
     static Vec3 toVec3d(BlockPos pos) {

@@ -20,7 +20,6 @@ import com.mineagent.engine.alto.util.slots.CursorSlot;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.time.TimerGame;
 import java.util.*;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.entity.item.ItemEntity;

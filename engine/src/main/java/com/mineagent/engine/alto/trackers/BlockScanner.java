@@ -14,7 +14,6 @@ import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
 import java.util.*;
 import java.util.function.Predicate;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;

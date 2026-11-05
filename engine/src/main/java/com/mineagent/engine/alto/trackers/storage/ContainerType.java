@@ -6,7 +6,6 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.util.slots.ChestSlot;
 import com.mineagent.engine.alto.util.slots.FurnaceSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
-import net.minecraft.client.Minecraft;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.AbstractFurnaceMenu;
 import net.minecraft.world.inventory.BrewingStandMenu;

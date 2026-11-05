@@ -14,8 +14,6 @@ import org.apache.commons.lang3.NotImplementedException;
 
 import java.util.Objects;
 import java.util.Optional;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -77,7 +75,7 @@ public class FastTravelTask extends Task {
         boolean canLightPortal = mod.getItemStorage().hasItem(Items.FLINT_AND_STEEL, Items.FIRE_CHARGE);
 
         // EDGE CASE: We die in the nether, stop force walking, we want to start over.
-        if (Minecraft.getInstance().screen instanceof DeathScreen) {
+        if (AltoClef.getInstance().getPlayer().isDeadOrDying() /* SMH: the death screen */) {
             _forceOverworldWalking = false;
         }
 

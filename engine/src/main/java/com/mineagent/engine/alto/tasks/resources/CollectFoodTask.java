@@ -316,7 +316,7 @@ public class CollectFoodTask extends Task {
         if (mod.getEntityTracker().entityFound(Chicken.class)) {
             Optional<Entity> chickens = mod.getEntityTracker().getClosestEntity(Chicken.class);
             if (chickens.isPresent()) {
-                Iterable<Entity> entities = mod.getWorld().getAllEntities();
+                Iterable<Entity> entities = mod.visibleEntities() /* SMH: what a client would see */;
                 for (Entity entity : entities) {
                     if (entity instanceof Monster || entity instanceof Slime) {
                         if (chickens.get().hasPassenger(entity)) {

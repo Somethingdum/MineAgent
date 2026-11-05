@@ -5,7 +5,6 @@ package com.mineagent.engine.alto.util.helpers;
 import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
 import com.mineagent.engine.alto.TaskCatalogue;
-import com.mineagent.engine.alto.mixins.AbstractFurnaceScreenHandlerAccessor;
 import com.mineagent.engine.alto.multiversion.item.ItemVer;
 import com.mineagent.engine.alto.multiversion.ToolMaterialVer;
 import com.mineagent.engine.alto.multiversion.versionedfields.Blocks;
@@ -20,11 +19,6 @@ import com.mineagent.engine.alto.util.slots.CursorSlot;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.engine.alto.baritone.utils.ToolSet;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.ChatScreen;
-import net.minecraft.client.gui.screens.PauseScreen;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -64,14 +58,11 @@ public class StorageHelper {
     public static void closeScreen() {
         if (AltoClef.getInstance().getPlayer() == null)
             return;
-        Screen screen = Minecraft.getInstance().screen;
-        if (
-                screen != null &&
-                        !(screen instanceof PauseScreen) &&
-                        !(screen instanceof OptionsSubScreen) &&
-                        !(screen instanceof ChatScreen)) {
+        // SMH: the companion's open container stands for the client's screen; its own inventory is no screen.
+        ServerPlayer player = AltoClef.getInstance().getPlayer();
+        if (player.containerMenu != player.inventoryMenu) {
             // Close the screen if we're in-game
-            AltoClef.getInstance().getPlayer().closeContainer();
+            player.closeContainer();
         }
     }
 
@@ -652,17 +643,17 @@ public class StorageHelper {
     }
 
     public static double getFurnaceFuel(AbstractFurnaceMenu handler) {
-        ContainerData d = ((AbstractFurnaceScreenHandlerAccessor) handler).getPropertyDelegate();
+        ContainerData d = handler.data /* SMH: opened by the access widener, as AltoClef's accessor does */;
         return (double) d.get(0) / 200.0;
     }
 
     public static double getSmokerFuel(AbstractFurnaceMenu handler) {
-        ContainerData d = ((AbstractFurnaceScreenHandlerAccessor) handler).getPropertyDelegate();
+        ContainerData d = handler.data /* SMH: opened by the access widener, as AltoClef's accessor does */;
         return (double) d.get(0) / 200.0;
     }
 
     public static double getBlastFurnaceFuel(AbstractFurnaceMenu handler) {
-        ContainerData d = ((AbstractFurnaceScreenHandlerAccessor) handler).getPropertyDelegate();
+        ContainerData d = handler.data /* SMH: opened by the access widener, as AltoClef's accessor does */;
         return (double) d.get(0) / 200.0;
     }
 

@@ -4,16 +4,11 @@ package com.mineagent.engine.alto.util.slots;
 
 import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.inventory.BlastFurnaceScreen;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
-import net.minecraft.client.gui.screens.inventory.CraftingScreen;
-import net.minecraft.client.gui.screens.inventory.FurnaceScreen;
-import net.minecraft.client.gui.screens.inventory.SmithingScreen;
-import net.minecraft.client.gui.screens.inventory.SmokerScreen;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.inventory.SmithingMenu;
+import net.minecraft.world.inventory.AbstractFurnaceMenu;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.InventoryMenu;
 import java.util.Iterator;
@@ -75,17 +70,17 @@ public abstract class Slot {
     }
 
     private static ContainerType getCurrentType() {
-        Screen screen = Minecraft.getInstance().screen;
-        if (screen instanceof FurnaceScreen || screen instanceof SmithingScreen || screen instanceof SmokerScreen ||
-                screen instanceof BlastFurnaceScreen) {
+        // SMH: the companion's open menu stands for the client's screen.
+        ServerPlayer player = AltoClef.getInstance().getPlayer();
+        AbstractContainerMenu menu = player != null ? player.containerMenu : null;
+        if (menu instanceof AbstractFurnaceMenu || menu instanceof SmithingMenu) {
             return ContainerType.FURNACE_OR_SMITH_OR_SMOKER_OR_BLAST;
         }
-        if (screen instanceof ContainerScreen) {
-            ChestMenu handler = ((ContainerScreen) screen).getMenu();
+        if (menu instanceof ChestMenu handler) {
             boolean big = (handler.getRowCount() == 6);
             return big ? ContainerType.CHEST_LARGE : ContainerType.CHEST_SMALL;
         }
-        if (screen instanceof CraftingScreen) {
+        if (menu instanceof CraftingMenu) {
             return ContainerType.CRAFTING_TABLE;
         }
         return ContainerType.PLAYER;

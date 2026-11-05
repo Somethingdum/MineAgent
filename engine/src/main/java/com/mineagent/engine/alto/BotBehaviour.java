@@ -10,7 +10,6 @@ import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.entity.Entity;
@@ -361,7 +360,7 @@ public class BotBehaviour {
         }
 
         private void readMinecraftState() {
-            pauseOnLostFocus = Minecraft.getInstance().options.pauseOnLostFocus;
+            pauseOnLostFocus = false; // SMH: a server-side body has no window to lose
         }
 
         /**
@@ -411,7 +410,7 @@ public class BotBehaviour {
             RayTraceUtils.fluidHandling = rayFluidHandling;
 
             // Minecraft
-            Minecraft.getInstance().options.pauseOnLostFocus = pauseOnLostFocus;
+            // SMH: no client options to put back.
         }
     }
 }

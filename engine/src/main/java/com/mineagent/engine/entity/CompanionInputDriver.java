@@ -159,6 +159,21 @@ public class CompanionInputDriver implements InputDriver {
         if (result.shouldSwing()) player.swing(InteractionHand.MAIN_HAND);
     }
 
+    /** What the companion is looking at within its reach, as a client's crosshair finds it (SMH plan 70: AltoClef's tasks). */
+    public HitResult pick() {
+        return pickTarget();
+    }
+
+    /** The block its held left click is breaking, or null (SMH plan 70: AltoClef's tasks). */
+    public BlockPos breakingBlock() {
+        return activeBreakTarget;
+    }
+
+    /** The left click let go: the block it was breaking is left (a client's release; SMH plan 70). */
+    public void releaseLeftClick() {
+        abortActiveBreak();
+    }
+
     private HitResult pickTarget() {
         // blockInteractionRange() is attribute based and does not know about
         // FakePlayerGameMode's optional creative-like reach. Use the custom

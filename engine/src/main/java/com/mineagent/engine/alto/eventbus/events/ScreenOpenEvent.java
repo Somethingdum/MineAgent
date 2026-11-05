@@ -2,13 +2,14 @@
 // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
 package com.mineagent.engine.alto.eventbus.events;
 
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 
+/** SMH: a server-side body has no screens; the container menu it opened (null when it closed one) stands for it. */
 public class ScreenOpenEvent {
-    public Screen screen;
+    public AbstractContainerMenu screen;
     public boolean preOpen;
 
-    public ScreenOpenEvent(Screen screen, boolean preOpen) {
+    public ScreenOpenEvent(AbstractContainerMenu screen, boolean preOpen) {
         this.screen = screen;
         this.preOpen = preOpen;
     }

@@ -6,7 +6,6 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
 import com.mineagent.engine.alto.eventbus.EventBus;
 import com.mineagent.engine.alto.eventbus.events.PlayerCollidedWithEntityEvent;
-import com.mineagent.engine.alto.mixins.PersistentProjectileEntityAccessor;
 import com.mineagent.engine.alto.trackers.blacklisting.EntityLocateBlacklist;
 import com.mineagent.engine.alto.util.ItemTarget;
 import com.mineagent.engine.alto.util.baritone.CachedProjectile;
@@ -16,7 +15,6 @@ import com.mineagent.engine.alto.util.helpers.ProjectileHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import java.util.*;
 import java.util.function.Predicate;
-import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -336,7 +334,7 @@ public class EntityTracker extends Tracker {
             entitiesCollidingWithPlayerAccumulator.clear();
 
             // Loop through all entities and track 'em
-            for (Entity entity : AltoClef.getInstance().getWorld().getAllEntities()) {
+            for (Entity entity : AltoClef.getInstance().visibleEntities() /* SMH: what a client would see */) {
 
                 // Catalogue based on type. Some types may get "squashed" or combined into one.
                 Class type = entity.getClass();
@@ -386,7 +384,7 @@ public class EntityTracker extends Tracker {
                         boolean inGround = false;
                         // Get projectile "inGround" variable
                         if (entity instanceof AbstractArrow) {
-                            inGround = ((PersistentProjectileEntityAccessor) entity).isInGround();
+                            inGround = ((net.minecraft.world.entity.projectile.AbstractArrow) entity).inGround /* SMH: access widener */;
                         }
 
                         // Ignore some of the harlmess projectiles

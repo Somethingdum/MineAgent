@@ -127,6 +127,12 @@ public final class Settings {
     /** Allow mining the block directly beneath its feet. */
     public final Setting<Boolean> allowDownward = new Setting<>(true);
 
+    /** Disallow MineBehavior from using X-Ray to see where the ores are. Turn this option on to force it to mine "legit". */
+    public final Setting<Boolean> legitMine = new Setting<>(false);
+
+    /** Treat every liquid next to a block as one that would flow in when it is broken. Enable for mods' own fluid physics. */
+    public final Setting<Boolean> strictLiquidCheck = new Setting<>(false);
+
     /** A setting: its value, and the value it started with. */
     public static final class Setting<T> {
         public T value;

@@ -12,17 +12,15 @@ import com.mineagent.engine.alto.trackers.Tracker;
 import com.mineagent.engine.alto.trackers.TrackerManager;
 import com.mineagent.engine.alto.util.Dimension;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.inventory.BlastFurnaceScreen;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
-import net.minecraft.client.gui.screens.inventory.FurnaceScreen;
-import net.minecraft.client.gui.screens.inventory.HopperScreen;
-import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
-import net.minecraft.client.gui.screens.inventory.SmokerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.BlastFurnaceMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.FurnaceMenu;
+import net.minecraft.world.inventory.HopperMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.inventory.SmokerMenu;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.AbstractFurnaceBlock;
 import net.minecraft.world.level.block.BarrelBlock;
@@ -85,13 +83,14 @@ public class ContainerSubTracker extends Tracker {
         }
     }
 
-    private void onScreenOpenFirstTick(final Screen screen) {
-        containerOpen = screen instanceof FurnaceScreen
-                || screen instanceof ContainerScreen
-                || screen instanceof SmokerScreen
-                || screen instanceof BlastFurnaceScreen
-                || screen instanceof HopperScreen
-                || screen instanceof ShulkerBoxScreen;
+    private void onScreenOpenFirstTick(final AbstractContainerMenu screen) {
+        // SMH: the companion's open menu stands for the client's screen.
+        containerOpen = screen instanceof FurnaceMenu
+                || screen instanceof ChestMenu
+                || screen instanceof SmokerMenu
+                || screen instanceof BlastFurnaceMenu
+                || screen instanceof HopperMenu
+                || screen instanceof ShulkerBoxMenu;
     }
 
     private void onScreenClose() {
@@ -106,7 +105,7 @@ public class ContainerSubTracker extends Tracker {
             return;
         // If we haven't registered interacting with a block, try the currently "looking at" block
         if (containerOpen && lastBlockPosInteraction == null && lastBlockInteraction == null) {
-            if (Minecraft.getInstance().hitResult instanceof BlockHitResult bhit) {
+            if (AltoClef.getInstance().getClientBaritone().getPlayerContext().objectMouseOver() instanceof BlockHitResult bhit) {
                 Debug.logWarning("Screen open but no block interaction detected, using the block we're currently looking at.");
                 lastBlockPosInteraction = bhit.getBlockPos();
                 lastBlockInteraction = mod.getWorld().getBlockState(lastBlockPosInteraction).getBlock();

@@ -26,9 +26,6 @@ import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.engine.alto.util.time.TimerGame;
 import com.mineagent.engine.alto.baritone.api.utils.input.Input;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.InBedChatScreen;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
@@ -228,8 +225,7 @@ public class PlaceBedAndSetSpawnTask extends Task {
             setDebugState("Going to the overworld first.");
             return new DefaultGoToDimensionTask(Dimension.OVERWORLD);
         }
-        Screen screen = Minecraft.getInstance().screen;
-        if (screen instanceof InBedChatScreen) {
+        if (mod.getPlayer().isSleeping()) { // SMH: a client in bed shows its in-bed chat screen
             progressChecker.reset();
             setDebugState("Sleeping...");
             wasSleeping = true;

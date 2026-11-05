@@ -7,7 +7,6 @@ import com.mineagent.engine.alto.multiversion.recipemanager.RecipeManagerWrapper
 import com.mineagent.engine.alto.multiversion.recipemanager.WrappedRecipeEntry;
 import java.util.*;
 import java.util.stream.Collectors;
-import net.minecraft.client.Minecraft;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -24,12 +23,13 @@ public class JankCraftingRecipeMapping {
      * Reloads the recipe mapping.
      */
     private static void reloadRecipeMapping() {
-        Minecraft client = Minecraft.getInstance();
+        // SMH: the server's own recipes (a client has them from its connection).
+        com.mineagent.engine.alto.AltoClef host = com.mineagent.engine.alto.AltoClef.getInstance();
 
         // Check if the network handler is available
-        if (client.getConnection() != null) {
-            RecipeManagerWrapper recipes = RecipeManagerWrapper.of(client.getConnection().getRecipeManager());
-            ServerLevel world = client.level;
+        if (host != null) {
+            RecipeManagerWrapper recipes = RecipeManagerWrapper.of(host.getWorld().getRecipeManager());
+            ServerLevel world = host.getWorld();
 
             // Check if the recipe manager is available
             if (recipes != null) {
