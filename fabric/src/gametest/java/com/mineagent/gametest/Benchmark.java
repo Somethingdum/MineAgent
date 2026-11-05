@@ -96,8 +96,51 @@ public final class Benchmark implements ModInitializer {
         owner.getAbilities().invulnerable = true;
         owner.onUpdateAbilities();
         startedAt = level.getGameTime();
+        watchForAHang(server);
         server.tickRateManager().requestGameToSprint((int) Math.min(Integer.MAX_VALUE, total));
         System.out.println("[BENCH] started at the spawn " + spawn.toShortString() + " on seed " + level.getSeed() + ", " + total + " ticks");
+    }
+
+    /**
+     * The run's own watchdog (its server's is off, max-tick-time=-1, as a sprint's long ticks would trip it): two minutes
+     * with no server tick and every thread's stack goes to the log ("[BENCH] hung:"), and the run ends, so a freeze is
+     * found from its log instead of sitting till the job's time is up (two AltoClef worlds froze on Nov 5).
+     */
+    private static void watchForAHang(MinecraftServer server) {
+        Thread watch = new Thread(() -> {
+            int last = -1;
+            long since = System.nanoTime();
+            while (true) {
+                try {
+                    Thread.sleep(10_000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                int now = server.getTickCount();
+                if (now != last) {
+                    last = now;
+                    since = System.nanoTime();
+                    continue;
+                }
+                if (System.nanoTime() - since < 120_000_000_000L) continue;
+                System.out.println("[BENCH] hung: no server tick for two minutes, at server tick " + now + "; its threads:");
+                for (var info : java.lang.management.ManagementFactory.getThreadMXBean().dumpAllThreads(true, true)) {
+                    System.out.println("[BENCH] hung: \"" + info.getThreadName() + "\" " + info.getThreadState()
+                            + (info.getLockName() == null ? "" : " waiting on " + info.getLockName())
+                            + (info.getLockOwnerName() == null ? "" : " held by \"" + info.getLockOwnerName() + "\""));
+                    // In full for the server's thread, Baritone's and any blocked on a lock (the job log keeps 400 lines).
+                    boolean full = info.getThreadName().equals("Server thread") || info.getThreadName().startsWith("MineAgent Baritone")
+                            || info.getThreadState() == Thread.State.BLOCKED || info.getLockOwnerName() != null;
+                    var frames = info.getStackTrace();
+                    for (int i = 0; i < Math.min(full ? 40 : 2, frames.length); i++) System.out.println("[BENCH] hung:     at " + frames[i]);
+                    for (var held : info.getLockedMonitors()) System.out.println("[BENCH] hung:     holds " + held);
+                }
+                System.out.flush();
+                Runtime.getRuntime().halt(3);
+            }
+        }, "MineAgent benchmark watchdog");
+        watch.setDaemon(true);
+        watch.start();
     }
 
     private static void tick(MinecraftServer server) {
