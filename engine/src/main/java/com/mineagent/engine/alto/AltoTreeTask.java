@@ -36,6 +36,14 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
         this.name = catalogueName(record.item);
     }
 
+    /** Each companion's AltoClef task chain as it last ran (what a scene's failure says it was doing). */
+    private static final java.util.Map<java.util.UUID, String> LAST_CHAIN = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** The companion's AltoClef task chain as it last ran, or "". */
+    public static String lastChain(java.util.UUID companionId) {
+        return LAST_CHAIN.getOrDefault(companionId, "");
+    }
+
     /** The catalogue's name for an item id ("minecraft:stone_pickaxe" is "stone_pickaxe"), or null for none. */
     public static String catalogueName(String itemId) {
         if (itemId == null) return null;
@@ -87,14 +95,17 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
         if (!sp.isAlive()) return TaskState.RUNNING;
         AltoClef host = AltoClef.of(player);
         host.tick(root);
-        if (Boolean.getBoolean("mineagent.traceWork") && ++ticks % 200 == 0) {
+        if (++ticks % 40 == 0) {
             // AltoClef's task chain as it ran this tick, outermost first, each with its own debug state.
             StringBuilder chain = new StringBuilder();
             for (Task t : host.getUserTaskChain().getTasks()) {
                 if (chain.length() > 0) chain.append(" > ");
                 chain.append(host.within(t::toString));
             }
-            System.out.println("[MineAgent] alto: tick " + ticks + " at " + sp.blockPosition().toShortString() + ": " + chain);
+            LAST_CHAIN.put(player.companionId(), "tick " + ticks + " at " + sp.blockPosition().toShortString() + ": " + chain);
+            if (Boolean.getBoolean("mineagent.traceWork") && ticks % 200 == 0) {
+                System.out.println("[MineAgent] alto: " + LAST_CHAIN.get(player.companionId()));
+            }
         }
         int have = ProductionTask.count(sp, item);
         final Task tree = root;

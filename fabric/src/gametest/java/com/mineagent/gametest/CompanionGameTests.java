@@ -5185,7 +5185,8 @@ public class CompanionGameTests implements FabricGameTest {
                 String how = "stone pickaxes " + inv.countItem(Items.STONE_PICKAXE) + ", wooden " + inv.countItem(Items.WOODEN_PICKAXE)
                         + ", cobblestone " + inv.countItem(Items.COBBLESTONE) + ", logs " + inv.countItem(Items.OAK_LOG)
                         + ", planks " + inv.countItem(Items.OAK_PLANKS) + ", sticks " + inv.countItem(Items.STICK)
-                        + ", tables " + inv.countItem(Items.CRAFTING_TABLE) + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                        + ", tables " + inv.countItem(Items.CRAFTING_TABLE) + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done)
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
                 boolean ok = inv.countItem(Items.STONE_PICKAXE) >= 1;
                 tidy(s);
                 com.mineagent.engine.settings.Switches.altoTasksOverride = null;
@@ -5215,7 +5216,8 @@ public class CompanionGameTests implements FabricGameTest {
             if (inv.countItem(Items.FURNACE) >= 1 || !done.isEmpty() || !failed.isEmpty() || helper.getTick() >= 2350) {
                 String how = "furnaces " + inv.countItem(Items.FURNACE) + ", cobblestone " + inv.countItem(Items.COBBLESTONE)
                         + ", tables " + inv.countItem(Items.CRAFTING_TABLE) + ", planks " + inv.countItem(Items.OAK_PLANKS)
-                        + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done);
+                        + "; said: " + (done.isEmpty() ? failed.isEmpty() ? lastSaid(s, "") : failed : done)
+                        + "; AltoClef was at " + com.mineagent.engine.alto.AltoTreeTask.lastChain(s.companion().companionId());
                 boolean ok = inv.countItem(Items.FURNACE) >= 1;
                 tidy(s);
                 com.mineagent.engine.settings.Switches.altoTasksOverride = null;
