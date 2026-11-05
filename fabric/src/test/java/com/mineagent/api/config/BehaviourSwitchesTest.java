@@ -104,6 +104,7 @@ final class BehaviourSwitchesTest {
         assertTrue(d.dugoutHomes(), "digging a home is on by default");
         assertTrue(d.homeAtNight(), "going home for the night is on by default");
         assertTrue(d.reactiveFood(), "food from what is in sight is on by default");
+        assertFalse(d.altoTasks(), "items by AltoClef's tasks is off until its scenes pass");
         // A file saved with the earlier default ("afkGuard": true, and "afkKeepWorking") has no say over the new ones.
         Path dir = Files.createTempDirectory("mineagent-config");
         Files.writeString(dir.resolve("mineagent.json"),

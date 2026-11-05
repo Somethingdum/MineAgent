@@ -94,6 +94,7 @@ public final class Switches {
     public static boolean dugoutHomes() { return b().dugoutHomes(); }
     public static boolean homeAtNight() { return b().homeAtNight(); }
     public static boolean reactiveFood() { return b().reactiveFood(); }
+    public static boolean altoTasks() { return b().altoTasks(); }
 
     /** How much it remembers (MA5.7). */
     public static MineAgentConfig.MemoryConfig memory() {
