@@ -58,7 +58,10 @@ def uncomment(seg):
         lead = seg[:len(seg) - len(seg.lstrip())]
         trail = seg[len(seg.rstrip()):]
         inner = stripped[2:-2]
-        return lead + inner + trail
+        # Inside a commented-out branch Stonecutter writes the comments it holds as "/^" and "^/": back to "/*" and "*/",
+        # and the version chains among them resolved in turn.
+        inner = inner.replace('/^', '/*').replace('^/', '*/')
+        return lead + resolve(inner) + trail
     return seg
 
 def resolve(text):
