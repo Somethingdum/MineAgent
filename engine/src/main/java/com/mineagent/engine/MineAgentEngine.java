@@ -1283,10 +1283,26 @@ public final class MineAgentEngine {
     // ── Server tick ─────────────────────────────────────────────────
 
     /**
+     * How long the last {@link #onServerTick} took, in nanoseconds: all companions' own work on the server thread
+     * (their tasks, the agent, the chains), not their bodies' physics or the path searches on Automatone's threads.
+     * Read by the benchmark for its tick cost (SMH plan 71, §7.12); a measurement only, it changes nothing.
+     */
+    public static volatile long lastTickNanos;
+
+    /**
      * Called every server tick to drive the priority auction and process
      * pending tasks. Also handles companion death revival and night skipping.
      */
     public static void onServerTick(net.minecraft.server.MinecraftServer server) {
+        long started = System.nanoTime();
+        try {
+            serverTick(server);
+        } finally {
+            lastTickNanos = System.nanoTime() - started;
+        }
+    }
+
+    private static void serverTick(net.minecraft.server.MinecraftServer server) {
         // Who opens a companion's own chests, and what they take (SMH plan 70: thieves confronted).
         try {
             java.util.List<AgentLoop> loops = new java.util.ArrayList<>();

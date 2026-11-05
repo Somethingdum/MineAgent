@@ -7298,4 +7298,103 @@ public class CompanionGameTests implements FabricGameTest {
             }
         });
     }
+
+    /**
+     * A stall snapshot rebuilt (SMH plan 71, §7.13): a benchmark world that stalled saved the blocks within 32 of the
+     * companion, what it carried, its health, hunger and the time of day (Benchmark.snapshot). With
+     * {@code -Pstall=<that directory>} (run it alone: {@code -Pscenes=stallsnapshot}) this scene puts those blocks back,
+     * puts the companion where it stood with what it had, turns on the run's switches, tells it to go survive on its own
+     * as the benchmark did, and passes once it has moved more than two blocks or gained or lost anything within five game
+     * minutes: a stall that took a 25-minute world to reach, reproduced in about a minute, and the scene a fix must pass.
+     * What the snapshot cannot hold (its memory, its journal, a half-built plan) is not restored. Without -Pstall it
+     * passes at once.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_stall_snapshot", timeoutTicks = 6400)
+    public void aStallSnapshotRebuilt(GameTestHelper helper) {
+        String dir = System.getProperty("mineagent.stall", "").trim();
+        if (dir.isEmpty()) {
+            helper.succeed();
+            return;
+        }
+        com.google.gson.JsonObject info;
+        net.minecraft.nbt.CompoundTag structure;
+        try {
+            var path = java.nio.file.Path.of(dir);
+            info = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(path.resolve("stall.json"))).getAsJsonObject();
+            structure = net.minecraft.nbt.NbtIo.readCompressed(path.resolve("structure.nbt"), net.minecraft.nbt.NbtAccounter.unlimitedHeap());
+        } catch (Exception e) {
+            fail(helper, "couldn't read the stall snapshot in " + dir + ": " + e);
+            return;
+        }
+        Scene s = scene(helper, "Stalled");
+        var level = helper.getLevel();
+        var template = new net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate();
+        template.load(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), structure);
+        var at = info.getAsJsonArray("at");
+        BlockPos rel = new BlockPos(at.get(0).getAsInt(), at.get(1).getAsInt(), at.get(2).getAsInt());
+        // Its corner where the companion's spot lands over the scene's (3, 1, 3), the whole of it above the scene's floor.
+        BlockPos corner = helper.absolutePos(new BlockPos(3, 1, 3)).offset(-rel.getX(), 0, -rel.getZ());
+        template.placeInWorld(level, corner, corner, new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings(),
+                level.getRandom(), net.minecraft.world.level.block.Block.UPDATE_CLIENTS);
+        BlockPos stand = corner.offset(rel);
+        s.owner().teleportTo(level, stand.getX() + 0.5, Math.min(level.getMaxBuildHeight() - 2, stand.getY() + 40), stand.getZ() + 0.5, 0f, 0f);
+        s.owner().getAbilities().invulnerable = true;
+        s.body().teleportTo(level, stand.getX() + 0.5, stand.getY(), stand.getZ() + 0.5, info.get("yaw").getAsFloat(), 0f);
+        var inv = s.body().getInventory();
+        inv.clearContent();
+        for (var e : info.getAsJsonArray("items")) {
+            var o = e.getAsJsonObject();
+            try {
+                var tag = net.minecraft.nbt.TagParser.parseTag(o.get("snbt").getAsString());
+                inv.setItem(o.get("slot").getAsInt(), ItemStack.parse(level.registryAccess(), tag).orElse(ItemStack.EMPTY));
+            } catch (Exception ex) {
+                System.out.println("[SCENE stall] an item that would not load: " + o);
+            }
+        }
+        s.body().setHealth(info.get("health").getAsFloat());
+        s.body().getFoodData().setFoodLevel(info.get("hunger").getAsInt());
+        level.setDayTime(level.getDayTime() - level.getDayTime() % 24_000L + info.get("timeOfDay").getAsLong());
+        String switches = info.get("switches").getAsString();
+        for (String sw : switches.split(",")) {
+            switch (sw.trim()) {
+                case "altoTasks" -> com.mineagent.engine.settings.Switches.altoTasksOverride = Boolean.TRUE;
+                case "altoLife" -> com.mineagent.engine.settings.Switches.altoLifeOverride = Boolean.TRUE;
+                case "altoSurvival" -> com.mineagent.engine.settings.Switches.altoSurvivalOverride = Boolean.TRUE;
+                case "oneAgent" -> com.mineagent.engine.settings.Switches.oneAgentOverride = Boolean.TRUE;
+                default -> { }
+            }
+        }
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        helper.runAfterDelay(5, () -> MineAgentEngine.onPlayerChat(s.owner(), "go survive on your own"));
+        String carried = carrying(s.body());
+        System.out.println("[SCENE stall] rebuilt " + dir + " (day " + info.get("day").getAsString() + ", switches \"" + switches
+                + "\"): at " + rel.toShortString() + " of the snapshot; it was: " + info.get("summary").getAsString());
+        helper.onEachTick(() -> {
+            trace(helper, s, "stall");
+            boolean moved = s.body().blockPosition().distSqr(stand) > 4;
+            boolean changed = !carrying(s.body()).equals(carried);
+            if (moved || changed || helper.getTick() >= 6_000) {
+                String how = "moved " + moved + ", carrying changed " + changed + " | "
+                        + (com.mineagent.engine.agent.Agents.existing(s.companion().companionId()) != null ? "agent: " + agentIs(s) : "doing: " + s.loop().doing());
+                com.mineagent.engine.settings.Switches.altoTasksOverride = null;
+                com.mineagent.engine.settings.Switches.altoLifeOverride = null;
+                com.mineagent.engine.settings.Switches.altoSurvivalOverride = null;
+                com.mineagent.engine.settings.Switches.oneAgentOverride = null;
+                tidy(s);
+                if (moved || changed) helper.succeed();
+                else fail(helper, "still stalled after five minutes, as in the snapshot: " + how);
+            }
+        });
+    }
+
+    /** What a body carries, as the benchmark's stall check reads it. */
+    private static String carrying(ServerPlayer body) {
+        StringBuilder b = new StringBuilder();
+        var inv = body.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty()) b.append(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem())).append('x').append(st.getCount()).append(',');
+        }
+        return b.toString();
+    }
 }

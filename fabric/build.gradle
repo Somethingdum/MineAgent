@@ -88,6 +88,10 @@ loom {
             source sourceSets.gametest
             vmArg "-Dfabric-api.gametest"
             vmArg "-Dfabric-api.gametest.report-file=${project.buildDir}/gametest/junit.xml"
+            // -Pscenes=<pattern>: only the scenes whose name it finds (SceneFilterMixin); -Pstall=<dir>: the stall
+            // snapshot the "a stall snapshot" scene rebuilds (SMH plan 71, steps 0.5 and 7.13).
+            vmArg "-Dmineagent.scenes=${project.findProperty('scenes') ?: ''}"
+            vmArg "-Dmineagent.stall=${project.findProperty('stall') ?: ''}"
             // Every exception with its stack (the JVM otherwise drops it from one thrown often at the same place).
             vmArg "-XX:-OmitStackTraceInFastThrow"
             runDir "build/gametest"
@@ -102,6 +106,8 @@ loom {
             vmArg "-Dmineagent.benchmark=${project.findProperty('benchmarkTicks') ?: '72000'}"
             vmArg "-Dmineagent.benchmark.report=${project.buildDir}/benchmark/report.json"
             vmArg "-Dmineagent.benchmark.switches=${project.findProperty('benchmarkSwitches') ?: ''}"
+            // -PbenchmarkBoxIn=true: the companion shut in barrier at the start, a forced stall (scripts/bench-local.sh).
+            vmArg "-Dmineagent.benchmark.boxIn=${project.findProperty('benchmarkBoxIn') ?: 'false'}"
             // Its work traced (what it is stuck on, and why), for the progress posted as it runs.
             vmArg "-Dmineagent.traceWork=true"
             vmArg "-XX:-OmitStackTraceInFastThrow"

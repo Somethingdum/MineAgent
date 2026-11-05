@@ -42,6 +42,18 @@ public final class Benchmark implements ModInitializer {
     private static ServerPlayer owner;
     private static CompanionEntity companion;
     private static final Map<String, Object> days = new LinkedHashMap<>();
+    /** Per tick, from the start: the server's own tick time (vanilla's measure) and the companion's (MineAgentEngine). */
+    private static long[] serverNanos = new long[0], companionNanos = new long[0];
+    private static int samples;
+    /** Stalls (SMH plan 71, §7.13): where and what it carried when it last changed, and for how long since. */
+    private static BlockPos stillFrom;
+    private static String stillCarrying = "";
+    private static long lastChange;
+    private static int stillDaytimeMinutes;
+    private static int stalls;
+    private static double firstStallDay = -1;
+    private static String stallSnapshot;
+    private static boolean endedStalled;
 
     @Override
     public void onInitialize() {
@@ -97,6 +109,19 @@ public final class Benchmark implements ModInitializer {
         owner.getAbilities().invulnerable = true;
         owner.onUpdateAbilities();
         startedAt = level.getGameTime();
+        int capacity = (int) Math.min(total + 100, 2_000_000);
+        serverNanos = new long[capacity];
+        companionNanos = new long[capacity];
+        // A forced stall, to check the stall marking and its snapshot (-Dmineagent.benchmark.boxIn=true): the companion
+        // shut in barrier where it stands, so it can neither move nor get anything.
+        if (Boolean.getBoolean("mineagent.benchmark.boxIn") && companion.serverPlayer() != null) {
+            BlockPos c = companion.serverPlayer().blockPosition();
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) for (int dy = -1; dy <= 2; dy++) {
+                boolean inside = dx == 0 && dz == 0 && (dy == 0 || dy == 1);
+                level.setBlockAndUpdate(c.offset(dx, dy, dz), inside ? Blocks.AIR.defaultBlockState() : Blocks.BARRIER.defaultBlockState());
+            }
+            System.out.println("[BENCH] boxed in at " + c.toShortString() + " (a forced stall)");
+        }
         watchForAHang(server);
         server.tickRateManager().requestGameToSprint((int) Math.min(Integer.MAX_VALUE, total));
         System.out.println("[BENCH] started at the spawn " + spawn.toShortString() + " on seed " + level.getSeed() + ", " + total + " ticks");
@@ -151,6 +176,12 @@ public final class Benchmark implements ModInitializer {
         if (startedAt < 0 || companion == null) return;
         ServerLevel level = server.overworld();
         long elapsed = level.getGameTime() - startedAt;
+        if (samples < serverNanos.length) {
+            long[] times = server.getTickTimesNanos();
+            serverNanos[samples] = times[server.getTickCount() % times.length];
+            companionNanos[samples] = com.mineagent.engine.MineAgentEngine.lastTickNanos;
+            samples++;
+        }
         if (elapsed - lastLine >= 1_200) {
             lastLine = elapsed;
             var s = state(server);
@@ -162,6 +193,12 @@ public final class Benchmark implements ModInitializer {
             if (firstMet < 0 && Boolean.TRUE.equals(s.get("minimum"))) firstMet = elapsed / 24_000.0;
             stuckReport(server, day);
             deathReport(day);
+            System.out.println("[BENCH] day " + day + " tick cost: " + tickCost());
+            stallCheck(server, elapsed, day, s);
+            if (endedStalled) {
+                finish(server, elapsed);
+                return;
+            }
         }
         if (elapsed >= total) finish(server, elapsed);
     }
@@ -356,6 +393,133 @@ public final class Benchmark implements ModInitializer {
         return false;
     }
 
+    /** Mean and 99th percentile, in ms, of the companion's own tick and the server's, over the run so far. */
+    private static Map<String, Object> tickCostMap() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ticks", samples);
+        m.put("companionMeanMs", meanMs(companionNanos));
+        m.put("companionP99Ms", p99Ms(companionNanos));
+        m.put("serverMeanMs", meanMs(serverNanos));
+        m.put("serverP99Ms", p99Ms(serverNanos));
+        return m;
+    }
+
+    private static String tickCost() {
+        return String.format("companion mean %.2f ms, p99 %.2f ms; server mean %.2f ms, p99 %.2f ms",
+                meanMs(companionNanos), p99Ms(companionNanos), meanMs(serverNanos), p99Ms(serverNanos));
+    }
+
+    private static double meanMs(long[] a) {
+        if (samples == 0) return 0;
+        long sum = 0;
+        for (int i = 0; i < samples; i++) sum += a[i];
+        return sum / (double) samples / 1_000_000.0;
+    }
+
+    private static double p99Ms(long[] a) {
+        if (samples == 0) return 0;
+        long[] copy = java.util.Arrays.copyOf(a, samples);
+        java.util.Arrays.sort(copy);
+        return copy[Math.min(samples - 1, (int) Math.ceil(samples * 0.99) - 1)] / 1_000_000.0;
+    }
+
+    /**
+     * A stall (SMH plan 71, §7.13): in daylight after the mobs have burned (time of day 1,000 to 12,000; waiting out the
+     * night inside is the owner's own rule, not a stall), five game minutes running with it never more than two blocks
+     * from where it was and nothing gained or lost. The first one leaves a snapshot a scene can rebuild. No change at
+     * all, day or night, for a whole game day ends the run, failed.
+     */
+    private static void stallCheck(MinecraftServer server, long elapsed, String day, Map<String, Object> s) {
+        var sp = companion.serverPlayer();
+        if (sp == null || !sp.isAlive()) {
+            stillFrom = null;
+            stillDaytimeMinutes = 0;
+            lastChange = elapsed;
+            return;
+        }
+        BlockPos at = sp.blockPosition();
+        StringBuilder carrying = new StringBuilder();
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
+            if (!st.isEmpty()) carrying.append(BuiltInRegistries.ITEM.getKey(st.getItem())).append('x').append(st.getCount()).append(',');
+        }
+        boolean changed = stillFrom == null || at.distSqr(stillFrom) > 4 || !carrying.toString().equals(stillCarrying);
+        if (changed) {
+            stillFrom = at.immutable();
+            stillCarrying = carrying.toString();
+            stillDaytimeMinutes = 0;
+            lastChange = elapsed;
+            return;
+        }
+        long timeOfDay = sp.serverLevel().getDayTime() % 24_000L;
+        if (timeOfDay >= 1_000 && timeOfDay < 12_000) stillDaytimeMinutes++;
+        else stillDaytimeMinutes = 0;
+        if (stillDaytimeMinutes == 5) {
+            stalls++;
+            if (firstStallDay < 0) firstStallDay = elapsed / 24_000.0;
+            System.out.println("[BENCH] day " + day + " stalled at " + at.toShortString() + ": five daytime minutes without moving"
+                    + " two blocks or gaining or losing anything | " + s.get("summary"));
+            if (stallSnapshot == null) stallSnapshot = snapshot(sp, elapsed, day, s);
+        }
+        if (elapsed - lastChange >= 24_000) {
+            System.out.println("[BENCH] day " + day + " no change for a whole day: the run ends here, failed");
+            endedStalled = true;
+        }
+    }
+
+    /**
+     * The blocks within 32 of it (a structure file), what it carries, its health, hunger, the time of day, its home and
+     * its description, under stalls/<seed>-<tick>/ in the run's directory, for the "a stall snapshot" scene
+     * ({@code ./gradlew :fabric:runGametest -Pscenes=stallsnapshot -Pstall=<that directory>}). A synthetic world only.
+     */
+    private static String snapshot(ServerPlayer sp, long elapsed, String day, Map<String, Object> s) {
+        try {
+            ServerLevel level = sp.serverLevel();
+            BlockPos at = sp.blockPosition();
+            int y0 = Math.max(level.getMinBuildHeight(), at.getY() - 32);
+            int y1 = Math.min(level.getMaxBuildHeight() - 1, at.getY() + 32);
+            BlockPos corner = new BlockPos(at.getX() - 32, y0, at.getZ() - 32);
+            var template = new net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate();
+            template.fillFromWorld(level, corner, new net.minecraft.core.Vec3i(65, y1 - y0 + 1, 65), true, Blocks.STRUCTURE_VOID);
+            Path dir = Path.of("stalls", level.getSeed() + "-" + elapsed).toAbsolutePath();
+            Files.createDirectories(dir);
+            net.minecraft.nbt.NbtIo.writeCompressed(template.save(new net.minecraft.nbt.CompoundTag()), dir.resolve("structure.nbt"));
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("day", day);
+            info.put("tick", elapsed);
+            info.put("seed", level.getSeed());
+            BlockPos rel = at.subtract(corner);
+            info.put("at", new int[] {rel.getX(), rel.getY(), rel.getZ()});
+            info.put("yaw", sp.getYRot());
+            info.put("timeOfDay", level.getDayTime() % 24_000L);
+            info.put("health", sp.getHealth());
+            info.put("hunger", sp.getFoodData().getFoodLevel());
+            info.put("switches", System.getProperty("mineagent.benchmark.switches", ""));
+            AgentLoop loop = TaskContext.agentLoop(companion);
+            BlockPos home = loop == null ? null : loop.homeIn("minecraft:overworld");
+            info.put("home", home == null ? null : new int[] {home.getX() - corner.getX(), home.getY() - corner.getY(), home.getZ() - corner.getZ()});
+            java.util.List<Map<String, Object>> items = new java.util.ArrayList<>();
+            var inv = sp.getInventory();
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                var st = inv.getItem(i);
+                if (st.isEmpty()) continue;
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("slot", i);
+                item.put("snbt", st.save(level.registryAccess()).toString());
+                items.add(item);
+            }
+            info.put("items", items);
+            info.put("summary", s.get("summary"));
+            Files.writeString(dir.resolve("stall.json"), new GsonBuilder().setPrettyPrinting().create().toJson(info));
+            System.out.println("[BENCH] stall snapshot saved: " + dir);
+            return dir.toString();
+        } catch (Exception e) {
+            System.out.println("[BENCH] couldn't save the stall snapshot: " + e);
+            return null;
+        }
+    }
+
     private static void finish(MinecraftServer server, long elapsed) {
         startedAt = -1;
         var s = state(server);
@@ -364,14 +528,23 @@ public final class Benchmark implements ModInitializer {
         report.put("days", elapsed / 24_000.0);
         report.put("seed", server.overworld().getSeed());
         report.put("passed", s.get("minimum"));
+        report.put("heldAtEnd", s.get("minimum"));
         report.put("minimumFirstMetDay", firstMet);
+        report.put("endedEarlyStalled", endedStalled);
+        report.put("stalls", stalls);
+        report.put("firstStallDay", firstStallDay);
+        report.put("stallSnapshot", stallSnapshot);
+        report.put("tickCost", tickCostMap());
         report.put("switchesOn", System.getProperty("mineagent.benchmark.switches", ""));
         report.put("end", s);
         report.put("byDay", days);
         String json = new GsonBuilder().setPrettyPrinting().create().toJson(report);
-        System.out.println("[BENCH] done after " + elapsed + " ticks: " + s.get("summary") + " | minimum first met on day "
-                + (firstMet < 0 ? "never" : String.format("%.2f", firstMet)) + " | switches on: "
-                + System.getProperty("mineagent.benchmark.switches", "none"));
+        System.out.println("[BENCH] done after " + elapsed + " ticks: " + s.get("summary") + " | held at the end ("
+                + String.format("day %.2f", elapsed / 24_000.0) + "): " + s.get("minimum") + " | minimum first met on day "
+                + (firstMet < 0 ? "never" : String.format("%.2f", firstMet)) + " | stalls " + stalls
+                + (endedStalled ? " (ended early: no change for a whole day)" : "")
+                + (stallSnapshot == null ? "" : ", first snapshot " + stallSnapshot) + " | tick cost: " + tickCost()
+                + " | switches on: " + System.getProperty("mineagent.benchmark.switches", "none"));
         System.out.println("[BENCH] report\n" + json);
         String path = System.getProperty("mineagent.benchmark.report");
         if (path != null) {
