@@ -19,6 +19,8 @@
 
 package com.mineagent.engine.baritone.api.utils;
 
+import com.mineagent.engine.baritone.api.BaritoneAPI;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.Util;

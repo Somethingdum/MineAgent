@@ -16,7 +16,7 @@ public class SelectionManager implements ISelectionManager {
     private ISelection[] selectionsArr = new ISelection[0];
 
     public SelectionManager(Baritone baritone) {
-        new SelectionRenderer(baritone, this);
+        // SMH: no renderer for selections on a server-side body.
     }
 
     private void resetSelectionsArr() {

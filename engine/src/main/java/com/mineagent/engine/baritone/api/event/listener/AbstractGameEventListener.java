@@ -42,16 +42,10 @@ public interface AbstractGameEventListener extends IGameEventListener {
     default void onPlayerUpdate(PlayerUpdateEvent event) {}
 
     @Override
-
-    @Override
-
-    @Override
     default void onChunkEvent(ChunkEvent event) {}
 
     @Override
     default void onBlockChange(BlockChangeEvent event) {}
-
-    @Override
 
     @Override
     default void onWorldEvent(WorldEvent event) {}
