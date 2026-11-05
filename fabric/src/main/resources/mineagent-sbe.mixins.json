@@ -1,0 +1,28 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.mineagent.sbe.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ClientConnectionAccessor",
+    "EntityAccessor",
+    "EntityAnimationSwungMixin",
+    "LivingEntityMixin",
+    "MixinAbstractFurnaceBlockEntity",
+    "MixinItemStack",
+    "MixinLivingEntity",
+    "MixinMobEntity",
+    "MixinServerChunkManager",
+    "MixinServerCommandSource",
+    "MixinServerPlayerInteractionManager",
+    "MixinUtil",
+    "PersistentProjectileEntityAccessor",
+    "PlayerCollidesWithEntityMixin",
+    "PlayerDamageMixin",
+    "WorldBlockModifiedMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1,
+    "maxShiftBy": 2
+  }
+}

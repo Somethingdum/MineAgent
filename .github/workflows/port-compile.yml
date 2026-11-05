@@ -5,7 +5,7 @@ name: Port compile
 on:
   push:
     branches: [smh-companion]
-    paths: ['engine/src/main/java/com/mineagent/engine/baritone/**', 'engine/src/main/java/com/mineagent/engine/alto/**', '.github/workflows/port-compile.yml', '.github/port/**']
+    paths: ['engine/src/main/java/com/mineagent/engine/baritone/**', 'engine/src/main/java/com/mineagent/engine/alto/**', 'engine/src/main/java/com/mineagent/sbe/**', 'engine/src/main/java/com/mineagent/engine/agent/**', '.github/workflows/port-compile.yml', '.github/port/**']
   workflow_dispatch:
 
 permissions:

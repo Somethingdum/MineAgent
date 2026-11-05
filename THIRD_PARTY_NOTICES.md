@@ -6,6 +6,20 @@ and keeping versions with a rollback to the better one (`learning/SkillRepair.ja
 MineAgent is licensed under LGPL-3.0-only (see `LICENSE`). The parts below were ported from other projects
 under their own licences, which are kept here as those licences require.
 
+## SecondBrainEngine
+
+From [SecondBrainEngine](https://github.com/sailex428/SecondBrainEngine) (sailex428, LGPL-3.0), at commit `1712b17e`:
+Automatone's server-side Baritone (Ladysnake's fork of Baritone, LGPL-3.0, as kept up by sailex428) and a server-side
+adaptation of AltoClef (MIT, Copyright (c) 2020 Adris Jautakas), one of each for a server player: the one agent's
+movement and doing layers. Its sources were read as text, resolved to 1.21.1 and remapped to Mojang's names
+(`.github/remap-sbe`, kept in `third_party/secondbrainengine` with its licence), and ported by
+`.github/port-sbe/port.py` (its package renamed, the companion's changes marked SMH) into:
+
+- `engine/src/main/java/com/mineagent/sbe/` (the mod's own `ServerHooks.java` in it is written for this mod)
+
+Its licence is the GNU Lesser General Public License, version 3, the same licence as this mod (see `LICENSE`); its
+AltoClef parts keep AltoClef's MIT notice, below.
+
 ## altoclef
 
 From [altoclef](https://github.com/MiranCZ/altoclef) (MIT), at commit `1f8e038`:

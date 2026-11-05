@@ -72,6 +72,17 @@ public class MineAgentNeoForge {
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
         NeoForge.EVENT_BUS.addListener(this::onServerChat);
         NeoForge.EVENT_BUS.addListener(this::onLivingDeath);
+        // The one agent's movement and doing layers (SecondBrainEngine, ported): the loader's chunk events, passed in.
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.level.ChunkEvent.Load e) -> {
+            if (e.getLevel() instanceof net.minecraft.server.level.ServerLevel level) {
+                com.mineagent.sbe.common.ServerHooks.chunkLoaded(level, e.getChunk().getPos());
+            }
+        });
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.level.ChunkEvent.Unload e) -> {
+            if (e.getLevel() instanceof net.minecraft.server.level.ServerLevel level) {
+                com.mineagent.sbe.common.ServerHooks.chunkUnloaded(level, e.getChunk().getPos());
+            }
+        });
     }
 
     /**
@@ -174,6 +185,7 @@ public class MineAgentNeoForge {
 
     private void onServerStarted(ServerStartedEvent event) {
         if (platform != null) platform.setServer(event.getServer());
+        com.mineagent.engine.agent.Agents.serverStarted(event.getServer());
         // Persistence must be scoped to the actual world, not the game or
         // config directory, otherwise companions leak between save files.
         MineAgentEngine.setWorldDataDir(event.getServer()
@@ -183,6 +195,7 @@ public class MineAgentNeoForge {
 
     private void onServerStopping(ServerStoppingEvent event) {
         MineAgentEngine.shutdown();
+        com.mineagent.engine.agent.Agents.serverStopped();
         if (platform != null) platform.setServer(null);
     }
 

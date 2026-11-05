@@ -23,7 +23,8 @@
     ]
   },
   "mixins": [
-    "mineagent.mixins.json"
+    "mineagent.mixins.json",
+    "mineagent-sbe.mixins.json"
   ],
   "accessWidener": "mineagent.accesswidener",
   "depends": {

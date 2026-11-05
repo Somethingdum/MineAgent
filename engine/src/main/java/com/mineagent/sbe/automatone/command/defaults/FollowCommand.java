@@ -1,0 +1,178 @@
+// Ported from SecondBrainEngine (github.com/sailex428/SecondBrainEngine, LGPL-3.0; its AltoClef parts MIT,
+// Copyright (c) 2020 Adris Jautakas; its Automatone and Baritone parts LGPL-3.0) at 1712b17e:
+// src/main/java/me/sailex/automatone/command/defaults/FollowCommand.java, as 1.21.1 in Mojang's names (third_party/secondbrainengine).
+// Changes for the companion are marked SMH (.github/port-sbe/port.py).
+/*
+ * This file is part of Baritone.
+ *
+ * Baritone is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Baritone is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.mineagent.sbe.automatone.command.defaults;
+
+import com.mineagent.sbe.automatone.KeepName;
+import com.mineagent.sbe.automatone.api.IBaritone;
+import com.mineagent.sbe.automatone.api.command.Command;
+import com.mineagent.sbe.automatone.api.command.argument.IArgConsumer;
+import com.mineagent.sbe.automatone.api.command.datatypes.EntityClassById;
+import com.mineagent.sbe.automatone.api.command.datatypes.IDatatypeFor;
+import com.mineagent.sbe.automatone.api.command.datatypes.NearbyPlayer;
+import com.mineagent.sbe.automatone.api.command.exception.CommandErrorMessageException;
+import com.mineagent.sbe.automatone.api.command.exception.CommandException;
+import com.mineagent.sbe.automatone.api.command.helpers.TabCompleteHelper;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
+public class FollowCommand extends Command {
+
+    public FollowCommand() {
+        super("follow");
+    }
+
+    @Override
+    public void execute(CommandSourceStack source, String label, IArgConsumer args, IBaritone baritone) throws CommandException {
+        args.requireMin(1);
+        FollowGroup group;
+        FollowList list;
+        List<Entity> entities = new ArrayList<>();
+        List<EntityType<?>> classes = new ArrayList<>();
+        if (args.hasExactlyOne()) {
+            baritone.getFollowProcess().follow((group = args.getEnum(FollowGroup.class)).filter);
+        } else {
+            args.requireMin(2);
+            group = null;
+            list = args.getEnum(FollowList.class);
+            while (args.hasAny()) {
+                Object gotten = args.getDatatypeFor(list.datatype);
+                if (gotten instanceof EntityType) {
+                    classes.add((EntityType<?>) gotten);
+                } else if (gotten != null) {
+                    entities.add((Entity) gotten);
+                }
+            }
+
+            baritone.getFollowProcess().follow(
+                    classes.isEmpty()
+                            ? entities::contains
+                            : e -> classes.stream().anyMatch(c -> e.getType().equals(c))
+            );
+        }
+        if (group != null) {
+            logDirect(source, String.format("Following all %s", group.name().toLowerCase(Locale.US)));
+        } else {
+            if (classes.isEmpty()) {
+                if (entities.isEmpty()) throw new NoEntitiesException();
+                logDirect(source, "Following these entities:");
+                entities.stream()
+                        .map(Entity::toString)
+                        .forEach(message -> logDirect(source, message));
+            } else {
+                logDirect(source, "Following these types of entities:");
+                classes.stream()
+                        .map(BuiltInRegistries.ENTITY_TYPE::getKey)
+                        .map(Objects::requireNonNull)
+                        .map(ResourceLocation::toString)
+                        .forEach(message -> logDirect(source, message));
+            }
+        }
+    }
+
+    @Override
+    public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
+        if (args.hasExactlyOne()) {
+            return new TabCompleteHelper()
+                    .append(FollowGroup.class)
+                    .append(FollowList.class)
+                    .filterPrefix(args.getString())
+                    .stream();
+        } else {
+            IDatatypeFor<?> followType;
+            try {
+                followType = args.getEnum(FollowList.class).datatype;
+            } catch (NullPointerException e) {
+                return Stream.empty();
+            }
+            while (args.has(2)) {
+                if (args.peekDatatypeOrNull(followType) == null) {
+                    return Stream.empty();
+                }
+                args.get();
+            }
+            return args.tabCompleteDatatype(followType);
+        }
+    }
+
+    @Override
+    public String getShortDesc() {
+        return "Follow entity things";
+    }
+
+    @Override
+    public List<String> getLongDesc() {
+        return Arrays.asList(
+                "The follow command makes an entity follow other entities of certain kinds.",
+                "",
+                "Usage:",
+                "> follow entities - Follows all entities.",
+                "> follow entity <entity1> <entity2> <...> - Follow certain entities (for example 'skeleton', 'horse' etc.)",
+                "> follow players - Follow players",
+                "> follow player <username1> <username2> <...> - Follow certain players"
+        );
+    }
+
+    @KeepName
+    private enum FollowGroup {
+        ENTITIES(LivingEntity.class::isInstance),
+        PLAYERS(Player.class::isInstance); /* ,
+        FRIENDLY(entity -> entity.getAttackTarget() != HELPER.mc.player),
+        HOSTILE(FRIENDLY.filter.negate()); */
+        final Predicate<Entity> filter;
+
+        FollowGroup(Predicate<Entity> filter) {
+            this.filter = filter;
+        }
+    }
+
+    @KeepName
+    private enum FollowList {
+        ENTITY(EntityClassById.INSTANCE),
+        PLAYER(NearbyPlayer.INSTANCE);
+
+        final IDatatypeFor<?> datatype;
+
+        FollowList(IDatatypeFor<?> datatype) {
+            this.datatype = datatype;
+        }
+    }
+
+    public static class NoEntitiesException extends CommandErrorMessageException {
+
+        protected NoEntitiesException() {
+            super("No valid entities in range!");
+        }
+
+    }
+}

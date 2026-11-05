@@ -1,0 +1,99 @@
+// Ported from SecondBrainEngine (github.com/sailex428/SecondBrainEngine, LGPL-3.0; its AltoClef parts MIT,
+// Copyright (c) 2020 Adris Jautakas; its Automatone and Baritone parts LGPL-3.0) at 1712b17e:
+// src/main/java/me/sailex/altoclef/util/baritone/GoalDodgeProjectiles.java, as 1.21.1 in Mojang's names (third_party/secondbrainengine).
+// Changes for the companion are marked SMH (.github/port-sbe/port.py).
+package com.mineagent.sbe.altoclef.util.baritone;
+
+import com.mineagent.sbe.altoclef.AltoClefController;
+import com.mineagent.sbe.altoclef.Debug;
+import com.mineagent.sbe.altoclef.util.helpers.BaritoneHelper;
+import com.mineagent.sbe.altoclef.util.helpers.ProjectileHelper;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
+import net.minecraft.world.phys.Vec3;
+import java.util.ArrayList;
+import java.util.List;
+
+public class GoalDodgeProjectiles implements Goal {
+   private static final double Y_SCALE = 0.3F;
+   private final AltoClefController mod;
+   private final double distanceHorizontal;
+   private final double distanceVertical;
+   private final List<CachedProjectile> cachedProjectiles = new ArrayList<>();
+
+   public GoalDodgeProjectiles(AltoClefController mod, double distanceHorizontal, double distanceVertical) {
+      this.mod = mod;
+      this.distanceHorizontal = distanceHorizontal;
+      this.distanceVertical = distanceVertical;
+   }
+
+   private static boolean isInvalidProjectile(CachedProjectile projectile) {
+      return projectile == null;
+   }
+
+   @Override
+   public boolean isInGoal(int x, int y, int z) {
+      List<CachedProjectile> projectiles = this.getProjectiles();
+      Vec3 p = new Vec3(x, y, z);
+      synchronized (BaritoneHelper.MINECRAFT_LOCK) {
+         if (!projectiles.isEmpty()) {
+            for (CachedProjectile projectile : projectiles) {
+               if (!isInvalidProjectile(projectile)) {
+                  try {
+                     if (projectile.needsToRecache()) {
+                        projectile.setCacheHit(ProjectileHelper.calculateArrowClosestApproach(projectile, p));
+                     }
+
+                     Vec3 hit = projectile.getCachedHit();
+                     if (this.isHitCloseEnough(hit, p)) {
+                        return false;
+                     }
+                  } catch (Exception var11) {
+                     Debug.logWarning("Weird exception caught while checking for goal: " + var11.getMessage());
+                  }
+               }
+            }
+         }
+
+         return true;
+      }
+   }
+
+   @Override
+   public double heuristic(int x, int y, int z) {
+      Vec3 p = new Vec3(x, y, z);
+      double costFactor = 0.0;
+      List<CachedProjectile> projectiles = this.getProjectiles();
+      synchronized (BaritoneHelper.MINECRAFT_LOCK) {
+         if (!projectiles.isEmpty()) {
+            for (CachedProjectile projectile : projectiles) {
+               if (!isInvalidProjectile(projectile)) {
+                  if (projectile.needsToRecache()) {
+                     projectile.setCacheHit(ProjectileHelper.calculateArrowClosestApproach(projectile, p));
+                  }
+
+                  Vec3 hit = projectile.getCachedHit();
+                  double arrowPenalty = ProjectileHelper.getFlatDistanceSqr(
+                     projectile.position.x, projectile.position.z, projectile.velocity.x, projectile.velocity.z, p.x, p.z
+                  );
+                  if (this.isHitCloseEnough(hit, p)) {
+                     costFactor += arrowPenalty;
+                  }
+               }
+            }
+         }
+      }
+
+      return -1.0 * costFactor;
+   }
+
+   private boolean isHitCloseEnough(Vec3 hit, Vec3 to) {
+      Vec3 delta = to.subtract(hit);
+      double horizontalSquared = delta.x * delta.x + delta.z * delta.z;
+      double vertical = Math.abs(delta.y);
+      return horizontalSquared < this.distanceHorizontal * this.distanceHorizontal && vertical < this.distanceVertical;
+   }
+
+   private List<CachedProjectile> getProjectiles() {
+      return this.mod.getEntityTracker().getProjectiles();
+   }
+}

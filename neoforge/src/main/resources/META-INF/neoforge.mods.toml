@@ -19,6 +19,9 @@ file = "META-INF/accesstransformer.cfg"
 [[mixins]]
 config = "mineagent.mixins.json"
 
+[[mixins]]
+config = "mineagent-sbe.mixins.json"
+
 [[dependencies.mineagent]]
 modId = "neoforge"
 type = "required"

@@ -41,7 +41,14 @@ public class MineAgentFabric implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             MineAgentEngine.shutdown();
+            com.mineagent.engine.agent.Agents.serverStopped();
         });
+
+        // The one agent's movement and doing layers (SecondBrainEngine, ported): the loader's chunk events, passed in.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents.CHUNK_LOAD.register((level, chunk) ->
+                com.mineagent.sbe.common.ServerHooks.chunkLoaded(level, chunk.getPos()));
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) ->
+                com.mineagent.sbe.common.ServerHooks.chunkUnloaded(level, chunk.getPos()));
 
         // 2. Initialize engine (LLM providers, etc.) with config directory
         MineAgentEngine.init(FabricLoader.getInstance().getConfigDir());
@@ -66,6 +73,7 @@ public class MineAgentFabric implements ModInitializer {
 
         // 7. Player join/leave events for companion lifecycle
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            com.mineagent.engine.agent.Agents.serverStarted(server);
             // Set the world data directory for companion persistence.
             // Use the server's actual world path (saves/<world>/ for single-player,
             // <level-name>/ for dedicated servers) — never guess from gameDir,
