@@ -100,7 +100,7 @@ jobs:
         run: |
           # The scenes' failure lines and the companions' traces near them, repeated at the end of the job log, where a
           # look at its last lines finds them.
-          grep -E "GAMETEST FAILED|required tests failed|^.*   - companiongametests|\[MineAgent\] (loot|builder|light|smelting|cell|shelter|production|hunt|alto|food):|\[SCENE trap\]|Took the trap|couldn't" \
+          grep -E "GAMETEST FAILED|required tests failed|^.*   - companiongametests|\[MineAgent\] (loot|builder|light|smelting|cell|shelter|production|hunt|alto|food):|\[SCENE trap\]|Took the trap|couldn't|Task tick error|\[SCENE agent|\[Alto Clef\] (Task START|Task FAILED|User Task Set)" \
             fabric/build/gametest/logs/latest.log | cut -c 1-1600 | tail -700 || true
 
       - name: Keep the report and the server log
