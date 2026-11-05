@@ -42,10 +42,33 @@ sourceSets {
     }
 }
 
+// A smoke mod (SMH plan 71, step 0.6): the companion spawned on a real NeoForge server and the player list checked
+// (./gradlew :neoforge:runSmoke). Its own source set, so it is never in the jar.
+sourceSets {
+    smoke {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+neoForge.addModdingDependenciesTo(sourceSets.smoke)
+
 dependencies {
+    smokeImplementation project(':api')
     implementation project(':api')
     // The ported SecondBrainEngine's annotations (javax.annotation: Nullable, Nonnegative); the game ships them at run time.
     compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+}
+
+// The smoke run's server: the EULA accepted, offline (the owner is a stand-in), a fresh small world each time.
+tasks.register('smokeServerFiles') {
+    doLast {
+        def dir = project.file('run-smoke')
+        project.delete(new File(dir, 'world'))
+        dir.mkdirs()
+        new File(dir, 'eula.txt').text = 'eula=true\n'
+        new File(dir, 'server.properties').text = 'online-mode=false\nlevel-seed=smh-smoke\nspawn-protection=0\n' +
+                'view-distance=4\nsimulation-distance=4\nmax-tick-time=-1\n'
+    }
 }
 
 neoForge {
@@ -59,14 +82,30 @@ neoForge {
         mineagent {
             sourceSet sourceSets.main
         }
+        mineagent_smoke {
+            sourceSet sourceSets.smoke
+        }
     }
 
     runs {
         client {
             client()
+            mods.set([neoForge.mods.mineagent])
         }
         server {
             server()
+            mods.set([neoForge.mods.mineagent])
+        }
+        // ./gradlew :neoforge:runSmoke: a fresh world, the companion spawned for a stand-in owner, the player list
+        // checked; the server exits 0 when it held (MineAgentSmoke).
+        smoke {
+            server()
+            sourceSet = sourceSets.smoke
+            mods.set([neoForge.mods.mineagent, neoForge.mods.mineagent_smoke])
+            gameDirectory = project.file('run-smoke')
+            systemProperty 'mineagent.smoke', 'true'
+            programArgument '--nogui'
+            taskBefore tasks.named('smokeServerFiles')
         }
     }
 }

@@ -1,0 +1,18 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "LGPL-3.0-only"
+
+[[mods]]
+modId = "mineagent_smoke"
+version = "1.0.0"
+displayName = "MineAgent smoke check"
+description = '''
+Spawns the companion on a NeoForge server and checks the player list (SMH plan 71, step 0.6). Never shipped.
+'''
+
+[[dependencies.mineagent_smoke]]
+modId = "mineagent"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"

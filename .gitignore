@@ -13,6 +13,7 @@
 
 # Minecraft development runtime data
 **/run/
+**/run-smoke/
 **/runs/
 /config/
 /saves/
