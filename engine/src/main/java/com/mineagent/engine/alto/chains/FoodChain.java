@@ -11,7 +11,7 @@ import com.mineagent.engine.alto.tasks.speedrun.DragonBreathTracker;
 import com.mineagent.engine.alto.tasksystem.TaskRunner;
 import com.mineagent.engine.alto.util.helpers.*;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import java.util.Objects;
 import java.util.Optional;
 import net.minecraft.server.level.ServerPlayer;

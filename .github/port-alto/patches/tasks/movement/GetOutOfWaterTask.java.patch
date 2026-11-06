@@ -1,7 +1,7 @@
 @@ -10,7 +10,6 @@
- import com.mineagent.engine.baritone.api.pathing.goals.Goal;
- import com.mineagent.engine.baritone.api.utils.input.Input;
- import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+ import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
 -import net.minecraft.client.Minecraft;
  import net.minecraft.core.BlockPos;
  import net.minecraft.world.item.Item;

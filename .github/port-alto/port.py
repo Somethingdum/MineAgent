@@ -27,9 +27,34 @@ def manifest(name):
     return [l.strip() for l in open(os.path.join(HERE, name)) if l.strip() and not l.startswith('#')]
 
 
+# Seam A (SMH plan 71, §6.1, step 1.1): AltoClef calls Baritone's API; the companion's movement is Automatone, whose API
+# has the same classes under its own package, a context of an entity instead of a player, and settings read with get()
+# and written with set() instead of a public value field. Each rule is one kind of change, made the same way in every
+# file; what is not one of these kinds is a patch.
+SEAM_A = [
+    (r'\bimport baritone\.altoclef\.AltoClefSettings;', 'import com.mineagent.sbe.automatone.settings.AltoClefSettings;'),
+    (r'\bimport baritone\.api\.utils\.IPlayerContext;', 'import com.mineagent.sbe.automatone.api.utils.IEntityContext;'),
+    (r'\bimport baritone\.', 'import com.mineagent.sbe.automatone.'),
+    (r'\bIPlayerContext\b', 'IEntityContext'),
+]
+SEAM_A_SETTINGS = [
+    (r'(\b[\w.()]*?(?:Settings\(\)|\bs|\bsettings|\bsa)\.\w+)\.value\s*=\s*([^;]+);', r'\1.set(\2);'),
+    (r'((?:Settings\(\)|\bs|\bsettings|\bsa)\.\w+)\.value\b', r'\1.get()'),
+]
+SEAM_A_CONTEXT = [  # only in files that talk to Baritone's context
+    (r'\.player\(\)', '.entity()'), (r'\.playerHead\(\)', '.headPos()'), (r'\.playerRotations\(\)', '.entityRotations()'),
+    (r'\.playerController\(\)', '.interactionController()'), (r'getAltoClefSettings\(\)', 'getExtraBaritoneSettings()'),
+]
+
+
 def transformed(rel):
     text = open(os.path.join(SRC, rel), encoding='utf-8', newline='').read()
-    text = text.replace('adris.altoclef', 'com.mineagent.engine.alto').replace('import baritone.', 'import com.mineagent.engine.baritone.')
+    text = text.replace('adris.altoclef', 'com.mineagent.engine.alto')
+    for a, b in SEAM_A + SEAM_A_SETTINGS:
+        text = re.sub(a, b, text)
+    if 'Baritone' in text or 'IEntityContext' in text or 'getPlayerContext' in text:
+        for a, b in SEAM_A_CONTEXT:
+            text = re.sub(a, b, text)
     header = ('// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/'
               + rel + ' at commit\n// ' + COMMIT + ", in Mojang's names (third_party/altoclef). Changes for the companion's"
               + " server-side body are marked SMH.\n")

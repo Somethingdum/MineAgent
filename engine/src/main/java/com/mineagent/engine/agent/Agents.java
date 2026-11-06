@@ -63,6 +63,18 @@ public final class Agents {
         return controller;
     }
 
+    /**
+     * The body's own Automatone, made and put in its provider's map as {@link #of} does: the AltoClef port's host
+     * (alto/AltoClef) takes its Baritone from here (SMH plan 71, seam A, step 1.1).
+     */
+    public static IBaritone bodyBaritone(AgentPlayer agent) {
+        ServerPlayer body = TaskContext.serverPlayer(agent);
+        DRIVERS.put(body, TaskContext.inputDriver(agent));
+        IBaritone baritone = BaritoneAPI.getProvider().getBaritone(body);
+        BaritoneProvider.INSTANCE.playerToBaritone.put(body, baritone);
+        return baritone;
+    }
+
     /** The companion's AltoClef if it has one now, else null. */
     public static AltoClefController existing(UUID companionId) {
         Agent a = AGENTS.get(companionId);

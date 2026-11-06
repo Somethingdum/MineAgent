@@ -24,12 +24,16 @@ for d, _, fs in os.walk(P):
             elif re.match(r'^\s*import [\w.]+\.\*;\s*$', l) or 'net.fabricmc.fabric.api.transfer' in l: kinds.add('wildcard or client-library imports the Mojang remap left behind, removed')
             elif CLIENT.search(l): kinds.add("the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance())")
             elif 'Baritone.settings()' in l: kinds.add("Baritone's static settings read through the companion's Baritone API")
+            elif re.search(r'Baritone\.settings\(\)|getSettings\(\)|Optional<Double>|new BlockOptionalMeta\(|getPrimaryBaritone\(\)|createBaritone|baritone\.tick\(\)|isInControl\(\)|\.logger\b|blocksToDisallowBreaking|MovementHelper\.avoidBreaking\(|BaritoneProvider\.as\(|destroyBaritone|setPlayer\(|import com\.mineagent\.engine\.(baritone|rules)', l):
+                kinds.add("Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1)")
             elif l.strip() == '': pass
             else: kinds.add('other')
+        known = sorted(k for k in kinds if k != 'other')
         if notes:
             why = 'SMH: ' + ' / '.join(n[:160] for n in notes[:3]) + (' / ...' if len(notes) > 3 else '')
+            if known: why += '; and ' + '; '.join(known)
         elif kinds and 'other' not in kinds:
-            why = '; '.join(sorted(kinds))
+            why = '; '.join(known)
         else:
             unexplained.append(rel)
             why = 'UNEXPLAINED'

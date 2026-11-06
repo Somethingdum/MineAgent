@@ -1,5 +1,5 @@
 @@ -22,7 +22,6 @@
- import com.mineagent.engine.baritone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
  import java.util.HashSet;
  import java.util.function.Predicate;
 -import net.minecraft.client.Minecraft;
@@ -15,7 +15,7 @@
 +        mod.getBehaviour().avoidBlockBreaking((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
 +        mod.getBehaviour().avoidBlockPlacing((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
  
-         mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.value = true;
+         mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.set(true);
          //_blacklist.clear();
 @@ -129,7 +128,7 @@
              if (blacklist.contains(blockPos)) return false;

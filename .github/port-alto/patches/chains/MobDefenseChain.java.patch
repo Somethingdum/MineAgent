@@ -1,7 +1,7 @@
 @@ -22,10 +22,8 @@
- import com.mineagent.engine.baritone.Baritone;
- import com.mineagent.engine.baritone.api.utils.Rotation;
- import com.mineagent.engine.baritone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.Baritone;
+ import com.mineagent.sbe.automatone.api.utils.Rotation;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
 -import net.minecraft.client.player.LocalPlayer;
 +import net.minecraft.server.level.ServerPlayer;
  import net.minecraft.core.BlockPos;

@@ -6,7 +6,7 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
 import com.mineagent.engine.alto.util.helpers.BaritoneHelper;
 import com.mineagent.engine.alto.util.helpers.ProjectileHelper;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.world.phys.Vec3;

@@ -8,11 +8,11 @@ import com.mineagent.engine.alto.control.InputControls;
 import com.mineagent.engine.alto.multiversion.DamageSourceVer;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.helpers.*;
-import com.mineagent.engine.baritone.Baritone;
-import com.mineagent.engine.baritone.api.utils.IPlayerContext;
-import com.mineagent.engine.baritone.api.utils.Rotation;
-import com.mineagent.engine.baritone.api.utils.RotationUtils;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.Baritone;
+import com.mineagent.sbe.automatone.api.utils.IEntityContext;
+import com.mineagent.sbe.automatone.api.utils.Rotation;
+import com.mineagent.sbe.automatone.api.utils.RotationUtils;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -185,8 +185,8 @@ public class MLGBucketTask extends Task {
             return null;
         }
 
-        IPlayerContext ctx = mod.getClientBaritone().getPlayerContext();
-        Optional<Rotation> reachable = RotationUtils.reachableCenter(ctx.player(), toPlaceOn, ctx.playerController().getBlockReachDistance(), false);
+        IEntityContext ctx = mod.getClientBaritone().getPlayerContext();
+        Optional<Rotation> reachable = RotationUtils.reachableCenter(ctx.entity(), toPlaceOn, ctx.interactionController().getBlockReachDistance(), false);
         if (reachable.isPresent()) {
             setDebugState("Performing MLG");
             LookHelper.lookAt(reachable.get());

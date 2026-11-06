@@ -1,5 +1,5 @@
 @@ -11,7 +11,6 @@
- import com.mineagent.engine.baritone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
  import java.util.ArrayList;
  import java.util.List;
 -import net.minecraft.client.Minecraft;

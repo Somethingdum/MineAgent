@@ -3,7 +3,16 @@
  
      private static String maybeCensor(double value) {
 -        return Baritone.settings().censorCoordinates.value ? "<censored>" : Double.toString(value);
-+        return com.mineagent.engine.baritone.api.BaritoneAPI.getSettings().censorCoordinates.value ? "<censored>" : Double.toString(value);
++        return com.mineagent.sbe.automatone.api.BaritoneAPI.getGlobalSettings().censorCoordinates.get() ? "<censored>" : Double.toString(value);
      }
  
      public boolean isInGoal(int x, int y, int z) {
+@@ -45,7 +45,7 @@
+                 pz = dirz * correctDistance;
+         double perpendicularDistance = ((dx - px) * (dx - px)) + ((dz - pz) * (dz - pz));
+ 
+-        return -correctDistance * BaritoneAPI.getSettings().costHeuristic.get()
++        return -correctDistance * BaritoneAPI.getGlobalSettings().costHeuristic.get()
+                 + perpendicularDistance * sidePenalty;
+     }
+ 

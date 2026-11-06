@@ -8,10 +8,10 @@ import com.mineagent.engine.alto.multiversion.item.ItemVer;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.helpers.LookHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.baritone.api.utils.Rotation;
-import com.mineagent.engine.baritone.api.utils.input.Input;
-import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.utils.Rotation;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -127,7 +127,7 @@ public class EscapeFromLavaTask extends CustomBaritoneGoalTask {
                         if (mod.getItemStorage().hasItem(Items.NETHERRACK)) {
                             mod.getSlotHandler().forceEquipItem(Items.NETHERRACK);
                         } else {
-                            mod.getSlotHandler().forceEquipItem(mod.getClientBaritoneSettings().acceptableThrowawayItems.value.toArray(new Item[0]));
+                            mod.getSlotHandler().forceEquipItem(mod.getClientBaritoneSettings().acceptableThrowawayItems.get().toArray(new Item[0]));
                         }
                         mod.log(pos+"");
                         mod.log(facing+"");

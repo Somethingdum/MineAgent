@@ -11,7 +11,7 @@ import com.mineagent.engine.alto.util.helpers.StorageHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;

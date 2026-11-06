@@ -3,9 +3,9 @@
 package com.mineagent.engine.alto;
 
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
-import com.mineagent.engine.baritone.api.Settings;
-import com.mineagent.engine.baritone.api.utils.RayTraceUtils;
+import com.mineagent.sbe.automatone.settings.AltoClefSettings;
+import com.mineagent.sbe.automatone.api.Settings;
+import com.mineagent.sbe.automatone.api.utils.RayTraceUtils;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
@@ -328,13 +328,13 @@ public class BotBehaviour {
          * Read in a copy of the current state
          */
         private void readState(Settings s) {
-            followOffsetDistance = s.followOffsetDistance.value;
-            mineScanDroppedItems = s.mineScanDroppedItems.value;
-            swimThroughLava = s.assumeWalkOnLava.value;
-            allowDiagonalAscend = s.allowDiagonalAscend.value;
-            blockPlacePenalty = s.blockPlacementPenalty.value;
-            blockBreakAdditionalPenalty = s.blockBreakAdditionalPenalty.value;
-            //preferredStairs = s.allowDownward.value;
+            followOffsetDistance = s.followOffsetDistance.get();
+            mineScanDroppedItems = s.mineScanDroppedItems.get();
+            swimThroughLava = s.assumeWalkOnLava.get();
+            allowDiagonalAscend = s.allowDiagonalAscend.get();
+            blockPlacePenalty = s.blockPlacementPenalty.get();
+            blockBreakAdditionalPenalty = s.blockBreakAdditionalPenalty.get();
+            //preferredStairs = s.allowDownward.get();
         }
 
         private void readExtraState(AltoClefSettings settings) {
@@ -367,14 +367,14 @@ public class BotBehaviour {
          * Make the current state match our copy
          */
         private void applyState(Settings s, AltoClefSettings sa) {
-            s.followOffsetDistance.value = followOffsetDistance;
-            s.mineScanDroppedItems.value = mineScanDroppedItems;
-            s.allowDiagonalAscend.value = allowDiagonalAscend;
-            s.blockPlacementPenalty.value = blockPlacePenalty;
-            s.blockBreakAdditionalPenalty.value = blockBreakAdditionalPenalty;
+            s.followOffsetDistance.set(followOffsetDistance);
+            s.mineScanDroppedItems.set(mineScanDroppedItems);
+            s.allowDiagonalAscend.set(allowDiagonalAscend);
+            s.blockPlacementPenalty.set(blockPlacePenalty);
+            s.blockBreakAdditionalPenalty.set(blockBreakAdditionalPenalty);
 
             // We need an alternrative method to handle this, this method makes navigation much less reliable.
-            //s.allowDownward.value = preferredStairs;
+            //s.allowDownward.set(preferredStairs);
 
             // Kinda jank but it works.
             synchronized (sa.getBreakMutex()) {

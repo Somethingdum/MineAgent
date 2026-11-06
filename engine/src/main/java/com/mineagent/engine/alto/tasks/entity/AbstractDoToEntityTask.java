@@ -14,7 +14,7 @@ import com.mineagent.engine.alto.util.helpers.LookHelper;
 import com.mineagent.engine.alto.util.helpers.StorageHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.baritone.api.pathing.goals.GoalRunAway;
+import com.mineagent.sbe.automatone.api.pathing.goals.GoalRunAway;
 import java.util.Optional;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.inventory.ClickType;

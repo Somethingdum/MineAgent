@@ -18,7 +18,7 @@ import com.mineagent.engine.alto.util.slots.CraftingTableSlot;
 import com.mineagent.engine.alto.util.slots.CursorSlot;
 import com.mineagent.engine.alto.util.slots.PlayerSlot;
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.baritone.utils.ToolSet;
+import com.mineagent.sbe.automatone.utils.ToolSet;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -162,7 +162,7 @@ public class StorageHelper {
                 if (stack.getItem().getDefaultInstance().isCorrectToolForDrops(state)) {
                     if (shouldSaveStack(mod,  state.getBlock(), stack)) continue;
 
-                    double speed = ToolSet.calculateSpeedVsBlock(stack, state);
+                    double speed = ToolSet.calculateSpeedVsBlock(stack, state, com.mineagent.engine.alto.AltoClef.getInstance().getPlayer());
                     if (speed > highestSpeed) {
                         highestSpeed = speed;
                         bestToolSlot = slot;

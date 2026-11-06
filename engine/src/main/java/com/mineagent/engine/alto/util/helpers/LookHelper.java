@@ -5,11 +5,11 @@ package com.mineagent.engine.alto.util.helpers;
 import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
 import com.mineagent.engine.alto.util.slots.Slot;
-import com.mineagent.engine.baritone.api.BaritoneAPI;
-import com.mineagent.engine.baritone.api.utils.IPlayerContext;
-import com.mineagent.engine.baritone.api.utils.RayTraceUtils;
-import com.mineagent.engine.baritone.api.utils.Rotation;
-import com.mineagent.engine.baritone.api.utils.RotationUtils;
+import com.mineagent.sbe.automatone.api.BaritoneAPI;
+import com.mineagent.sbe.automatone.api.utils.IEntityContext;
+import com.mineagent.sbe.automatone.api.utils.RayTraceUtils;
+import com.mineagent.sbe.automatone.api.utils.Rotation;
+import com.mineagent.sbe.automatone.api.utils.RotationUtils;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -45,7 +45,7 @@ public interface LookHelper {
      */
     static Optional<Rotation> getReach(BlockPos target, Direction side) {
         // Get the player context
-        IPlayerContext context = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext();
+        IEntityContext context = com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext();
 
         // Declare the reachable rotation variable
         Optional<Rotation> reachableRotation;
@@ -53,7 +53,7 @@ public interface LookHelper {
         // Check if the side is null
         if (side == null) {
             // Calculate the reachable rotation from the player's position to the target position
-            reachableRotation = RotationUtils.reachable(context.player(), target, context.playerController().getBlockReachDistance());
+            reachableRotation = RotationUtils.reachable(context.entity(), target, context.interactionController().getBlockReachDistance());
         } else {
             // Calculate the center offset vector based on the side direction
             Vec3i sideVector = side.getNormal();
@@ -64,13 +64,13 @@ public interface LookHelper {
             Vec3 sidePoint = centerOffset.add(target.getX(), target.getY(), target.getZ());
 
             // Calculate the reachable rotation from the player's position to the side point
-            reachableRotation = RotationUtils.reachableOffset(context.player(), target, sidePoint,
-                    context.playerController().getBlockReachDistance(), false);
+            reachableRotation = RotationUtils.reachableOffset(context.entity(), target, sidePoint,
+                    context.interactionController().getBlockReachDistance(), false);
 
             // Check if the reachable rotation is present
             if (reachableRotation.isPresent()) {
                 // Calculate the camera position and vector to player position
-                Vec3 cameraPos = context.player().getEyePosition(1.0F);
+                Vec3 cameraPos = context.entity().getEyePosition(1.0F);
                 Vec3 vecToPlayerPos = cameraPos.subtract(sidePoint);
 
                 // Calculate the dot product between the vector to player position and the side vector
@@ -362,10 +362,10 @@ public interface LookHelper {
      */
     static Vec3 getCameraPos(AltoClef mod) {
         // Get the player context from the Baritone API
-        IPlayerContext playerContext = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext();
+        IEntityContext playerContext = com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext();
 
         // Get the camera position vector from the player context
-        return playerContext.player().getEyePosition(1);
+        return playerContext.entity().getEyePosition(1);
     }
 
     /**
@@ -685,10 +685,10 @@ public interface LookHelper {
      */
     static Rotation getLookRotation(AltoClef mod, Vec3 toLook) {
         // Get the player's head position
-        Vec3 playerHead = mod.getClientBaritone().getPlayerContext().playerHead();
+        Vec3 playerHead = mod.getClientBaritone().getPlayerContext().headPos();
 
         // Get the player's current rotations
-        Rotation playerRotations = mod.getClientBaritone().getPlayerContext().playerRotations();
+        Rotation playerRotations = mod.getClientBaritone().getPlayerContext().entityRotations();
 
         // Calculate the rotation needed to look at the specified point
         return RotationUtils.calcRotationFromVec3d(playerHead, toLook, playerRotations);

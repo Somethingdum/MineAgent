@@ -6,7 +6,7 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.Debug;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.baritone.GoalDirectionXZ;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import net.minecraft.world.phys.Vec3;
 
 public class GoInDirectionXZTask extends CustomBaritoneGoalTask {

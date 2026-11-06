@@ -4,7 +4,7 @@
 // its body each tick by apply(), together with what Baritone's input override forces.
 package com.mineagent.engine.alto.control;
 
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import com.mineagent.engine.entity.CompanionInputDriver;
 
 import net.minecraft.server.level.ServerPlayer;

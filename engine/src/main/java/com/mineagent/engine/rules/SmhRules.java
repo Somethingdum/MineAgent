@@ -3,7 +3,7 @@
 // broken (MA5.2), nothing is broken or placed at a farm whose player is AFK or in an area its owner protected (MA5.4,
 // MA10.2), and a block that is built, grows food back or hides a silverfish is never broken just to get somewhere
 // (MA5.1). Written for this mod; no other project's code.
-package com.mineagent.engine.baritone.utils;
+package com.mineagent.engine.rules;
 
 import com.mineagent.engine.pathing.util.BlockHelper;
 import com.mineagent.engine.pathing.util.BreakCost;

@@ -1,6 +1,6 @@
 @@ -15,11 +15,7 @@
- import com.mineagent.engine.baritone.api.utils.Rotation;
- import com.mineagent.engine.baritone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.api.utils.Rotation;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
  import java.util.Optional;
 -import net.minecraft.client.Minecraft;
 -import net.minecraft.client.gui.screens.ChatScreen;

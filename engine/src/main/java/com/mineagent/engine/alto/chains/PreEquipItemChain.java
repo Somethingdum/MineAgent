@@ -6,11 +6,11 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.tasks.entity.AbstractKillEntityTask;
 import com.mineagent.engine.alto.tasksystem.TaskChain;
 import com.mineagent.engine.alto.tasksystem.TaskRunner;
-import com.mineagent.engine.baritone.api.BaritoneAPI;
-import com.mineagent.engine.baritone.api.pathing.calc.IPath;
-import com.mineagent.engine.baritone.api.pathing.movement.IMovement;
-import com.mineagent.engine.baritone.pathing.movement.Movement;
-import com.mineagent.engine.baritone.utils.BlockStateInterface;
+import com.mineagent.sbe.automatone.api.BaritoneAPI;
+import com.mineagent.sbe.automatone.api.pathing.calc.IPath;
+import com.mineagent.sbe.automatone.api.pathing.movement.IMovement;
+import com.mineagent.sbe.automatone.pathing.movement.Movement;
+import com.mineagent.sbe.automatone.utils.BlockStateInterface;
 
 import java.util.Optional;
 
@@ -47,7 +47,7 @@ public class PreEquipItemChain extends SingleTaskChain {
         IPath path = pathOptional.get();
 
         // should this really be created each tick?
-        BlockStateInterface bsi = new BlockStateInterface(BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext());
+        BlockStateInterface bsi = new BlockStateInterface(com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext());
         for (IMovement iMovement : path.movements()) {
             Movement movement = (Movement) iMovement;
             if (movement.toBreak(bsi).stream().anyMatch(pos -> mod.getWorld().getBlockState(pos).getBlock().defaultDestroyTime() > 0)

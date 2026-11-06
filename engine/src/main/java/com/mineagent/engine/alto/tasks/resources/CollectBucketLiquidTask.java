@@ -19,7 +19,7 @@ import com.mineagent.engine.alto.util.helpers.LookHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import java.util.HashSet;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
@@ -69,7 +69,7 @@ public class CollectBucketLiquidTask extends ResourceTask {
         mod.getBehaviour().avoidBlockBreaking((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
         mod.getBehaviour().avoidBlockPlacing((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
 
-        mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.value = true;
+        mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.set(true);
         //_blacklist.clear();
 
         progressChecker.reset();
@@ -214,7 +214,7 @@ public class CollectBucketLiquidTask extends ResourceTask {
         //mod.getClientBaritone().getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
         mod.getExtraBaritoneSettings().setInteractionPaused(false);
 
-        mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.value = false;
+        mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.set(false);
     }
 
     @Override

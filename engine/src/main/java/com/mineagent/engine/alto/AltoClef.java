@@ -5,12 +5,12 @@
 package com.mineagent.engine.alto;
 
 import com.mineagent.api.entity.AgentPlayer;
-import com.mineagent.engine.baritone.Baritone;
-import com.mineagent.engine.baritone.BaritoneProvider;
-import com.mineagent.engine.baritone.api.BaritoneAPI;
-import com.mineagent.engine.baritone.utils.SmhRules;
-import com.mineagent.engine.baritone.altoclef.AltoClefSettings;
-import com.mineagent.engine.baritone.api.Settings;
+import com.mineagent.sbe.automatone.Baritone;
+import com.mineagent.sbe.automatone.BaritoneProvider;
+import com.mineagent.sbe.automatone.api.BaritoneAPI;
+import com.mineagent.engine.rules.SmhRules;
+import com.mineagent.sbe.automatone.settings.AltoClefSettings;
+import com.mineagent.sbe.automatone.api.Settings;
 import com.mineagent.engine.alto.chains.FoodChain;
 import com.mineagent.engine.alto.chains.MLGBucketFallChain;
 import com.mineagent.engine.alto.chains.MobDefenseChain;
@@ -93,7 +93,7 @@ public class AltoClef {
     private final InputControls inputControls;
     private final SlotHandler slotHandler;
     private final ServerGameMode controller = new ServerGameMode();
-    private final Baritone baritone;
+    private Baritone baritone;
     // SMH: what the companion's body was showing last tick, for AltoClef's screen events.
     private AbstractContainerMenu lastMenu;
     private boolean wasBreaking;
@@ -105,7 +105,7 @@ public class AltoClef {
         current = this;
         try {
             // Baritone's engine (engine/.../baritone, AltoClef's own fork of it), one for each companion's body.
-            this.baritone = BaritoneAPI.getProvider().createBaritone(agent, player);
+            this.baritone = (Baritone) com.mineagent.engine.agent.Agents.bodyBaritone(agent);
             settings = new com.mineagent.engine.alto.Settings();
             initializeBaritoneSettings();
             taskRunner = new TaskRunner(this);
@@ -141,7 +141,7 @@ public class AltoClef {
             List<Item> baritoneCanPlace = Arrays.stream(settings.getThrowawayItems(true))
                     .filter(item -> item != Items.SOUL_SAND && item != Items.MAGMA_BLOCK && item != Items.SAND && item
                             != Items.GRAVEL).toList();
-            getClientBaritoneSettings().acceptableThrowawayItems.value.addAll(baritoneCanPlace);
+            getClientBaritoneSettings().acceptableThrowawayItems.get().addAll(baritoneCanPlace);
             getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
             getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
             getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
@@ -154,11 +154,9 @@ public class AltoClef {
             TaskCatalogue.init();
             if (Boolean.getBoolean("mineagent.traceWork")) {
                 // The scenes: Baritone's own messages (its debug ones too), the first 120 of them.
-                getClientBaritoneSettings().chatDebug.value = true;
-                java.util.function.Consumer<net.minecraft.network.chat.Component> log = message -> {
-                    if (BARITONE_LINES.incrementAndGet() <= 120) System.out.println("[MineAgent] alto: baritone: " + message.getString());
-                };
-                getClientBaritoneSettings().logger.value = log;
+                getClientBaritoneSettings().chatDebug.set(true);
+                // SMH: Automatone has no logger setting (sailex's wrote to a client's chat window); its log is routed to
+                // the server's at SMH plan 71 step 1.7.
             }
             taskRunner.enable();
         } finally {
@@ -173,7 +171,7 @@ public class AltoClef {
         if (host.player != sp) { // respawned: a new body, the same companion
             host.player = sp;
             knowAllRecipes(sp);
-            host.baritone.setPlayer(sp);
+            host.baritone = (Baritone) com.mineagent.engine.agent.Agents.bodyBaritone(host.agent);
             host.inputControls.setPlayer(sp);
         }
         return host;
@@ -203,7 +201,7 @@ public class AltoClef {
         AltoClef host = HOSTS.remove(companionId);
         if (host != null) {
             host.baritone.getPathingBehavior().forceCancel();
-            BaritoneAPI.getProvider().destroyBaritone(host.baritone);
+            com.mineagent.sbe.automatone.BaritoneProvider.INSTANCE.playerToBaritone.remove(host.player);
         }
     }
 
@@ -213,7 +211,7 @@ public class AltoClef {
         current = this;
         try {
             // Its Baritone is the primary one meanwhile (AltoClef's helpers ask BaritoneAPI for it).
-            return BaritoneProvider.as(baritone, what);
+            return what.get();
         } finally {
             current = before;
         }
@@ -236,28 +234,27 @@ public class AltoClef {
 
     private void initializeBaritoneSettings() {
         getExtraBaritoneSettings().canWalkOnEndPortal(false);
-        getClientBaritoneSettings().freeLook.value = false;
-        getClientBaritoneSettings().overshootTraverse.value = false;
-        getClientBaritoneSettings().allowOvershootDiagonalDescend.value = true;
-        getClientBaritoneSettings().allowInventory.value = true;
-        getClientBaritoneSettings().allowParkour.value = false;
-        getClientBaritoneSettings().allowParkourAscend.value = false;
-        getClientBaritoneSettings().allowParkourPlace.value = false;
-        getClientBaritoneSettings().allowDiagonalDescend.value = false;
-        getClientBaritoneSettings().allowDiagonalAscend.value = false;
-        getClientBaritoneSettings().blocksToAvoid.value = new LinkedList<>(List.of(Blocks.FLOWERING_AZALEA, Blocks.AZALEA,
+        getClientBaritoneSettings().freeLook.set(false);
+        getClientBaritoneSettings().overshootTraverse.set(false);
+        getClientBaritoneSettings().allowOvershootDiagonalDescend.set(true);
+        getClientBaritoneSettings().allowInventory.set(true);
+        getClientBaritoneSettings().allowParkour.set(false);
+        getClientBaritoneSettings().allowParkourAscend.set(false);
+        getClientBaritoneSettings().allowParkourPlace.set(false);
+        getClientBaritoneSettings().allowDiagonalDescend.set(false);
+        getClientBaritoneSettings().allowDiagonalAscend.set(false);
+        getClientBaritoneSettings().blocksToAvoid.set(new LinkedList<>(List.of(Blocks.FLOWERING_AZALEA, Blocks.AZALEA,
                 Blocks.POWDER_SNOW, Blocks.BIG_DRIPLEAF, Blocks.BIG_DRIPLEAF_STEM, Blocks.CAVE_VINES,
                 Blocks.CAVE_VINES_PLANT, Blocks.TWISTING_VINES, Blocks.TWISTING_VINES_PLANT, Blocks.SWEET_BERRY_BUSH,
                 Blocks.WARPED_ROOTS, Blocks.VINE, Blocks.SHORT_GRASS, Blocks.FERN, Blocks.TALL_GRASS, Blocks.LARGE_FERN,
                 Blocks.SMALL_AMETHYST_BUD, Blocks.MEDIUM_AMETHYST_BUD, Blocks.LARGE_AMETHYST_BUD,
-                Blocks.AMETHYST_CLUSTER, Blocks.SCULK, Blocks.SCULK_VEIN));
-        getClientBaritoneSettings().blocksToAvoidBreaking.value.add(Blocks.NETHER_PORTAL);
-        getClientBaritoneSettings().blocksToDisallowBreaking.value.add(Blocks.NETHER_PORTAL);
-        getClientBaritoneSettings().fadePath.value = true;
-        getClientBaritoneSettings().mineScanDroppedItems.value = false;
-        getClientBaritoneSettings().mineDropLoiterDurationMSThanksLouca.value = 0L;
+                Blocks.AMETHYST_CLUSTER, Blocks.SCULK, Blocks.SCULK_VEIN)));
+        getClientBaritoneSettings().blocksToAvoidBreaking.get().add(Blocks.NETHER_PORTAL);
+        getClientBaritoneSettings().fadePath.set(true);
+        getClientBaritoneSettings().mineScanDroppedItems.set(false);
+        getClientBaritoneSettings().mineDropLoiterDurationMSThanksLouca.set(0L);
         getExtraBaritoneSettings().configurePlaceBucketButDontFall(true);
-        getClientBaritoneSettings().randomLooking.value = 0.0;
+        getClientBaritoneSettings().randomLooking.set(0.0);
         getClientBaritoneSettings().failureTimeoutMS.reset();
         getClientBaritoneSettings().planAheadFailureTimeoutMS.reset();
         getClientBaritoneSettings().movementTimeoutTicks.reset();
@@ -289,10 +286,12 @@ public class AltoClef {
             taskRunner.tick();
             // Baritone's tick, as its client mixins drive it: its processes, the path, what it presses and where it
             // looks; then the task tree's own keys (its movement keys only while Baritone isn't steering).
-            baritone.tick();
+            baritone.serverTick();
             CompanionInputDriver driver = driver();
             if (driver != null) {
-                inputControls.apply(driver, java.util.Set.of(), baritone.getInputOverrideHandler().isInControl());
+                // SMH: until plan 71 step 1.8's rule of one writer per key, AltoClef's movement keys apply only while
+                // Automatone is not pathing (Automatone has no isInControl; the old port's was its own).
+                inputControls.apply(driver, java.util.Set.of(), baritone.getPathingBehavior().isPathing());
             }
             inputControls.onTickPost();
         }
@@ -419,11 +418,11 @@ public class AltoClef {
     }
 
     public Settings getClientBaritoneSettings() {
-        return BaritoneAPI.getSettings();
+        return baritone.settings();
     }
 
     public AltoClefSettings getExtraBaritoneSettings() {
-        return baritone.getAltoClefSettings();
+        return baritone.getExtraBaritoneSettings();
     }
 
     public com.mineagent.engine.alto.Settings getModSettings() {

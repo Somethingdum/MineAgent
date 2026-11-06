@@ -6,7 +6,7 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.chains.MobDefenseChain;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.baritone.GoalRunAwayFromEntities;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.world.entity.Entity;

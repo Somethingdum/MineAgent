@@ -7,9 +7,9 @@
  import com.mineagent.engine.alto.multiversion.world.WorldVer;
  import com.mineagent.engine.alto.util.Dimension;
 @@ -12,16 +11,13 @@
- import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
- import com.mineagent.engine.baritone.process.MineProcess;
- import com.mineagent.engine.baritone.utils.BlockStateInterface;
+ import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
+ import com.mineagent.sbe.automatone.process.MineProcess;
+ import com.mineagent.sbe.automatone.utils.BlockStateInterface;
 -import net.minecraft.block.*;
 -import net.minecraft.client.Minecraft;
 -import net.minecraft.client.multiplayer.ClientLevel;
@@ -117,6 +117,15 @@
  
          if (player == null)
              return false;
+@@ -280,7 +276,7 @@
+         AltoClef altoClef = AltoClef.getInstance();
+ 
+         // There might be mumbo jumbo next to it, we fall and we get killed by lava or something.
+-        if (MovementHelper.avoidBreaking(altoClef.getClientBaritone().bsi, toBreak.getX(), toBreak.getY(), toBreak.getZ(), altoClef.getWorld().getBlockState(toBreak))) {
++        if (MovementHelper.avoidBreaking(altoClef.getClientBaritone().bsi, toBreak.getX(), toBreak.getY(), toBreak.getZ(), altoClef.getWorld().getBlockState(toBreak), com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritoneSettings())) {
+             return true;
+         }
+         // Fall down
 @@ -325,11 +321,7 @@
          return !altoClef.getBlockScanner().isUnreachable(pos);
      }
@@ -129,15 +138,21 @@
          return (WorldVer.isBiome(b,Biomes.OCEAN)
                  || WorldVer.isBiome(b,Biomes.COLD_OCEAN)
                  || WorldVer.isBiome(b,Biomes.DEEP_COLD_OCEAN)
-@@ -406,7 +398,7 @@
+@@ -405,11 +397,11 @@
+     }
  
      static boolean fallingBlockSafeToBreak(BlockPos pos) {
-         BlockStateInterface bsi = new BlockStateInterface(BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext());
+-        BlockStateInterface bsi = new BlockStateInterface(BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext());
 -        Level w = Minecraft.getInstance().level;
++        BlockStateInterface bsi = new BlockStateInterface(com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext());
 +        Level w = AltoClef.getInstance().getWorld();
          assert w != null;
          while (isFallingBlock(pos)) {
-             if (MovementHelper.avoidBreaking(bsi, pos.getX(), pos.getY(), pos.getZ(), w.getBlockState(pos)))
+-            if (MovementHelper.avoidBreaking(bsi, pos.getX(), pos.getY(), pos.getZ(), w.getBlockState(pos)))
++            if (MovementHelper.avoidBreaking(bsi, pos.getX(), pos.getY(), pos.getZ(), w.getBlockState(pos), com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritoneSettings()))
+                 return false;
+             pos = pos.above();
+         }
 @@ -417,13 +409,13 @@
      }
  

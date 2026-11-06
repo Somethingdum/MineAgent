@@ -8,7 +8,7 @@ import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.baritone.GoalFollowEntity;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.block.Block;

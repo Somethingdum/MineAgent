@@ -1,7 +1,7 @@
 @@ -12,13 +12,10 @@
- import com.mineagent.engine.baritone.api.utils.Rotation;
- import com.mineagent.engine.baritone.api.utils.input.Input;
- import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+ import com.mineagent.sbe.automatone.api.utils.Rotation;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
 -import net.minecraft.client.Minecraft;
 -import net.minecraft.client.player.LocalPlayer;
 +import net.minecraft.server.level.ServerPlayer;

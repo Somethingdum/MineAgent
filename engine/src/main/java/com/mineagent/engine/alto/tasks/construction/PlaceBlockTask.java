@@ -14,10 +14,10 @@ import com.mineagent.engine.alto.util.ItemTarget;
 import com.mineagent.engine.alto.util.helpers.ItemHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
-import com.mineagent.engine.baritone.api.schematic.AbstractSchematic;
-import com.mineagent.engine.baritone.api.schematic.ISchematic;
-import com.mineagent.engine.baritone.api.utils.BlockOptionalMeta;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.schematic.AbstractSchematic;
+import com.mineagent.sbe.automatone.api.schematic.ISchematic;
+import com.mineagent.sbe.automatone.api.utils.BlockOptionalMeta;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.util.Arrays;
@@ -59,7 +59,7 @@ public class PlaceBlockTask extends Task implements ITaskRequiresGrounded {
         int count = mod.getItemStorage().getItemCount(ItemHelper.blocksToItems(toPlace));
 
         if (useThrowaways) {
-            count += mod.getItemStorage().getItemCount(mod.getClientBaritoneSettings().acceptableThrowawayItems.value.toArray(new Item[0]));
+            count += mod.getItemStorage().getItemCount(mod.getClientBaritoneSettings().acceptableThrowawayItems.get().toArray(new Item[0]));
         }
         return count;
     }
@@ -115,7 +115,7 @@ public class PlaceBlockTask extends Task implements ITaskRequiresGrounded {
                 }
             }
 
-            //Item[] items = Util.toArray(Item.class, mod.getClientBaritoneSettings().acceptableThrowawayItems.value);
+            //Item[] items = Util.toArray(Item.class, mod.getClientBaritoneSettings().acceptableThrowawayItems.get());
             if (getMaterialCount(mod) < MIN_MATERIALS) {
                 // TODO: Mine items, extract their resource key somehow.
                 materialTask = getMaterialTask(PREFERRED_MATERIALS);
@@ -203,7 +203,7 @@ public class PlaceBlockTask extends Task implements ITaskRequiresGrounded {
                 if (!available.isEmpty()) {
                     for (BlockState possible : available) {
                         if (possible == null) continue;
-                        if (useThrowaways && _mod.getClientBaritoneSettings().acceptableThrowawayItems.value.contains(possible.getBlock().asItem())) {
+                        if (useThrowaways && _mod.getClientBaritoneSettings().acceptableThrowawayItems.get().contains(possible.getBlock().asItem())) {
                             return possible;
                         }
                         if (Arrays.asList(toPlace).contains(possible.getBlock())) {
@@ -213,7 +213,7 @@ public class PlaceBlockTask extends Task implements ITaskRequiresGrounded {
                 }
                 Debug.logInternal("Failed to find throwaway block");
                 // No throwaways available!!
-                return new BlockOptionalMeta(Blocks.COBBLESTONE).getAnyBlockState();
+                return new BlockOptionalMeta(com.mineagent.engine.alto.AltoClef.getInstance().getWorld(), Blocks.COBBLESTONE).getAnyBlockState();
             }
             // Don't care.
             return blockState;

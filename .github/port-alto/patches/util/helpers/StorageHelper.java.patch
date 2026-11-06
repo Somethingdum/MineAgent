@@ -9,7 +9,7 @@
 @@ -20,14 +19,7 @@
  import com.mineagent.engine.alto.util.slots.PlayerSlot;
  import com.mineagent.engine.alto.util.slots.Slot;
- import com.mineagent.engine.baritone.utils.ToolSet;
+ import com.mineagent.sbe.automatone.utils.ToolSet;
 -import net.minecraft.client.Minecraft;
 -import net.minecraft.client.gui.screens.ChatScreen;
 -import net.minecraft.client.gui.screens.PauseScreen;
@@ -50,6 +50,15 @@
          if (player == null)
              return ItemStack.EMPTY;
          // Cursor slot
+@@ -173,7 +162,7 @@
+                 if (stack.getItem().getDefaultInstance().isCorrectToolForDrops(state)) {
+                     if (shouldSaveStack(mod,  state.getBlock(), stack)) continue;
+ 
+-                    double speed = ToolSet.calculateSpeedVsBlock(stack, state);
++                    double speed = ToolSet.calculateSpeedVsBlock(stack, state, com.mineagent.engine.alto.AltoClef.getInstance().getPlayer());
+                     if (speed > highestSpeed) {
+                         highestSpeed = speed;
+                         bestToolSlot = slot;
 @@ -433,7 +422,7 @@
      }
  

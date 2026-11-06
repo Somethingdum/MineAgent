@@ -15,8 +15,8 @@ import com.mineagent.engine.alto.tasksystem.ITaskRequiresGrounded;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.helpers.ItemHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
-import com.mineagent.engine.baritone.api.schematic.AbstractSchematic;
-import com.mineagent.engine.baritone.api.utils.BlockOptionalMeta;
+import com.mineagent.sbe.automatone.api.schematic.AbstractSchematic;
+import com.mineagent.sbe.automatone.api.utils.BlockOptionalMeta;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
@@ -180,7 +180,7 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
     }
 
     private int throwaways(AltoClef mod) {
-        return mod.getItemStorage().getItemCount(mod.getClientBaritoneSettings().acceptableThrowawayItems.value.toArray(new Item[0]));
+        return mod.getItemStorage().getItemCount(mod.getClientBaritoneSettings().acceptableThrowawayItems.get().toArray(new Item[0]));
     }
 
     @Override
@@ -315,11 +315,11 @@ public class BuildHutTask extends Task implements ITaskRequiresGrounded {
                 BlockPos pos = place.offset(x, y + OFFSET, z);
                 if (isWall(current, mod, pos)) return current;
                 for (BlockState possible : available) {
-                    if (possible != null && mod.getClientBaritoneSettings().acceptableThrowawayItems.value.contains(possible.getBlock().asItem())) {
+                    if (possible != null && mod.getClientBaritoneSettings().acceptableThrowawayItems.get().contains(possible.getBlock().asItem())) {
                         return possible;
                     }
                 }
-                return new BlockOptionalMeta(Blocks.DIRT).getAnyBlockState();
+                return new BlockOptionalMeta(com.mineagent.engine.alto.AltoClef.getInstance().getWorld(), Blocks.DIRT).getAnyBlockState();
             }
             return isFitting(current) ? current : Blocks.AIR.defaultBlockState();
         }

@@ -13,7 +13,7 @@ import com.mineagent.engine.alto.tasksystem.TaskRunner;
 import com.mineagent.engine.alto.util.helpers.StorageHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import java.util.LinkedList;
 import java.util.Optional;
 import net.minecraft.server.level.ServerLevel;

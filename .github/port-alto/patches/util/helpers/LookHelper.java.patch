@@ -1,7 +1,7 @@
 @@ -10,13 +10,11 @@
- import com.mineagent.engine.baritone.api.utils.RayTraceUtils;
- import com.mineagent.engine.baritone.api.utils.Rotation;
- import com.mineagent.engine.baritone.api.utils.RotationUtils;
+ import com.mineagent.sbe.automatone.api.utils.RayTraceUtils;
+ import com.mineagent.sbe.automatone.api.utils.Rotation;
+ import com.mineagent.sbe.automatone.api.utils.RotationUtils;
 -import net.minecraft.client.Minecraft;
 -import net.minecraft.client.player.LocalPlayer;
 +import net.minecraft.server.level.ServerPlayer;
@@ -13,6 +13,15 @@
  import net.minecraft.world.entity.Entity;
  import net.minecraft.world.entity.npc.AbstractVillager;
  import net.minecraft.world.entity.player.Player;
+@@ -47,7 +45,7 @@
+      */
+     static Optional<Rotation> getReach(BlockPos target, Direction side) {
+         // Get the player context
+-        IEntityContext context = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext();
++        IEntityContext context = com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext();
+ 
+         // Declare the reachable rotation variable
+         Optional<Rotation> reachableRotation;
 @@ -199,8 +197,7 @@
       * @return True if there is a clear line of sight, false otherwise.
       */
@@ -32,6 +41,15 @@
  
          // If the player is null, return a default rotation
          if (player == null) {
+@@ -365,7 +362,7 @@
+      */
+     static Vec3 getCameraPos(AltoClef mod) {
+         // Get the player context from the Baritone API
+-        IEntityContext playerContext = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext();
++        IEntityContext playerContext = com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext();
+ 
+         // Get the camera position vector from the player context
+         return playerContext.entity().getEyePosition(1);
 @@ -468,7 +465,7 @@
          }
  

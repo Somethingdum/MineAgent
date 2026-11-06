@@ -16,9 +16,9 @@ import com.mineagent.engine.alto.util.helpers.StorageHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.baritone.api.utils.IPlayerContext;
-import com.mineagent.engine.baritone.api.utils.input.Input;
-import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+import com.mineagent.sbe.automatone.api.utils.IEntityContext;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.util.Arrays;
@@ -190,7 +190,7 @@ public class PlaceBlockNearbyTask extends Task {
         if (hit instanceof BlockHitResult bhit) {
             BlockPos bpos = bhit.getBlockPos();//.subtract(bhit.getSide().getVector());
             //Debug.logMessage("TEMP: A: " + bpos);
-            IPlayerContext ctx = mod.getClientBaritone().getPlayerContext();
+            IEntityContext ctx = mod.getClientBaritone().getPlayerContext();
             if (MovementHelper.canPlaceAgainst(ctx, bpos)) {
                 BlockPos placePos = bhit.getBlockPos().offset(bhit.getDirection().getNormal());
                 // Don't place inside the player.

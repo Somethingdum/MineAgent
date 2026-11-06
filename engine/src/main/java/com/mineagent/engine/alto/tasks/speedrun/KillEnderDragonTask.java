@@ -20,10 +20,10 @@ import com.mineagent.engine.alto.util.helpers.ItemHelper;
 import com.mineagent.engine.alto.util.helpers.StorageHelper;
 import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.baritone.api.pathing.goals.GoalGetToBlock;
-import com.mineagent.engine.baritone.api.utils.Rotation;
-import com.mineagent.engine.baritone.api.utils.RotationUtils;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.pathing.goals.GoalGetToBlock;
+import com.mineagent.sbe.automatone.api.utils.Rotation;
+import com.mineagent.sbe.automatone.api.utils.RotationUtils;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -296,7 +296,7 @@ public class KillEnderDragonTask extends Task {
                                 AbstractKillEntityTask.equipWeapon(mod);
                                 // Look torwards da dragon
                                 Vec3 targetLookPos = head.position().add(0, 3, 0);
-                                Rotation targetRotation = RotationUtils.calcRotationFromVec3d(mod.getClientBaritone().getPlayerContext().playerHead(), targetLookPos, mod.getClientBaritone().getPlayerContext().playerRotations());
+                                Rotation targetRotation = RotationUtils.calcRotationFromVec3d(mod.getClientBaritone().getPlayerContext().headPos(), targetLookPos, mod.getClientBaritone().getPlayerContext().entityRotations());
                                 mod.getClientBaritone().getLookBehavior().updateTarget(targetRotation, true);
                                 // Also look towards da dragon
                                 OptionsVer.setAutoJump(false);

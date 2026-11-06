@@ -2,9 +2,9 @@
 // 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
 package com.mineagent.engine.alto.util.baritone;
 
-import com.mineagent.engine.baritone.Baritone;
-import com.mineagent.engine.baritone.api.BaritoneAPI;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.Baritone;
+import com.mineagent.sbe.automatone.api.BaritoneAPI;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import net.minecraft.world.phys.Vec3;
 
 public class GoalDirectionXZ implements Goal {
@@ -30,7 +30,7 @@ public class GoalDirectionXZ implements Goal {
     }
 
     private static String maybeCensor(double value) {
-        return com.mineagent.engine.baritone.api.BaritoneAPI.getSettings().censorCoordinates.value ? "<censored>" : Double.toString(value);
+        return com.mineagent.sbe.automatone.api.BaritoneAPI.getGlobalSettings().censorCoordinates.get() ? "<censored>" : Double.toString(value);
     }
 
     public boolean isInGoal(int x, int y, int z) {
@@ -45,7 +45,7 @@ public class GoalDirectionXZ implements Goal {
                 pz = dirz * correctDistance;
         double perpendicularDistance = ((dx - px) * (dx - px)) + ((dz - pz) * (dz - pz));
 
-        return -correctDistance * BaritoneAPI.getSettings().costHeuristic.value
+        return -correctDistance * BaritoneAPI.getGlobalSettings().costHeuristic.get()
                 + perpendicularDistance * sidePenalty;
     }
 

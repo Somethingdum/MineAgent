@@ -8,28 +8,28 @@ in `written.txt`.
 
 | File | Lines | Why |
 |---|---|---|
-| `AltoClef.java` | +304 / -399 | SMH: AltoClef is one client's mod with one player; here there is / what the companion's body was showing last tick, for AltoClef's screen events. / plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a / ... |
-| `BotBehaviour.java` | +2 / -3 | SMH: a server-side body has no window to lose / no client options to put back. |
-| `Debug.java` | +26 / -43 | SMH: the companion has no chat window of its own, so AltoClef's |
+| `AltoClef.java` | +304 / -400 | SMH: AltoClef is one client's mod with one player; here there is / what the companion's body was showing last tick, for AltoClef's screen events. / plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a / ...; and Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1); Baritone's static settings read through the companion's Baritone API; the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
+| `BotBehaviour.java` | +2 / -3 | SMH: a server-side body has no window to lose / no client options to put back.; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `Debug.java` | +26 / -43 | SMH: the companion has no chat window of its own, so AltoClef's; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `Settings.java` | +23 / -40 | SMH: no JSON file (its defaults, as AltoClef ships them, except / AltoClef's default; the host fills the companion's recipe book with every recipe (AltoClef.knowAllRecipes), so a recipe it has never made is placed as one it ha / the force field's strategy is the companion's own fighting (combat/CombatBrain, from AltoClef's KillAura). / ... |
-| `TaskCatalogue.java` | +14 / -3 | SMH: a target of several items with no catalogue name squashed into a task for itself, which asked for its |
-| `util/JankCraftingRecipeMapping.java` | +6 / -6 | SMH: the server's own recipes (a client has them from its connection). |
-| `util/helpers/ConfigHelper.java` | +4 / -162 | SMH: no config files and no Jackson: every config is its |
+| `TaskCatalogue.java` | +14 / -3 | SMH: a target of several items with no catalogue name squashed into a task for itself, which asked for its; and wildcard or client-library imports the Mojang remap left behind, removed |
+| `util/JankCraftingRecipeMapping.java` | +6 / -6 | SMH: the server's own recipes (a client has them from its connection).; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `util/helpers/ConfigHelper.java` | +4 / -162 | SMH: no config files and no Jackson: every config is its; and wildcard or client-library imports the Mojang remap left behind, removed |
 | `util/helpers/EntityHelper.java` | +0 / -5 | multi-version comments resolved to 1.21.1; wildcard or client-library imports the Mojang remap left behind, removed |
-| `util/helpers/LookHelper.java` | +5 / -8 | SMH: its crosshair |
+| `util/helpers/LookHelper.java` | +7 / -10 | SMH: its crosshair; and Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1); the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
 | `util/helpers/ProjectileHelper.java` | +2 / -2 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `util/helpers/StorageHelper.java` | +22 / -33 | SMH: the companion's open container stands for the client's screen; its own inventory is no screen. / opened by the access widener, as AltoClef's accessor does */; / opened by the access widener, as AltoClef's accessor does */; / ... |
-| `util/helpers/WorldHelper.java` | +20 / -28 | SMH: the world's game time (a client counts its connection's ticks). |
-| `util/baritone/GoalDirectionXZ.java` | +1 / -1 | Baritone's static settings read through the companion's Baritone API |
+| `util/helpers/StorageHelper.java` | +23 / -34 | SMH: the companion's open container stands for the client's screen; its own inventory is no screen. / opened by the access widener, as AltoClef's accessor does */; / opened by the access widener, as AltoClef's accessor does */; / ...; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
+| `util/helpers/WorldHelper.java` | +23 / -31 | SMH: the world's game time (a client counts its connection's ticks).; and Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1); multi-version comments resolved to 1.21.1; the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
+| `util/baritone/GoalDirectionXZ.java` | +2 / -2 | Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1); Baritone's static settings read through the companion's Baritone API |
 | `util/slots/PlayerSlot.java` | +3 / -3 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `util/slots/Slot.java` | +13 / -18 | SMH: the companion's open menu stands for the client's screen. |
-| `util/time/TimerGame.java` | +5 / -28 | SMH: in the companion's world's game time (a client counts its connection's ticks; a server-side body has none, |
+| `util/slots/Slot.java` | +13 / -18 | SMH: the companion's open menu stands for the client's screen.; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
+| `util/time/TimerGame.java` | +5 / -28 | SMH: in the companion's world's game time (a client counts its connection's ticks; a server-side body has none,; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `multiversion/BlockTagVer.java` | +0 / -4 | multi-version comments resolved to 1.21.1 |
 | `multiversion/DamageSourceVer.java` | +0 / -4 | multi-version comments resolved to 1.21.1 |
 | `multiversion/DamageSourceWrapper.java` | +0 / -12 | multi-version comments resolved to 1.21.1 |
 | `multiversion/FoodComponentWrapper.java` | +0 / -8 | multi-version comments resolved to 1.21.1 |
 | `multiversion/MethodWrapper.java` | +0 / -14 | multi-version comments resolved to 1.21.1 |
-| `multiversion/OptionsVer.java` | +2 / -11 | SMH: a server-side body has no screen brightness. / the companion jumps only when its walk says so; there is no auto-jump to set. |
+| `multiversion/OptionsVer.java` | +2 / -11 | SMH: a server-side body has no screen brightness. / the companion jumps only when its walk says so; there is no auto-jump to set.; and multi-version comments resolved to 1.21.1; the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `multiversion/RecipeVer.java` | +0 / -4 | multi-version comments resolved to 1.21.1 |
 | `multiversion/recipemanager/RecipeManagerWrapper.java` | +0 / -11 | multi-version comments resolved to 1.21.1 |
 | `multiversion/recipemanager/WrappedRecipeEntry.java` | +0 / -6 | multi-version comments resolved to 1.21.1 |
@@ -40,52 +40,54 @@ in `written.txt`.
 | `multiversion/versionedfields/Entities.java` | +0 / -8 | multi-version comments resolved to 1.21.1 |
 | `multiversion/versionedfields/Items.java` | +0 / -126 | multi-version comments resolved to 1.21.1 |
 | `multiversion/item/ItemVer.java` | +0 / -24 | multi-version comments resolved to 1.21.1 |
-| `multiversion/entity/EntityHelper.java` | +6 / -25 | SMH: which portal it stands in, from the block it stands in (AltoClef reads the portal process's private field |
-| `multiversion/entity/PlayerVer.java` | +7 / -25 | SMH: what AltoClef would say in chat is its log here (the companion speaks through its own loop); a command it |
+| `multiversion/entity/EntityHelper.java` | +6 / -25 | SMH: which portal it stands in, from the block it stands in (AltoClef reads the portal process's private field; and multi-version comments resolved to 1.21.1 |
+| `multiversion/entity/PlayerVer.java` | +7 / -25 | SMH: what AltoClef would say in chat is its log here (the companion speaks through its own loop); a command it; and multi-version comments resolved to 1.21.1; the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `tasks/AbstractDoToClosestObjectTask.java` | +1 / -1 | Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1) |
 | `tasks/CraftGenericManuallyTask.java` | +3 / -1 | SMH: it fills the 2x2 grid, as CraftGenericWithRecipeBooksTask does, so it says so (ITaskUsesCraftingGrid): without it |
 | `tasks/CraftGenericWithRecipeBooksTask.java` | +2 / -3 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/InteractWithBlockTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
-| `tasks/SafeNetherPortalTask.java` | +1 / -2 | SMH: no frames between ticks on a server */, true); |
+| `tasks/SafeNetherPortalTask.java` | +1 / -2 | SMH: no frames between ticks on a server */, true);; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/movement/CustomBaritoneGoalTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
-| `tasks/movement/EscapeFromLavaTask.java` | +8 / -11 | SMH: a server-side body has no frame to interpolate */; |
-| `tasks/movement/FastTravelTask.java` | +1 / -3 | SMH: the death screen */) { |
+| `tasks/movement/EscapeFromLavaTask.java` | +8 / -11 | SMH: a server-side body has no frame to interpolate */;; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
+| `tasks/movement/FastTravelTask.java` | +1 / -3 | SMH: the death screen */) {; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/movement/GetOutOfWaterTask.java` | +2 / -3 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/movement/GetToEntityTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/movement/LocateStrongholdCoordinatesTask.java` | +3 / -4 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `tasks/movement/MLGBucketTask.java` | +18 / -24 | SMH: no settings file on a server-side body; its defaults are kept. |
+| `tasks/movement/MLGBucketTask.java` | +18 / -24 | SMH: no settings file on a server-side body; its defaults are kept.; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/movement/PickupDroppedItemTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/movement/TimeoutWanderTask.java` | +2 / -3 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/misc/EquipArmorTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
-| `tasks/misc/PlaceBedAndSetSpawnTask.java` | +1 / -5 | SMH: a client in bed shows its in-bed chat screen |
-| `tasks/speedrun/beatgame/BeatMinecraftTask.java` | +6 / -15 | SMH: no screen brightness on a server-side body (AltoClef sets gamma 20 here). / the end poem is the server's "won the game" (WinScreen on a client) / what a client would see */; / ... |
+| `tasks/misc/PlaceBedAndSetSpawnTask.java` | +1 / -5 | SMH: a client in bed shows its in-bed chat screen; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `tasks/speedrun/beatgame/BeatMinecraftTask.java` | +6 / -15 | SMH: no screen brightness on a server-side body (AltoClef sets gamma 20 here). / the end poem is the server's "won the game" (WinScreen on a client) / what a client would see */; / ...; and multi-version comments resolved to 1.21.1; the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/speedrun/beatgame/prioritytask/prioritycalculators/CollectFoodPriorityCalculator.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
-| `tasks/construction/DestroyBlockTask.java` | +1 / -2 | SMH: what a client would see */; |
-| `tasks/construction/PlaceBlockNearbyTask.java` | +4 / -5 | SMH: its crosshair / its crosshair |
-| `tasks/construction/PlaceBlockTask.java` | +1 / -2 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `tasks/construction/ProjectileProtectionWallTask.java` | +4 / -5 | SMH: the body's own sneak state (a client's input) |
+| `tasks/construction/DestroyBlockTask.java` | +1 / -2 | SMH: what a client would see */;; and wildcard or client-library imports the Mojang remap left behind, removed |
+| `tasks/construction/PlaceBlockNearbyTask.java` | +4 / -5 | SMH: its crosshair / its crosshair; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `tasks/construction/PlaceBlockTask.java` | +2 / -3 | Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1); the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `tasks/construction/ProjectileProtectionWallTask.java` | +4 / -5 | SMH: the body's own sneak state (a client's input); and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/construction/compound/ConstructNetherPortalBucketTask.java` | +6 / -7 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/construction/compound/ConstructNetherPortalObsidianTask.java` | +2 / -3 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/resources/CollectBucketLiquidTask.java` | +3 / -4 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `tasks/resources/CollectFoodTask.java` | +1 / -3 | SMH: what a client would see */; |
+| `tasks/resources/CollectFoodTask.java` | +1 / -3 | SMH: what a client would see */;; and wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/resources/CollectMeatTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/resources/CollectPlanksTask.java` | +0 / -1 | wildcard or client-library imports the Mojang remap left behind, removed |
 | `tasks/resources/MineAndCollectTask.java` | +1 / -2 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `tasks/resources/wood/CollectHangingSignTask.java` | +0 / -3 | multi-version comments resolved to 1.21.1 |
 | `tasks/container/CraftInTableTask.java` | +2 / -3 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `control/InputControls.java` | +97 / -33 | SMH: the companion has no keyboard, so its keys are held / the keys as the game's key mappings would hold them. / keys pressed since the last apply (a click registers even when released in the same tick). / ... |
-| `control/SlotHandler.java` | +13 / -12 | SMH: the clicks asked for, held back by the move delay and sent, for the scenes' traces. / a client clicks every slot twice to have the server resend its inventory when the two disagree; the |
+| `control/InputControls.java` | +97 / -33 | SMH: the companion has no keyboard, so its keys are held / the keys as the game's key mappings would hold them. / keys pressed since the last apply (a click registers even when released in the same tick). / ...; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `control/SlotHandler.java` | +13 / -12 | SMH: the clicks asked for, held back by the move delay and sent, for the scenes' traces. / a client clicks every slot twice to have the server resend its inventory when the two disagree; the; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
 | `eventbus/EventBus.java` | +28 / -14 | SMH: one bus per companion (its AltoClef host), so one companion's container or block events never reach / AltoClef collected these but never removed them. |
-| `eventbus/events/ScreenOpenEvent.java` | +4 / -3 | SMH: a server-side body has no screens; the container menu it opened (null when it closed one) stands for it. |
+| `eventbus/events/ScreenOpenEvent.java` | +4 / -3 | SMH: a server-side body has no screens; the container menu it opened (null when it closed one) stands for it.; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `chains/FoodChain.java` | +3 / -4 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `chains/MobDefenseChain.java` | +2 / -4 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
-| `chains/PlayerInteractionFixChain.java` | +6 / -8 | SMH: the open menu stands for the screen / the companion's open container stands for the client's screen; its inventory is none. |
-| `chains/UnstuckChain.java` | +6 / -7 | SMH: a server-side body is never paused */ // !mod.getUserTaskChain().isActive()) |
+| `chains/PlayerInteractionFixChain.java` | +6 / -8 | SMH: the open menu stands for the screen / the companion's open container stands for the client's screen; its inventory is none.; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `chains/PreEquipItemChain.java` | +1 / -1 | Automatone's API where it differs from Baritone's (seam A, SMH plan 71 §6.1) |
+| `chains/UnstuckChain.java` | +6 / -7 | SMH: a server-side body is never paused */ // !mod.getUserTaskChain().isActive()); and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `chains/UserTaskChain.java` | +6 / -113 | SMH: the order the companion was given is its one user / the host sees the task finished and ends the order itself. |
 | `tasksystem/ITaskRequiresGrounded.java` | +2 / -2 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
-| `trackers/BlockScanner.java` | +30 / -9 | SMH: the loaded chunks round it, taken on the server thread without loading any (a client has these in its / what the scan thread reads (set on the server thread before it starts). |
-| `trackers/CraftingRecipeTracker.java` | +2 / -7 | SMH: the server's own recipes (a client has them from its connection). |
-| `trackers/EntityTracker.java` | +4 / -5 | SMH: what a client would see */) { / access widener */; |
+| `trackers/BlockScanner.java` | +30 / -9 | SMH: the loaded chunks round it, taken on the server thread without loading any (a client has these in its / what the scan thread reads (set on the server thread before it starts).; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
+| `trackers/CraftingRecipeTracker.java` | +2 / -7 | SMH: the server's own recipes (a client has them from its connection).; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
+| `trackers/EntityTracker.java` | +4 / -5 | SMH: what a client would see */) { / access widener */;; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |
 | `trackers/Tracker.java` | +13 / -0 | SMH: brought up to date on the server's own thread only. Baritone's path threads ask too (AltoClef's / whether this is the server's own thread (its companion's server), not one of Baritone's. |
-| `trackers/storage/ContainerSubTracker.java` | +18 / -20 | SMH: the companion's open menu stands for the client's screen. |
+| `trackers/storage/ContainerSubTracker.java` | +18 / -20 | SMH: the companion's open menu stands for the client's screen.; and the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
 | `trackers/storage/ContainerType.java` | +3 / -5 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()); wildcard or client-library imports the Mojang remap left behind, removed |
 | `trackers/storage/InventorySubTracker.java` | +9 / -9 | the client's player, world and game mode replaced by the companion's server player, world and game mode (AltoClef.getInstance()) |

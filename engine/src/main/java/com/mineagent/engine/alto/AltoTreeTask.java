@@ -163,7 +163,7 @@ public class AltoTreeTask extends CompanionTask<ProductionTask.ProduceRecord> {
             b.append(", move ").append(cur.getPosition()).append('/').append(moves.size());
             if (at >= 0) b.append(' ').append(moves.get(at).getClass().getSimpleName()).append(' ').append(moves.get(at).getDest().toShortString());
         }
-        if (host.getClientBaritone().getInputOverrideHandler().isInControl()) b.append(", steers");
+        if (host.getClientBaritone().getPathingBehavior().isPathing()) b.append(", steers");
         b.append(", keys ").append(String.format(java.util.Locale.ROOT, "%.2f/%.2f", sp.zza, sp.xxa));
         b.append(", speed ").append(String.format(java.util.Locale.ROOT, "%.3f", sp.getDeltaMovement().horizontalDistance()));
         b.append(", yaw ").append(Math.round(sp.getYRot()));

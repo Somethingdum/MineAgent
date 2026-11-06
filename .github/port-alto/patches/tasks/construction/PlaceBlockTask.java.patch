@@ -15,3 +15,12 @@
          if (useThrowaways) {
              return WorldHelper.isSolidBlock(target);
          }
+@@ -214,7 +213,7 @@
+                 }
+                 Debug.logInternal("Failed to find throwaway block");
+                 // No throwaways available!!
+-                return new BlockOptionalMeta(Blocks.COBBLESTONE).getAnyBlockState();
++                return new BlockOptionalMeta(com.mineagent.engine.alto.AltoClef.getInstance().getWorld(), Blocks.COBBLESTONE).getAnyBlockState();
+             }
+             // Don't care.
+             return blockState;

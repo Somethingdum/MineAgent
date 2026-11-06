@@ -9,7 +9,7 @@
 @@ -32,14 +31,10 @@
  import com.mineagent.engine.alto.util.slots.Slot;
  import com.mineagent.engine.alto.util.time.TimerGame;
- import com.mineagent.engine.baritone.api.utils.input.Input;
+ import com.mineagent.sbe.automatone.api.utils.input.Input;
 -import net.minecraft.client.gui.screens.WinScreen;
 -import net.minecraft.client.player.LocalPlayer;
 +import net.minecraft.server.level.ServerPlayer;

@@ -6,7 +6,7 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.baritone.GoalRunAwayFromEntities;
 import com.mineagent.engine.alto.util.helpers.BaritoneHelper;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;

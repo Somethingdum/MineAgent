@@ -6,11 +6,11 @@ import com.mineagent.engine.alto.AltoClef;
 import com.mineagent.engine.alto.multiversion.MethodWrapper;
 import com.mineagent.engine.alto.multiversion.world.WorldVer;
 import com.mineagent.engine.alto.util.Dimension;
-import com.mineagent.engine.baritone.api.BaritoneAPI;
-import com.mineagent.engine.baritone.pathing.movement.CalculationContext;
-import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
-import com.mineagent.engine.baritone.process.MineProcess;
-import com.mineagent.engine.baritone.utils.BlockStateInterface;
+import com.mineagent.sbe.automatone.api.BaritoneAPI;
+import com.mineagent.sbe.automatone.pathing.movement.CalculationContext;
+import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
+import com.mineagent.sbe.automatone.process.MineProcess;
+import com.mineagent.sbe.automatone.utils.BlockStateInterface;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
@@ -276,14 +276,14 @@ public interface WorldHelper {
         AltoClef altoClef = AltoClef.getInstance();
 
         // There might be mumbo jumbo next to it, we fall and we get killed by lava or something.
-        if (MovementHelper.avoidBreaking(altoClef.getClientBaritone().bsi, toBreak.getX(), toBreak.getY(), toBreak.getZ(), altoClef.getWorld().getBlockState(toBreak))) {
+        if (MovementHelper.avoidBreaking(altoClef.getClientBaritone().bsi, toBreak.getX(), toBreak.getY(), toBreak.getZ(), altoClef.getWorld().getBlockState(toBreak), com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritoneSettings())) {
             return true;
         }
         // Fall down
         for (int dy = 1; dy <= toBreak.getY() - altoClef.getWorld().getMinBuildHeight(); ++dy) {
             BlockPos check = toBreak.below(dy);
             BlockState s = altoClef.getWorld().getBlockState(check);
-            boolean tooFarToFall = dy > altoClef.getClientBaritoneSettings().maxFallHeightNoWater.value;
+            boolean tooFarToFall = dy > altoClef.getClientBaritoneSettings().maxFallHeightNoWater.get();
             // Don't fall in lava
             if (MovementHelper.isLava(s))
                 return true;
@@ -397,11 +397,11 @@ public interface WorldHelper {
     }
 
     static boolean fallingBlockSafeToBreak(BlockPos pos) {
-        BlockStateInterface bsi = new BlockStateInterface(BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext());
+        BlockStateInterface bsi = new BlockStateInterface(com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritone().getPlayerContext());
         Level w = AltoClef.getInstance().getWorld();
         assert w != null;
         while (isFallingBlock(pos)) {
-            if (MovementHelper.avoidBreaking(bsi, pos.getX(), pos.getY(), pos.getZ(), w.getBlockState(pos)))
+            if (MovementHelper.avoidBreaking(bsi, pos.getX(), pos.getY(), pos.getZ(), w.getBlockState(pos), com.mineagent.engine.alto.AltoClef.getInstance().getClientBaritoneSettings()))
                 return false;
             pos = pos.above();
         }

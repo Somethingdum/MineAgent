@@ -30,7 +30,7 @@ import com.mineagent.engine.alto.util.*;
 import com.mineagent.engine.alto.util.helpers.*;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.baritone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
@@ -1197,7 +1197,7 @@ public class BeatMinecraftTask extends Task {
             blockPlacementPenalty = 7.5;
         }
 
-        mod.getClientBaritoneSettings().blockPlacementPenalty.value = blockPlacementPenalty;
+        mod.getClientBaritoneSettings().blockPlacementPenalty.set(blockPlacementPenalty);
 
         if (mod.getPlayer().getMainHandItem().getItem() instanceof EnderEyeItem && !openingEndPortal) {
             List<ItemStack> itemStacks = itemStorage.getItemStacksPlayerInventory(true);

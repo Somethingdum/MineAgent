@@ -48,7 +48,7 @@ public abstract class AbstractDoToClosestObjectTask<T> extends Task {
     }
 
     private double getCurrentCalculatedHeuristic(AltoClef mod) {
-        Optional<Double> ticksRemainingOp = mod.getClientBaritone().getPathingBehavior().ticksRemainingInSegment();
+        java.util.OptionalDouble ticksRemainingOp = mod.getClientBaritone().getPathingBehavior().ticksRemainingInSegment();
         return ticksRemainingOp.orElse(Double.POSITIVE_INFINITY);
     }
 

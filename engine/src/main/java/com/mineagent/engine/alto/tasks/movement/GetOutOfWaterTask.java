@@ -7,9 +7,9 @@ import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.helpers.LookHelper;
 import com.mineagent.engine.alto.util.helpers.StorageHelper;
 import com.mineagent.engine.alto.util.time.TimerGame;
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
-import com.mineagent.engine.baritone.api.utils.input.Input;
-import com.mineagent.engine.baritone.pathing.movement.MovementHelper;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
+import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Blocks;
@@ -52,7 +52,7 @@ public class GetOutOfWaterTask extends CustomBaritoneGoalTask{
                 return new SafeRandomShimmyTask();
             }
 
-            mod.getSlotHandler().forceEquipItem(mod.getClientBaritoneSettings().acceptableThrowawayItems.value.toArray(new Item[0]));
+            mod.getSlotHandler().forceEquipItem(mod.getClientBaritoneSettings().acceptableThrowawayItems.get().toArray(new Item[0]));
             LookHelper.lookAt(mod, mod.getPlayer().getOnPos().below());
             mod.getInputControls().tryPress(Input.CLICK_RIGHT);
         }

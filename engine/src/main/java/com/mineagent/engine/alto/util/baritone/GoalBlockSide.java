@@ -3,7 +3,7 @@
 package com.mineagent.engine.alto.util.baritone;
 
 
-import com.mineagent.engine.baritone.api.pathing.goals.Goal;
+import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
