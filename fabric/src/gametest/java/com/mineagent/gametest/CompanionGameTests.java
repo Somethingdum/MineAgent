@@ -5349,6 +5349,71 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * SMH plan 71, after phase 1's gate: AltoClef's five-block wander, begun where Automatone's explore puts its first
+     * goal (the middle of the chunk it starts in), goes its five blocks. Automatone had no chunk cache, so every chunk
+     * read as unexplored, the first goal was that middle, and a body standing there was in its goal and stood still for
+     * good: the wander a hut that "got nowhere" starts (alto hut kept, CI on smh-companion at 7ee27f5).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_wander", timeoutTicks = 600)
+    public void aWanderFromTheMiddleOfAChunkGoesItsDistance(GameTestHelper helper) {
+        Scene s = scene(helper, "Wanderer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos near = helper.absolutePos(new BlockPos(4, 1, 4));
+        BlockPos middle = new BlockPos((near.getX() & ~15) + 8, near.getY(), (near.getZ() & ~15) + 8);
+        s.body().teleportTo(helper.getLevel(), middle.getX() + 0.5, middle.getY(), middle.getZ() + 0.5, 0.0f, 0.0f);
+        helper.runAfterDelay(5, () -> altoWalk(s, "scene-wander", WanderOnce::new));
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto wander");
+            double dx = s.body().getX() - (middle.getX() + 0.5), dz = s.body().getZ() - (middle.getZ() + 0.5);
+            double gone = Math.sqrt(dx * dx + dz * dz);
+            if (gone > 5.5 || helper.getTick() >= 560) {
+                var goal = com.mineagent.engine.agent.Agents.bodyBaritone(s.companion()).getPathingBehavior().getGoal();
+                String how = String.format("%.1f", gone) + " blocks from the middle of its chunk, at "
+                        + rel(helper, s.body().blockPosition()).toShortString() + "; its goal " + goal;
+                tidy(s);
+                if (gone > 5.5) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * A five-block wander as AltoClef's own tasks run one (BuildHutTask's "got nowhere"): as a subtask. As a root task
+     * its chain asks isFinished() before it starts, and TimeoutWanderTask's reads the origin it sets on starting.
+     */
+    private static final class WanderOnce extends com.mineagent.engine.alto.tasksystem.Task {
+        private final com.mineagent.engine.alto.tasks.movement.TimeoutWanderTask wander = new com.mineagent.engine.alto.tasks.movement.TimeoutWanderTask(5);
+
+        @Override
+        protected void onStart() {
+        }
+
+        @Override
+        protected com.mineagent.engine.alto.tasksystem.Task onTick() {
+            return wander;
+        }
+
+        @Override
+        public boolean isFinished() {
+            return wander.isActive() && wander.isFinished();
+        }
+
+        @Override
+        protected void onStop(com.mineagent.engine.alto.tasksystem.Task interruptTask) {
+        }
+
+        @Override
+        protected boolean isEqual(com.mineagent.engine.alto.tasksystem.Task other) {
+            return other instanceof WanderOnce;
+        }
+
+        @Override
+        protected String toDebugString() {
+            return "Wandering five blocks";
+        }
+    }
+
     /** An AltoClef task given to a scene's companion, run where its own AltoClef tasks run (SceneAltoTask). */
     private static void altoWalk(Scene s, String id, java.util.function.Supplier<com.mineagent.engine.alto.tasksystem.Task> root) {
         SceneAltoTask.register();

@@ -52,6 +52,26 @@ public final class ExploreProcess extends BaritoneProcessHelper implements IExpl
 
     private int distanceCompleted;
 
+    // SMH: the chunks its client would have been sent (Baritone's cache, filled by GameEventHandler.onChunkEvent at
+    // 11ea66c): the server's view distance round where it has stood while exploring, in the world it is in.
+    private final LongOpenHashSet seen = new LongOpenHashSet();
+    private long seenFrom = Long.MIN_VALUE;
+    private Object seenIn;
+
+    private void markSeen() {
+        if (ctx.world().dimension() != seenIn) {
+            seen.clear();
+            seenIn = ctx.world().dimension();
+            seenFrom = Long.MIN_VALUE;
+        }
+        BlockPos feet = ctx.feetPos();
+        int cx = feet.getX() >> 4, cz = feet.getZ() >> 4;
+        if (ChunkPos.asLong(cx, cz) == seenFrom) return;
+        seenFrom = ChunkPos.asLong(cx, cz);
+        int r = ctx.world().getServer().getPlayerList().getViewDistance();
+        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) seen.add(ChunkPos.asLong(cx + dx, cz + dz));
+    }
+
     public ExploreProcess(Baritone baritone) {
         super(baritone);
     }
@@ -92,6 +112,7 @@ public final class ExploreProcess extends BaritoneProcessHelper implements IExpl
             onLostControl();
             return null;
         }
+        markSeen(); // SMH: what its client would have been sent by now
         IChunkFilter filter = calcFilter();
         if (!baritone.settings().disableCompletionCheck.get() && filter.countRemain() == 0) {
             logDirect("Explored all chunks");
@@ -196,7 +217,7 @@ public final class ExploreProcess extends BaritoneProcessHelper implements IExpl
         public Status isAlreadyExplored(int chunkX, int chunkZ) {
             int centerX = chunkX << 4;
             int centerZ = chunkZ << 4;
-            if (cache.isCached(centerX, centerZ)) {
+            if (cache.isCached(centerX, centerZ) || seen.contains(ChunkPos.asLong(chunkX, chunkZ))) { // SMH: or seen
                 return Status.EXPLORED;
             }
             return Status.NOT_EXPLORED;

@@ -113,9 +113,11 @@ and deleted the copy; it stays in this repository's history at `afb11cb` as the 
 AltoClef's own patches to Baritone (`MiranCZ/baritone_altoclef` at `a34f78a`, patches 0002 and 0003, modifying
 Baritone and used under its LGPL-3.0; kept in `third_party/baritone_altoclef`) were put onto Automatone at step 1.5 by
 `.github/port-sbe/altoclef_hooks.py`, each place asking its own companion's settings; what was taken and what was not
-is in `.github/port-sbe/AUTOMATONE-LEDGER.md` (ledger 2). Two pieces of Baritone's own later code were put onto
-Automatone the same way (`.github/port-sbe/baritone.py`, plan 71 steps 1.6 and 1.7): `blocksToDisallowBreaking`
-(`Settings.java:244-249`, `MovementHelper.java:77`) and the feet position on a slab (`IPlayerContext.java:63-81`).
+is in `.github/port-sbe/AUTOMATONE-LEDGER.md` (ledger 2). Three pieces of Baritone's own later code were put onto
+Automatone the same way (`.github/port-sbe/baritone.py`, plan 71 steps 1.6 and 1.7, and after phase 1's gate):
+`blocksToDisallowBreaking` (`Settings.java:244-249`, `MovementHelper.java:77`), the feet position on a slab
+(`IPlayerContext.java:63-81`), and which chunks explore counts as explored (`ExploreProcess.java:189-213`,
+`CachedWorld.java:111-118`, `GameEventHandler.java:87-110`: a chunk the body has been in view of).
 
 Automatone's six unit tests (`src/test` of `sailex428/automatone` at `b7953df8`, LGPL-3.0, from Ladysnake's
 Automatone and Baritone) were translated into `fabric/src/test/java/com/mineagent/sbe/automatone` (plan 71, step

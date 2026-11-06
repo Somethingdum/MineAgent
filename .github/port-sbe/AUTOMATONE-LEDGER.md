@@ -115,6 +115,7 @@ By `.github/port-sbe/baritone.py`, each citing Baritone `11ea66c`:
 |---|---|---|
 | `api/Settings.java`, `MovementHelper.avoidBreaking` | `blocksToDisallowBreaking`, blocks it may never break; AltoClef's nether portal back on it (its `AltoClef.java:276-277`) | Baritone `Settings.java:244-249`, `MovementHelper.java:77` (step 1.6; scene `aPathPastAPortalLeavesItWhole`) |
 | `utils/player/EntityContext.feetPos` | the chunk its feet are in (it asked for `(int) x << 4`), so a bottom slab underfoot puts its feet a block up | Baritone `IPlayerContext.java:63-81` (step 1.7; scene `aPathFromASlabStartsWhereItStands`) |
+| `process/ExploreProcess` (its `BaritoneChunkCache`) | a chunk counts as explored once it has been within the server's view distance of where the body stood while exploring; Automatone has no chunk cache, so every chunk read as unexplored and a body at the middle of the chunk explore began in was already in its goal and stood still | Baritone `ExploreProcess.java:189-213`, `CachedWorld.java:111-118`, `GameEventHandler.java:87-110` (a client caches every chunk it is sent); after phase 1's gate, scene `aWanderFromTheMiddleOfAChunkGoesItsDistance` |
 | `api/IBaritone.logDirect`, `api/utils/IEntityContext.logDebug` | Automatone's messages to the server's log as well (`ServerHooks.log`), its debug ones by this body's own `chatDebug` (it read the global one) | ours (step 1.7): it writes to its entity's chat, which a fake player shows no one; sailex's `logger` setting is client-only and stays out |
 
 ### Automatone's unit tests (step 1.9)

@@ -39,6 +39,50 @@ BARITONE = [
     ('automatone/utils/player/EntityContext.java',
      '((ServerChunkManagerAccessor) world.getChunkSource()).automatone$getChunkNow((int) x << 4, (int) z << 4);',
      '((ServerChunkManagerAccessor) world.getChunkSource()).automatone$getChunkNow(feet.getX() >> 4, feet.getZ() >> 4); // SMH'),
+
+    # After phase 1's gate (alto hut kept on smh-companion's CI at 7ee27f5): which chunks explore counts as explored.
+    # Baritone's are the chunks in its cache (ExploreProcess.java:189-213, CachedWorld.isCached at CachedWorld.java:
+    # 111-118), which its client fills with every chunk the server sends it (GameEventHandler.onChunkEvent,
+    # GameEventHandler.java:87-110, queueForPacking at :104), so explore's first goals lie past the render distance.
+    # Automatone has no cache (Ladysnake's WorldData.getCachedWorld throws; sailex's returns one that holds nothing), so
+    # every chunk read as unexplored and the first goal was the middle of the chunk explore began in: a body standing
+    # there, or reaching it, was in its goal and stood still for good, and AltoClef's five-block wander (the hut's "got
+    # nowhere") never ended. A body on the server is sent no chunks; the chunks within the server's view distance of
+    # where it has stood while exploring stand in for those its client would have been sent.
+    ('automatone/process/ExploreProcess.java',
+     '''    private int distanceCompleted;
+''',
+     '''    private int distanceCompleted;
+
+    // SMH: the chunks its client would have been sent (Baritone's cache, filled by GameEventHandler.onChunkEvent at
+    // 11ea66c): the server's view distance round where it has stood while exploring, in the world it is in.
+    private final LongOpenHashSet seen = new LongOpenHashSet();
+    private long seenFrom = Long.MIN_VALUE;
+    private Object seenIn;
+
+    private void markSeen() {
+        if (ctx.world().dimension() != seenIn) {
+            seen.clear();
+            seenIn = ctx.world().dimension();
+            seenFrom = Long.MIN_VALUE;
+        }
+        BlockPos feet = ctx.feetPos();
+        int cx = feet.getX() >> 4, cz = feet.getZ() >> 4;
+        if (ChunkPos.asLong(cx, cz) == seenFrom) return;
+        seenFrom = ChunkPos.asLong(cx, cz);
+        int r = ctx.world().getServer().getPlayerList().getViewDistance();
+        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) seen.add(ChunkPos.asLong(cx + dx, cz + dz));
+    }
+'''),
+    ('automatone/process/ExploreProcess.java',
+     '''        IChunkFilter filter = calcFilter();
+        if (!baritone.settings().disableCompletionCheck.get()''',
+     '''        markSeen(); // SMH: what its client would have been sent by now
+        IChunkFilter filter = calcFilter();
+        if (!baritone.settings().disableCompletionCheck.get()'''),
+    ('automatone/process/ExploreProcess.java',
+     '            if (cache.isCached(centerX, centerZ)) {',
+     '            if (cache.isCached(centerX, centerZ) || seen.contains(ChunkPos.asLong(chunkX, chunkZ))) { // SMH: or seen'),
 ]
 
 # Step 1.8 (plan 71, §6.2, seam B): one writer per key, one break finisher. Not Baritone's code; ours.
