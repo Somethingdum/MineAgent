@@ -54,7 +54,7 @@ public final class InventoryBehavior extends Behavior {
 
     @Override
     public void onTickServer() {
-        if (!baritone.settings().allowInventory.get()) {
+        if (!baritone.settings().allowInventory.get() || baritone.getExtraBaritoneSettings().isInteractionPaused()) { // SMH: AltoClef 0002
             return;
         }
         Player player = ctx.entity();
@@ -106,6 +106,9 @@ public final class InventoryBehavior extends Behavior {
     }
 
     private void swapWithHotBar(int inInventory, int inHotbar, Inventory inventory) {
+        if (baritone.getExtraBaritoneSettings().isInteractionPaused()) { // SMH: AltoClef 0002
+            return;
+        }
         ItemStack h = inventory.getItem(inHotbar);
         inventory.setItem(inHotbar, inventory.getItem(inInventory));
         inventory.setItem(inInventory, h);
@@ -114,7 +117,8 @@ public final class InventoryBehavior extends Behavior {
     private int firstValidThrowaway(Inventory inventory) { // TODO offhand idk
         NonNullList<ItemStack> invy = PlayerInventoryVer.getMainInventory(inventory);
         for (int i = 0; i < invy.size(); i++) {
-            if (baritone.settings().acceptableThrowawayItems.get().contains(invy.get(i).getItem())) {
+            if (baritone.settings().acceptableThrowawayItems.get().contains(invy.get(i).getItem())
+                    && !baritone.getExtraBaritoneSettings().isItemProtected(invy.get(i).getItem())) { // SMH: AltoClef 0002
                 return i;
             }
         }
@@ -146,11 +150,15 @@ public final class InventoryBehavior extends Behavior {
 
     public boolean hasGenericThrowaway() {
         return throwaway(false,
-                stack -> baritone.settings().acceptableThrowawayItems.get().contains(stack.getItem()));
+                stack -> baritone.settings().acceptableThrowawayItems.get().contains(stack.getItem())
+                        && !baritone.getExtraBaritoneSettings().isItemProtected(stack.getItem())); // SMH: AltoClef 0002
     }
 
     public boolean selectThrowawayForLocation(boolean select, int x, int y, int z) {
         Player player = ctx.entity();
+        if (baritone.getExtraBaritoneSettings().shouldAvoidPlacingAt(x, y, z)) { // SMH: AltoClef 0002
+            return false;
+        }
 
         BlockState maybe = baritone.getBuilderProcess().placeAt(x, y, z, baritone.bsi.get0(x, y, z));
         if (maybe != null && throwaway(select, stack -> stack.getItem() instanceof BlockItem && maybe.equals(((BlockItem) stack.getItem()).getBlock().getStateForPlacement(new BlockPlaceContext(new UseOnContext(ctx.world(), player, InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(player.getX(), player.getY(), player.getZ()), Direction.UP, ctx.feetPos(), false)) {}))))) {
@@ -160,10 +168,14 @@ public final class InventoryBehavior extends Behavior {
             return true;
         }
         return throwaway(select,
-                stack -> baritone.settings().acceptableThrowawayItems.get().contains(stack.getItem()));
+                stack -> baritone.settings().acceptableThrowawayItems.get().contains(stack.getItem())
+                        && !baritone.getExtraBaritoneSettings().isItemProtected(stack.getItem())); // SMH: AltoClef 0002
     }
 
     public boolean throwaway(boolean select, Predicate<? super ItemStack> desired) {
+        if (baritone.getExtraBaritoneSettings().isInteractionPaused()) { // SMH: AltoClef 0002
+            return false;
+        }
         Player p = ctx.entity();
 
         NonNullList<ItemStack> inv = PlayerInventoryVer.getMainInventory(p.getInventory());

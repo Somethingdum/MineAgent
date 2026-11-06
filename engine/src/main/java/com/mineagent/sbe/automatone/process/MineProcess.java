@@ -131,6 +131,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             cancel();
             return null;
         }
+        if (((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().isInteractionPaused()) { // SMH: AltoClef 0002
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
         updateLoucaSystem();
         int mineGoalUpdateInterval = baritone.settings().mineGoalUpdateInterval.get();
         List<BlockPos> curr = new ArrayList<>(knownOreLocations);
@@ -388,7 +391,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         locs = prune(ctx, locs, filter, max, blacklist, dropped);
 
-        if (!untracked.isEmpty() || (ctx.baritone.settings().extendCacheOnThreshold.get() && locs.size() < max)) {
+        if (!untracked.isEmpty() || (ctx.baritone.settings().extendCacheOnThreshold.get() && locs.size() < max * filter.blocks().size())) { // SMH: AltoClef 0002
             locs.addAll(WorldScanner.INSTANCE.scanChunkRadius(
                     ctx.getBaritone().getPlayerContext(),
                     filter,
@@ -485,6 +488,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
 
     public static boolean plausibleToBreak(CalculationContext ctx, BlockPos pos) {
+        net.minecraft.world.level.block.Block here = ctx.bsi.get0(pos).getBlock(); // SMH: AltoClef 0002
+        if (here instanceof net.minecraft.world.level.block.EndPortalFrameBlock || here instanceof net.minecraft.world.level.block.EndPortalBlock || here == Blocks.LAVA) {
+            return true;
+        }
         if (MovementHelper.getMiningDurationTicks(ctx, pos.getX(), pos.getY(), pos.getZ(), ctx.bsi.get0(pos), true) >= COST_INF) {
             return false;
         }

@@ -67,7 +67,17 @@ public final class RayTraceUtils {
                 direction.y * blockReachDistance,
                 direction.z * blockReachDistance
         );
-        return EntityVer.getWorld(entity).clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, entity));
+        return EntityVer.getWorld(entity).clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, fluidHandlingOf(entity), entity)); // SMH: AltoClef 0002
+    }
+
+    // SMH: the companion's own fluid handling; any other entity's ray stops at no fluid (never makes a Baritone).
+    private static ClipContext.Fluid fluidHandlingOf(Entity entity) {
+        if (entity instanceof net.minecraft.server.level.ServerPlayer player
+                && com.mineagent.sbe.automatone.api.BaritoneAPI.getProvider() instanceof com.mineagent.sbe.automatone.BaritoneProvider provider) {
+            com.mineagent.sbe.automatone.api.IBaritone baritone = provider.playerToBaritone.get(player);
+            if (baritone != null) return ((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().getRayFluidHandling();
+        }
+        return ClipContext.Fluid.NONE;
     }
 
     public static Vec3 inferSneakingEyePosition(Entity entity) {

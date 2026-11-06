@@ -130,6 +130,9 @@ public class ToolSet {
         If we actually want know what efficiency our held item has instead of the best one
         possible, this lets us make pathing depend on the actual tool to be used (if auto tool is disabled)
         */
+        if (b.getExplosionResistance() == 0) { // SMH: AltoClef 0002
+            return PlayerInventoryVer.getSelectedSlot(player.getInventory());
+        }
         if (baritone.settings().disableAutoTool.get() && pathingCalculation) {
             return PlayerInventoryVer.getSelectedSlot(player.getInventory());
         }
@@ -148,7 +151,13 @@ public class ToolSet {
             if (baritone.settings().itemSaver.get() && itemStack.getDamageValue() >= itemStack.getMaxDamage() && itemStack.getMaxDamage() > 1) {
                 continue;
             }
+            if (((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().shouldForceSaveTool(blockState, itemStack)) { // SMH: AltoClef 0002
+                continue;
+            }
             double speed = calculateSpeedVsBlock(itemStack, blockState, player);
+            if (((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().shouldForceUseTool(blockState, itemStack)) {
+                speed = Double.POSITIVE_INFINITY;
+            }
             boolean silkTouch = hasSilkTouch(itemStack);
             if (speed > highestSpeed) {
                 highestSpeed = speed;

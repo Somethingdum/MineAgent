@@ -35,7 +35,8 @@ public class EntityStuckTracker extends Tracker {
          LivingEntity clientPlayerEntity = this.mod.getEntity();
 
          for (Entity entity : this.mod.getWorld().getAllEntities()) {
-            if (entity != null && entity.isAlive() && !entity.equals(clientPlayerEntity) && clientPlayerEntity.closerThan(entity, 25.0)) {
+            if (entity != null && entity.isAlive() && entity.blocksBuilding // SMH: what keeps a block from being placed
+               && !entity.equals(clientPlayerEntity) && clientPlayerEntity.closerThan(entity, 25.0)) {
                AABB b = entity.getBoundingBox();
 
                for (BlockPos p : WorldHelper.getBlocksTouchingBox(b)) {

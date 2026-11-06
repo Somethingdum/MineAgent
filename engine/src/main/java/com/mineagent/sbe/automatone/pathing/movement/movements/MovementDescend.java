@@ -317,6 +317,9 @@ public class MovementDescend extends Movement {
                     && !(MovementHelper.isWater(state) && baritone.settings().allowSwimming.get())) {
                 return true;
             }
+            if (((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().shouldAvoidWalkThroughForce(into.above(y))) { // SMH: AltoClef 0002
+                return true;
+            }
         }
         return false;
     }

@@ -617,8 +617,12 @@ public class Settings {
     }
 
     public boolean isPositionExplicitlyProtected(BlockPos pos) {
-        // SMH: the places its owner said not to touch (world/ProtectedAreas, plan 70 MA10.2).
-        AltoClef host = AltoClef.current();
+        return isPositionExplicitlyProtected(AltoClef.getInstance(), pos);
+    }
+
+    // SMH: the places its owner said not to touch (world/ProtectedAreas, plan 70 MA10.2), for the host given: Baritone
+    // asks this from its path threads, where no host's scope is open (it read AltoClef.current() and passed everything).
+    public boolean isPositionExplicitlyProtected(AltoClef host, BlockPos pos) {
         if (host == null || pos == null) return false;
         return com.mineagent.engine.world.ProtectedAreas.at(host.getWorld().dimension().location().toString(),
                 pos.getX(), pos.getY(), pos.getZ()) != null;

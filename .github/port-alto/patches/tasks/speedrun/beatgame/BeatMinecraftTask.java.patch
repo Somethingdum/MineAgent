@@ -85,6 +85,15 @@
                  boolean isEndPortal = blockState.getBlock() == Blocks.END_PORTAL;
                  if (isEndPortal) {
                      Debug.logInternal("Walking on End Portal at " + blockPos.toString());
+@@ -1138,7 +1130,7 @@
+      */
+     private void avoidDragonBreath(AltoClef mod) {
+         mod.getBehaviour().avoidWalkingThrough(blockPos -> {
+-            Dimension currentDimension = WorldHelper.getCurrentDimension();
++            Dimension currentDimension = WorldHelper.getCurrentDimension(mod.getWorld()); // SMH: this host's (path threads ask)
+             boolean isEndDimension = currentDimension == Dimension.END;
+             boolean isTouchingDragonBreath = dragonBreathTracker.isTouchingDragonBreath(blockPos);
+ 
 @@ -1160,8 +1152,9 @@
          mod.getBehaviour().avoidBlockBreaking(blockPos -> {
              if (bedSpawnLocation != null) {

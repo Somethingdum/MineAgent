@@ -110,13 +110,13 @@ public class CalculationContext {
         this.player = baritone.getPlayerContext().entity();
         this.world = baritone.getPlayerContext().world();
         this.worldData = (WorldData) baritone.getWorldProvider().getCurrentWorld();
-        this.bsi = new BlockStateInterface(world);
+        this.bsi = new BlockStateInterface(world, ((Baritone) baritone).getExtraBaritoneSettings()); // SMH: its rules
         this.toolSet = player == null ? null : new ToolSet(player);
-        this.hasThrowaway = baritone.settings().allowPlace.get() && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
+        this.hasThrowaway = !bsi.rules.isInteractionPaused() && baritone.settings().allowPlace.get() && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
         this.hasWaterBucket = player != null && baritone.settings().allowWaterBucketFall.get() && Inventory.isHotbarSlot(InventoryBehavior.getSlotWithStack(player.getInventory(), Automatone.WATER_BUCKETS)) && !DimensionVer.isUltrawarm(world);
         this.canSprint = player != null && baritone.settings().allowSprint.get() && player.getFoodData().getFoodLevel() > 6;
         this.placeBlockCost = baritone.settings().blockPlacementPenalty.get();
-        this.allowBreak = baritone.settings().allowBreak.get();
+        this.allowBreak = !bsi.rules.isInteractionPaused() && baritone.settings().allowBreak.get(); // SMH: AltoClef 0002
         this.allowParkour = baritone.settings().allowParkour.get();
         this.allowParkourPlace = baritone.settings().allowParkourPlace.get();
         this.allowJumpAt256 = baritone.settings().allowJumpAt256.get();
@@ -190,6 +190,9 @@ public class CalculationContext {
         if (isProtected(x, y, z)) {
             return COST_INF;
         }
+        if (bsi.rules.shouldAvoidPlacingAt(x, y, z)) { // SMH: AltoClef 0002
+            return COST_INF;
+        }
         return placeBlockCost;
     }
 
@@ -198,6 +201,9 @@ public class CalculationContext {
             return COST_INF;
         }
         if (isProtected(x, y, z)) {
+            return COST_INF;
+        }
+        if (bsi.rules.shouldAvoidBreaking(x, y, z) || current.getBlock() instanceof net.minecraft.world.level.block.EndPortalFrameBlock) { // SMH: AltoClef 0002
             return COST_INF;
         }
         return 1;

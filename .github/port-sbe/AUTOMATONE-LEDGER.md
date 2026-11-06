@@ -48,3 +48,61 @@ entity; the companion is a player), `api/utils/IPlayerController.java` and `util
 
 `api/Settings.java` only. `mixins/MixinUtil.java` trips the provenance grep (`var3`), but it is SecondBrainEngine's
 own: it copies Minecraft's own executor-shutdown routine, whose decompiled local name came with it.
+
+## Ledger 2: our patches (SMH plan 71, §5.3)
+
+### AltoClef's own Baritone patches, onto Automatone (step 1.5)
+
+MiranCZ/altoclef's `research/baritone_altoclef/patches` 0002 and 0003 (LGPL-3.0, as Baritone is; kept in
+`third_party/baritone_altoclef`), put onto Automatone by `.github/port-sbe/altoclef_hooks.py`, each change an exact
+replacement with a comment naming its patch. AltoClef asks one static `AltoClefSettings.getInstance()`; here every place
+asks its own companion's (`Baritone.getExtraBaritoneSettings()`), since Automatone runs one Baritone per body and
+plans on executor threads that must read the companion they plan for. The rules ride on each `BlockStateInterface`
+(every path search makes its own, for one Baritone); a place with an entity context asks its Baritone. Scenes: the 7
+`alto_*` scenes and `automatoneGoesRoundAWallItsOwnerBuilt` (the owner's wall priced as never, the world's stone as
+stone, the path round; without these patches the same scene broke through the wall).
+
+| Where | What it asks | From |
+|---|---|---|
+| `CalculationContext` | its own rules on its `BlockStateInterface`; no breaking or placing while AltoClef holds interaction; never place where its rules say not; never break what they keep, or an end portal frame | 0002 |
+| `MovementHelper.avoidBreaking` | its rules, an end portal frame, and the block under one | 0002 |
+| `MovementHelper.canWalkThrough` | lava it may swim (with nothing on top); the cells its rules keep it out of, before the air check | 0002 |
+| `MovementHelper.fullyPassable` (entity) | the cells its rules keep it out of | 0002 |
+| `MovementHelper.canWalkOn` | an end portal frame is ground; an end portal when AltoClef says so (0002 put this in `canWalkOnBlockState`; Automatone has no state-only cache, so it goes where the rules are in reach) | 0002 |
+| `MovementHelper.avoidWalkingInto` | an end portal frame | 0002 |
+| `MovementHelper.canPlaceAgainst` | never place where its rules say not | 0002 |
+| `MovementDescend.safeMode`, `MovementTraverse` (walking into what it breaks), `PathExecutor` (the corner cut) | the cells its rules keep it out of | 0002 |
+| `MovementFall` | AltoClef's "fall, but place no bucket" | 0002 |
+| `MineProcess` | waits while AltoClef holds interaction; widens the cache by the number of kinds asked for; lava and end portals count as plausible | 0002 |
+| `InputOverrideHandler` | no clicks while AltoClef holds interaction | 0002 |
+| `ToolSet` | a block that breaks at once is broken with what is in hand; never a tool it is saving; the tool it is told to use | 0002 |
+| `InventoryBehavior` | no moves while AltoClef holds interaction; protected items are never thrown down as blocks; no block chosen for a spot its rules keep clear | 0002 |
+| `BuilderProcess` | no placing and no inventory moves while AltoClef holds interaction; no placement plausible for a state that is not there | 0003 |
+| `AltoClefSettings`, `RayTraceUtils` | the fluids its ray traces stop at, the companion's own (AltoClef's static, which SecondBrainEngine kept but never used: its clip passed `NONE`) | 0002 |
+
+Not taken, each with why:
+
+- 0002 `PathNode`: `applyGlobalHeuristic` returns its input in AltoClef itself (its loop is commented out).
+- 0002 `MovementHelper`: the infested block taken off the never-break list. Kept: `SmhRules.neverBreakToPass` never
+  breaks one to pass either.
+- 0002 `MovementTraverse`: soul sand as an ordinary block. Automatone's traverse has no soul-sand case to switch off.
+- 0002 `MineProcess`: an import and wildcard imports.
+- 0002 `IBuilderProcess` and 0003: `popStack`, `isFromAltoclefFinished` and the state stack. Nothing in MiranCZ's
+  AltoClef calls them.
+- 0003: the break history (`getFromHistory`, `noteRemoval`, `HistoryInfo`). Never filled; asked and cleared only.
+- 0003: `protectItemOfMissing` and `stopProtectItemOfMissing`, the `missing` map. The map is never filled and the
+  protecting half never called.
+- 0003: `isDefaultState` and `PropertyContainer`. Never called.
+- 0003: `updateMovement`. It ticks the path's current movement a second time on every builder tick, a second writer of
+  the keys (plan 71, I4).
+
+Found when Automatone began asking the rules (step 1.5), and fixed in the same step:
+
+- Our routine's own rule (`engine/agent/npc/NpcRoutineTask`: a build's standing blocks are kept) read the world
+  through vanilla's `getChunkNow`, which gives null off the server thread, so it kept nothing when Automatone asked
+  from a path thread and the build's blocks when the executor asked on the server thread: the path went through what
+  the executor would then not break, and the agent's hut stood stuck (3 of 3 failed with the patches, 2 of 3 passed
+  without). `BuildGoalTask.standingPart` reads through `WorldHelper.chunkAt` now (3 of 3).
+- SecondBrainEngine's AltoClef's own "never place where an entity is" rule (`EntityStuckTracker`, not in MiranCZ's
+  AltoClef) counted dropped items and experience orbs; it counts what the game's placement check counts
+  (`blocksBuilding`), by `port.py`.

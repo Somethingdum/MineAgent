@@ -111,7 +111,7 @@ public class MovementFall extends Movement {
         Rotation targetRotation = null;
         BlockState destState = ctx.world().getBlockState(dest);
         boolean isWater = destState.getFluidState().getType() instanceof WaterFluid;
-        if (!isWater && willPlaceBucket() && !playerFeet.equals(dest)) {
+        if (!isWater && willPlaceBucket() && !playerFeet.equals(dest) && !((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().shouldNotPlaceBucketButStillFall()) { // SMH: AltoClef 0002
             Inventory inventory = ctx.inventory();
             if (inventory == null || !Inventory.isHotbarSlot(InventoryBehavior.getSlotWithStack(inventory, Automatone.WATER_BUCKETS)) || DimensionVer.isUltrawarm(ctx.world())) {
                 return state.setStatus(MovementStatus.UNREACHABLE);

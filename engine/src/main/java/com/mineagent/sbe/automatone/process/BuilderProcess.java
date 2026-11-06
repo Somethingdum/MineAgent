@@ -288,6 +288,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
     }
 
     public boolean placementPlausible(BlockPos pos, BlockState state) {
+        if (state == null) return false; // SMH: AltoClef 0003
         VoxelShape voxelshape = state.getCollisionShape(ctx.world(), pos);
         return voxelshape.isEmpty() || ctx.world().isUnobstructed(null, voxelshape.move(pos.getX(), pos.getY(), pos.getZ()));
     }
@@ -502,7 +503,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
         }
         List<BlockState> desirableOnHotbar = new ArrayList<>();
         Optional<Placement> toPlace = searchForPlacables(bcc, desirableOnHotbar);
-        if (toPlace.isPresent() && isSafeToCancel && ctx.entity().onGround() && ticks <= 0) {
+        if (!baritone.getExtraBaritoneSettings().isInteractionPaused() && toPlace.isPresent() && isSafeToCancel && ctx.entity().onGround() && ticks <= 0) { // SMH: AltoClef 0003
             Rotation rot = toPlace.get().rot;
             baritone.getLookBehavior().updateTarget(rot, true);
             PlayerInventoryVer.setSelectedSlot(inventory, toPlace.get().hotbarSelection);
@@ -513,7 +514,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
 
-        if (baritone.settings().allowInventory.get()) {
+        if (!baritone.getExtraBaritoneSettings().isInteractionPaused() && baritone.settings().allowInventory.get()) { // SMH: AltoClef 0003
             ArrayList<Integer> usefulSlots = new ArrayList<>();
             List<BlockState> noValidHotbarOption = new ArrayList<>();
             outer:

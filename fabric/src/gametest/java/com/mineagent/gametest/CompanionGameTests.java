@@ -5254,6 +5254,108 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * Plan 71, step 1.5: a wall its owner built stands between the companion and where Automatone is sent. Breaking two
+     * of its blocks with the stone pickaxe it carries is the cheap way; it goes round instead. The rule that a person's
+     * block is never broken (SmhRules.placedByAPerson, on this companion's own AltoClef settings) is asked by
+     * Automatone's path search on its own thread (AltoClef's patch 0002, onto Automatone); the world's own stone, the
+     * same block, is priced as stone.
+     */
+    /**
+     * AltoClef tasks a scene runs itself, ticked in the server tick's end, after the engine's own. Enough for Automatone
+     * to plan: the engine steps the body's physics inside its own tick, after the planner's task auction, which writes
+     * the keys while it has no task of its own, so a scene's task cannot also walk the body until each key has one
+     * writer (plan 71, I4, step 1.8). The companion's own AltoClef tasks run inside that auction and walk.
+     */
+    private static final java.util.Map<java.util.UUID, Runnable> ALTO_TICKS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicBoolean ALTO_TICKER = new java.util.concurrent.atomic.AtomicBoolean();
+
+    private static void tickAltoAtTickEnd(Scene s, com.mineagent.engine.alto.tasksystem.Task root) {
+        if (ALTO_TICKER.compareAndSet(false, true)) {
+            net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> ALTO_TICKS.values().forEach(Runnable::run));
+        }
+        ALTO_TICKS.put(s.companion().companionId(), () -> com.mineagent.engine.alto.AltoClef.of(s.companion()).tick(root));
+    }
+
+    /** One of Automatone's moves, as a scene prints it: its kind, from and to, in the scene's own coordinates. */
+    private static String moveOf(GameTestHelper helper, com.mineagent.sbe.automatone.api.pathing.movement.IMovement m) {
+        return m.getClass().getSimpleName().replace("Movement", "") + " " + rel(helper, m.getSrc()).toShortString()
+                + " to " + rel(helper, m.getDest()).toShortString();
+    }
+
+    /**
+     * Plan 71, step 1.5: a wall its owner built (x 6, z 0 to 12, three high) stands between the companion and where
+     * AltoClef's GetToBlockTask sends it. Breaking two of its blocks with the stone pickaxe it carries is the cheap way;
+     * Automatone, searching on its own thread, plans round instead, because the rule that a person's block is never
+     * broken (SmhRules.placedByAPerson, on this companion's own AltoClef settings) is asked there now (AltoClef's patch
+     * 0002, onto Automatone). The world's own stone, the same block, is priced as stone. Without the patches the same
+     * scene broke through (run on c12cfcf, 2026-11-06).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_detour", timeoutTicks = 600)
+    public void automatoneGoesRoundAWallItsOwnerBuilt(GameTestHelper helper) {
+        Scene s = scene(helper, "Rounder");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var level = helper.getLevel();
+        s.body().getInventory().setItem(0, new ItemStack(Items.STONE_PICKAXE));
+        java.util.Set<BlockPos> wall = new java.util.HashSet<>();
+        // The floor is stone at y 0 (scene()); the wall stands on it.
+        for (int z = 0; z <= 12; z++) {
+            for (int y = 1; y <= 3; y++) {
+                helper.setBlock(6, y, z, Blocks.STONE);
+                BlockPos at = helper.absolutePos(new BlockPos(6, y, z));
+                com.mineagent.engine.world.PlacedBlocks.placedBy(s.owner(), level, at, Blocks.STONE.defaultBlockState());
+                wall.add(at);
+            }
+        }
+        helper.setBlock(10, 1, 2, Blocks.STONE);
+        BlockPos nature = helper.absolutePos(new BlockPos(10, 1, 2));
+        BlockPos theirs = helper.absolutePos(new BlockPos(6, 1, 6));
+        BlockPos start = helper.absolutePos(new BlockPos(3, 1, 6));
+        BlockPos target = helper.absolutePos(new BlockPos(9, 1, 6));
+        s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, -90.0f, 0.0f);
+        com.mineagent.engine.rules.SmhRules.prime(level);
+        double[] cost = new double[2];
+        helper.runAfterDelay(5, () -> {
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            var go = host.within(() -> {
+                var ctx = new com.mineagent.sbe.automatone.pathing.movement.CalculationContext(host.getClientBaritone());
+                cost[0] = com.mineagent.sbe.automatone.pathing.movement.MovementHelper.getMiningDurationTicks(ctx,
+                        theirs.getX(), theirs.getY(), theirs.getZ(), false);
+                cost[1] = com.mineagent.sbe.automatone.pathing.movement.MovementHelper.getMiningDurationTicks(ctx,
+                        nature.getX(), nature.getY(), nature.getZ(), false);
+                return new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target);
+            });
+            tickAltoAtTickEnd(s, go);
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 6) return;
+            var pb = com.mineagent.engine.alto.AltoClef.of(s.companion()).getClientBaritone().getPathingBehavior();
+            var path = pb.getCurrent() == null ? null : pb.getCurrent().getPath();
+            int broken = 0;
+            for (BlockPos p : wall) if (!level.getBlockState(p).is(Blocks.STONE)) broken++;
+            String how = "wall blocks broken " + broken + ", cost to break theirs " + cost[0] + ", the world's own " + cost[1];
+            if (path != null && path.getDest().equals(target)) {
+                ALTO_TICKS.remove(s.companion().companionId());
+                int into = 0, breaks = 0;
+                StringBuilder moves = new StringBuilder();
+                for (var p : path.positions()) if (wall.contains(p)) into++;
+                for (var m : path.movements()) {
+                    if (moves.length() < 600) moves.append(moveOf(helper, m)).append("; ");
+                    for (BlockPos q : ((com.mineagent.sbe.automatone.pathing.movement.Movement) m).toBreakAll()) if (wall.contains(q)) breaks++;
+                }
+                how += "; its path: " + path.movements().size() + " moves, " + into + " into the wall, " + breaks + " breaking it: " + moves;
+                tidy(s);
+                if (broken == 0 && into == 0 && breaks == 0 && cost[0] >= com.mineagent.sbe.automatone.api.pathing.movement.ActionCosts.COST_INF
+                        && cost[1] < 1_000) helper.succeed();
+                else fail(helper, how);
+            } else if (broken > 0 || helper.getTick() >= 560) {
+                ALTO_TICKS.remove(s.companion().companionId());
+                tidy(s);
+                fail(helper, how + "; Automatone: goal " + pb.getGoal() + (path == null ? ", no path" : ", path to " + rel(helper, path.getDest()).toShortString()));
+            }
+        });
+    }
+
+    /**
      * SMH plan 70, its first days by AltoClef's priorities (behaviour.altoLife): evening, with a stone pickaxe, a crafting
      * table, dirt and a door on it, and no hut: the hut comes first. Mindcraft's dirt shelter, built by Baritone's builder,
      * stands with its door in before dark.

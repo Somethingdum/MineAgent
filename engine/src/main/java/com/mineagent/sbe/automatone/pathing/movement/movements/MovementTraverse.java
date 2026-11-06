@@ -295,6 +295,11 @@ public class MovementTraverse extends Movement {
                     return state;
                 }
             }
+            for (BlockPos p : positionsToBreak) {
+                if (((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings().shouldAvoidWalkThroughForce(p)) { // SMH: AltoClef 0002
+                    return state;
+                }
+            }
 
             // and we aren't already pressed up against the block
             double dist = Math.max(Math.abs(ctx.entity().getX() - (dest.getX() + 0.5D)), Math.abs(ctx.entity().getZ() - (dest.getZ() + 0.5D)));

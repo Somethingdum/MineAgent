@@ -236,6 +236,15 @@ PATCHES = [
      '      // SMH: under the game\'s config directory (it was a folder "me/sailex/altoclef" wherever the server was started).\n'
      '      return ' + HOOKS + '.configDir().resolve("mineagent").resolve("altoclef").resolve(path).toFile();'),
 
+    # SMH plan 71, step 1.5: SecondBrainEngine's own "never place where an entity is" rule (not in MiranCZ's AltoClef)
+    # counted every entity in reach, dropped items and experience orbs too, so once Automatone asks it (AltoClef's patch
+    # 0002, step 1.5) a dropped item would keep a block from going where the game would let it. It counts what the
+    # game's own placement check counts (EntityGetter.isUnobstructed: blocksBuilding).
+    ('altoclef/trackers/EntityStuckTracker.java',
+     'if (entity != null && entity.isAlive() && !entity.equals(clientPlayerEntity) && clientPlayerEntity.closerThan(entity, 25.0)) {',
+     'if (entity != null && entity.isAlive() && entity.blocksBuilding // SMH: what keeps a block from being placed\n'
+     '               && !entity.equals(clientPlayerEntity) && clientPlayerEntity.closerThan(entity, 25.0)) {'),
+
     # SMH plan 71, I1: the block scanner's scan thread read each chunk by Level.getChunk, which on a server loads or
     # generates it, and off the server thread waits on the server thread to do so (the guard counted 680 in one scene).
     # It reads the loaded chunk through Automatone's view of the visible chunk map, as Automatone's own search does, and
@@ -254,6 +263,10 @@ PATCHES = [
 _names = {}
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mixin_names.py'), encoding='utf-8').read(), _names)
 PATCHES += _names['MIXIN_PATCHES']
+# AltoClef's own Baritone patches, onto Automatone, each place asking its own companion's rules (altoclef_hooks.py).
+_hooks = {}
+exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'altoclef_hooks.py'), encoding='utf-8').read(), _hooks)
+PATCHES += _hooks['HOOKS']
 # Jackson left out (jackson.py, read the same way).
 _jackson = {}
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'jackson.py'), encoding='utf-8').read(), _jackson)

@@ -91,8 +91,15 @@ import static com.mineagent.sbe.automatone.pathing.movement.Movement.HORIZONTALS
 public interface MovementHelper extends ActionCosts {
 
     static boolean avoidBreaking(BlockStateInterface bsi, int x, int y, int z, BlockState state, Settings settings) {
+        if (bsi.get0(x, y + 1, z).getBlock() instanceof net.minecraft.world.level.block.EndPortalFrameBlock) { // SMH: AltoClef 0002
+            return true;
+        }
+        if (bsi.rules.shouldAvoidBreaking(x, y, z)) {
+            return true;
+        }
         Block b = state.getBlock();
-        return b == Blocks.ICE // ice becomes water, and water can mess up the path
+        return b instanceof net.minecraft.world.level.block.EndPortalFrameBlock
+                || b == Blocks.ICE // ice becomes water, and water can mess up the path
                 || b instanceof InfestedBlock // obvious reasons
                 // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
                 || avoidAdjacentBreaking(bsi, x, y + 1, z, true, settings)
@@ -128,6 +135,12 @@ public interface MovementHelper extends ActionCosts {
 
     static boolean canWalkThrough(BlockStateInterface bsi, int x, int y, int z, BlockState state, Settings settings) {
         Block block = state.getBlock();
+        if (bsi.rules.canSwimThroughLava() && block == Blocks.LAVA) { // SMH: AltoClef 0002
+            return bsi.get0(x, y + 1, z).getFluidState().isEmpty();
+        }
+        if (bsi.rules.shouldAvoidWalkThroughForce(x, y, z)) {
+            return false;
+        }
         if (block instanceof AirBlock) { // early return for most common case
             return true;
         }
@@ -216,6 +229,9 @@ public interface MovementHelper extends ActionCosts {
     }
 
     static boolean fullyPassable(IEntityContext ctx, BlockPos pos) {
+        if (((com.mineagent.sbe.automatone.Baritone) ctx.baritone()).getExtraBaritoneSettings().shouldAvoidWalkThroughForce(pos)) { // SMH: AltoClef 0002
+            return false;
+        }
         return fullyPassable(ctx.world(), pos, ctx.world().getBlockState(pos));
     }
 
@@ -331,6 +347,7 @@ public interface MovementHelper extends ActionCosts {
                 || block == Blocks.MAGMA_BLOCK
                 || block == Blocks.CACTUS
                 || block instanceof BaseFireBlock
+                || block instanceof net.minecraft.world.level.block.EndPortalFrameBlock // SMH: AltoClef 0002
                 || block == Blocks.END_PORTAL
                 || block == Blocks.COBWEB
                 || block == Blocks.BUBBLE_COLUMN;
@@ -351,6 +368,9 @@ public interface MovementHelper extends ActionCosts {
      */
     static boolean canWalkOn(BlockStateInterface bsi, int x, int y, int z, BlockState state, Settings settings) {
         Block block = state.getBlock();
+        if (block instanceof net.minecraft.world.level.block.EndPortalFrameBlock || (block == Blocks.END_PORTAL && bsi.rules.isCanWalkOnEndPortal())) { // SMH: AltoClef 0002
+            return true;
+        }
         if (block instanceof AirBlock || block == Blocks.MAGMA_BLOCK || block == Blocks.BUBBLE_COLUMN || block == Blocks.HONEY_BLOCK) {
             // early return for most common case (air)
             // plus magma, which is a normal cube but it hurts you
@@ -428,6 +448,9 @@ public interface MovementHelper extends ActionCosts {
     }
 
     static boolean canPlaceAgainst(BlockStateInterface bsi, int x, int y, int z, BlockState state) {
+        if (bsi.rules.shouldAvoidPlacingAt(x, y, z)) { // SMH: AltoClef 0002
+            return false;
+        }
         // can we look at the center of a side face of this block and likely be able to place?
         // (thats how this check is used)
         // therefore dont include weird things that we technically could place against (like carpet) but practically can't

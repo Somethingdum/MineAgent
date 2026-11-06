@@ -147,7 +147,11 @@ public interface WorldHelper {
     }
 
     static Dimension getCurrentDimension() {
-        ServerLevel world = AltoClef.getInstance().getWorld();
+        return getCurrentDimension(AltoClef.getInstance().getWorld());
+    }
+
+    // SMH: the world given, for the rules Baritone asks from its path threads (no host's scope is open there).
+    static Dimension getCurrentDimension(ServerLevel world) {
         if (world == null) return Dimension.OVERWORLD;
         if (world.dimensionType().ultraWarm()) return Dimension.NETHER;
         if (world.dimensionType().natural()) return Dimension.OVERWORLD;

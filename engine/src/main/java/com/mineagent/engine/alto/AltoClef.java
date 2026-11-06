@@ -144,12 +144,13 @@ public class AltoClef {
                     .filter(item -> item != Items.SOUL_SAND && item != Items.MAGMA_BLOCK && item != Items.SAND && item
                             != Items.GRAVEL).toList();
             getClientBaritoneSettings().acceptableThrowawayItems.get().addAll(baritoneCanPlace);
-            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
-            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
+            // SMH: this host's, given: Baritone asks these from its path threads (plan 71, step 1.5).
+            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(this, blockPos));
+            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(this, blockPos));
             getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
             // SMH plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a
             // farm whose player is AFK (the companion's own rules; the kinds of block it never breaks to get
-            // somewhere are kept in Baritone's path costs, SmhRules.neverBreakToPass).
+            // somewhere, SmhRules.neverBreakToPass, are not yet asked on Automatone's path: SMH plan 71, step 1.8).
             getExtraBaritoneSettings().avoidBlockBreak(blockPos -> SmhRules.placedByAPerson(this.player.serverLevel(), blockPos)
                     || SmhRules.afkFarm(this.player.serverLevel(), blockPos));
             getExtraBaritoneSettings().avoidBlockPlace(blockPos -> SmhRules.afkFarm(this.player.serverLevel(), blockPos));

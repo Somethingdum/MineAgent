@@ -234,6 +234,17 @@ public class AltoClefSettings {
         return this.globalHeuristicMutex;
     }
 
+    // SMH: the fluids its ray traces stop at (AltoClef's RayTraceUtils.fluidHandling, one per companion here).
+    private volatile net.minecraft.world.level.ClipContext.Fluid rayFluidHandling = net.minecraft.world.level.ClipContext.Fluid.NONE;
+
+    public net.minecraft.world.level.ClipContext.Fluid getRayFluidHandling() {
+        return this.rayFluidHandling;
+    }
+
+    public void setRayFluidHandling(net.minecraft.world.level.ClipContext.Fluid fluidHandling) {
+        this.rayFluidHandling = fluidHandling == null ? net.minecraft.world.level.ClipContext.Fluid.NONE : fluidHandling;
+    }
+
     public boolean isCanWalkOnEndPortal() {
         return this.canWalkOnEndPortal;
     }

@@ -1130,7 +1130,7 @@ public class BeatMinecraftTask extends Task {
      */
     private void avoidDragonBreath(AltoClef mod) {
         mod.getBehaviour().avoidWalkingThrough(blockPos -> {
-            Dimension currentDimension = WorldHelper.getCurrentDimension();
+            Dimension currentDimension = WorldHelper.getCurrentDimension(mod.getWorld()); // SMH: this host's (path threads ask)
             boolean isEndDimension = currentDimension == Dimension.END;
             boolean isTouchingDragonBreath = dragonBreathTracker.isTouchingDragonBreath(blockPos);
 

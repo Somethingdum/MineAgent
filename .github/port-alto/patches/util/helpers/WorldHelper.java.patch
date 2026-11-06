@@ -76,16 +76,20 @@
  
          BlockState s = world.getBlockState(pos);
          if (s.getBlock() instanceof LiquidBlock) {
-@@ -127,7 +147,7 @@
+@@ -127,7 +147,11 @@
      }
  
      static Dimension getCurrentDimension() {
 -        ClientLevel world = Minecraft.getInstance().level;
-+        ServerLevel world = AltoClef.getInstance().getWorld();
++        return getCurrentDimension(AltoClef.getInstance().getWorld());
++    }
++
++    // SMH: the world given, for the rules Baritone asks from its path threads (no host's scope is open there).
++    static Dimension getCurrentDimension(ServerLevel world) {
          if (world == null) return Dimension.OVERWORLD;
          if (world.dimensionType().ultraWarm()) return Dimension.NETHER;
          if (world.dimensionType().natural()) return Dimension.OVERWORLD;
-@@ -143,7 +163,7 @@
+@@ -143,7 +167,7 @@
       * better method for blocks that can be walked on should be created instead
       */
      static boolean isSolidBlock(BlockPos pos) {
@@ -94,7 +98,7 @@
  
          return world.getBlockState(pos).isRedstoneConductor(world, pos);
      }
-@@ -152,12 +172,15 @@
+@@ -152,12 +176,15 @@
       * Get the "head" of a block with a bed, if the block is a bed.
       */
      static BlockPos getBedHead(BlockPos posWithBed) {
@@ -113,7 +117,7 @@
                  return posWithBed;
              }
              return posWithBed.relative(facing);
-@@ -169,12 +192,15 @@
+@@ -169,12 +196,15 @@
       * Get the "foot" of a block with a bed, if the block is a bed.
       */
      static BlockPos getBedFoot(BlockPos posWithBed) {
@@ -132,7 +136,7 @@
                  return posWithBed;
              }
              return posWithBed.relative(facing.getOpposite());
-@@ -208,7 +234,7 @@
+@@ -208,7 +238,7 @@
      }
  
      static int getGroundHeight(int x, int z) {
@@ -141,7 +145,7 @@
  
          for (int y = world.getMaxBuildHeight(); y >= world.getMinBuildHeight(); --y) {
              BlockPos check = new BlockPos(x, y, z);
-@@ -218,7 +244,7 @@
+@@ -218,7 +248,7 @@
      }
  
      static BlockPos getADesertTemple() {
@@ -150,7 +154,7 @@
  
          List<BlockPos> stonePressurePlates = AltoClef.getInstance().getBlockScanner().getKnownLocations(Blocks.STONE_PRESSURE_PLATE);
          if (!stonePressurePlates.isEmpty()) {
-@@ -238,7 +264,7 @@
+@@ -238,7 +268,7 @@
      }
  
      static int getGroundHeight(int x, int z, Block... groundBlocks) {
@@ -159,7 +163,7 @@
  
          Set<Block> possibleBlocks = new HashSet<>(Arrays.asList(groundBlocks));
          for (int y = world.getMaxBuildHeight(); y >= world.getMinBuildHeight(); --y) {
-@@ -269,7 +295,7 @@
+@@ -269,7 +299,7 @@
      }
  
      static boolean isInNetherPortal() {
@@ -168,7 +172,7 @@
  
          if (player == null)
              return false;
-@@ -280,7 +306,7 @@
+@@ -280,7 +310,7 @@
          AltoClef altoClef = AltoClef.getInstance();
  
          // There might be mumbo jumbo next to it, we fall and we get killed by lava or something.
@@ -177,7 +181,7 @@
              return true;
          }
          // Fall down
-@@ -325,11 +351,7 @@
+@@ -325,11 +355,7 @@
          return !altoClef.getBlockScanner().isUnreachable(pos);
      }
  
@@ -189,7 +193,7 @@
          return (WorldVer.isBiome(b,Biomes.OCEAN)
                  || WorldVer.isBiome(b,Biomes.COLD_OCEAN)
                  || WorldVer.isBiome(b,Biomes.DEEP_COLD_OCEAN)
-@@ -405,11 +427,11 @@
+@@ -405,11 +431,11 @@
      }
  
      static boolean fallingBlockSafeToBreak(BlockPos pos) {
@@ -204,7 +208,7 @@
                  return false;
              pos = pos.above();
          }
-@@ -417,13 +439,13 @@
+@@ -417,13 +443,13 @@
      }
  
      static boolean isFallingBlock(BlockPos pos) {
@@ -220,7 +224,7 @@
  
          BlockState state = world.getBlockState(pos);
          if (state.getBlock() instanceof SpawnerBlock) {
-@@ -463,7 +485,7 @@
+@@ -463,7 +489,7 @@
      }
  
      static boolean canSleep() {
@@ -229,7 +233,7 @@
          if (world != null) {
              // You can sleep during thunderstorms
              if (world.isThundering() && world.isRaining())
-@@ -478,7 +500,7 @@
+@@ -478,7 +504,7 @@
      }
  
      static int getTimeOfDay() {
@@ -238,7 +242,7 @@
          if (world != null) {
              // You can sleep during thunderstorms
              return (int) (world.getDayTime() % 24000);
-@@ -487,7 +509,7 @@
+@@ -487,7 +513,7 @@
      }
  
      static boolean isVulnerable() {
@@ -247,7 +251,7 @@
  
          int armor = player.getArmorValue();
          float health = player.getHealth();
-@@ -505,7 +527,7 @@
+@@ -505,7 +531,7 @@
  
      // Function to check if the player is surrounded on two or more sides
      static boolean isSurrounded(List<LivingEntity> entities) {

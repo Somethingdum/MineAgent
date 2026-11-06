@@ -555,6 +555,10 @@ public class PathExecutor implements IPathExecutor {
         if (MovementHelper.avoidWalkingInto(ctx.world().getBlockState(current.getSrc().above(3)))) {
             return false;
         }
+        if (((com.mineagent.sbe.automatone.Baritone) ctx.baritone()).getExtraBaritoneSettings().shouldAvoidWalkThroughForce(current.getSrc().above(3))
+                || ((com.mineagent.sbe.automatone.Baritone) ctx.baritone()).getExtraBaritoneSettings().shouldAvoidWalkThroughForce(current.getSrc().above(2))) { // SMH: AltoClef 0002
+            return false;
+        }
         return !MovementHelper.avoidWalkingInto(ctx.world().getBlockState(next.getDest().above(2))); // codacy smh my head
     }
 

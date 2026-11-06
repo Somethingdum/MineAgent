@@ -92,7 +92,15 @@ public final class Agents {
                 .append(" health ").append((int) body.getHealth()).append(" food ").append(body.getFoodData().getFoodLevel())
                 .append("; baritone goal ").append(path.getGoal()).append(path.isPathing() ? ", pathing" : "")
                 .append(path.getPath().map(p -> ", path of " + p.length()).orElse(", no path"))
-                .append(", keys ").append(String.format("%.1f/%.1f", body.zza, body.xxa)).append(" ||");
+                .append(", keys ").append(String.format("%.1f/%.1f", body.zza, body.xxa));
+        // Its AltoClef rules, which Automatone asks (plan 71, step 1.5): whether it holds interaction, and how many of
+        // each it carries.
+        var rules = ((com.mineagent.sbe.automatone.Baritone) a.baritone()).getExtraBaritoneSettings();
+        out.append("; rules: paused ").append(rules.isInteractionPaused()).append(", break ").append(rules.getBreakAvoiders().size())
+                .append("+").append(rules.getBlocksToAvoidBreaking().size()).append(", place ").append(rules.getPlaceAvoiders().size())
+                .append(", walk-through ").append(rules.getForceAvoidWalkThroughPredicates().size())
+                .append(", protected items ").append(rules.getProtectedItems().size());
+        out.append(" ||");
         // The user task tree, root to leaf (each task's own debug line), as AltoClef's own status shows it.
         Object task = field(a.controller().getUserTaskChain(), "mainTask");
         for (int depth = 0; task != null && depth < 12; depth++) {

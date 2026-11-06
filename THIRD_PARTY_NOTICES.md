@@ -110,6 +110,11 @@ Its engine (1.21.1, commit `11ea66c`, with AltoClef's own patches) was ported by
 AltoClef port until 2026-11-05, when SMH plan 71 (step 1.1) put that port on Automatone instead (SecondBrainEngine, above)
 and deleted the copy; it stays in this repository's history at `afb11cb` as the map for AltoClef's patches (step 1.5).
 
+AltoClef's own patches to Baritone (`MiranCZ/baritone_altoclef` at `a34f78a`, patches 0002 and 0003, modifying
+Baritone and used under its LGPL-3.0; kept in `third_party/baritone_altoclef`) were put onto Automatone at step 1.5 by
+`.github/port-sbe/altoclef_hooks.py`, each place asking its own companion's settings; what was taken and what was not
+is in `.github/port-sbe/AUTOMATONE-LEDGER.md` (ledger 2).
+
 Baritone is licensed under the GNU Lesser General Public License, version 3, the same licence as this mod (see
 `LICENSE`).
 

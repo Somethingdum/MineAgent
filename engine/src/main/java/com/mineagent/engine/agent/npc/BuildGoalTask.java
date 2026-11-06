@@ -98,7 +98,10 @@ public class BuildGoalTask extends Task {
         int[] r = NpcUtils.rotateXZ(x, z, orientation, goal.sizeX(), goal.sizeZ());
         String name = goal.blocks()[y][r[1]][r[0]];
         if (name.isEmpty() || name.equals("air")) return false;
-        var chunk = level.getChunkSource().getChunkNow(p.getX() >> 4, p.getZ() >> 4);
+        // SMH plan 71, step 1.5: Automatone asks this rule from its path threads (AltoClef's patch 0002), where vanilla's
+        // getChunkNow gives null, so it kept nothing there and the build's standing blocks on the server thread: a path
+        // planned through what the executor then would not break (the agent's hut stood stuck). Read on any thread.
+        var chunk = com.mineagent.engine.alto.util.helpers.WorldHelper.chunkAt(level, p.getX() >> 4, p.getZ() >> 4);
         return chunk != null && satisfied(name, chunk.getBlockState(p), level, p);
     }
 

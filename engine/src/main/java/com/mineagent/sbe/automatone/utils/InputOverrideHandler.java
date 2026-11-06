@@ -102,6 +102,10 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     public final void onTickServer() {
         if (!this.needsUpdate) return;
 
+        if (baritone.getExtraBaritoneSettings().isInteractionPaused()) { // SMH: AltoClef 0002
+            setInputForceState(Input.CLICK_LEFT, false);
+            setInputForceState(Input.CLICK_RIGHT, false);
+        }
         if (isInputForcedDown(Input.CLICK_LEFT)) {
             setInputForceState(Input.CLICK_RIGHT, false);
         }

@@ -1,4 +1,4 @@
-@@ -1,259 +1,237 @@
+@@ -1,259 +1,238 @@
 -// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/AltoClef.java at commit
 -// 1f8e038, in Mojang's names (third_party/altoclef). Changes for the companion's server-side body are marked SMH.
 +// Ported from AltoClef (MIT, Copyright (c) 2020 Adris Jautakas; see THIRD_PARTY_NOTICES.md): adris/altoclef/AltoClef.java at
@@ -287,22 +287,13 @@
 -            if ((!getUserTaskChain().isActive() || getUserTaskChain().isRunningIdleTask()) && getModSettings().shouldRunIdleCommandWhenNotActive()) {
 -                getUserTaskChain().signalNextTaskToBeIdleTask();
 -                getCommandExecutor().executeWithPrefix(getModSettings().getIdleCommand());
--            }
--            // Don't break blocks or place blocks where we are explicitly protected.
-             getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
-             getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
-             getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
--        });
--
--        // Receive + cancel chat
--        EventBus.subscribe(SendChatEvent.class, evt -> {
--            String line = evt.message;
--            if (getCommandExecutor().isClientCommand(line)) {
--                evt.cancel();
--                getCommandExecutor().execute(line);
++            // SMH: this host's, given: Baritone asks these from its path threads (plan 71, step 1.5).
++            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(this, blockPos));
++            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(this, blockPos));
++            getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
 +            // SMH plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a
 +            // farm whose player is AFK (the companion's own rules; the kinds of block it never breaks to get
-+            // somewhere are kept in Baritone's path costs, SmhRules.neverBreakToPass).
++            // somewhere, SmhRules.neverBreakToPass, are not yet asked on Automatone's path: SMH plan 71, step 1.8).
 +            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> SmhRules.placedByAPerson(this.player.serverLevel(), blockPos)
 +                    || SmhRules.afkFarm(this.player.serverLevel(), blockPos));
 +            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> SmhRules.afkFarm(this.player.serverLevel(), blockPos));
@@ -313,6 +304,19 @@
 +                // SMH: Automatone has no logger setting (sailex's wrote to a client's chat window); its log is routed to
 +                // the server's at SMH plan 71 step 1.7.
              }
+-            // Don't break blocks or place blocks where we are explicitly protected.
+-            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
+-            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> settings.isPositionExplicitlyProtected(blockPos));
+-            getExtraBaritoneSettings().getForceSaveToolPredicates().add((state, item) -> StorageHelper.shouldSaveStack(this, state.getBlock(), item));
+-        });
+-
+-        // Receive + cancel chat
+-        EventBus.subscribe(SendChatEvent.class, evt -> {
+-            String line = evt.message;
+-            if (getCommandExecutor().isClientCommand(line)) {
+-                evt.cancel();
+-                getCommandExecutor().execute(line);
+-            }
 -        });
 -
 -        // Tick with the client
@@ -445,7 +449,7 @@
      }
  
      private void initializeBaritoneSettings() {
-@@ -273,300 +251,228 @@
+@@ -273,300 +252,228 @@
                  Blocks.WARPED_ROOTS, Blocks.VINE, Blocks.SHORT_GRASS, Blocks.FERN, Blocks.TALL_GRASS, Blocks.LARGE_FERN,
                  Blocks.SMALL_AMETHYST_BUD, Blocks.MEDIUM_AMETHYST_BUD, Blocks.LARGE_AMETHYST_BUD,
                  Blocks.AMETHYST_CLUSTER, Blocks.SCULK, Blocks.SCULK_VEIN)));

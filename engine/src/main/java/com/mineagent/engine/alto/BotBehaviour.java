@@ -5,7 +5,6 @@ package com.mineagent.engine.alto;
 import com.mineagent.engine.alto.util.slots.Slot;
 import com.mineagent.sbe.automatone.settings.AltoClefSettings;
 import com.mineagent.sbe.automatone.api.Settings;
-import com.mineagent.sbe.automatone.api.utils.RayTraceUtils;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
@@ -356,7 +355,8 @@ public class BotBehaviour {
             }
             _allowWalkThroughFlowingWater = settings.isFlowingWaterPassAllowed();
 
-            rayFluidHandling = RayTraceUtils.fluidHandling;
+            // SMH: the companion's own (AltoClef's RayTraceUtils.fluidHandling is one static every companion would write).
+            rayFluidHandling = settings.getRayFluidHandling();
         }
 
         private void readMinecraftState() {
@@ -407,7 +407,7 @@ public class BotBehaviour {
             sa.allowSwimThroughLava(swimThroughLava);
 
             // Extra / hard coded
-            RayTraceUtils.fluidHandling = rayFluidHandling;
+            sa.setRayFluidHandling(rayFluidHandling); // SMH: the companion's own
 
             // Minecraft
             // SMH: no client options to put back.

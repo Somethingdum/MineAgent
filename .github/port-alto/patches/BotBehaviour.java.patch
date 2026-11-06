@@ -1,4 +1,9 @@
-@@ -10,7 +10,6 @@
+@@ -5,12 +5,10 @@
+ import com.mineagent.engine.alto.util.slots.Slot;
+ import com.mineagent.sbe.automatone.settings.AltoClefSettings;
+ import com.mineagent.sbe.automatone.api.Settings;
+-import com.mineagent.sbe.automatone.api.utils.RayTraceUtils;
+ import java.util.*;
  import java.util.function.BiFunction;
  import java.util.function.BiPredicate;
  import java.util.function.Predicate;
@@ -6,7 +11,13 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.util.Tuple;
  import net.minecraft.world.entity.Entity;
-@@ -361,7 +360,7 @@
+@@ -357,11 +355,12 @@
+             }
+             _allowWalkThroughFlowingWater = settings.isFlowingWaterPassAllowed();
+ 
+-            rayFluidHandling = RayTraceUtils.fluidHandling;
++            // SMH: the companion's own (AltoClef's RayTraceUtils.fluidHandling is one static every companion would write).
++            rayFluidHandling = settings.getRayFluidHandling();
          }
  
          private void readMinecraftState() {
@@ -15,8 +26,12 @@
          }
  
          /**
-@@ -411,7 +410,7 @@
-             RayTraceUtils.fluidHandling = rayFluidHandling;
+@@ -408,10 +407,10 @@
+             sa.allowSwimThroughLava(swimThroughLava);
+ 
+             // Extra / hard coded
+-            RayTraceUtils.fluidHandling = rayFluidHandling;
++            sa.setRayFluidHandling(rayFluidHandling); // SMH: the companion's own
  
              // Minecraft
 -            Minecraft.getInstance().options.pauseOnLostFocus = pauseOnLostFocus;

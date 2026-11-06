@@ -130,7 +130,7 @@
  
      public String getIdleCommand() {
          return idleCommand;
-@@ -624,19 +612,16 @@
+@@ -624,19 +612,20 @@
      public boolean isSupportedFuel(Item item) {
          return !limitFuelsToSupportedFuels || supportedFuels.contains(item);
      }
@@ -147,15 +147,19 @@
 -            }
 -        }
 -        return false;
-+        // SMH: the places its owner said not to touch (world/ProtectedAreas, plan 70 MA10.2).
-+        AltoClef host = AltoClef.current();
++        return isPositionExplicitlyProtected(AltoClef.getInstance(), pos);
++    }
++
++    // SMH: the places its owner said not to touch (world/ProtectedAreas, plan 70 MA10.2), for the host given: Baritone
++    // asks this from its path threads, where no host's scope is open (it read AltoClef.current() and passed everything).
++    public boolean isPositionExplicitlyProtected(AltoClef host, BlockPos pos) {
 +        if (host == null || pos == null) return false;
 +        return com.mineagent.engine.world.ProtectedAreas.at(host.getWorld().dimension().location().toString(),
 +                pos.getX(), pos.getY(), pos.getZ()) != null;
      }
  
      public DefaultGoToDimensionTask.OVERWORLD_TO_NETHER_BEHAVIOUR getOverworldToNetherBehaviour() {
-@@ -651,12 +636,10 @@
+@@ -651,12 +640,10 @@
          return homeBasePosition;
      }
  

@@ -49,11 +49,21 @@ public class BlockStateInterface {
 
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 
+    // SMH: the companion's own AltoClef rules (plan 71, step 1.5), asked from the path threads; none when made
+    // for no companion.
+    public final com.mineagent.sbe.automatone.settings.AltoClefSettings rules;
+    private static final com.mineagent.sbe.automatone.settings.AltoClefSettings NO_RULES = new com.mineagent.sbe.automatone.settings.AltoClefSettings();
+
     public BlockStateInterface(IEntityContext ctx) {
-        this(ctx.world());
+        this(ctx.world(), ((com.mineagent.sbe.automatone.Baritone) ctx.baritone()).getExtraBaritoneSettings());
     }
 
     public BlockStateInterface(Level world) {
+        this(world, NO_RULES);
+    }
+
+    public BlockStateInterface(Level world, com.mineagent.sbe.automatone.settings.AltoClefSettings rules) {
+        this.rules = rules;
         this.world = world;
         this.provider = (ServerChunkManagerAccessor) world.getChunkSource();
         this.isPassableBlockPos = new BlockPos.MutableBlockPos();
