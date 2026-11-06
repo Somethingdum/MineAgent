@@ -25,6 +25,10 @@ public final class CompanionCommandHelper implements ICommandHelper {
 
     @Override
     public void executeMove(MoveDirection direction) {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeMoveNow(direction));
+    }
+
+    private void executeMoveNow(MoveDirection direction) {
         switch (direction) {
             case FORWARD -> forward = 1f;
             case BACKWARD -> forward = -1f;
@@ -38,6 +42,10 @@ public final class CompanionCommandHelper implements ICommandHelper {
 
     @Override
     public void executeMoveStop() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeMoveStopNow());
+    }
+
+    private void executeMoveStopNow() {
         forward = 0f;
         strafe = 0f;
         driver.setForward(0f);
@@ -58,11 +66,19 @@ public final class CompanionCommandHelper implements ICommandHelper {
 
     @Override
     public void executeJump() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeJumpNow());
+    }
+
+    private void executeJumpNow() {
         driver.setJumping(true);
     }
 
     @Override
     public void executeAttack() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeAttackNow());
+    }
+
+    private void executeAttackNow() {
         driver.leftClick();
     }
 
@@ -78,21 +94,37 @@ public final class CompanionCommandHelper implements ICommandHelper {
 
     @Override
     public void executeUse() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeUseNow());
+    }
+
+    private void executeUseNow() {
         driver.rightClick();
     }
 
     @Override
     public void executeSneak() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeSneakNow());
+    }
+
+    private void executeSneakNow() {
         driver.setSneaking(true);
     }
 
     @Override
     public void executeUnSneak() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeUnSneakNow());
+    }
+
+    private void executeUnSneakNow() {
         driver.setSneaking(false);
     }
 
     @Override
     public void executeStopAll() {
+        com.mineagent.engine.entity.KeyWriters.as("automatone", () -> executeStopAllNow());
+    }
+
+    private void executeStopAllNow() {
         forward = 0f;
         strafe = 0f;
         driver.clear();

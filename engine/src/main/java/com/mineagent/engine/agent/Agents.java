@@ -59,6 +59,13 @@ public final class Agents {
         // Its provider's map is how any of its tasks find this Baritone again (it makes a new one for a player not in it).
         BaritoneProvider.INSTANCE.playerToBaritone.put(body, baritone);
         AltoClefController controller = new AltoClefController(baritone);
+        // SMH plan 71, §6.2 rule 4: the companion's one rule predicate on this body's Automatone, as its AltoClef host
+        // registers it (the game mode asks it again and records a break it forbids).
+        var level = body.serverLevel();
+        ((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings()
+                .avoidBlockBreak(pos -> !com.mineagent.engine.rules.BlockRules.mayBreak(level, pos));
+        ((com.mineagent.sbe.automatone.Baritone) baritone).getExtraBaritoneSettings()
+                .avoidBlockPlace(pos -> !com.mineagent.engine.rules.BlockRules.mayPlace(level, pos));
         AGENTS.put(agent.companionId(), new Agent(body, baritone, controller));
         return controller;
     }

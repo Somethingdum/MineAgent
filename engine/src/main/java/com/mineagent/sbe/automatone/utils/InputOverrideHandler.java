@@ -111,6 +111,8 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         }
 
         ServerPlayer entity = this.ctx.entity();
+        boolean hostKeys = com.mineagent.sbe.common.ServerHooks.keysAreTheHosts(baritone); // SMH: one writer per key
+        if (!hostKeys) {
         entity.xxa = 0.0F;
         entity.zza = 0.0F;
         entity.setShiftKeyDown(false);
@@ -148,8 +150,9 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
 //            entity.forwardSpeed *= 0.3D;
             commandHelper.executeSneak();
         }
+        } // SMH: the host applies this body's walk keys, jump and sneak
 
-        if (entity.isInWater()) {
+        if (!hostKeys && entity.isInWater()) { // SMH: not for a body its host drives
             Vec3 vec3d = entity.getDeltaMovement();
             entity.setDeltaMovement(vec3d.x, 0.25F, vec3d.z);
         }

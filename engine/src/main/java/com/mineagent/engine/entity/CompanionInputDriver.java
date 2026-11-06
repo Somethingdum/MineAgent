@@ -30,26 +30,31 @@ public class CompanionInputDriver implements InputDriver {
 
     @Override
     public void setForward(float value) {
+        KeyWriters.wrote(player, "forward"); // SMH plan 71, I4: who writes each key, per tick
         player.zza = value;
     }
 
     @Override
     public void setStrafe(float value) {
+        KeyWriters.wrote(player, "strafe");
         player.xxa = value;
     }
 
     @Override
     public void setJumping(boolean jumping) {
+        KeyWriters.wrote(player, "jump");
         player.setJumping(jumping);
     }
 
     @Override
     public void setSneaking(boolean sneaking) {
+        KeyWriters.wrote(player, "sneak");
         player.setShiftKeyDown(sneaking);
     }
 
     @Override
     public void setSprinting(boolean sprinting) {
+        KeyWriters.wrote(player, "sprint");
         // Only when the game would let a player sprint (SMH plan 70, MA5.10): the server takes our word for it.
         player.setSprinting(sprinting && com.mineagent.engine.act.SprintRule.allowed(
                 player.getFoodData().getFoodLevel(), player.getAbilities().mayfly,
@@ -59,6 +64,7 @@ public class CompanionInputDriver implements InputDriver {
 
     @Override
     public void leftClick() {
+        KeyWriters.wrote(player, "left click");
         // Entity.pick() is a block clip and cannot reliably produce an
         // EntityHitResult. ProjectileUtil performs the vanilla combined
         // block/entity view-vector query used for aimed interactions.
@@ -99,6 +105,7 @@ public class CompanionInputDriver implements InputDriver {
 
     @Override
     public void rightClick() {
+        KeyWriters.wrote(player, "right click");
         // Pick what the player is looking at (5.0 block reach, no fluids).
         // This mirrors the vanilla client right-click pipeline: the client
         // always performs a pick before dispatching useItemOn / interactOn /
@@ -171,6 +178,7 @@ public class CompanionInputDriver implements InputDriver {
 
     /** The left click let go: the block it was breaking is left (a client's release; SMH plan 70). */
     public void releaseLeftClick() {
+        KeyWriters.wrote(player, "left click");
         abortActiveBreak();
     }
 
@@ -192,6 +200,7 @@ public class CompanionInputDriver implements InputDriver {
         // Fake players have no client release packet. Explicitly aborting here
         // prevents a cancelled task from continuing to mine a stale target.
         abortActiveBreak();
+        for (String key : new String[] {"forward", "strafe", "jump", "sneak", "sprint", "left click"}) KeyWriters.wrote(player, key);
         player.xxa = 0;
         player.zza = 0;
         player.setJumping(false);

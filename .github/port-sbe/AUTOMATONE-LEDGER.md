@@ -32,7 +32,7 @@ reformatted.
 | `process/FarmProcess.java` | pauses when it has no goals | inert (the agent does not farm through Automatone yet) |
 | `utils/schematic/format/*` | MCEdit and Sponge schematic files not read | inert: the agent's builds are made in code (`BuildGoalTask`), never read from files |
 | `command/defaults/DefaultCommands.java` | an alias renamed; a fish command added | inert: no chat commands are registered (`port-sbe`) |
-| `utils/InputOverrideHandler.java` | on every input update the walk keys and sneak are zeroed and forward set; in water the upward speed set to 0.25 | **open, step 1.8**: kept only if the swim, dive and sneak scenes fail without them; neither sailex nor Ladysnake has them |
+| `utils/InputOverrideHandler.java` | on every input update the walk keys and sneak are zeroed and forward set; in water the upward speed set to 0.25 | step 1.8: off for a body its AltoClef host drives (the host applies its keys, Automatone's forced ones over its own, plan 71 §6.2 rule 2), kept for the bodies SecondBrainEngine's own AltoClef drives, which leaves the keys to Automatone (phase 2 removes it). No scene fails without either line: `automatoneSwimsUpThreeBlocks`, `automatoneDivesToABlockThreeDown` and `automatoneSneaksAsItBridgesATrench` pass without them, and the swim and dive scenes with the water rise as well |
 
 ## Files only in one of them
 
@@ -122,3 +122,20 @@ By `.github/port-sbe/baritone.py`, each citing Baritone `11ea66c`:
 Its six, from sailex's `src/test` at `b7953df8`, translated into `fabric/src/test/java/com/mineagent/sbe/automatone`
 (package renamed, Mojang's names, JUnit 5): cached regions, `GoalGetToBlock`, action costs, open sets (31 sizes),
 pathing block types, `BetterBlockPos` (its `testSimple` carries no `@Test` upstream and never ran there; here it runs).
+
+### Seam B (step 1.8)
+
+By `.github/port-sbe/baritone.py` (`SEAM_B`), ours (plan 71, §6.2):
+
+| Where | What | Why |
+|---|---|---|
+| `utils/InputOverrideHandler.onTickServer` | for a body whose keys its host applies (`ServerHooks.keysByHost`), the walk keys, jump, sneak and the water rise are left alone; clicks stay | rule 2, one writer per key: the host (`AltoClef.tick`) puts Automatone's forced keys over its own, as Baritone's over a client's keyboard |
+| `utils/player/PlayerEntityInteractionController.onPlayerDamageBlock` | sends no STOP of its own; reports whether the game mode is still breaking | rule 3, one break finisher: the body's game mode carries a break to its end (`FakePlayerGameMode.tick`), as the old port's `BaritonePlayerController` did |
+
+Outside this tree, in the same step: `engine/rules/BlockRules` (rule 4: one predicate for breaks and placements,
+registered with each body's Automatone when its AltoClef host or its SecondBrainEngine agent is made, and asked
+again by the game mode, which refuses a break it forbids and records a rule mismatch, I3; the scenes fail on any);
+`engine/entity/KeyWriters` (I4: who wrote each key in each tick; the movement scenes fail on any key with two
+writers). A placement is not yet asked again at the bottom: the game mode's `useItemOn` cannot tell a placement from
+a use (opening a chest in a protected area would be refused), and a hook on `BlockItem.place` means a mixin per
+loader; placements are asked at the planning level, where Automatone prices them.

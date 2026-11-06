@@ -119,22 +119,25 @@
          }
      }
  
-@@ -87,5 +89,67 @@
+@@ -87,5 +89,72 @@
      public void onTickPost() {
          _waitForRelease.clear();
      }
 +
 +    /**
-+     * SMH: the held keys (and those Baritone's input override forces) put on the body, once a tick, after its walk has
-+     * had its turn. Movement keys only when no walk is running (a walk drives the body itself, as Baritone's own input
-+     * would); clicks always: a held left click breaks what it looks at, a right click uses or places once per press, and
-+     * letting go of the right click stops using what it holds (a bow drawn, food half eaten).
++     * SMH: the held keys put on the body, once a tick, after Automatone has had its turn: a held left click breaks what
++     * it looks at, a right click uses or places once per press, and letting go of the right click stops using what it
++     * holds (a bow drawn, food half eaten). SMH plan 71, §6.2 rule 2: one writer per key. The walk keys, jump and sneak
++     * are Automatone's where it forces them
++     * ({@code forced}) and AltoClef's otherwise, as on a client, where Baritone's forced keys override the keyboard's;
++     * sprint is Automatone's while it walks a path (its executor sets it on the body); the clicks are AltoClef's unless
++     * Automatone is clicking (breaking or placing).
 +     */
-+    public void apply(CompanionInputDriver driver, Set<Input> forced, boolean walking) {
++    public void apply(CompanionInputDriver driver, Set<Input> forced, boolean automatoneWalks, boolean automatoneClicks) {
 +        Set<Input> now = EnumSet.noneOf(Input.class);
 +        now.addAll(down);
 +        now.addAll(forced);
-+        if (!walking) {
++        {
 +            float forward = (now.contains(Input.MOVE_FORWARD) ? 1f : 0f) - (now.contains(Input.MOVE_BACK) ? 1f : 0f);
 +            float strafe = (now.contains(Input.MOVE_LEFT) ? 1f : 0f) - (now.contains(Input.MOVE_RIGHT) ? 1f : 0f);
 +            boolean anyMove = forward != 0 || strafe != 0 || now.contains(Input.JUMP) || now.contains(Input.SNEAK)
@@ -146,10 +149,12 @@
 +                driver.setStrafe(strafe);
 +                driver.setJumping(now.contains(Input.JUMP));
 +                driver.setSneaking(now.contains(Input.SNEAK));
-+                driver.setSprinting(now.contains(Input.SPRINT) && forward > 0);
++                if (!automatoneWalks) driver.setSprinting(now.contains(Input.SPRINT) && forward > 0);
 +            }
 +        }
-+        if (now.contains(Input.CLICK_LEFT) || clicked.contains(Input.CLICK_LEFT)) {
++        if (automatoneClicks) {
++            // Automatone's break or placement: its own, through the game mode.
++        } else if (now.contains(Input.CLICK_LEFT) || clicked.contains(Input.CLICK_LEFT)) {
 +            driver.leftClick();
 +        } else if (applied.contains(Input.CLICK_LEFT)) {
 +            driver.releaseLeftClick();

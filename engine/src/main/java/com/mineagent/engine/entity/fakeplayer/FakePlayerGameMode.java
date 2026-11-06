@@ -198,6 +198,13 @@ public class FakePlayerGameMode extends ServerPlayerGameMode {
             if (automaticDestroyPos != null && !automaticDestroyPos.equals(pos)) {
                 abortAutomaticDestroy();
             }
+            // SMH plan 71, §6.2 rule 4: the companion's rules asked again at the bottom. A break they forbid is refused
+            // and recorded (I3): whoever asked had not been told, and would ask again.
+            if (!com.mineagent.engine.rules.BlockRules.mayBreak(level, pos)) {
+                com.mineagent.engine.rules.BlockRules.mismatch(player, "break", pos, com.mineagent.engine.entity.KeyWriters.who());
+                clearAutomaticDestroy();
+                return;
+            }
 
             if (instantBreak) {
                 // Instant mode remains an explicit configuration feature, but

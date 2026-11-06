@@ -61,16 +61,8 @@ public class PlayerEntityInteractionController implements InteractionController 
     @Override
     public boolean onPlayerDamageBlock(BlockPos pos, Direction side) {
         IServerPlayerInteractionManager interactionManager = (IServerPlayerInteractionManager) this.player.gameMode;
-        if (interactionManager.isMining()) {
-            int progress = interactionManager.getBlockBreakingProgress();
-            if (progress >= 10) {
-                this.player.gameMode.handleBlockBreakAction(interactionManager.getMiningPos(),
-                        ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, side,
-                        HeightLimitViewVer.getTopY(ServerPlayerEntityVer.getWorld(this.player)), sequence++);
-            }
-            return true;
-        }
-        return false;
+        // SMH (plan 71, §6.2 rule 3): the game mode finishes the break; this reports whether it is still breaking.
+        return interactionManager.isMining();
     }
 
     @Override

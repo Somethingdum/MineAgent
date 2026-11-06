@@ -41,6 +41,69 @@ BARITONE = [
      '((ServerChunkManagerAccessor) world.getChunkSource()).automatone$getChunkNow(feet.getX() >> 4, feet.getZ() >> 4); // SMH'),
 ]
 
+# Step 1.8 (plan 71, §6.2, seam B): one writer per key, one break finisher. Not Baritone's code; ours.
+SEAM_B = [
+    # Rule 2: for a body its AltoClef host drives (ServerHooks.keysByHost), its keys are applied by the host, Automatone's
+    # forced keys over AltoClef's own (AltoClef.tick); this handler leaves the walk keys, jump and sneak alone. Its
+    # clicks (breaking, placing) stay here. SecondBrainEngine's zeroing of every key on each update is kept for the
+    # other bodies (SecondBrainEngine's own AltoClef, which phase 2 removes, leaves the keys to it).
+    ('automatone/utils/InputOverrideHandler.java',
+     '''        ServerPlayer entity = this.ctx.entity();
+        entity.xxa = 0.0F;
+        entity.zza = 0.0F;
+        entity.setShiftKeyDown(false);
+        commandHelper.executeMoveStop();
+        commandHelper.executeUnSneak();
+''',
+     '''        ServerPlayer entity = this.ctx.entity();
+        boolean hostKeys = com.mineagent.sbe.common.ServerHooks.keysAreTheHosts(baritone); // SMH: one writer per key
+        if (!hostKeys) {
+        entity.xxa = 0.0F;
+        entity.zza = 0.0F;
+        entity.setShiftKeyDown(false);
+        commandHelper.executeMoveStop();
+        commandHelper.executeUnSneak();
+'''),
+    ('automatone/utils/InputOverrideHandler.java',
+     '''        if (this.isInputForcedDown(Input.SNEAK)) {
+//            entity.setSneaking(true);
+//            entity.sidewaysSpeed *= 0.3D;
+//            entity.forwardSpeed *= 0.3D;
+            commandHelper.executeSneak();
+        }
+''',
+     '''        if (this.isInputForcedDown(Input.SNEAK)) {
+//            entity.setSneaking(true);
+//            entity.sidewaysSpeed *= 0.3D;
+//            entity.forwardSpeed *= 0.3D;
+            commandHelper.executeSneak();
+        }
+        } // SMH: the host applies this body's walk keys, jump and sneak
+'''),
+    # SecondBrainEngine's own water rise (upward speed 0.25 on every update in water; in neither upstream). Plan 71 keeps
+    # such a line only if a scene fails without it: the swim and dive scenes pass with it and without it (Automatone's
+    # forced jump swims it up), so it is off for a body its host drives and kept for the other bodies.
+    ('automatone/utils/InputOverrideHandler.java',
+     '''        if (entity.isInWater()) {''',
+     '''        if (!hostKeys && entity.isInWater()) { // SMH: not for a body its host drives'''),
+    # Rule 3: one break finisher. Automatone decides which block and when it starts or stops; the body's game mode
+    # carries the break to its end, as a client's continueDestroyBlock does (FakePlayerGameMode.tick). Automatone sent
+    # its own STOP as well; it reports the game mode's state instead (as the old port's BaritonePlayerController did).
+    ('automatone/utils/player/PlayerEntityInteractionController.java',
+     '''        if (interactionManager.isMining()) {
+            int progress = interactionManager.getBlockBreakingProgress();
+            if (progress >= 10) {
+                this.player.gameMode.handleBlockBreakAction(interactionManager.getMiningPos(),
+                        ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, side,
+                        HeightLimitViewVer.getTopY(ServerPlayerEntityVer.getWorld(this.player)), sequence++);
+            }
+            return true;
+        }
+        return false;''',
+     '''        // SMH (plan 71, §6.2 rule 3): the game mode finishes the break; this reports whether it is still breaking.
+        return interactionManager.isMining();'''),
+]
+
 # Step 1.7: Automatone's log, routed to ours (ServerHooks.log): it writes to its entity's chat, which a fake player
 # shows no one. Not Baritone's code; ours, kept here with the other patches of ledger 2.
 LOG = [

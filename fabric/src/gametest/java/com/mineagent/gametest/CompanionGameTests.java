@@ -5290,7 +5290,7 @@ public class CompanionGameTests implements FabricGameTest {
      * 0002, onto Automatone). The world's own stone, the same block, is priced as stone. Without the patches the same
      * scene broke through (run on c12cfcf, 2026-11-06).
      */
-    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_detour", timeoutTicks = 600)
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_detour", timeoutTicks = 1200)
     public void automatoneGoesRoundAWallItsOwnerBuilt(GameTestHelper helper) {
         Scene s = scene(helper, "Rounder");
         MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
@@ -5313,45 +5313,254 @@ public class CompanionGameTests implements FabricGameTest {
         BlockPos target = helper.absolutePos(new BlockPos(9, 1, 6));
         s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, -90.0f, 0.0f);
         com.mineagent.engine.rules.SmhRules.prime(level);
+        com.mineagent.engine.entity.KeyWriters.forget(s.body().getGameProfile().getName());
         double[] cost = new double[2];
         helper.runAfterDelay(5, () -> {
             var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
-            var go = host.within(() -> {
+            host.within(() -> {
                 var ctx = new com.mineagent.sbe.automatone.pathing.movement.CalculationContext(host.getClientBaritone());
                 cost[0] = com.mineagent.sbe.automatone.pathing.movement.MovementHelper.getMiningDurationTicks(ctx,
                         theirs.getX(), theirs.getY(), theirs.getZ(), false);
                 cost[1] = com.mineagent.sbe.automatone.pathing.movement.MovementHelper.getMiningDurationTicks(ctx,
                         nature.getX(), nature.getY(), nature.getZ(), false);
-                return new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target);
+                return null;
             });
-            tickAltoAtTickEnd(s, go);
+            // AltoClef's own walk there, run as the companion's AltoClef tasks run (SceneAltoTask).
+            SceneAltoTask.register();
+            com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(),
+                    new SceneAltoTask.Record("scene-detour", () -> new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target)), reply -> { });
         });
         helper.onEachTick(() -> {
             if (helper.getTick() < 6) return;
-            var pb = com.mineagent.engine.alto.AltoClef.of(s.companion()).getClientBaritone().getPathingBehavior();
-            var path = pb.getCurrent() == null ? null : pb.getCurrent().getPath();
+            trace(helper, s, "alto detour");
             int broken = 0;
             for (BlockPos p : wall) if (!level.getBlockState(p).is(Blocks.STONE)) broken++;
-            String how = "wall blocks broken " + broken + ", cost to break theirs " + cost[0] + ", the world's own " + cost[1];
-            if (path != null && path.getDest().equals(target)) {
-                ALTO_TICKS.remove(s.companion().companionId());
-                int into = 0, breaks = 0;
-                StringBuilder moves = new StringBuilder();
-                for (var p : path.positions()) if (wall.contains(p)) into++;
-                for (var m : path.movements()) {
-                    if (moves.length() < 600) moves.append(moveOf(helper, m)).append("; ");
-                    for (BlockPos q : ((com.mineagent.sbe.automatone.pathing.movement.Movement) m).toBreakAll()) if (wall.contains(q)) breaks++;
-                }
-                how += "; its path: " + path.movements().size() + " moves, " + into + " into the wall, " + breaks + " breaking it: " + moves;
+            boolean there = s.body().blockPosition().distManhattan(target) <= 1;
+            var clashes = com.mineagent.engine.entity.KeyWriters.clashes(s.body().getGameProfile().getName());
+            String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", wall blocks broken " + broken
+                    + ", cost to break theirs " + cost[0] + ", the world's own " + cost[1] + ", key clashes " + clashes.size()
+                    + (clashes.isEmpty() ? "" : " (first: " + clashes.get(0) + ")");
+            if (broken > 0 || there || helper.getTick() >= 1150) {
                 tidy(s);
-                if (broken == 0 && into == 0 && breaks == 0 && cost[0] >= com.mineagent.sbe.automatone.api.pathing.movement.ActionCosts.COST_INF
-                        && cost[1] < 1_000) helper.succeed();
+                if (there && broken == 0 && cost[0] >= com.mineagent.sbe.automatone.api.pathing.movement.ActionCosts.COST_INF
+                        && cost[1] < 1_000 && clashes.isEmpty()) helper.succeed();
                 else fail(helper, how);
-            } else if (broken > 0 || helper.getTick() >= 560) {
-                ALTO_TICKS.remove(s.companion().companionId());
-                tidy(s);
-                fail(helper, how + "; Automatone: goal " + pb.getGoal() + (path == null ? ", no path" : ", path to " + rel(helper, path.getDest()).toShortString()));
             }
+        });
+    }
+
+    /** An AltoClef task given to a scene's companion, run where its own AltoClef tasks run (SceneAltoTask). */
+    private static void altoWalk(Scene s, String id, java.util.function.Supplier<com.mineagent.engine.alto.tasksystem.Task> root) {
+        SceneAltoTask.register();
+        com.mineagent.api.task.TaskDispatch.dispatchAsync(s.companion(), new SceneAltoTask.Record(id, root), reply -> { });
+    }
+
+    /** A pool three deep (x 3 to 5, z 5 to 7), its water from the bottom at y -2 to the floor's level at y 0. */
+    private static void pool(GameTestHelper helper) {
+        for (int x = 3; x <= 5; x++) for (int z = 5; z <= 7; z++) for (int y = -2; y <= 0; y++) helper.setBlock(x, y, z, Blocks.WATER);
+    }
+
+    /**
+     * Plan 71, step 1.8 (§6.2 rule 2): at the bottom of a pool three deep, sent to the bank; Automatone swims up and
+     * climbs out, its keys put on the body by its AltoClef host (one writer per key; Automatone's jump forced, the rest
+     * AltoClef's), without SecondBrainEngine's zeroing of every key or its water rise.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_swim", timeoutTicks = 800)
+    public void automatoneSwimsUpThreeBlocks(GameTestHelper helper) {
+        Scene s = scene(helper, "Swimmer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        pool(helper);
+        BlockPos bottom = helper.absolutePos(new BlockPos(4, -2, 6));
+        BlockPos target = helper.absolutePos(new BlockPos(9, 1, 6));
+        s.body().teleportTo(helper.getLevel(), bottom.getX() + 0.5, bottom.getY(), bottom.getZ() + 0.5, -90.0f, 0.0f);
+        com.mineagent.engine.entity.KeyWriters.forget(s.body().getGameProfile().getName());
+        helper.runAfterDelay(5, () -> altoWalk(s, "scene-swim", () -> new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target)));
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto swim");
+            var clashes = com.mineagent.engine.entity.KeyWriters.clashes(s.body().getGameProfile().getName());
+            boolean there = s.body().blockPosition().distManhattan(target) <= 1;
+            if (there || helper.getTick() >= 760) {
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", air " + s.body().getAirSupply()
+                        + ", health " + s.body().getHealth() + ", key clashes " + clashes.size() + (clashes.isEmpty() ? "" : " (first: " + clashes.get(0) + ")");
+                tidy(s);
+                if (there && clashes.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 71, step 1.8: at the top of a pool three deep, sent to its floor; it dives and gets there. (From the bank
+     * Automatone's first searches find no way into the water and AltoClef wanders first, so the scene starts it in the
+     * water, at the surface.) With this and the swim scene, SecondBrainEngine's water rise on Automatone's input
+     * handler (upward speed 0.25 in water on every update) is shown not needed: both pass with it and without it.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_dive", timeoutTicks = 800)
+    public void automatoneDivesToABlockThreeDown(GameTestHelper helper) {
+        Scene s = scene(helper, "Diver");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        pool(helper);
+        BlockPos start = helper.absolutePos(new BlockPos(4, 0, 6));
+        BlockPos bottom = helper.absolutePos(new BlockPos(4, -2, 6));
+        BlockPos floor = helper.absolutePos(new BlockPos(4, -3, 6)); // the pool's floor: getting to it is diving to its bottom
+        s.body().teleportTo(helper.getLevel(), start.getX() + 0.5, start.getY(), start.getZ() + 0.5, -90.0f, 0.0f);
+        com.mineagent.engine.entity.KeyWriters.forget(s.body().getGameProfile().getName());
+        helper.runAfterDelay(5, () -> altoWalk(s, "scene-dive", () -> new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(floor)));
+        helper.onEachTick(() -> {
+            trace(helper, s, "alto dive");
+            var clashes = com.mineagent.engine.entity.KeyWriters.clashes(s.body().getGameProfile().getName());
+            boolean there = s.body().blockPosition().distManhattan(bottom) <= 1;
+            if (there || helper.getTick() >= 760) {
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", air " + s.body().getAirSupply()
+                        + ", key clashes " + clashes.size() + (clashes.isEmpty() ? "" : " (first: " + clashes.get(0) + ")");
+                tidy(s);
+                if (there && clashes.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 71, step 1.8 (§6.2 rule 2): a trench four wide and six deep across a pen of bedrock, the far side its
+     * goal, dirt in its pack. Too deep to drop into and too wide to jump, so Automatone bridges it, sneaking at the edge
+     * as it places; its forced sneak reaches the body through its host's keys, and is let go after. It never falls in.
+     * (AltoClef's own walk tasks let go of AltoClef's sneak while Automatone walks, so the sneak on an edge is
+     * Automatone's.)
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_sneak", timeoutTicks = 1600)
+    public void automatoneSneaksAsItBridgesATrench(GameTestHelper helper) {
+        Scene s = scene(helper, "Bridger");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        s.body().getInventory().setItem(1, new ItemStack(Items.DIRT, 32));
+        // A pen of bedrock six high round the corridor (x 0 to 12, z 5 to 7): no way round and none over.
+        for (int y = 1; y <= 6; y++) {
+            for (int x = -1; x <= 13; x++) {
+                helper.setBlock(x, y, 4, Blocks.BEDROCK);
+                helper.setBlock(x, y, 8, Blocks.BEDROCK);
+            }
+            for (int z = 4; z <= 8; z++) {
+                helper.setBlock(-1, y, z, Blocks.BEDROCK);
+                helper.setBlock(13, y, z, Blocks.BEDROCK);
+            }
+        }
+        for (int x = 4; x <= 7; x++) for (int z = 5; z <= 7; z++) for (int y = -5; y <= 0; y++) helper.setBlock(x, y, z, Blocks.AIR);
+        BlockPos start = helper.absolutePos(new BlockPos(2, 1, 6));
+        BlockPos target = helper.absolutePos(new BlockPos(10, 1, 6));
+        s.body().teleportTo(helper.getLevel(), start.getX() + 0.5, start.getY(), start.getZ() + 0.5, -90.0f, 0.0f);
+        com.mineagent.engine.entity.KeyWriters.forget(s.body().getGameProfile().getName());
+        double[] lowest = {Double.MAX_VALUE};
+        int[] sneaking = {0};
+        helper.runAfterDelay(5, () -> altoWalk(s, "scene-bridge", () -> new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target)));
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 6) return;
+            trace(helper, s, "alto bridge");
+            lowest[0] = Math.min(lowest[0], s.body().getY() - helper.absolutePos(BlockPos.ZERO).getY());
+            if (s.body().isShiftKeyDown()) sneaking[0]++;
+            var clashes = com.mineagent.engine.entity.KeyWriters.clashes(s.body().getGameProfile().getName());
+            boolean there = s.body().blockPosition().distManhattan(target) <= 1;
+            if (there || lowest[0] < 0.5 || helper.getTick() >= 1550) {
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", lowest " + String.format("%.2f", lowest[0])
+                        + ", ticks sneaking " + sneaking[0] + ", sneaking now " + s.body().isShiftKeyDown() + ", dirt left "
+                        + s.body().getInventory().countItem(Items.DIRT) + ", key clashes " + clashes.size()
+                        + (clashes.isEmpty() ? "" : " (first: " + clashes.get(0) + ")");
+                tidy(s);
+                if (there && lowest[0] >= 0.5 && sneaking[0] > 0 && clashes.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 71, step 1.10: two companions of one owner, each with its own AltoClef and Automatone, walk at once to two
+     * places past each other; both get there, no key of either has two writers, their AltoClef settings are two, and a
+     * rule given to one is not the other's (§6.4, I2).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_two", timeoutTicks = 1000)
+    public void twoCompanionsPathAtOnce(GameTestHelper helper) {
+        Scene a = scene(helper, "Left");
+        Scene b = beside(a, "Right");
+        var level = helper.getLevel();
+        for (Scene s : new Scene[] {a, b}) MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        BlockPos aStart = helper.absolutePos(new BlockPos(2, 1, 3)), aTarget = helper.absolutePos(new BlockPos(12, 1, 9));
+        BlockPos bStart = helper.absolutePos(new BlockPos(12, 1, 3)), bTarget = helper.absolutePos(new BlockPos(2, 1, 9));
+        a.body().teleportTo(level, aStart.getX() + 0.5, aStart.getY(), aStart.getZ() + 0.5, 0.0f, 0.0f);
+        b.body().teleportTo(level, bStart.getX() + 0.5, bStart.getY(), bStart.getZ() + 0.5, 0.0f, 0.0f);
+        BlockPos onlyA = helper.absolutePos(new BlockPos(7, 0, 6));
+        boolean[] separate = new boolean[1];
+        for (Scene s : new Scene[] {a, b}) com.mineagent.engine.entity.KeyWriters.forget(s.body().getGameProfile().getName());
+        helper.runAfterDelay(5, () -> {
+            var ha = com.mineagent.engine.alto.AltoClef.of(a.companion());
+            var hb = com.mineagent.engine.alto.AltoClef.of(b.companion());
+            ha.getExtraBaritoneSettings().avoidBlockBreak(onlyA);
+            separate[0] = ha.getExtraBaritoneSettings() != hb.getExtraBaritoneSettings()
+                    && ha.getExtraBaritoneSettings().shouldAvoidBreaking(onlyA) && !hb.getExtraBaritoneSettings().shouldAvoidBreaking(onlyA);
+            altoWalk(a, "scene-two-a", () -> new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(aTarget));
+            altoWalk(b, "scene-two-b", () -> new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(bTarget));
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 6) return;
+            boolean aThere = a.body().blockPosition().distManhattan(aTarget) <= 1, bThere = b.body().blockPosition().distManhattan(bTarget) <= 1;
+            var clashes = new java.util.ArrayList<>(com.mineagent.engine.entity.KeyWriters.clashes(a.body().getGameProfile().getName()));
+            clashes.addAll(com.mineagent.engine.entity.KeyWriters.clashes(b.body().getGameProfile().getName()));
+            if ((aThere && bThere) || helper.getTick() >= 950) {
+                String how = "left at " + rel(helper, a.body().blockPosition()).toShortString() + ", right at "
+                        + rel(helper, b.body().blockPosition()).toShortString() + ", settings separate " + separate[0]
+                        + ", key clashes " + clashes.size() + (clashes.isEmpty() ? "" : " (first: " + clashes.get(0) + ")");
+                MineAgentEngine.despawnCompanion(b.companion().companionId(), true);
+                tidy(a);
+                if (aThere && bThere && separate[0] && clashes.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            }
+        });
+    }
+
+    /**
+     * Plan 71, step 1.10 (§6.3): Automatone's block search, asked for a block in thirty-two chunks round the companion,
+     * far past what is loaded, reads only the loaded ones and loads none (the loaded-chunk count before and after; the
+     * I1 guard for any off the server thread).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_unloaded", timeoutTicks = 100)
+    public void aSearchBesideUnloadedChunksLoadsNone(GameTestHelper helper) {
+        Scene s = scene(helper, "Seeker");
+        var level = helper.getLevel();
+        helper.setBlock(5, 1, 5, Blocks.DIAMOND_BLOCK);
+        BlockPos diamond = helper.absolutePos(new BlockPos(5, 1, 5));
+        helper.runAfterDelay(5, () -> {
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            int before = level.getChunkSource().getLoadedChunksCount();
+            var found = host.within(() -> com.mineagent.sbe.automatone.cache.WorldScanner.INSTANCE.scanChunkRadius(
+                    host.getClientBaritone().getPlayerContext(),
+                    new com.mineagent.sbe.automatone.api.utils.BlockOptionalMetaLookup(level, Blocks.DIAMOND_BLOCK), 8, -1, 32));
+            int after = level.getChunkSource().getLoadedChunksCount();
+            tidy(s);
+            if (found.contains(diamond) && after == before) helper.succeed();
+            else fail(helper, "found " + found.size() + " (the diamond block among them " + found.contains(diamond) + "), loaded chunks "
+                    + before + " before, " + after + " after");
+        });
+    }
+
+    /**
+     * Plan 71, I3 (§6.2 rule 4): asked at the bottom to break a block its owner placed, the body's game mode refuses and
+     * records a rule mismatch, which every scene fails on; this scene takes its own back out (and runs in a batch of
+     * its own, so it fails no other).
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_i3_rules", timeoutTicks = 100)
+    public void theGameModeRefusesABreakTheRulesForbid(GameTestHelper helper) {
+        Scene s = scene(helper, "Asker");
+        var level = helper.getLevel();
+        helper.setBlock(4, 1, 3, Blocks.STONE);
+        BlockPos theirs = helper.absolutePos(new BlockPos(4, 1, 3));
+        com.mineagent.engine.world.PlacedBlocks.placedBy(s.owner(), level, theirs, Blocks.STONE.defaultBlockState());
+        com.mineagent.engine.rules.SmhRules.prime(level);
+        helper.runAfterDelay(5, () -> {
+            s.body().gameMode.handleBlockBreakAction(theirs, net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
+                    net.minecraft.core.Direction.UP, level.getMaxBuildHeight(), 0);
+            var mine = com.mineagent.engine.rules.BlockRules.takeAll();
+            boolean recorded = mine.stream().anyMatch(m -> m.pos().equals(theirs) && m.body().equals(s.body().getGameProfile().getName()));
+            boolean standing = level.getBlockState(theirs).is(Blocks.STONE);
+            tidy(s);
+            if (recorded && standing) helper.succeed();
+            else fail(helper, "recorded " + mine + ", the block still standing " + standing);
         });
     }
 

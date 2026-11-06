@@ -5,9 +5,11 @@
 package com.mineagent.engine.alto;
 
 import com.mineagent.api.entity.AgentPlayer;
+import com.mineagent.sbe.automatone.api.utils.input.Input;
 import com.mineagent.sbe.automatone.Baritone;
 import com.mineagent.sbe.automatone.BaritoneProvider;
 import com.mineagent.sbe.automatone.api.BaritoneAPI;
+import com.mineagent.engine.rules.BlockRules;
 import com.mineagent.engine.rules.SmhRules;
 import com.mineagent.sbe.automatone.settings.AltoClefSettings;
 import com.mineagent.sbe.automatone.api.Settings;
@@ -108,6 +110,8 @@ public class AltoClef {
         try {
             // Baritone's engine (engine/.../baritone, AltoClef's own fork of it), one for each companion's body.
             this.baritone = (Baritone) com.mineagent.engine.agent.Agents.bodyBaritone(agent);
+            // SMH plan 71, §6.2 rule 2: this host applies the body's keys (tick), Automatone's forced keys over its own.
+            com.mineagent.sbe.common.ServerHooks.keysByHost(this.baritone);
             settings = new com.mineagent.engine.alto.Settings();
             initializeBaritoneSettings();
             taskRunner = new TaskRunner(this);
@@ -151,9 +155,9 @@ public class AltoClef {
             // SMH plan 70, MA5.2 and MA5.4: what a person placed is never broken, and nothing is broken or placed at a
             // farm whose player is AFK (the companion's own rules; the kinds of block it never breaks to get
             // somewhere, SmhRules.neverBreakToPass, are not yet asked on Automatone's path: SMH plan 71, step 1.8).
-            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> SmhRules.placedByAPerson(this.player.serverLevel(), blockPos)
-                    || SmhRules.afkFarm(this.player.serverLevel(), blockPos));
-            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> SmhRules.afkFarm(this.player.serverLevel(), blockPos));
+            // SMH plan 71, §6.2 rule 4: one predicate, registered here once, asked again by the body's game mode.
+            getExtraBaritoneSettings().avoidBlockBreak(blockPos -> !BlockRules.mayBreak(this.player.serverLevel(), blockPos));
+            getExtraBaritoneSettings().avoidBlockPlace(blockPos -> !BlockRules.mayPlace(this.player.serverLevel(), blockPos));
             TaskCatalogue.init();
             if (Boolean.getBoolean("mineagent.traceWork")) {
                 // The scenes: Baritone's own messages (its debug ones too), the first 120 of them.
@@ -175,6 +179,7 @@ public class AltoClef {
             host.player = sp;
             knowAllRecipes(sp);
             host.baritone = (Baritone) com.mineagent.engine.agent.Agents.bodyBaritone(host.agent);
+            com.mineagent.sbe.common.ServerHooks.keysByHost(host.baritone);
             host.inputControls.setPlayer(sp);
         }
         return host;
@@ -294,9 +299,16 @@ public class AltoClef {
             baritone.serverTick();
             CompanionInputDriver driver = driver();
             if (driver != null) {
-                // SMH: until plan 71 step 1.8's rule of one writer per key, AltoClef's movement keys apply only while
-                // Automatone is not pathing (Automatone has no isInControl; the old port's was its own).
-                inputControls.apply(driver, java.util.Set.of(), baritone.getPathingBehavior().isPathing());
+                // SMH plan 71, §6.2 rule 2: one writer per key. Automatone's forced keys over AltoClef's, as Baritone's
+                // over a client's keyboard; Automatone's input handler leaves this body's keys to this (ServerHooks).
+                var ioh = baritone.getInputOverrideHandler();
+                java.util.Set<Input> forced = java.util.EnumSet.noneOf(Input.class);
+                for (Input key : new Input[] {Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.JUMP, Input.SNEAK}) {
+                    if (ioh.isInputForcedDown(key)) forced.add(key);
+                }
+                boolean clicks = ioh.isInputForcedDown(Input.CLICK_LEFT) || ioh.isInputForcedDown(Input.CLICK_RIGHT);
+                boolean walks = baritone.getPathingBehavior().isPathing();
+                com.mineagent.engine.entity.KeyWriters.as("altoclef", () -> inputControls.apply(driver, forced, walks, clicks));
             }
             inputControls.onTickPost();
         }

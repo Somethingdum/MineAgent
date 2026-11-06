@@ -107,6 +107,25 @@ public final class ServerHooks {
         return f.apply(baritone, player);
     }
 
+    /**
+     * The bodies whose keys their AltoClef host applies, Automatone's forced keys over its own (SMH plan 71, §6.2
+     * rule 2, one writer per key): Automatone's input handler leaves their walk keys, jump and sneak alone. The
+     * other AltoClef (SecondBrainEngine's, phase 2 removes it) leaves them to Automatone, as before.
+     */
+    private static final java.util.Set<IBaritone> KEYS_BY_HOST = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    public static void keysByHost(IBaritone baritone) {
+        synchronized (KEYS_BY_HOST) {
+            KEYS_BY_HOST.add(baritone);
+        }
+    }
+
+    public static boolean keysAreTheHosts(IBaritone baritone) {
+        synchronized (KEYS_BY_HOST) {
+            return KEYS_BY_HOST.contains(baritone);
+        }
+    }
+
     /** The last lines Automatone said for each body, by its name: what a scene reads back (SMH plan 71, step 1.7). */
     private static final java.util.Map<String, java.util.Deque<String>> SAID = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int KEPT = 40;
