@@ -62,8 +62,11 @@ public class AltoClef {
     /** Every companion's host, by its body's id: Baritone's "baritone for this player". */
     private static final Map<UUID, AltoClef> HOSTS = new ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicInteger BARITONE_LINES = new java.util.concurrent.atomic.AtomicInteger();
-    /** The host whose tick (or construction) is running: AltoClef's static getInstance(). Server thread only. */
-    private static AltoClef current;
+    /**
+     * SMH: the host this thread is working for (its tick, its construction, a call into it): AltoClef's static
+     * getInstance(), per companion and per thread, failing loudly outside any scope (SMH plan 71, §6.4, HostScope).
+     */
+    private static final HostScope<AltoClef> SCOPE = new HostScope<>("AltoClef");
 
     private final AgentPlayer agent;
     private ServerPlayer player;
@@ -101,8 +104,7 @@ public class AltoClef {
     private AltoClef(AgentPlayer agent, ServerPlayer player) {
         this.agent = agent;
         this.player = player;
-        AltoClef before = current;
-        current = this;
+        AltoClef before = SCOPE.swap(this);
         try {
             // Baritone's engine (engine/.../baritone, AltoClef's own fork of it), one for each companion's body.
             this.baritone = (Baritone) com.mineagent.engine.agent.Agents.bodyBaritone(agent);
@@ -160,7 +162,7 @@ public class AltoClef {
             }
             taskRunner.enable();
         } finally {
-            current = before;
+            SCOPE.restore(before);
         }
     }
 
@@ -207,28 +209,28 @@ public class AltoClef {
 
     /** Something of AltoClef's done as this host's (its tasks reach for AltoClef.getInstance() when made and asked). */
     public <T> T within(java.util.function.Supplier<T> what) {
-        AltoClef before = current;
-        current = this;
+        AltoClef before = SCOPE.swap(this);
         try {
             // Its Baritone is the primary one meanwhile (AltoClef's helpers ask BaritoneAPI for it).
             return what.get();
         } finally {
-            current = before;
+            SCOPE.restore(before);
         }
     }
 
     /** The host ticking now, or null. */
     public static AltoClef current() {
-        return current;
+        return SCOPE.peek();
     }
 
     /** AltoClef's static access, as its tasks use it: the host ticking now. */
     public static AltoClef getInstance() {
-        return current;
+        return SCOPE.get();
     }
 
     // Are we in game (playing in a server/world)
     public static boolean inGame() {
+        AltoClef current = SCOPE.peek();
         return current != null && current.player != null && current.player.isAlive() && !current.player.hasDisconnected();
     }
 

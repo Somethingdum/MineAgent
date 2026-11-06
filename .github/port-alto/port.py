@@ -105,6 +105,9 @@ def build(rel):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ''
+    if mode not in ('', '--check', '--record') or len(sys.argv) > 2:
+        # An unknown word never regenerates the tree (the usage is the header above).
+        sys.exit('usage: port.py [--check | --record]')
     ported, written = manifest('files.txt'), manifest('written.txt')
     if mode == '--record':
         n = 0

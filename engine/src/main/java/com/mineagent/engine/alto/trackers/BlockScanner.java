@@ -296,7 +296,10 @@ public class BlockScanner {
         snapshotPlayerChunk = at;
         snapshotPlayerPos = mod.getPlayer().position();
         snapshotTime = mod.getWorld().getGameTime();
-        new Thread(() -> {
+        // SMH: the scan thread works for this companion, so it opens this companion's scope (HostScope): the timer
+        // reset below reads the game time through it. Outside a scope that read gave 0, so the timer never waited and
+        // the scanner rescanned back to back; in it, the scanner waits its second between scans, as AltoClef's does.
+        new Thread(() -> mod.within(() -> {
             try {
                 rescan(Integer.MAX_VALUE, Integer.MAX_VALUE);
             } catch (Exception e) {
@@ -305,7 +308,8 @@ public class BlockScanner {
                 rescanTimer.reset();
                 scanning = false;
             }
-        }).start();
+            return null;
+        }), "AltoClef block scan").start();
     }
 
     private void scanCloseBlocks() {

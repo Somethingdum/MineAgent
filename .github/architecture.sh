@@ -17,7 +17,7 @@ check() { # <from phase> <what> <count> <allowed>
 }
 count() { grep -rlE "$1" $2 2>/dev/null | wc -l; }
 check 1 "files naming com.mineagent.engine.baritone" "$(count 'com\.mineagent\.engine\.baritone' "$src fabric/src neoforge/src")" 0
-check 1 "a static AltoClef current" "$(grep -rE 'static AltoClef current\b' $src 2>/dev/null | wc -l)" 0
+check 1 "a static AltoClef current" "$(grep -rE 'static AltoClef current[[:space:]]*[;=]' $src 2>/dev/null | wc -l)" 0
 check 2 "files naming com.mineagent.sbe.altoclef" "$(count 'com\.mineagent\.sbe\.altoclef' "$src fabric/src neoforge/src")" 0
 # sbe/mixins/MixinUtil.java copies Minecraft's own executor-shutdown routine, whose decompiled local name (var3) came
 # with it; it is SecondBrainEngine's source, not decompiled (.github/port-sbe/AUTOMATONE-LEDGER.md).

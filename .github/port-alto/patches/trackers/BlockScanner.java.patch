@@ -17,10 +17,11 @@
          if (world == null) {
              return false;
          }
-@@ -282,6 +281,21 @@
+@@ -282,7 +281,25 @@
  
          scanning = true;
          forceStop = false;
+-        new Thread(() -> {
 +        // SMH: the loaded chunks round it, taken on the server thread without loading any (a client has these in its
 +        // own world); the scan thread reads only these, never the server's chunk map, which belongs to its own thread.
 +        java.util.Map<ChunkPos, LevelChunk> loaded = new java.util.HashMap<>();
@@ -36,10 +37,24 @@
 +        snapshotPlayerChunk = at;
 +        snapshotPlayerPos = mod.getPlayer().position();
 +        snapshotTime = mod.getWorld().getGameTime();
-         new Thread(() -> {
++        // SMH: the scan thread works for this companion, so it opens this companion's scope (HostScope): the timer
++        // reset below reads the game time through it. Outside a scope that read gave 0, so the timer never waited and
++        // the scanner rescanned back to back; in it, the scanner waits its second between scans, as AltoClef's does.
++        new Thread(() -> mod.within(() -> {
              try {
                  rescan(Integer.MAX_VALUE, Integer.MAX_VALUE);
-@@ -340,11 +354,17 @@
+             } catch (Exception e) {
+@@ -291,7 +308,8 @@
+                 rescanTimer.reset();
+                 scanning = false;
+             }
+-        }).start();
++            return null;
++        }), "AltoClef block scan").start();
+     }
+ 
+     private void scanCloseBlocks() {
+@@ -340,11 +358,17 @@
          }
      }
  
@@ -59,7 +74,7 @@
  
          HashSet<ChunkPos> visited = new HashSet<>();
          Queue<Node> queue = new ArrayDeque<>();
-@@ -353,11 +373,11 @@
+@@ -353,11 +377,11 @@
          while (!queue.isEmpty() && visited.size() < maxCount && !forceStop) {
              Node node = queue.poll();
  
@@ -73,7 +88,7 @@
                  continue;
  
              visited.add(node.pos);
-@@ -428,8 +448,9 @@
+@@ -428,8 +452,9 @@
       */
      private void scanChunk(ChunkPos chunkPos, ChunkPos playerChunkPos) {
          Level world = mod.getWorld();

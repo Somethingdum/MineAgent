@@ -24,6 +24,7 @@ jobs:
         run: |
           python3 -I .github/port-alto/port.py --check
           python3 -I .github/port-alto/ledger.py
+          git diff --exit-code -- .github/port-alto/LEDGER.md
 
       - name: SecondBrainEngine's port
         run: |

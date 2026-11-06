@@ -2234,7 +2234,15 @@ public class CompanionGameTests implements FabricGameTest {
                 if (wall && lava && raw == 1) helper.succeed();
                 else fail(helper, "wall left " + wall + ", lava where it was " + lava + ", raw iron " + raw + "; done: " + done);
             } else if (helper.getTick() >= 2300) {
-                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + "; said: " + lastSaid(s, "");
+                // Which way it went wrong: the ore never taken, or taken and its drop left lying (plan 71, §7.12).
+                int lying = 0;
+                for (var e : helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,
+                        new net.minecraft.world.phys.AABB(helper.absolutePos(new BlockPos(4, 1, -2))).inflate(24))) {
+                    if (e.getItem().is(Items.RAW_IRON)) lying += e.getItem().getCount();
+                }
+                String how = "at " + rel(helper, s.body().blockPosition()).toShortString() + ", iron ore still there "
+                        + is(helper, 4, 1, -2, Blocks.IRON_ORE) + ", raw iron carried " + s.body().getInventory().countItem(Items.RAW_IRON)
+                        + ", lying " + lying + "; said: " + lastSaid(s, "");
                 tidy(s);
                 fail(helper, how);
             }
@@ -5268,7 +5276,7 @@ public class CompanionGameTests implements FabricGameTest {
         helper.onEachTick(() -> {
             trace(helper, s, "alto hut");
             var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
-            var hut = new com.mineagent.engine.alto.tasks.construction.BuildHutTask(place);
+            var hut = host.within(() -> new com.mineagent.engine.alto.tasks.construction.BuildHutTask(place));
             boolean shell = host.within(() -> com.mineagent.engine.alto.tasks.construction.BuildHutTask.shellStands(
                     com.mineagent.engine.alto.AltoClef.getInstance(), place));
             boolean door = host.within(() -> hut.doorIn(com.mineagent.engine.alto.AltoClef.getInstance()));
@@ -5324,7 +5332,7 @@ public class CompanionGameTests implements FabricGameTest {
                         && !com.mineagent.engine.alto.AltoClef.getInstance().getExtraBaritoneSettings().shouldAvoidBreaking(outside));
             }
             var host = helper.getTick() > 5 ? com.mineagent.engine.alto.AltoClef.of(s.companion()) : null;
-            var hut = new com.mineagent.engine.alto.tasks.construction.BuildHutTask(place);
+            var hut = host == null ? null : host.within(() -> new com.mineagent.engine.alto.tasks.construction.BuildHutTask(place));
             boolean shell = host != null && host.within(() -> com.mineagent.engine.alto.tasks.construction.BuildHutTask.shellStands(
                     com.mineagent.engine.alto.AltoClef.getInstance(), place));
             boolean door = host != null && host.within(() -> hut.doorIn(com.mineagent.engine.alto.AltoClef.getInstance()));

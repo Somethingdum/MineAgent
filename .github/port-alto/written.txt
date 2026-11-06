@@ -1,6 +1,7 @@
 # Files in engine/alto written for the companion, not ported (the script leaves them alone)
 AltoLifeTask.java
 AltoTreeTask.java
+HostScope.java
 control/ServerGameMode.java
 tasks/construction/BuildHutTask.java
 tasks/life/ModelWants.java
