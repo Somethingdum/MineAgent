@@ -4,7 +4,9 @@
   "package": "com.mineagent.gametest.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "SceneFilterMixin"
+    "SceneFilterMixin",
+    "OffThreadChunkGuardMixin",
+    "SceneResultMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -7395,6 +7395,88 @@ public class CompanionGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Plan 71, step 1.4 (§6.3, item 1): AltoClef's block accessor reads the same block on the server thread and off
+     * it, and a chunk that is not loaded reads as air on both and is still not loaded after (nothing asked the chunk
+     * map to load it, so the guard of I1 records nothing). The thread is never waited for on the server thread: had the
+     * read gone to the chunk map, it would wait on this thread, so the answer is looked for on the ticks after.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_any_thread_read", timeoutTicks = 200)
+    public void aBlockReadsTheSameOnAnyThread(GameTestHelper helper) {
+        helper.setBlock(1, 1, 1, Blocks.GOLD_BLOCK);
+        var level = helper.getLevel();
+        BlockPos here = helper.absolutePos(new BlockPos(1, 1, 1));
+        BlockPos far = here.offset(4_000_000, 0, 4_000_000);
+        int farX = far.getX() >> 4, farZ = far.getZ() >> 4;
+        boolean farLoadedBefore = level.getChunkSource().getChunkNow(farX, farZ) != null;
+        var hereOnServer = com.mineagent.engine.alto.util.helpers.WorldHelper.blockAt(level, here);
+        var farOnServer = com.mineagent.engine.alto.util.helpers.WorldHelper.blockAt(level, far);
+        var off = new java.util.concurrent.atomic.AtomicReference<Object[]>();
+        Thread reader = new Thread(() -> {
+            try {
+                off.set(new Object[] {com.mineagent.engine.alto.util.helpers.WorldHelper.blockAt(level, here),
+                        com.mineagent.engine.alto.util.helpers.WorldHelper.blockAt(level, far),
+                        com.mineagent.engine.alto.util.helpers.WorldHelper.chunkAt(level, farX, farZ),
+                        com.mineagent.engine.alto.util.helpers.WorldHelper.chunkAt(level, here.getX() >> 4, here.getZ() >> 4)});
+            } catch (Throwable e) {
+                off.set(new Object[] {e});
+            }
+        }, "MineAgent any-thread read");
+        reader.setDaemon(true);
+        reader.start();
+        helper.onEachTick(() -> {
+            Object[] r = off.get();
+            if (r == null) {
+                if (helper.getTick() >= 180) fail(helper, "the read off the server thread never came back");
+                return;
+            }
+            if (r.length == 1) {
+                fail(helper, "the read off the server thread threw " + r[0]);
+                return;
+            }
+            var hereOff = (net.minecraft.world.level.block.state.BlockState) r[0];
+            var farOff = (net.minecraft.world.level.block.state.BlockState) r[1];
+            boolean farLoadedAfter = level.getChunkSource().getChunkNow(farX, farZ) != null;
+            String how = "here: " + hereOnServer + " on the server thread, " + hereOff + " off it; far: " + farOnServer
+                    + " and " + farOff + ", its chunk loaded before " + farLoadedBefore + ", after " + farLoadedAfter
+                    + ", seen off the thread " + (r[2] != null) + "; this chunk seen off the thread " + (r[3] != null);
+            if (hereOnServer.is(Blocks.GOLD_BLOCK) && hereOff.is(Blocks.GOLD_BLOCK) && farOnServer.isAir() && farOff.isAir()
+                    && !farLoadedBefore && !farLoadedAfter && r[2] == null && r[3] != null) helper.succeed();
+            else fail(helper, how);
+        });
+    }
+
+    /**
+     * Plan 71, I1: the guard sees a world read made off the server thread the way that loads chunks
+     * (Level.getBlockState), and records where it came from. The scene takes its own record back out, so it fails no
+     * other scene; it runs in a batch of its own for the same reason.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_i1_guard", timeoutTicks = 200)
+    public void theChunkGuardSeesAReadOffTheServerThread(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos here = helper.absolutePos(new BlockPos(1, 1, 1));
+        String name = "MineAgent I1 guard check";
+        var done = new java.util.concurrent.atomic.AtomicBoolean();
+        Thread reader = new Thread(() -> {
+            try {
+                level.getBlockState(here);
+            } finally {
+                done.set(true);
+            }
+        }, name);
+        reader.setDaemon(true);
+        reader.start();
+        helper.onEachTick(() -> {
+            if (!done.get()) {
+                if (helper.getTick() >= 180) fail(helper, "the read off the server thread never came back");
+                return;
+            }
+            var mine = OffThreadChunks.drain(c -> c.thread().equals(name));
+            if (!mine.isEmpty() && mine.get(0).ours().contains("CompanionGameTests")) helper.succeed();
+            else fail(helper, "the guard recorded " + mine + " for a Level.getBlockState off the server thread");
+        });
+    }
+
     /** What a body carries, as the benchmark's stall check reads it. */
     private static String carrying(ServerPlayer body) {
         StringBuilder b = new StringBuilder();

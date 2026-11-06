@@ -11,6 +11,7 @@ import com.mineagent.sbe.automatone.pathing.movement.CalculationContext;
 import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
 import com.mineagent.sbe.automatone.process.MineProcess;
 import com.mineagent.sbe.automatone.utils.BlockStateInterface;
+import com.mineagent.sbe.automatone.utils.accessor.ServerChunkManagerAccessor;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.core.BlockPos;
@@ -43,6 +44,7 @@ import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import java.util.*;
@@ -58,6 +60,28 @@ public interface WorldHelper {
     static int getTicks() {
         // SMH: the world's game time (a client counts its connection's ticks).
         return (int) AltoClef.getInstance().getWorld().getGameTime();
+    }
+
+    /**
+     * SMH (plan 71, §6.3): a block as the world has it, on any thread, never loading a chunk. A chunk that is not loaded
+     * reads as air, as a client reads it. Level.getBlockState is never right off the server thread: on a chunk not
+     * loaded it loads or generates it, and off the server thread it waits on the server thread to do so.
+     */
+    static BlockState blockAt(ServerLevel level, BlockPos pos) {
+        if (level.isOutsideBuildHeight(pos)) return Blocks.VOID_AIR.defaultBlockState();
+        LevelChunk chunk = chunkAt(level, pos.getX() >> 4, pos.getZ() >> 4);
+        return chunk == null ? Blocks.AIR.defaultBlockState() : chunk.getBlockState(pos);
+    }
+
+    /**
+     * SMH: the loaded chunk at these chunk coordinates, or null, on any thread, never loading it. On the server thread,
+     * vanilla's getChunkNow; on any other (Automatone's path threads), Automatone's view of the visible chunk map,
+     * because vanilla's getChunkNow returns null off the server thread. That view holds the ticking chunks, the ones
+     * Automatone's own path search reads (BlockStateInterface), so a rule asked from a path thread sees its world.
+     */
+    static LevelChunk chunkAt(ServerLevel level, int chunkX, int chunkZ) {
+        if (level.getServer().isSameThread()) return level.getChunkSource().getChunkNow(chunkX, chunkZ);
+        return ((ServerChunkManagerAccessor) level.getChunkSource()).automatone$getChunkNow(chunkX, chunkZ);
     }
 
     static Vec3 toVec3d(BlockPos pos) {
@@ -148,12 +172,15 @@ public interface WorldHelper {
      * Get the "head" of a block with a bed, if the block is a bed.
      */
     static BlockPos getBedHead(BlockPos posWithBed) {
-        ServerLevel world = AltoClef.getInstance().getWorld();
+        return getBedHead(AltoClef.getInstance().getWorld(), posWithBed);
+    }
 
-        BlockState state = world.getBlockState(posWithBed);
+    // SMH: the world given, read on any thread (blockAt), for the rules Baritone asks from its path threads.
+    static BlockPos getBedHead(ServerLevel world, BlockPos posWithBed) {
+        BlockState state = blockAt(world, posWithBed);
         if (state.getBlock() instanceof BedBlock) {
             Direction facing = state.getValue(BedBlock.FACING);
-            if (world.getBlockState(posWithBed).getValue(BedBlock.PART).equals(BedPart.HEAD)) {
+            if (state.getValue(BedBlock.PART).equals(BedPart.HEAD)) {
                 return posWithBed;
             }
             return posWithBed.relative(facing);
@@ -165,12 +192,15 @@ public interface WorldHelper {
      * Get the "foot" of a block with a bed, if the block is a bed.
      */
     static BlockPos getBedFoot(BlockPos posWithBed) {
-        ServerLevel world = AltoClef.getInstance().getWorld();
+        return getBedFoot(AltoClef.getInstance().getWorld(), posWithBed);
+    }
 
-        BlockState state = world.getBlockState(posWithBed);
+    // SMH: the world given, read on any thread (blockAt), for the rules Baritone asks from its path threads.
+    static BlockPos getBedFoot(ServerLevel world, BlockPos posWithBed) {
+        BlockState state = blockAt(world, posWithBed);
         if (state.getBlock() instanceof BedBlock) {
             Direction facing = state.getValue(BedBlock.FACING);
-            if (world.getBlockState(posWithBed).getValue(BedBlock.PART).equals(BedPart.FOOT)) {
+            if (state.getValue(BedBlock.PART).equals(BedPart.FOOT)) {
                 return posWithBed;
             }
             return posWithBed.relative(facing.getOpposite());

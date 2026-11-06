@@ -1,4 +1,10 @@
-@@ -12,13 +12,10 @@
+@@ -7,18 +7,16 @@
+ import com.mineagent.engine.alto.multiversion.item.ItemVer;
+ import com.mineagent.engine.alto.tasksystem.Task;
+ import com.mineagent.engine.alto.util.helpers.LookHelper;
++import com.mineagent.engine.alto.util.helpers.WorldHelper;
+ import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
+ import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
  import com.mineagent.sbe.automatone.api.utils.Rotation;
  import com.mineagent.sbe.automatone.api.utils.input.Input;
  import com.mineagent.sbe.automatone.pathing.movement.MovementHelper;
@@ -13,7 +19,17 @@
  import net.minecraft.world.item.Item;
  import net.minecraft.world.item.ItemStack;
  import net.minecraft.world.item.Items;
-@@ -152,7 +149,7 @@
+@@ -40,7 +38,8 @@
+     public EscapeFromLavaTask(AltoClef mod,float strength) {
+         this.strength = strength;
+         avoidPlacingRiskyBlock = (blockPos -> mod.getPlayer().getBoundingBox().intersects(new AABB(blockPos))
+-                && (mod.getWorld().getBlockState(mod.getPlayer().blockPosition().below()).getBlock() == Blocks.LAVA || mod.getPlayer().isInLava()));
++                // SMH: read on any thread (WorldHelper.blockAt): Baritone asks its rules from its path threads.
++                && (WorldHelper.blockAt(mod.getWorld(), mod.getPlayer().blockPosition().below()).getBlock() == Blocks.LAVA || mod.getPlayer().isInLava()));
+     }
+ 
+ 
+@@ -152,7 +151,7 @@
      private Optional<Item> calculateFood(AltoClef mod) {
          Item bestFood = null;
          double bestFoodScore = Double.NEGATIVE_INFINITY;
@@ -22,7 +38,7 @@
  
          float hunger = player != null ? player.getFoodData().getFoodLevel() : 20;
          float saturation = player != null ? player.getFoodData().getSaturationLevel() : 20;
-@@ -201,7 +198,7 @@
+@@ -201,7 +200,7 @@
  
  
      public HitResult raycast(AltoClef mod,double maxDistance, float pitch, float yaw) {
@@ -31,7 +47,7 @@
          Vec3 rotationVector = getRotationVector(pitch,yaw);
  
          Vec3 vec3d3 = cameraPos.add(rotationVector.x * maxDistance, rotationVector.y * maxDistance, rotationVector.z * maxDistance);
-@@ -251,7 +248,7 @@
+@@ -251,7 +250,7 @@
  
      @Override
      public boolean isFinished() {
@@ -40,7 +56,7 @@
  
          return !player.isInLava() && !player.isOnFire();
      }
-@@ -264,8 +261,8 @@
+@@ -264,8 +263,8 @@
      private class EscapeFromLavaGoal implements Goal {
  
          private static boolean isLava(int x, int y, int z) {
@@ -51,7 +67,7 @@
          }
  
          private static boolean isLavaAdjacent(int x, int y, int z) {
-@@ -275,8 +272,8 @@
+@@ -275,8 +274,8 @@
          }
  
          private static boolean isWater(int x, int y, int z) {

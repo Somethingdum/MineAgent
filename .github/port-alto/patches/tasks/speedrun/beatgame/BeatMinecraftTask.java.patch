@@ -66,7 +66,38 @@
              Debug.logInternal("isFinished - Current screen is CreditsScreen");
              return true;
          }
-@@ -1180,7 +1171,7 @@
+@@ -1063,7 +1054,8 @@
+         avoidDragonBreath(mod);
+         avoidBreakingBed(mod);
+ 
+-        mod.getBehaviour().avoidBlockBreaking((pos) -> mod.getWorld().getBlockState(pos).getBlock().equals(Blocks.NETHER_PORTAL));
++        // SMH: read on any thread (WorldHelper.blockAt): Baritone asks its rules from its path threads.
++        mod.getBehaviour().avoidBlockBreaking((pos) -> WorldHelper.blockAt(mod.getWorld(), pos).getBlock().equals(Blocks.NETHER_PORTAL));
+     }
+ 
+     /**
+@@ -1119,7 +1111,7 @@
+     private void allowWalkingOnEndPortal(AltoClef mod) {
+         mod.getBehaviour().allowWalkingOn(blockPos -> {
+             if (enterindEndPortal && (mod.getChunkTracker().isChunkLoaded(blockPos))) {
+-                BlockState blockState = mod.getWorld().getBlockState(blockPos);
++                BlockState blockState = WorldHelper.blockAt(mod.getWorld(), blockPos); // SMH: any thread (path threads ask)
+                 boolean isEndPortal = blockState.getBlock() == Blocks.END_PORTAL;
+                 if (isEndPortal) {
+                     Debug.logInternal("Walking on End Portal at " + blockPos.toString());
+@@ -1160,8 +1152,9 @@
+         mod.getBehaviour().avoidBlockBreaking(blockPos -> {
+             if (bedSpawnLocation != null) {
+                 // Get the head and foot positions of the bed
+-                BlockPos bedHead = WorldHelper.getBedHead(bedSpawnLocation);
+-                BlockPos bedFoot = WorldHelper.getBedFoot(bedSpawnLocation);
++                // SMH: this host's world, read on any thread (path threads ask).
++                BlockPos bedHead = WorldHelper.getBedHead(mod.getWorld(), bedSpawnLocation);
++                BlockPos bedFoot = WorldHelper.getBedFoot(mod.getWorld(), bedSpawnLocation);
+ 
+                 boolean shouldAvoidBreaking = blockPos.equals(bedHead) || blockPos.equals(bedFoot);
+ 
+@@ -1180,7 +1173,7 @@
          Optional<BlockPos> nearestTracking = mod.getBlockScanner().getNearestBlock(block);
  
          if (nearestTracking.isPresent()) {
@@ -75,7 +106,7 @@
              for (Entity entity : entities) {
  
                  if (mod.getBlockScanner().isUnreachable(nearestTracking.get()) || !(entity instanceof Monster))
-@@ -1298,7 +1289,7 @@
+@@ -1298,7 +1291,7 @@
          List<BlockPos> logs = mod.getBlockScanner().getKnownLocations(ItemHelper.itemsToBlocks(ItemHelper.LOG));
  
          for (BlockPos log : logs) {

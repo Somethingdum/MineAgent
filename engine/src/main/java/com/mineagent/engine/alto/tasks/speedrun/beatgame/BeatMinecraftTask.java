@@ -1054,7 +1054,8 @@ public class BeatMinecraftTask extends Task {
         avoidDragonBreath(mod);
         avoidBreakingBed(mod);
 
-        mod.getBehaviour().avoidBlockBreaking((pos) -> mod.getWorld().getBlockState(pos).getBlock().equals(Blocks.NETHER_PORTAL));
+        // SMH: read on any thread (WorldHelper.blockAt): Baritone asks its rules from its path threads.
+        mod.getBehaviour().avoidBlockBreaking((pos) -> WorldHelper.blockAt(mod.getWorld(), pos).getBlock().equals(Blocks.NETHER_PORTAL));
     }
 
     /**
@@ -1110,7 +1111,7 @@ public class BeatMinecraftTask extends Task {
     private void allowWalkingOnEndPortal(AltoClef mod) {
         mod.getBehaviour().allowWalkingOn(blockPos -> {
             if (enterindEndPortal && (mod.getChunkTracker().isChunkLoaded(blockPos))) {
-                BlockState blockState = mod.getWorld().getBlockState(blockPos);
+                BlockState blockState = WorldHelper.blockAt(mod.getWorld(), blockPos); // SMH: any thread (path threads ask)
                 boolean isEndPortal = blockState.getBlock() == Blocks.END_PORTAL;
                 if (isEndPortal) {
                     Debug.logInternal("Walking on End Portal at " + blockPos.toString());
@@ -1151,8 +1152,9 @@ public class BeatMinecraftTask extends Task {
         mod.getBehaviour().avoidBlockBreaking(blockPos -> {
             if (bedSpawnLocation != null) {
                 // Get the head and foot positions of the bed
-                BlockPos bedHead = WorldHelper.getBedHead(bedSpawnLocation);
-                BlockPos bedFoot = WorldHelper.getBedFoot(bedSpawnLocation);
+                // SMH: this host's world, read on any thread (path threads ask).
+                BlockPos bedHead = WorldHelper.getBedHead(mod.getWorld(), bedSpawnLocation);
+                BlockPos bedFoot = WorldHelper.getBedFoot(mod.getWorld(), bedSpawnLocation);
 
                 boolean shouldAvoidBreaking = blockPos.equals(bedHead) || blockPos.equals(bedFoot);
 

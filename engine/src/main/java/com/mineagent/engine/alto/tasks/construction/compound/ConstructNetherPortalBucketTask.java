@@ -110,7 +110,7 @@ public class ConstructNetherPortalBucketTask extends Task {
                 for (Vec3i framePosRelative : PORTAL_FRAME) {
                     BlockPos framePos = portalOrigin.offset(framePosRelative);
                     if (block.equals(framePos)) {
-                        return mod.getWorld().getBlockState(framePos).getBlock() == Blocks.OBSIDIAN;
+                        return WorldHelper.blockAt(mod.getWorld(), framePos).getBlock() == Blocks.OBSIDIAN; // SMH: any thread
                     }
                 }
             }

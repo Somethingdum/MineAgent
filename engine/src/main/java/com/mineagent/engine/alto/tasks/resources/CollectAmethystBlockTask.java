@@ -9,6 +9,7 @@ import com.mineagent.engine.alto.tasks.CraftInInventoryTask;
 import com.mineagent.engine.alto.tasks.ResourceTask;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.*;
+import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -31,7 +32,7 @@ public class CollectAmethystBlockTask extends ResourceTask {
         // Bot will not break Budding Amethyst
         mod.getBehaviour().push();
         mod.getBehaviour().avoidBlockBreaking(blockPos -> {
-            BlockState s = mod.getWorld().getBlockState(blockPos);
+            BlockState s = WorldHelper.blockAt(mod.getWorld(), blockPos); // SMH: any thread (path threads ask)
             return s.getBlock() == Blocks.BUDDING_AMETHYST;
         });
     }

@@ -6,18 +6,19 @@
  import net.minecraft.core.BlockPos;
  import net.minecraft.core.Direction;
  import net.minecraft.core.Vec3i;
-@@ -67,8 +66,8 @@
+@@ -67,8 +66,9 @@
          mod.getBehaviour().setRayTracingFluidHandling(ClipContext.Fluid.SOURCE_ONLY);
  
          // Avoid breaking / placing blocks at our liquid
 -        mod.getBehaviour().avoidBlockBreaking((pos) -> Minecraft.getInstance().level.getBlockState(pos).getBlock() == toCollect);
 -        mod.getBehaviour().avoidBlockPlacing((pos) -> Minecraft.getInstance().level.getBlockState(pos).getBlock() == toCollect);
-+        mod.getBehaviour().avoidBlockBreaking((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
-+        mod.getBehaviour().avoidBlockPlacing((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
++        // SMH: this host's world, read on any thread, never loading a chunk (WorldHelper.blockAt): Baritone asks its rules from its path threads.
++        mod.getBehaviour().avoidBlockBreaking((pos) -> WorldHelper.blockAt(mod.getWorld(), pos).getBlock() == toCollect);
++        mod.getBehaviour().avoidBlockPlacing((pos) -> WorldHelper.blockAt(mod.getWorld(), pos).getBlock() == toCollect);
  
          mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.set(true);
          //_blacklist.clear();
-@@ -129,7 +128,7 @@
+@@ -129,7 +129,7 @@
              if (blacklist.contains(blockPos)) return false;
              if (!WorldHelper.canReach(blockPos)) return false;
              if (!WorldHelper.canReach(blockPos.above())) return false; // We may try reaching the block above.

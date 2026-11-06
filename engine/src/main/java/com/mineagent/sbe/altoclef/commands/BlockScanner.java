@@ -386,7 +386,12 @@ public class BlockScanner {
 
    private void scanChunk(ChunkPos chunkPos, ChunkPos playerChunkPos) {
       Level world = this.mod.getWorld();
-      LevelChunk chunk = this.mod.getWorld().getChunk(chunkPos.x, chunkPos.z);
+      // SMH: never loading it, and safe on the scan thread (plan 71, I1).
+      LevelChunk chunk = ((com.mineagent.sbe.automatone.utils.accessor.ServerChunkManagerAccessor) world.getChunkSource())
+         .automatone$getChunkNow(chunkPos.x, chunkPos.z);
+      if (chunk == null) {
+         return;
+      }
       this.scannedChunks.put(chunkPos, world.getGameTime());
       boolean isPriorityChunk = this.getChunkDist(chunkPos, playerChunkPos) <= 2;
 

@@ -7,6 +7,7 @@ import com.mineagent.engine.alto.multiversion.FoodComponentWrapper;
 import com.mineagent.engine.alto.multiversion.item.ItemVer;
 import com.mineagent.engine.alto.tasksystem.Task;
 import com.mineagent.engine.alto.util.helpers.LookHelper;
+import com.mineagent.engine.alto.util.helpers.WorldHelper;
 import com.mineagent.engine.alto.util.progresscheck.MovementProgressChecker;
 import com.mineagent.sbe.automatone.api.pathing.goals.Goal;
 import com.mineagent.sbe.automatone.api.utils.Rotation;
@@ -37,7 +38,8 @@ public class EscapeFromLavaTask extends CustomBaritoneGoalTask {
     public EscapeFromLavaTask(AltoClef mod,float strength) {
         this.strength = strength;
         avoidPlacingRiskyBlock = (blockPos -> mod.getPlayer().getBoundingBox().intersects(new AABB(blockPos))
-                && (mod.getWorld().getBlockState(mod.getPlayer().blockPosition().below()).getBlock() == Blocks.LAVA || mod.getPlayer().isInLava()));
+                // SMH: read on any thread (WorldHelper.blockAt): Baritone asks its rules from its path threads.
+                && (WorldHelper.blockAt(mod.getWorld(), mod.getPlayer().blockPosition().below()).getBlock() == Blocks.LAVA || mod.getPlayer().isInLava()));
     }
 
 

@@ -1,0 +1,19 @@
+@@ -17,7 +17,6 @@
+ import java.util.stream.Collectors;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.level.ChunkPos;
+-import net.minecraft.world.level.chunk.EmptyLevelChunk;
+ 
+ /**
+  * Keeps track of currently loaded chunks. That's it.
+@@ -46,7 +45,9 @@
+     }
+ 
+     public boolean isChunkLoaded(ChunkPos pos) {
+-        return !(mod.getWorld().getChunk(pos.x, pos.z) instanceof EmptyLevelChunk);
++        // SMH: a client's getChunk gives an empty chunk for one it has not loaded; a server's loads or generates it.
++        // Asked the way WorldHelper.blockAt asks, on any thread and never loading it (plan 71, §6.3).
++        return WorldHelper.chunkAt(mod.getWorld(), pos.x, pos.z) != null;
+     }
+ 
+     public boolean isChunkLoaded(BlockPos pos) {

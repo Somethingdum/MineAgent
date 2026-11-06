@@ -66,8 +66,9 @@ public class CollectBucketLiquidTask extends ResourceTask {
         mod.getBehaviour().setRayTracingFluidHandling(ClipContext.Fluid.SOURCE_ONLY);
 
         // Avoid breaking / placing blocks at our liquid
-        mod.getBehaviour().avoidBlockBreaking((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
-        mod.getBehaviour().avoidBlockPlacing((pos) -> AltoClef.getInstance().getWorld().getBlockState(pos).getBlock() == toCollect);
+        // SMH: this host's world, read on any thread, never loading a chunk (WorldHelper.blockAt): Baritone asks its rules from its path threads.
+        mod.getBehaviour().avoidBlockBreaking((pos) -> WorldHelper.blockAt(mod.getWorld(), pos).getBlock() == toCollect);
+        mod.getBehaviour().avoidBlockPlacing((pos) -> WorldHelper.blockAt(mod.getWorld(), pos).getBlock() == toCollect);
 
         mod.getClientBaritoneSettings().avoidUpdatingFallingBlocks.set(true);
         //_blacklist.clear();

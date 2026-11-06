@@ -235,6 +235,19 @@ PATCHES = [
      '      String fullPath = "me/sailex/altoclef" + File.separator + path;\n      return new File(fullPath);',
      '      // SMH: under the game\'s config directory (it was a folder "me/sailex/altoclef" wherever the server was started).\n'
      '      return ' + HOOKS + '.configDir().resolve("mineagent").resolve("altoclef").resolve(path).toFile();'),
+
+    # SMH plan 71, I1: the block scanner's scan thread read each chunk by Level.getChunk, which on a server loads or
+    # generates it, and off the server thread waits on the server thread to do so (the guard counted 680 in one scene).
+    # It reads the loaded chunk through Automatone's view of the visible chunk map, as Automatone's own search does, and
+    # skips one that is not loaded, as a client's scanner sees nothing there.
+    ('altoclef/commands/BlockScanner.java',
+     '      LevelChunk chunk = this.mod.getWorld().getChunk(chunkPos.x, chunkPos.z);\n',
+     '      // SMH: never loading it, and safe on the scan thread (plan 71, I1).\n'
+     '      LevelChunk chunk = ((me.sailex.automatone.utils.accessor.ServerChunkManagerAccessor) world.getChunkSource())\n'
+     '         .automatone$getChunkNow(chunkPos.x, chunkPos.z);\n'
+     '      if (chunk == null) {\n'
+     '         return;\n'
+     '      }\n'),
 ]
 
 # The mixins' annotation names (mixin_names.py, read as data: -I keeps this script's folder off the import path).
