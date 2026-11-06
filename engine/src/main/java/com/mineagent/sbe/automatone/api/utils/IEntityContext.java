@@ -112,9 +112,10 @@ public interface IEntityContext {
     }
 
     default void logDebug(String message) {
-        if (!BaritoneAPI.getGlobalSettings().chatDebug.get()) {
+        if (!baritone().settings().chatDebug.get()) { // SMH: this body's own (plan 71, step 1.7)
             return;
         }
+        com.mineagent.sbe.common.ServerHooks.log(entity(), message); // SMH
         LivingEntity entity = entity();
         if (entity instanceof Player) ((Player) entity).displayClientMessage(Component.literal(message).withStyle(ChatFormatting.GRAY), false);
 

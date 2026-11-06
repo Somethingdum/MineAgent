@@ -216,6 +216,14 @@ public final class Settings {
     )));
 
     /**
+     * Blocks that Baritone is not allowed to break
+     */
+    // SMH: Baritone's own (Settings.java:244-249 at 11ea66c); Automatone forked a Baritone without it.
+    public final Setting<List<Block>> blocksToDisallowBreaking = new Setting<>(new ArrayList<>(
+            // Leave Empty by Default
+    ));
+
+    /**
      * A list of blocks to be treated as if they're air.
      * <p>
      * If a schematic asks for air at a certain position, and that position currently contains a block on this list, it will be treated as correct.

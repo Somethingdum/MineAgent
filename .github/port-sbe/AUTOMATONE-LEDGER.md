@@ -106,3 +106,19 @@ Found when Automatone began asking the rules (step 1.5), and fixed in the same s
 - SecondBrainEngine's AltoClef's own "never place where an entity is" rule (`EntityStuckTracker`, not in MiranCZ's
   AltoClef) counted dropped items and experience orbs; it counts what the game's placement check counts
   (`blocksBuilding`), by `port.py`.
+
+### Baritone's own later code, and Automatone's log (steps 1.6 and 1.7)
+
+By `.github/port-sbe/baritone.py`, each citing Baritone `11ea66c`:
+
+| Where | What | From |
+|---|---|---|
+| `api/Settings.java`, `MovementHelper.avoidBreaking` | `blocksToDisallowBreaking`, blocks it may never break; AltoClef's nether portal back on it (its `AltoClef.java:276-277`) | Baritone `Settings.java:244-249`, `MovementHelper.java:77` (step 1.6; scene `aPathPastAPortalLeavesItWhole`) |
+| `utils/player/EntityContext.feetPos` | the chunk its feet are in (it asked for `(int) x << 4`), so a bottom slab underfoot puts its feet a block up | Baritone `IPlayerContext.java:63-81` (step 1.7; scene `aPathFromASlabStartsWhereItStands`) |
+| `api/IBaritone.logDirect`, `api/utils/IEntityContext.logDebug` | Automatone's messages to the server's log as well (`ServerHooks.log`), its debug ones by this body's own `chatDebug` (it read the global one) | ours (step 1.7): it writes to its entity's chat, which a fake player shows no one; sailex's `logger` setting is client-only and stays out |
+
+### Automatone's unit tests (step 1.9)
+
+Its six, from sailex's `src/test` at `b7953df8`, translated into `fabric/src/test/java/com/mineagent/sbe/automatone`
+(package renamed, Mojang's names, JUnit 5): cached regions, `GoalGetToBlock`, action costs, open sets (31 sizes),
+pathing block types, `BetterBlockPos` (its `testSimple` carries no `@Test` upstream and never ran there; here it runs).

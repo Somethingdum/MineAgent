@@ -5356,6 +5356,135 @@ public class CompanionGameTests implements FabricGameTest {
     }
 
     /**
+     * Plan 71, step 1.7: standing on a bottom slab, Automatone counts its feet a block up, as Baritone does
+     * (IPlayerContext.playerFeet), so a path from there begins where it stands (it began a block low, inside the slab);
+     * and what Automatone says, with this body's chatDebug on, reaches the server's log, where the scene reads it back.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_slab", timeoutTicks = 400)
+    public void aPathFromASlabStartsWhereItStands(GameTestHelper helper) {
+        Scene s = scene(helper, "Slabber");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var level = helper.getLevel();
+        helper.setBlock(3, 1, 6, Blocks.STONE_SLAB);
+        BlockPos slab = helper.absolutePos(new BlockPos(3, 1, 6));
+        BlockPos target = helper.absolutePos(new BlockPos(9, 1, 6));
+        s.body().teleportTo(level, slab.getX() + 0.5, slab.getY() + 0.5, slab.getZ() + 0.5, -90.0f, 0.0f);
+        BlockPos[] feet = new BlockPos[1];
+        helper.runAfterDelay(5, () -> {
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            var go = host.within(() -> {
+                host.getClientBaritoneSettings().chatDebug.set(true);
+                feet[0] = host.getClientBaritone().getPlayerContext().feetPos();
+                return new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target);
+            });
+            tickAltoAtTickEnd(s, go);
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 6) return;
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            var pb = host.getClientBaritone().getPathingBehavior();
+            var path = pb.getCurrent() == null ? null : pb.getCurrent().getPath();
+            var said = com.mineagent.sbe.common.ServerHooks.said(s.body().getName().getString());
+            String how = "feet " + (feet[0] == null ? "?" : rel(helper, feet[0]).toShortString()) + " on the slab at "
+                    + rel(helper, slab).toShortString() + ", Automatone said " + said.size() + " lines"
+                    + (said.isEmpty() ? "" : " (last: " + said.get(said.size() - 1) + ")");
+            if (path != null && path.getDest().equals(target)) {
+                ALTO_TICKS.remove(s.companion().companionId());
+                host.getClientBaritoneSettings().chatDebug.set(false);
+                how += "; its path from " + rel(helper, path.getSrc()).toShortString();
+                tidy(s);
+                if (slab.above().equals(feet[0]) && slab.above().equals(path.getSrc()) && !said.isEmpty()) helper.succeed();
+                else fail(helper, how);
+            } else if (helper.getTick() >= 360) {
+                ALTO_TICKS.remove(s.companion().companionId());
+                host.getClientBaritoneSettings().chatDebug.set(false);
+                tidy(s);
+                fail(helper, how + "; Automatone: goal " + pb.getGoal() + (path == null ? ", no path" : ", path to " + rel(helper, path.getDest()).toShortString()));
+            }
+        });
+    }
+
+    /**
+     * Plan 71, step 1.6: a lit nether portal stands across a corridor of bedrock, so the ways past are through it,
+     * under it, or by breaking it. Automatone may never break a portal (Baritone's blocksToDisallowBreaking, put onto
+     * Automatone, with AltoClef's own nether portal on it), and its path past leaves the frame and the portal whole.
+     */
+    @GameTest(template = EMPTY_STRUCTURE, batch = "mineagent_alto_portal_frame", timeoutTicks = 600)
+    public void aPathPastAPortalLeavesItWhole(GameTestHelper helper) {
+        Scene s = scene(helper, "Passer");
+        MineAgentEngine.setCompanionMode(s.companion().companionId(), MineAgentEngine.CompanionMode.FREE);
+        var level = helper.getLevel();
+        s.body().getInventory().setItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        // The corridor: z 6 and 7, walls of bedrock four high at z 5 and z 8; the frame across it at x 6 (its foot in
+        // the floor), the portal 2 wide and 3 high inside.
+        for (int x = 0; x <= 12; x++) {
+            for (int y = 1; y <= 4; y++) {
+                helper.setBlock(x, y, 5, x == 6 ? Blocks.OBSIDIAN : Blocks.BEDROCK);
+                helper.setBlock(x, y, 8, x == 6 ? Blocks.OBSIDIAN : Blocks.BEDROCK);
+            }
+        }
+        java.util.Set<BlockPos> frame = new java.util.HashSet<>();
+        for (int z = 5; z <= 8; z++) {
+            helper.setBlock(6, 0, z, Blocks.OBSIDIAN);
+            helper.setBlock(6, 4, z, Blocks.OBSIDIAN);
+            frame.add(helper.absolutePos(new BlockPos(6, 0, z)));
+            frame.add(helper.absolutePos(new BlockPos(6, 4, z)));
+        }
+        for (int y = 1; y <= 3; y++) {
+            frame.add(helper.absolutePos(new BlockPos(6, y, 5)));
+            frame.add(helper.absolutePos(new BlockPos(6, y, 8)));
+        }
+        BlockPos inside = helper.absolutePos(new BlockPos(6, 1, 6));
+        net.minecraft.world.level.portal.PortalShape.findEmptyPortalShape(level, inside, net.minecraft.core.Direction.Axis.Z)
+                .ifPresent(net.minecraft.world.level.portal.PortalShape::createPortalBlocks);
+        java.util.Set<BlockPos> portal = new java.util.HashSet<>();
+        for (int y = 1; y <= 3; y++) for (int z = 6; z <= 7; z++) portal.add(helper.absolutePos(new BlockPos(6, y, z)));
+        BlockPos start = helper.absolutePos(new BlockPos(3, 1, 6));
+        BlockPos target = helper.absolutePos(new BlockPos(10, 1, 6));
+        s.body().teleportTo(level, start.getX() + 0.5, start.getY(), start.getZ() + 0.5, -90.0f, 0.0f);
+        boolean[] kept = new boolean[1];
+        helper.runAfterDelay(5, () -> {
+            var host = com.mineagent.engine.alto.AltoClef.of(s.companion());
+            var go = host.within(() -> {
+                var ctx = new com.mineagent.sbe.automatone.pathing.movement.CalculationContext(host.getClientBaritone());
+                kept[0] = com.mineagent.sbe.automatone.pathing.movement.MovementHelper.avoidBreaking(ctx.bsi,
+                        inside.getX(), inside.getY(), inside.getZ(), level.getBlockState(inside), host.getClientBaritone().settings());
+                return new com.mineagent.engine.alto.tasks.movement.GetToBlockTask(target);
+            });
+            tickAltoAtTickEnd(s, go);
+        });
+        helper.onEachTick(() -> {
+            if (helper.getTick() < 6) return;
+            int lit = 0, whole = 0;
+            for (BlockPos p : portal) if (level.getBlockState(p).is(Blocks.NETHER_PORTAL)) lit++;
+            for (BlockPos p : frame) if (level.getBlockState(p).is(Blocks.OBSIDIAN)) whole++;
+            var pb = com.mineagent.engine.alto.AltoClef.of(s.companion()).getClientBaritone().getPathingBehavior();
+            var path = pb.getCurrent() == null ? null : pb.getCurrent().getPath();
+            String how = "portal blocks " + lit + " of 6, frame " + whole + " of " + frame.size() + ", the portal never broken "
+                    + kept[0];
+            if (path != null && path.getDest().equals(target)) {
+                ALTO_TICKS.remove(s.companion().companionId());
+                int breaks = 0;
+                StringBuilder moves = new StringBuilder();
+                for (var m : path.movements()) {
+                    if (moves.length() < 600) moves.append(moveOf(helper, m)).append("; ");
+                    for (BlockPos q : ((com.mineagent.sbe.automatone.pathing.movement.Movement) m).toBreakAll()) {
+                        if ((frame.contains(q) || portal.contains(q)) && !level.getBlockState(q).isAir()) breaks++;
+                    }
+                }
+                how += "; its path: " + path.movements().size() + " moves, " + breaks + " breaking the frame or the portal: " + moves;
+                tidy(s);
+                if (lit == 6 && whole == frame.size() && kept[0] && breaks == 0) helper.succeed();
+                else fail(helper, how);
+            } else if (lit < 6 || whole < frame.size() || helper.getTick() >= 560) {
+                ALTO_TICKS.remove(s.companion().companionId());
+                tidy(s);
+                fail(helper, how + "; Automatone: goal " + pb.getGoal() + (path == null ? ", no path" : ", path to " + rel(helper, path.getDest()).toShortString()));
+            }
+        });
+    }
+
+    /**
      * SMH plan 70, its first days by AltoClef's priorities (behaviour.altoLife): evening, with a stone pickaxe, a crafting
      * table, dirt and a door on it, and no hut: the hut comes first. Mindcraft's dirt shelter, built by Baritone's builder,
      * stands with its door in before dark.

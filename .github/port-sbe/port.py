@@ -267,6 +267,10 @@ PATCHES += _names['MIXIN_PATCHES']
 _hooks = {}
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'altoclef_hooks.py'), encoding='utf-8').read(), _hooks)
 PATCHES += _hooks['HOOKS']
+# Baritone's own later code, put onto Automatone (baritone.py).
+_baritone = {}
+exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baritone.py'), encoding='utf-8').read(), _baritone)
+PATCHES += _baritone['BARITONE'] + _baritone['LOG']
 # Jackson left out (jackson.py, read the same way).
 _jackson = {}
 exec(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'jackson.py'), encoding='utf-8').read(), _jackson)

@@ -102,7 +102,7 @@ public class EntityContext implements IEntityContext {
 
         ServerLevel world = world();
         if (world != null) {
-            LevelChunk chunk = ((ServerChunkManagerAccessor) world.getChunkSource()).automatone$getChunkNow((int) x << 4, (int) z << 4);
+            LevelChunk chunk = ((ServerChunkManagerAccessor) world.getChunkSource()).automatone$getChunkNow(feet.getX() >> 4, feet.getZ() >> 4); // SMH
             if (chunk != null && chunk.getBlockState(feet).getBlock() instanceof SlabBlock) {
                 return feet.above();
             }

@@ -163,6 +163,10 @@ public interface IBaritone {
     default void logDirect(Component... components) {
         IEntityContext playerContext = this.getPlayerContext();
         LivingEntity entity = playerContext.entity();
+        // SMH: to the server's log as well (plan 71, step 1.7)
+        StringBuilder line = new StringBuilder();
+        for (Component c : components) line.append(c.getString());
+        com.mineagent.sbe.common.ServerHooks.log(entity, line.toString());
         if (entity instanceof Player) {
             MutableComponent component = Component.literal("");
             // If we are not logging as a Toast

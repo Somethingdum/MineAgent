@@ -98,7 +98,8 @@ public interface MovementHelper extends ActionCosts {
             return true;
         }
         Block b = state.getBlock();
-        return b instanceof net.minecraft.world.level.block.EndPortalFrameBlock
+        return settings.blocksToDisallowBreaking.get().contains(b) // SMH: Baritone's MovementHelper.java:77 at 11ea66c
+                || b instanceof net.minecraft.world.level.block.EndPortalFrameBlock
                 || b == Blocks.ICE // ice becomes water, and water can mess up the path
                 || b instanceof InfestedBlock // obvious reasons
                 // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason

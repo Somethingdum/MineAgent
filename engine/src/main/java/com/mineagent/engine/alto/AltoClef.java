@@ -252,7 +252,9 @@ public class AltoClef {
                 Blocks.WARPED_ROOTS, Blocks.VINE, Blocks.SHORT_GRASS, Blocks.FERN, Blocks.TALL_GRASS, Blocks.LARGE_FERN,
                 Blocks.SMALL_AMETHYST_BUD, Blocks.MEDIUM_AMETHYST_BUD, Blocks.LARGE_AMETHYST_BUD,
                 Blocks.AMETHYST_CLUSTER, Blocks.SCULK, Blocks.SCULK_VEIN)));
+        // dont try to break nether portal block
         getClientBaritoneSettings().blocksToAvoidBreaking.get().add(Blocks.NETHER_PORTAL);
+        getClientBaritoneSettings().blocksToDisallowBreaking.get().add(Blocks.NETHER_PORTAL);
         getClientBaritoneSettings().fadePath.set(true);
         getClientBaritoneSettings().mineScanDroppedItems.set(false);
         getClientBaritoneSettings().mineDropLoiterDurationMSThanksLouca.set(0L);

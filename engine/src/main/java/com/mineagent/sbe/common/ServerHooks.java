@@ -106,4 +106,28 @@ public final class ServerHooks {
         if (f == null) throw new IllegalStateException("No input for the companion's body: ServerHooks.setCommandHelpers was not called");
         return f.apply(baritone, player);
     }
+
+    /** The last lines Automatone said for each body, by its name: what a scene reads back (SMH plan 71, step 1.7). */
+    private static final java.util.Map<String, java.util.Deque<String>> SAID = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int KEPT = 40;
+
+    /**
+     * Automatone's own messages, which it sends to its entity's chat; a fake player has no client to show them, so they
+     * go to the server's log (sailex's {@code logger} setting wrote to a client's chat window and stays out, plan 71
+     * §5.3). Its direct messages always, its debug ones while its {@code chatDebug} is on.
+     */
+    public static void log(net.minecraft.world.entity.LivingEntity entity, String message) {
+        if (message == null || message.isBlank()) return;
+        String who = entity == null ? "?" : entity.getName().getString();
+        System.out.println("[MineAgent] automatone(" + who + "): " + message);
+        var lines = SAID.computeIfAbsent(who, k -> new java.util.concurrent.ConcurrentLinkedDeque<>());
+        lines.addLast(message);
+        while (lines.size() > KEPT) lines.pollFirst();
+    }
+
+    /** What Automatone last said for this body, oldest first. */
+    public static List<String> said(String name) {
+        var lines = SAID.get(name);
+        return lines == null ? List.of() : new ArrayList<>(lines);
+    }
 }
