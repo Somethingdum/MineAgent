@@ -7,7 +7,8 @@ P = os.path.join(HERE, 'patches')
 PRE = re.compile(r'^\s*//\s*(#if|#else|#elseif|#endif|\$\$)')
 CLIENT = re.compile(r'Minecraft\.getInstance\(\)|LocalPlayer|net\.minecraft\.client\.')
 rows, unexplained = [], []
-for d, _, fs in os.walk(P):
+for d, dirs, fs in os.walk(P):
+    dirs.sort()  # the same order on every filesystem (CI diffs the ledger)
     for f in sorted(fs):
         rel = os.path.relpath(os.path.join(d, f), P)[:-len('.patch')]
         lines = open(os.path.join(d, f), encoding='utf-8').read().split('\n')
