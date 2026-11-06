@@ -19,7 +19,9 @@ count() { grep -rlE "$1" $2 2>/dev/null | wc -l; }
 check 1 "files naming com.mineagent.engine.baritone" "$(count 'com\.mineagent\.engine\.baritone' "$src fabric/src neoforge/src")" 0
 check 1 "a static AltoClef current" "$(grep -rE 'static AltoClef current\b' $src 2>/dev/null | wc -l)" 0
 check 2 "files naming com.mineagent.sbe.altoclef" "$(count 'com\.mineagent\.sbe\.altoclef' "$src fabric/src neoforge/src")" 0
-check 2 "decompiled files (catch (X varN)) in the engine" "$(count 'catch \([A-Za-z]* var[0-9]+\)' "$src")" 0
+# sbe/mixins/MixinUtil.java copies Minecraft's own executor-shutdown routine, whose decompiled local name (var3) came
+# with it; it is SecondBrainEngine's source, not decompiled (.github/port-sbe/AUTOMATONE-LEDGER.md).
+check 2 "decompiled files (catch (X varN)) in the engine" "$(grep -rlE 'catch \([A-Za-z]* var[0-9]+\)' $src | grep -v 'sbe/mixins/MixinUtil.java' | wc -l)" 0
 check 2 "getBlockState( in engine/alto outside blockAt" "$(grep -rn 'getBlockState(' $src/engine/alto 2>/dev/null | grep -v blockAt | wc -l)" 0
 check 5 "lines in AgentLoop.java (upstream's 3,979)" "$(wc -l < $src/engine/loop/AgentLoop.java)" 3999
 switches=$(grep -cE '^\s*public static boolean [a-zA-Z0-9]+\(\)' $src/engine/settings/Switches.java)

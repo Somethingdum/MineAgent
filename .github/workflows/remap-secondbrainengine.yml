@@ -3,10 +3,9 @@ name: Remap SecondBrainEngine
 # SMH plan 70, one agent: SecondBrainEngine's sources (Automatone's server-side Baritone with a server-side AltoClef) as
 # 1.21.1 in Mojang's names, the copy the mod's movement and doing layers are ported from (.github/remap-sbe/README.md).
 # Its sources are read as text: none of its own build or code is run.
+# Run by hand on the branch whose copy is to be remade (SMH plan 71, §7.14: smh-companion moves only at a gate, so this
+# never pushes there on its own; it commits to the branch it was run on).
 on:
-  push:
-    branches: [smh-companion]
-    paths: ['.github/remap-sbe/**', '.github/workflows/remap-secondbrainengine.yml']
   workflow_dispatch:
 
 permissions:
@@ -42,6 +41,15 @@ jobs:
           python3 -I .github/remap-sbe/stonecut.py 1.21.1 "$RUNNER_TEMP/sbe/src/main" "$RUNNER_TEMP/sbe-1.21.1"
           if grep -rln '//?\|/\*?' "$RUNNER_TEMP/sbe-1.21.1/java"; then echo "markers left"; exit 1; fi
 
+      # Its api/Settings.java is decompiled; it is made instead from sailex's Automatone source with SecondBrainEngine's
+      # deliberate changes (SMH plan 71, step 1.2; the script lists them).
+      - name: Settings.java from sailex's source
+        run: |
+          git clone --quiet https://github.com/sailex428/Automatone "$RUNNER_TEMP/sailex"
+          git -C "$RUNNER_TEMP/sailex" checkout --quiet b7953df8
+          python3 -I .github/remap-sbe/settings_from_source.py "$RUNNER_TEMP/sailex/src/api/java/baritone/api/Settings.java" \
+              "$RUNNER_TEMP/sbe-1.21.1/java/me/sailex/automatone/api/Settings.java"
+
       - name: Remap from Yarn to Mojang's names
         run: |
           chmod +x gradlew
@@ -75,5 +83,5 @@ jobs:
           Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
           Claude-Session: https://claude.ai/code/session_01Li1nwwTBR4H5BX1Z3D59KY
           MSG
-          git pull --quiet --rebase origin smh-companion
-          git push origin HEAD:smh-companion
+          git pull --quiet --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
